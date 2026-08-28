@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.DS_Store
+postgres-data
+npm-debug.log*
+backup.sql
+*.sql
+backup.sql
+*.sql
