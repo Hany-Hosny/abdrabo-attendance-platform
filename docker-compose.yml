@@ -21,13 +21,13 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgres://${POSTGRES_USER:-abdrabo}:${POSTGRES_PASSWORD:-abdrabo_password}@postgres:5432/${POSTGRES_DB:-abdrabo_attendance}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
-      TOKEN_SECRET: ${TOKEN_SECRET:-change_this_local_token_secret}
-      ADMIN_NAME: ${ADMIN_NAME:-Ahmed Abdrabo}
-      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-teacher@abdrabo.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-@admin123}
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+      TOKEN_SECRET: ${TOKEN_SECRET}
+      ADMIN_NAME: ${ADMIN_NAME}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       TRUST_PROXY: "1"
     ports:
       - "${BACKEND_PORT:-4000}:4000"

@@ -314,9 +314,9 @@ input:disabled {
 .admin-header {
   display: grid;
   grid-template-columns: minmax(190px, auto) minmax(0, 1fr);
-  max-width: 1440px;
+  max-width: 1680px;
   align-items: center;
-  column-gap: clamp(16px, 2.5vw, 36px);
+  column-gap: clamp(12px, 2vw, 28px);
 }
 
 .admin-header .brand {
@@ -327,20 +327,19 @@ input:disabled {
   min-width: 0;
   width: 100%;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
 .admin-nav {
   justify-content: flex-end;
-  gap: 6px;
+  gap: 3px;
 }
 
 .admin-header .admin-nav {
   flex: 1 1 auto;
   min-width: 0;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  overflow: visible;
 }
 
 .admin-nav button {
@@ -352,7 +351,7 @@ input:disabled {
   color: var(--muted);
   cursor: pointer;
   font-weight: 700;
-  padding: 0 10px;
+  padding: 0 clamp(5px, 0.55vw, 9px);
   white-space: nowrap;
 }
 
@@ -383,7 +382,7 @@ input:disabled {
   color: #ffb3a8;
   cursor: pointer;
   font-weight: 700;
-  padding: 0 10px;
+  padding: 0 clamp(5px, 0.55vw, 9px);
   white-space: nowrap;
 }
 
