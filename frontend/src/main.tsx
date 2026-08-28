@@ -1132,7 +1132,7 @@ function purgeDaysLeft(purgeAfter?: string | null) {
   return Math.max(0, Math.ceil((Date.parse(purgeAfter) - Date.now()) / (24 * 60 * 60 * 1000)));
 }
 
-  const studentCodePattern = /^A-\d{4}$/;
+const studentCodePattern = /^A-\d{4}$/;
 
 function normalizeStudentCode(value: string) {
   return normalizeDigits(value).trim().toUpperCase().replace(/^A(\d{4})$/, "A-$1");
@@ -1853,16 +1853,44 @@ function TeacherDashboard({
 
   return (
     <div className="app-shell admin-shell">
-      <header className="site-header admin-header">
-        <a className="brand" href="/teacher/dashboard">
+      <header
+        className="site-header admin-header"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "16px",
+          width: "100%"
+        }}
+      >
+        <a
+          className="brand"
+          href="/teacher/dashboard"
+          style={{ flexShrink: 0, minWidth: "fit-content", display: "inline-flex", alignItems: "center", gap: "10px" }}
+        >
           <span className="brand-icon">{t("site.mark")}</span>
           <span>
             <strong>{t("teacher.dashboardTitle")}</strong>
             <small>{t("site.name")}</small>
           </span>
         </a>
-        <div className="header-actions">
-          <nav className="admin-nav" aria-label={language === "ar" ? "تنقل لوحة الإدارة" : "Admin navigation"}>
+        <div
+          className="header-actions"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "12px",
+            justifyContent: "flex-end",
+            flex: "1 1 auto"
+          }}
+        >
+          <nav
+            className="admin-nav"
+            aria-label={language === "ar" ? "تنقل لوحة الإدارة" : "Admin navigation"}
+            style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px" }}
+          >
             {adminTabs.map((tab) => (
               <button
                 key={tab.id}
@@ -1874,12 +1902,13 @@ function TeacherDashboard({
               </button>
             ))}
           </nav>
-          <button className="admin-logout-tab" type="button" onClick={onLogout}>
+          <button className="admin-logout-tab" type="button" onClick={onLogout} style={{ flexShrink: 0 }}>
             {t("teacher.logout")}
           </button>
           <div
             className="language-switcher"
             aria-label={language === "ar" ? "اختيار اللغة" : "Language selector"}
+            style={{ flexShrink: 0 }}
           >
             <button
               className={language === "ar" ? "active" : ""}
@@ -3207,9 +3236,28 @@ function Shell({
 
   return (
     <div className="app-shell">
-      <header className="site-header">
-        <div className="brand-cluster">
-          <a className="brand" href="/">
+      <header
+        className="site-header"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "16px",
+          width: "100%"
+        }}
+      >
+        <div
+          className="brand-cluster"
+          style={{
+            flexShrink: 0,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "12px",
+            minWidth: "fit-content"
+          }}
+        >
+          <a className="brand" href="/" style={{ flexShrink: 0 }}>
             <span className="brand-icon">{t("site.mark")}</span>
             <span>
               <strong>{t("site.name")}</strong>
@@ -3218,8 +3266,21 @@ function Shell({
           </a>
           <DateTimeWidget language={language} t={t} compact />
         </div>
-        <div className="header-actions">
-          <nav aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}>
+        <div
+          className="header-actions"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "12px",
+            justifyContent: "flex-end",
+            flex: "1 1 auto"
+          }}
+        >
+          <nav
+            aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}
+            style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px" }}
+          >
             <a
               className={`primary-nav-link ${activeNav === "student-login" ? "active" : ""}`}
               href="/#student-login"
@@ -3259,6 +3320,7 @@ function Shell({
           <div
             className="language-switcher"
             aria-label={language === "ar" ? "اختيار اللغة" : "Language selector"}
+            style={{ flexShrink: 0 }}
           >
             <button
               className={language === "ar" ? "active" : ""}
@@ -3278,7 +3340,7 @@ function Shell({
             </button>
           </div>
           {onLogout ? (
-            <button className="logout-button" type="button" onClick={onLogout}>
+            <button className="logout-button" type="button" onClick={onLogout} style={{ flexShrink: 0 }}>
               {logoutLabel || t("student.logout")}
             </button>
           ) : null}
@@ -3349,7 +3411,7 @@ function StudentNotesPanel({ studentCode, language, t, onUnreadCountChange }: { 
 
   useEffect(() => { loadNotes().catch(() => undefined); }, [studentCode]);
   if (loading) return <p className="field-hint">{language === "ar" ? "جاري تحميل الملاحظات..." : "Loading notes..."}</p>;
-  if (error) return <div><p className="form-error">{t("notes.loadError")}</p><button className="secondary-button" type="button" onClick={loadNotes}>{t("notes.refresh")}</button></div>;
+  if (error) return <div><p className="form-error">{t("notes.loadError")}</p><button className="secondary-button compact-button" type="button" onClick={loadNotes}>{t("notes.refresh")}</button></div>;
   return <section className="student-notes-panel">
     <div className="notes-toolbar"><h3>{t("notes.title")}</h3><button className="secondary-button compact-button" type="button" onClick={loadNotes}>{t("notes.refresh")}</button></div>
     {notes.length ? <div className="student-notes-list">{notes.map((note, index) => <article className={`student-note-card ${note.is_read ? "read" : "unread"}`} key={note.id || index}><p>{String(note.text || note.body || "")}</p><small className="student-note-meta">{note.creator_name || "Staff"} · {formatDateTime(note.created_at, language, "—")} · {note.is_read ? t("notes.read") : t("notes.unread")}</small></article>)}</div> : <p className="empty-state">{t("notes.noAvailable")}</p>}
