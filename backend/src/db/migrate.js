@@ -8,7 +8,11 @@ function hashValue(value) {
 }
 
 export async function migrate() {
+  // 1. تحديد الـ Schema وإنشاء الجداول الأساسية
   await query(`
+    CREATE SCHEMA IF NOT EXISTS public;
+    SET search_path TO public;
+
     CREATE TABLE IF NOT EXISTS centers (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -33,12 +37,18 @@ export async function migrate() {
       id SERIAL PRIMARY KEY,
       group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
       student_code TEXT NOT NULL UNIQUE,
+      student_serial TEXT,
+      scan_serial TEXT,
+      qr_token TEXT,
       full_name TEXT NOT NULL,
       phone TEXT,
       guardian_phone TEXT,
       national_id_hash TEXT,
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      purge_after TIMESTAMPTZ,
+      deleted_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS class_schedules (
@@ -49,7 +59,9 @@ export async function migrate() {
       end_time TIME NOT NULL,
       opens_before_minutes INTEGER NOT NULL DEFAULT 3,
       closes_after_minutes INTEGER NOT NULL DEFAULT 20,
-      is_active BOOLEAN NOT NULL DEFAULT TRUE
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      deleted_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS attendance_sessions (
@@ -68,7 +80,7 @@ export async function migrate() {
       id SERIAL PRIMARY KEY,
       session_id INTEGER NOT NULL REFERENCES attendance_sessions(id) ON DELETE CASCADE,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-      status TEXT NOT NULL DEFAULT 'present' CHECK (status IN ('present', 'pending_review', 'rejected')),
+      status TEXT NOT NULL DEFAULT 'present' CHECK (status IN ('present', 'absent', 'late', 'pending_review', 'rejected')),
       method TEXT NOT NULL DEFAULT 'gps',
       checkin_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       location_lat DOUBLE PRECISION,
@@ -109,6 +121,10 @@ export async function migrate() {
       password_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'teacher' CHECK (role IN ('admin', 'teacher', 'assistant')),
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      print_student_labels BOOLEAN NOT NULL DEFAULT FALSE,
+      max_label_reprints INTEGER NOT NULL DEFAULT 2 CHECK (max_label_reprints >= 0),
+      can_use_inbox BOOLEAN NOT NULL DEFAULT FALSE,
+      deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -134,6 +150,7 @@ export async function migrate() {
       attachment_url TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
     CREATE TABLE IF NOT EXISTS homework_submissions (
       id BIGSERIAL PRIMARY KEY,
       homework_id BIGINT NOT NULL REFERENCES homeworks(id) ON DELETE CASCADE,
@@ -144,8 +161,51 @@ export async function migrate() {
     );
   `);
 
-  // Keep legacy records compatible with the canonical ASCII-digit format.
+  // 2. تحديث وتعديل الأعمدة (ALTERs & Constraints) لضمان التوافق
   await query(`
+    SET search_path TO public;
+
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS print_student_labels BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS max_label_reprints INTEGER NOT NULL DEFAULT 2 CHECK (max_label_reprints >= 0);
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS can_use_inbox BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'teachers_role_check'
+      ) THEN
+        ALTER TABLE teachers ADD CONSTRAINT teachers_role_check CHECK (role IN ('admin', 'teacher', 'assistant'));
+      END IF;
+    END $$;
+
+    ALTER TABLE groups ADD COLUMN IF NOT EXISTS grade_level TEXT;
+    ALTER TABLE groups ADD COLUMN IF NOT EXISTS display_name TEXT;
+    ALTER TABLE groups ADD COLUMN IF NOT EXISTS fees_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (fees_amount >= 0);
+    ALTER TABLE groups ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE groups ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+    ALTER TABLE class_schedules ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    ALTER TABLE class_schedules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS student_serial TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS scan_serial TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS qr_token TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS purge_after TIMESTAMPTZ;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+    ALTER TABLE attendance_records DROP CONSTRAINT IF EXISTS attendance_records_status_check;
+    ALTER TABLE attendance_records ADD CONSTRAINT attendance_records_status_check CHECK (status IN ('present','absent','late','pending_review','rejected'));
+
+    UPDATE groups SET grade_level = COALESCE(grade_level, grade), display_name = COALESCE(display_name, name);
+  `);
+
+  // 3. تحديث السجلات وصيغ الأرقام والـ Serials
+  await query(`
+    SET search_path TO public;
+
     UPDATE students
     SET phone = translate(phone, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'),
         guardian_phone = translate(guardian_phone, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789'),
@@ -156,55 +216,28 @@ export async function migrate() {
           WHEN student_serial ~ '^A[0-9]{4}$' THEN 'A-' || SUBSTRING(student_serial FROM 2)
           ELSE student_serial
         END,
-        scan_serial = translate(scan_serial, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789')
-    WHERE phone ~ '[٠-٩۰-۹]' OR guardian_phone ~ '[٠-٩۰-۹]' OR student_code ~ '^A[0-9]{4}$'
-      OR student_serial ~ '[٠-٩۰-۹]' OR student_serial ~ '^A[0-9]{4}$' OR scan_serial ~ '[٠-٩۰-۹]'
-  `);
+        scan_serial = CASE 
+          WHEN scan_serial IS NOT NULL THEN translate(scan_serial, '٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹', '01234567890123456789')
+          ELSE scan_serial
+        END
+    WHERE (phone IS NOT NULL AND phone ~ '[٠-٩۰-۹]')
+       OR (guardian_phone IS NOT NULL AND guardian_phone ~ '[٠-٩۰-۹]')
+       OR student_code ~ '^A[0-9]{4}$'
+       OR (student_serial IS NOT NULL AND (student_serial ~ '[٠-٩۰-۹]' OR student_serial ~ '^A[0-9]{4}$'))
+       OR (scan_serial IS NOT NULL AND scan_serial ~ '[٠-٩۰-۹]');
 
-  await query(`
-    ALTER TABLE teachers
-      ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    UPDATE students 
+    SET student_serial = COALESCE(student_serial, CASE WHEN student_code ~ '^A[0-9]{4}$' THEN 'A-' || SUBSTRING(student_code FROM 2) ELSE student_code END), 
+        qr_token = COALESCE(qr_token, md5(random()::text || clock_timestamp()::text || id::text));
 
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'teachers_role_check'
-      ) THEN
-        ALTER TABLE teachers
-          ADD CONSTRAINT teachers_role_check CHECK (role IN ('admin', 'teacher', 'assistant'));
-      END IF;
-    END $$;
-  `);
+    UPDATE students 
+    SET scan_serial = COALESCE(scan_serial, 'ABD-' || REPLACE(COALESCE(student_code, 'A-' || id::text), '-', '') || '-' || LPAD(id::text, 6, '0'));
 
-  await query(`
-    ALTER TABLE groups ADD COLUMN IF NOT EXISTS grade_level TEXT;
-    ALTER TABLE groups ADD COLUMN IF NOT EXISTS display_name TEXT;
-    ALTER TABLE groups ADD COLUMN IF NOT EXISTS fees_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (fees_amount >= 0);
-    ALTER TABLE groups ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-    ALTER TABLE groups ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-    ALTER TABLE class_schedules ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-    ALTER TABLE students ADD COLUMN IF NOT EXISTS student_serial TEXT;
-    ALTER TABLE students ADD COLUMN IF NOT EXISTS scan_serial TEXT;
-    ALTER TABLE students ADD COLUMN IF NOT EXISTS qr_token TEXT;
-    ALTER TABLE students ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-    ALTER TABLE students ADD COLUMN IF NOT EXISTS purge_after TIMESTAMPTZ;
-    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS print_student_labels BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS max_label_reprints INTEGER NOT NULL DEFAULT 2 CHECK (max_label_reprints >= 0);
-    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS can_use_inbox BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-    ALTER TABLE students ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
-    ALTER TABLE attendance_records DROP CONSTRAINT IF EXISTS attendance_records_status_check;
-    ALTER TABLE attendance_records ADD CONSTRAINT attendance_records_status_check CHECK (status IN ('present','absent','late','pending_review','rejected'));
-    ALTER TABLE class_schedules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-    UPDATE groups SET grade_level = COALESCE(grade_level, grade), display_name = COALESCE(display_name, name);
-    UPDATE students SET student_serial = COALESCE(student_serial, CASE WHEN student_code ~ '^A[0-9]{4}$' THEN 'A-' || SUBSTRING(student_code FROM 2) ELSE student_code END), qr_token = COALESCE(qr_token, md5(random()::text || clock_timestamp()::text || id::text));
-    UPDATE students SET scan_serial = COALESCE(scan_serial, 'ABD-' || REPLACE(COALESCE(student_code, 'A-' || id::text), '-', '') || '-' || LPAD(id::text, 6, '0'));
     CREATE UNIQUE INDEX IF NOT EXISTS students_student_serial_unique ON students(student_serial);
     CREATE UNIQUE INDEX IF NOT EXISTS students_scan_serial_unique ON students(scan_serial);
     CREATE UNIQUE INDEX IF NOT EXISTS students_qr_token_unique ON students(qr_token);
     CREATE UNIQUE INDEX IF NOT EXISTS class_schedules_group_day_time_unique ON class_schedules(group_id, day_of_week, start_time, end_time);
+
     DELETE FROM attendance_sessions WHERE schedule_id IS NULL;
     UPDATE attendance_sessions s
     SET starts_at = ((s.session_date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
@@ -212,12 +245,14 @@ export async function migrate() {
         closes_at = ((s.session_date + cs.end_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
     FROM class_schedules cs
     WHERE cs.id = s.schedule_id AND cs.group_id = s.group_id;
+
     DELETE FROM attendance_sessions duplicate
     USING attendance_sessions keeper
     WHERE duplicate.id < keeper.id
       AND duplicate.group_id = keeper.group_id
       AND duplicate.schedule_id = keeper.schedule_id
       AND duplicate.session_date = keeper.session_date;
+
     DO $$
     BEGIN
       IF NOT EXISTS (
@@ -231,7 +266,10 @@ export async function migrate() {
     END $$;
   `);
 
+  // 4. جداول الـ Inbox والـ Audit والـ Payments
   await query(`
+    SET search_path TO public;
+
     CREATE TABLE IF NOT EXISTS inbox_threads (
       id BIGSERIAL PRIMARY KEY,
       student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
@@ -250,55 +288,79 @@ export async function migrate() {
       sender_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       body TEXT NOT NULL,
       is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    ALTER TABLE inbox_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS inbox_threads_student_idx ON inbox_threads(student_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS inbox_messages_thread_idx ON inbox_messages(thread_id, created_at);
     CREATE INDEX IF NOT EXISTS inbox_messages_unread_idx ON inbox_messages(is_read, created_at);
   `);
 
   await query(`
+    SET search_path TO public;
+
     CREATE TABLE IF NOT EXISTS audit_logs (
-      id BIGSERIAL PRIMARY KEY, action TEXT NOT NULL,
+      id BIGSERIAL PRIMARY KEY, 
+      action TEXT NOT NULL,
       actor_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
       session_id INTEGER REFERENCES attendance_sessions(id) ON DELETE SET NULL,
-      details JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      details JSONB NOT NULL DEFAULT '{}'::jsonb, 
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS payments (
       id BIGSERIAL PRIMARY KEY,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
       group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
-      amount NUMERIC(10,2) NOT NULL CHECK (amount > 0), payment_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      payment_method TEXT NOT NULL DEFAULT 'cash', notes TEXT,
-      recorded_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      amount NUMERIC(10,2) NOT NULL CHECK (amount > 0), 
+      payment_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      payment_method TEXT NOT NULL DEFAULT 'cash', 
+      notes TEXT,
+      recorded_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, 
+      paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      paid_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      payment_months JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS payment_change_requests (
-      id BIGSERIAL PRIMARY KEY, payment_id BIGINT REFERENCES payments(id) ON DELETE SET NULL,
-      requested_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, action TEXT NOT NULL,
-      proposed_data JSONB NOT NULL DEFAULT '{}'::jsonb, status TEXT NOT NULL DEFAULT 'pending',
-      reviewed_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, reviewed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id BIGSERIAL PRIMARY KEY, 
+      payment_id BIGINT REFERENCES payments(id) ON DELETE SET NULL,
+      requested_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, 
+      action TEXT NOT NULL,
+      proposed_data JSONB NOT NULL DEFAULT '{}'::jsonb, 
+      status TEXT NOT NULL DEFAULT 'pending',
+      reviewed_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, 
+      reviewed_at TIMESTAMPTZ, 
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS serial_change_requests (
-      id BIGSERIAL PRIMARY KEY, student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
-      requested_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, old_serial TEXT NOT NULL, new_serial TEXT NOT NULL,
-      old_qr_token TEXT, new_qr_token TEXT, status TEXT NOT NULL DEFAULT 'pending',
-      reviewed_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, reviewed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id BIGSERIAL PRIMARY KEY, 
+      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
+      requested_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, 
+      old_serial TEXT NOT NULL, 
+      new_serial TEXT NOT NULL,
+      old_qr_token TEXT, 
+      new_qr_token TEXT, 
+      status TEXT NOT NULL DEFAULT 'pending',
+      reviewed_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL, 
+      reviewed_at TIMESTAMPTZ, 
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS student_notes (
       id BIGSERIAL PRIMARY KEY,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
       author_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       body TEXT NOT NULL,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS student_notes_student_idx ON student_notes(student_id, created_at DESC);
-    ALTER TABLE student_notes ADD COLUMN IF NOT EXISTS is_read BOOLEAN NOT NULL DEFAULT FALSE;
   `);
 
   await query(`
+    SET search_path TO public;
+
     CREATE TABLE IF NOT EXISTS fee_dues (
       id BIGSERIAL PRIMARY KEY,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
@@ -309,14 +371,10 @@ export async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (student_id, due_month)
     );
-    ALTER TABLE payments ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-    ALTER TABLE payments ADD COLUMN IF NOT EXISTS paid_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL;
-    ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_months JSONB NOT NULL DEFAULT '[]'::jsonb;
-    UPDATE payments SET paid_at = payment_date WHERE paid_at IS NULL;
-    UPDATE payments SET paid_by = recorded_by WHERE paid_by IS NULL;
     CREATE INDEX IF NOT EXISTS fee_dues_student_month_idx ON fee_dues(student_id, due_month);
   `);
 
+  // 5. إدخال البيانات الافتراضية (Initial Seeding)
   const center = await query(
     `
       INSERT INTO centers (name, address, latitude, longitude, allowed_radius_meters)
@@ -371,12 +429,6 @@ export async function migrate() {
     `,
     [groupId, "18:00:00", "19:30:00"]
   );
-
-  const scheduleId =
-    schedule.rows[0]?.id ||
-    (await query("SELECT id FROM class_schedules WHERE group_id = $1 ORDER BY id DESC LIMIT 1", [
-      groupId
-    ])).rows[0].id;
 
   const exam = await query(
     `

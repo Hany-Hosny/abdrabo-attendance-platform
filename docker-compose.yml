@@ -21,7 +21,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://neondb_owner:npg_D8lAMpnqj5uf@ep-calm-silence-ay9096lp-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
       CORS_ORIGIN: ${CORS_ORIGIN}
       TOKEN_SECRET: ${TOKEN_SECRET}
       ADMIN_NAME: ${ADMIN_NAME}
