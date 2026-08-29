@@ -242,6 +242,8 @@ const translations = {
     "fees.alreadyPaid": "تم سداد المصروفات بالفعل.",
     "fees.noOutstanding": "لا توجد مصروفات مستحقة لهذا الطالب.",
     "fees.paymentFailed": "تعذر إتمام الدفع. حاول مرة أخرى.",
+    "fees.paidStudentName": "الاسم: {{name}}",
+    "fees.paidStudentStatus": "الحالة: مدفوع",
     "fees.monthsCovered": "الأشهر المغطاة",
     "fees.noMatchingResults": "لا توجد نتائج مطابقة للبحث.",
     "fees.reports": "التقارير",
@@ -588,6 +590,8 @@ const translations = {
     "fees.alreadyPaid": "Fees already paid.",
     "fees.noOutstanding": "No outstanding fees for this student.",
     "fees.paymentFailed": "Payment could not be completed. Please try again.",
+    "fees.paidStudentName": "Name: {{name}}",
+    "fees.paidStudentStatus": "Status: Paid",
     "fees.monthsCovered": "Months covered",
     "fees.noMatchingResults": "No matching results found.",
     "fees.reports": "Reports",
@@ -1036,10 +1040,9 @@ function formatDateTime(value: string | undefined, language: Language, emptyText
 }
 
 function localDateInputValue(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function formatLocalTime(value: string | undefined, language: Language) {
@@ -2930,13 +2933,16 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
       <label>{t("fees.scanStudent")}<input autoFocus type="text" value={code} onChange={(event) => setCode(normalizeDigits(event.target.value))} placeholder="A-2303" /></label>
       <button className="primary-button" type="submit">{t("fees.find")}</button>
     </form>
-    {summary ? <div className="status-panel success">
+    {summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary">
+      <strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong>
+      <span className="paid-summary-status">{t("fees.paidStudentStatus")}</span>
+    </div> : <div className="status-panel success">
       <strong>{summary.full_name}</strong>
       <span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>
       <span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span>
       <span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>
       <small>{t("fees.fullOnly")}</small>
-      <button className="secondary-button" type="button" onClick={pay} disabled={Number(summary.remaining_balance) <= 0}>{t("fees.payFull")}</button>
+      <button className="secondary-button" type="button" onClick={pay}>{t("fees.payFull")}</button>
     </div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
   </section>;
@@ -2980,7 +2986,7 @@ function PaymentReportsPanel({ session, t }: { session: TeacherSession; t: Trans
   }
 
   function setThisMonth() {
-    const now = new Date(); const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`; const today = localDateInputValue(); setFrom(monthStart); setTo(today); searchReport(monthStart, today).catch(() => undefined);
+    const today = localDateInputValue(); const monthStart = `${today.slice(0, 7)}-01`; setFrom(monthStart); setTo(today); searchReport(monthStart, today).catch(() => undefined);
   }
 
   function exportCsv() {

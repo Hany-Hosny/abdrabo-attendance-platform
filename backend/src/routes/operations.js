@@ -27,6 +27,7 @@ operationsRouter.get("/payments/report", async (req, res, next) => {
   try {
     const values = [];
     const filters = ["s.deleted_at IS NULL"];
+    const paymentTimestamp = "COALESCE(p.paid_at, p.payment_date::timestamp AT TIME ZONE 'Africa/Cairo')";
     const add = (sql, value) => { values.push(value); filters.push(sql.replaceAll("?", `$${values.length}`)); };
     const search = normalizedSearch(req.query.q);
     if (search) {
@@ -37,21 +38,21 @@ operationsRouter.get("/payments/report", async (req, res, next) => {
       const hashParam = `$${values.length}`;
       filters.push(`(s.full_name ILIKE ${searchParam} OR s.student_code ILIKE ${searchParam} OR s.student_serial ILIKE ${searchParam} OR s.scan_serial ILIKE ${searchParam} OR s.phone ILIKE ${searchParam} OR s.guardian_phone ILIKE ${searchParam} OR COALESCE(g.display_name,g.name) ILIKE ${searchParam} OR COALESCE(g.grade_level,g.grade) ILIKE ${searchParam} OR s.national_id_hash = ${hashParam})`);
     }
-    if (req.query.date_from) add("COALESCE(p.paid_at,p.payment_date) >= ?::date", normalizeDigits(req.query.date_from).trim());
-    if (req.query.date_to) add("COALESCE(p.paid_at,p.payment_date) < (?::date + INTERVAL '1 day')", normalizeDigits(req.query.date_to).trim());
+    if (req.query.date_from) add(`${paymentTimestamp} >= (?::date::timestamp AT TIME ZONE 'Africa/Cairo')`, normalizeDigits(req.query.date_from).trim());
+    if (req.query.date_to) add(`${paymentTimestamp} < (((?::date + INTERVAL '1 day')::timestamp) AT TIME ZONE 'Africa/Cairo')`, normalizeDigits(req.query.date_to).trim());
     if (req.query.group_id) {
       const groupValue = normalizeDigits(req.query.group_id).trim();
       if (/^\d+$/.test(groupValue)) add("g.id = ?", Number(groupValue));
       else add("COALESCE(g.display_name,g.name) ILIKE ?", `%${groupValue}%`);
     }
     if (req.query.grade_level) add("COALESCE(g.grade_level,g.grade) ILIKE ?", `%${normalizeDigits(req.query.grade_level).trim()}%`);
-    const result = await query(`SELECT p.id, COALESCE(p.paid_at,p.payment_date) AS paid_at, p.amount, p.payment_months,
+    const result = await query(`SELECT p.id, ${paymentTimestamp} AS paid_at, p.amount, p.payment_months,
         s.full_name, s.student_code, s.student_serial, s.scan_serial,
         COALESCE(g.display_name,g.name) AS group_name, COALESCE(g.grade_level,g.grade) AS grade_level,
         COALESCE(u.name,u.username,u.email,'Staff') AS paid_by
       FROM payments p JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id
       LEFT JOIN teachers u ON u.id=COALESCE(p.paid_by,p.recorded_by)
-      WHERE ${filters.join(" AND ")} ORDER BY COALESCE(p.paid_at,p.payment_date) DESC`, values);
+      WHERE ${filters.join(" AND ")} ORDER BY ${paymentTimestamp} DESC`, values);
     res.json({ ok: true, payments: result.rows, total_paid: result.rows.reduce((sum, row) => sum + Number(row.amount), 0), payment_count: result.rowCount });
   } catch (error) { next(error); }
 });
