@@ -92,6 +92,15 @@ type AdminGroup = {
   active_students_count?: number;
   disabled_students_count?: number;
   deleted_students_count?: number;
+  schedules?: Array<{
+    id: number;
+    day_of_week: number;
+    start_time: string;
+    end_time: string;
+    opens_before_minutes: number;
+    closes_after_minutes: number;
+    is_active: boolean;
+  }>;
 };
 
 type AdminStudent = {
@@ -2306,6 +2315,7 @@ const emptyGroupForm = {
 };
 
 type ScheduleDraft = {
+  id?: number;
   day_of_week: string;
   start_time: string;
   end_time: string;
@@ -2403,25 +2413,59 @@ function AcademicManager({
     setScheduleRows([defaultScheduleDraft()]);
   }
 
-  function editGroup(group: AdminGroup) {
-    setEditingId(group.id);
-    setGroupForm({
-      name: group.name,
-      grade: group.grade_level || group.grade,
-      subject: group.subject,
-      center_id: String(group.center_id),
-      day_of_week: String(group.day_of_week),
-      start_time: group.start_time.slice(0, 5),
-      end_time: group.end_time.slice(0, 5),
-      opens_before_minutes: String(group.opens_before_minutes),
-      closes_after_minutes: String(group.closes_after_minutes),
-      fees_amount: String(group.fees_amount ?? 0),
-      is_active: group.is_active
-    });
-    setScheduleRows([{
-      day_of_week: String(group.day_of_week), start_time: group.start_time.slice(0, 5), end_time: group.end_time.slice(0, 5),
-      opens_before_minutes: String(group.opens_before_minutes), closes_after_minutes: String(group.closes_after_minutes), is_active: group.is_active
-    }]);
+  async function editGroup(group: AdminGroup) {
+    setLoading(true);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/groups/${group.id}/details`, { headers });
+      const data = (await response.json()) as { ok: boolean; group?: AdminGroup; schedules?: AdminGroup["schedules"] };
+      if (!response.ok || !data.ok) throw new Error(t("errors.loginFailed"));
+
+      const savedGroup = data.group || group;
+      const savedSchedules = Array.isArray(data.schedules)
+        ? data.schedules
+        : Array.isArray(savedGroup.schedules) ? savedGroup.schedules : [];
+      const firstSchedule = savedSchedules[0] || savedGroup;
+      const scheduleRowsFromGroup = savedSchedules.length
+        ? savedSchedules.map((schedule) => ({
+            id: schedule.id,
+            day_of_week: String(schedule.day_of_week),
+            start_time: String(schedule.start_time || "").slice(0, 5),
+            end_time: String(schedule.end_time || "").slice(0, 5),
+            opens_before_minutes: String(schedule.opens_before_minutes ?? 3),
+            closes_after_minutes: String(schedule.closes_after_minutes ?? 20),
+            is_active: schedule.is_active !== false
+          }))
+        : savedGroup.day_of_week != null && savedGroup.start_time && savedGroup.end_time
+          ? [{
+              day_of_week: String(savedGroup.day_of_week),
+              start_time: String(savedGroup.start_time).slice(0, 5),
+              end_time: String(savedGroup.end_time).slice(0, 5),
+              opens_before_minutes: String(savedGroup.opens_before_minutes ?? 3),
+              closes_after_minutes: String(savedGroup.closes_after_minutes ?? 20),
+              is_active: savedGroup.is_active
+            }]
+          : [];
+      setEditingId(savedGroup.id);
+      setGroupForm({
+        name: savedGroup.name,
+        grade: savedGroup.grade_level || savedGroup.grade,
+        subject: savedGroup.subject,
+        center_id: String(savedGroup.center_id),
+        day_of_week: firstSchedule?.day_of_week == null ? "" : String(firstSchedule.day_of_week),
+        start_time: firstSchedule?.start_time ? String(firstSchedule.start_time).slice(0, 5) : "",
+        end_time: firstSchedule?.end_time ? String(firstSchedule.end_time).slice(0, 5) : "",
+        opens_before_minutes: String(firstSchedule?.opens_before_minutes ?? 3),
+        closes_after_minutes: String(firstSchedule?.closes_after_minutes ?? 20),
+        fees_amount: String(savedGroup.fees_amount ?? 0),
+        is_active: savedGroup.is_active
+      });
+      setScheduleRows(scheduleRowsFromGroup);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+    } finally {
+      setLoading(false);
+    }
   }
 
   function editStudent(student: AdminStudent) {

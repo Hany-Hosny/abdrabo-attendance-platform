@@ -53,8 +53,10 @@ function groupPayload(body) {
   const opensBefore = Number(normalizeDigits(body?.opens_before_minutes ?? 3));
   const closesAfter = Number(normalizeDigits(body?.closes_after_minutes ?? 20));
   const centerId = Number(normalizeDigits(body?.center_id || 0));
-  const schedules = (Array.isArray(body?.schedules) ? body.schedules : [{ day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, opens_before_minutes: opensBefore, closes_after_minutes: closesAfter, is_active: parseBoolean(body?.is_active) }]).map((schedule) => ({
+  const hasSchedules = Array.isArray(body?.schedules);
+  const schedules = (hasSchedules ? body.schedules : [{ day_of_week: dayOfWeek, start_time: startTime, end_time: endTime, opens_before_minutes: opensBefore, closes_after_minutes: closesAfter, is_active: parseBoolean(body?.is_active) }]).map((schedule) => ({
     ...schedule,
+    id: schedule?.id ? Number(normalizeDigits(schedule.id)) : undefined,
     day_of_week: Number(normalizeDigits(schedule?.day_of_week)),
     opens_before_minutes: Number(normalizeDigits(schedule?.opens_before_minutes ?? 3)),
     closes_after_minutes: Number(normalizeDigits(schedule?.closes_after_minutes ?? 20))
@@ -73,6 +75,7 @@ function groupPayload(body) {
     displayName: String(body?.display_name || name).trim(),
     feesAmount: Number(normalizeDigits(body?.fees_amount ?? 0)),
     schedules,
+    hasSchedules,
     isActive: parseBoolean(body?.is_active)
   };
 }
@@ -98,6 +101,19 @@ const groupSelect = `
     c.name AS center_name, g.grade_level, g.display_name, g.fees_amount,
     cs.id AS schedule_id, cs.day_of_week, cs.start_time, cs.end_time,
     cs.opens_before_minutes, cs.closes_after_minutes, g.deleted_at,
+    COALESCE((
+      SELECT json_agg(json_build_object(
+        'id', all_cs.id,
+        'day_of_week', all_cs.day_of_week,
+        'start_time', all_cs.start_time,
+        'end_time', all_cs.end_time,
+        'opens_before_minutes', all_cs.opens_before_minutes,
+        'closes_after_minutes', all_cs.closes_after_minutes,
+        'is_active', all_cs.is_active
+      ) ORDER BY all_cs.day_of_week, all_cs.start_time)
+      FROM class_schedules all_cs
+      WHERE all_cs.group_id = g.id AND all_cs.deleted_at IS NULL
+    ), '[]'::json) AS schedules,
     (SELECT COUNT(*)::int FROM students stc WHERE stc.group_id=g.id AND stc.deleted_at IS NULL) AS students_count,
     (SELECT COUNT(*)::int FROM students stc WHERE stc.group_id=g.id AND stc.deleted_at IS NULL AND stc.is_active=TRUE) AS active_students_count,
     (SELECT COUNT(*)::int FROM students stc WHERE stc.group_id=g.id AND stc.deleted_at IS NULL AND stc.is_active=FALSE) AS disabled_students_count,
@@ -106,7 +122,7 @@ const groupSelect = `
   JOIN centers c ON c.id = g.center_id
   LEFT JOIN LATERAL (
     SELECT * FROM class_schedules
-    WHERE group_id = g.id
+    WHERE group_id = g.id AND deleted_at IS NULL
     ORDER BY id DESC
     LIMIT 1
   ) cs ON TRUE
@@ -159,9 +175,44 @@ adminAcademicRouter.put("/groups/:id", async (req, res, next) => {
     );
     if (!updated.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
 
-    const keep = new Set(data.schedules.map((schedule) => `${Number(schedule.day_of_week)}|${schedule.start_time}|${schedule.end_time}`));
-    await query("DELETE FROM class_schedules WHERE group_id=$1 AND NOT ((day_of_week::text || '|' || start_time::text || '|' || end_time::text) = ANY($2::text[]))", [groupId, [...keep]]);
-    for (const schedule of data.schedules) await query(`INSERT INTO class_schedules (group_id,day_of_week,start_time,end_time,opens_before_minutes,closes_after_minutes,is_active) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (group_id,day_of_week,start_time,end_time) DO UPDATE SET opens_before_minutes=EXCLUDED.opens_before_minutes,closes_after_minutes=EXCLUDED.closes_after_minutes,is_active=EXCLUDED.is_active,updated_at=NOW()`, [groupId, Number(schedule.day_of_week), schedule.start_time, schedule.end_time, Number(schedule.opens_before_minutes ?? 3), Number(schedule.closes_after_minutes ?? 20), parseBoolean(schedule.is_active)]);
+    if (data.hasSchedules) {
+      const keptScheduleIds = [];
+      for (const schedule of data.schedules) {
+        if (Number.isInteger(schedule.id) && schedule.id > 0) {
+          const updatedSchedule = await query(
+            `UPDATE class_schedules
+             SET day_of_week=$1, start_time=$2, end_time=$3, opens_before_minutes=$4,
+                 closes_after_minutes=$5, is_active=$6, deleted_at=NULL, updated_at=NOW()
+             WHERE id=$7 AND group_id=$8
+             RETURNING id`,
+            [Number(schedule.day_of_week), schedule.start_time, schedule.end_time, Number(schedule.opens_before_minutes ?? 3), Number(schedule.closes_after_minutes ?? 20), parseBoolean(schedule.is_active), schedule.id, groupId]
+          );
+          if (updatedSchedule.rowCount) {
+            keptScheduleIds.push(updatedSchedule.rows[0].id);
+            continue;
+          }
+        }
+        const insertedSchedule = await query(
+          `INSERT INTO class_schedules (group_id,day_of_week,start_time,end_time,opens_before_minutes,closes_after_minutes,is_active,deleted_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,NULL)
+           ON CONFLICT (group_id,day_of_week,start_time,end_time) DO UPDATE SET
+             opens_before_minutes=EXCLUDED.opens_before_minutes,
+             closes_after_minutes=EXCLUDED.closes_after_minutes,
+             is_active=EXCLUDED.is_active,
+             deleted_at=NULL,
+             updated_at=NOW()
+           RETURNING id`,
+          [groupId, Number(schedule.day_of_week), schedule.start_time, schedule.end_time, Number(schedule.opens_before_minutes ?? 3), Number(schedule.closes_after_minutes ?? 20), parseBoolean(schedule.is_active)]
+        );
+        keptScheduleIds.push(insertedSchedule.rows[0].id);
+      }
+      await query(
+        `UPDATE class_schedules
+         SET deleted_at=NOW(), is_active=FALSE, updated_at=NOW()
+         WHERE group_id=$1 AND NOT (id = ANY($2::int[])) AND deleted_at IS NULL`,
+        [groupId, keptScheduleIds]
+      );
+    }
     const result = await query(`${groupSelect} WHERE g.id = $1`, [groupId]);
     res.json({ ok: true, group: result.rows[0] });
   } catch (error) {
