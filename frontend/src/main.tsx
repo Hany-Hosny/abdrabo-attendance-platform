@@ -228,6 +228,19 @@ const translations = {
     "attendance.noRealSessions": "لا توجد حصص حقيقية لهذا اليوم.",
     "fees.title": "المصروفات",
     "fees.newPayment": "دفع جديد",
+    "fees.advancePayment": "دفع مقدما",
+    "fees.advanceTitle": "دفع مقدما",
+    "fees.advanceMonths": "اختر الأشهر المستقبلية",
+    "fees.advanceSelected": "الأشهر المختارة",
+    "fees.advanceTotal": "إجمالي الدفع المقدم",
+    "fees.advanceConfirm": "هل تريد تأكيد دفع الأشهر المحددة مقدماً؟",
+    "fees.advanceSaved": "تم تسجيل الدفع المقدم بنجاح.",
+    "fees.advanceNoMonths": "لا توجد أشهر متاحة للدفع مقدماً.",
+    "fees.advanceFailed": "تعذر تسجيل الدفع المقدم.",
+    "fees.advanceAlreadyPaid": "هذا الشهر مدفوع بالفعل.",
+    "fees.advancePaymentLabel": "دفع مقدم",
+    "fees.paymentType": "نوع الدفع",
+    "fees.normalPayment": "دفع عادي",
     "fees.paidPayments": "المدفوع",
     "fees.latePayments": "المتأخر",
     "fees.scanStudent": "امسح مسلسل الطالب أو رمز QR",
@@ -576,6 +589,19 @@ const translations = {
     "attendance.noRealSessions": "No real class sessions for this date.",
     "fees.title": "Fees",
     "fees.newPayment": "New Payment",
+    "fees.advancePayment": "Advance Payment",
+    "fees.advanceTitle": "Advance Payment",
+    "fees.advanceMonths": "Select future months",
+    "fees.advanceSelected": "Selected months",
+    "fees.advanceTotal": "Advance payment total",
+    "fees.advanceConfirm": "Confirm advance payment for the selected months?",
+    "fees.advanceSaved": "Advance payment recorded successfully.",
+    "fees.advanceNoMonths": "No future months are available for advance payment.",
+    "fees.advanceFailed": "Advance payment could not be recorded.",
+    "fees.advanceAlreadyPaid": "This month is already paid.",
+    "fees.advancePaymentLabel": "Advance payment",
+    "fees.paymentType": "Payment type",
+    "fees.normalPayment": "Normal payment",
     "fees.paidPayments": "Paid Payments",
     "fees.latePayments": "Late Payments",
     "fees.scanStudent": "Scan student serial or QR code",
@@ -2850,50 +2876,52 @@ function LegacyFeesPanel({ session, t }: { session: TeacherSession; t: Translato
 }
 
 function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
+  const [mode, setMode] = useState<"new" | "advance">("new");
   const [code, setCode] = useState("");
   const [summary, setSummary] = useState<any>(null);
+  const [advanceData, setAdvanceData] = useState<any>(null);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
   const [status, setStatus] = useState("");
+  const auth = { Authorization: `Bearer ${session.token}` };
 
   async function lookup(event: React.FormEvent) {
     event.preventDefault();
     setStatus("");
     setSummary(null);
-    const value = code.trim().toUpperCase();
+    setAdvanceData(null);
+    setSelectedMonths([]);
+    const value = normalizeDigits(code).trim().toUpperCase();
     if (!value) {
       setStatus(t("fees.studentNotFound"));
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/students`, {
-        headers: { Authorization: `Bearer ${session.token}` }
-      });
+      const response = await fetch(`${API_BASE_URL}/admin/students`, { headers: auth });
       const data = await response.json();
       if (!response.ok || !data.ok) {
         setStatus(paymentErrorMessage(data.status, data.message, t));
         return;
       }
       const student = (data.students || []).find((item: any) =>
-        item.scan_serial === value ||
-        item.student_serial === value ||
-        item.student_code === value ||
-        item.qr_token === code.trim()
+        item.scan_serial === value || item.student_serial === value || item.student_code === value || item.qr_token === code.trim()
       );
       if (!student) {
         setStatus(t("fees.studentNotFound"));
         return;
       }
-      const summaryResponse = await fetch(`${API_BASE_URL}/admin/fees/summary/${student.id}`, {
-        headers: { Authorization: `Bearer ${session.token}` }
-      });
-      const summaryData = await summaryResponse.json();
-      if (!summaryResponse.ok || !summaryData.ok) {
-        setStatus(paymentErrorMessage(summaryData.status, summaryData.message, t));
+      const endpoint = mode === "advance"
+        ? `${API_BASE_URL}/admin/fees/advance-options/${student.id}`
+        : `${API_BASE_URL}/admin/fees/summary/${student.id}`;
+      const detailsResponse = await fetch(endpoint, { headers: auth });
+      const details = await detailsResponse.json();
+      if (!detailsResponse.ok || !details.ok) {
+        setStatus(paymentErrorMessage(details.status, details.message, t));
         return;
       }
-      setSummary(summaryData.summary || null);
-      if (!summaryData.summary) setStatus(t("fees.paymentFailed"));
+      if (mode === "advance") setAdvanceData(details);
+      else setSummary(details.summary || null);
     } catch {
-      setStatus(t("fees.paymentFailed"));
+      setStatus(mode === "advance" ? t("fees.advanceFailed") : t("fees.paymentFailed"));
     }
   }
 
@@ -2905,45 +2933,51 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
     }
     try {
       const response = await fetch(`${API_BASE_URL}/admin/fees/payments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
-        body: JSON.stringify({ student_id: summary.id })
+        method: "POST", headers: { "Content-Type": "application/json", ...auth }, body: JSON.stringify({ student_id: summary.id })
       });
       const data = await response.json();
-      if (data.ok) {
-        setStatus(t("fees.paymentRecorded"));
-        setSummary({ ...summary, paid_amount: summary.required_amount, remaining_balance: 0, current_cycle_paid: summary.current_cycle_fee, current_cycle_outstanding: 0, total_historical_payments: Number(summary.total_historical_payments || 0) + Number(data.payment?.amount || 0) });
-      } else {
-        setStatus(paymentErrorMessage(data.status, data.message, t));
-      }
-    } catch {
-      setStatus(t("fees.paymentFailed"));
-    }
+      if (!data.ok) { setStatus(paymentErrorMessage(data.status, data.message, t)); return; }
+      setStatus(t("fees.paymentRecorded"));
+      setSummary({ ...summary, paid_amount: summary.required_amount, remaining_balance: 0, current_cycle_paid: summary.current_cycle_fee, current_cycle_outstanding: 0 });
+      window.dispatchEvent(new Event("fees-updated"));
+    } catch { setStatus(t("fees.paymentFailed")); }
   }
 
+  async function saveAdvance() {
+    if (!advanceData?.student || !selectedMonths.length) return;
+    if (selectedMonths.length > 1 && !window.confirm(t("fees.advanceConfirm"))) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/fees/advance-payments`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...auth },
+        body: JSON.stringify({ student_id: advanceData.student.id, months: selectedMonths })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) {
+        setStatus(data.status === "month_already_paid" ? t("fees.advanceAlreadyPaid") : t("fees.advanceFailed"));
+        return;
+      }
+      setStatus(t("fees.advanceSaved"));
+      setSelectedMonths([]);
+      const refresh = await fetch(`${API_BASE_URL}/admin/fees/advance-options/${advanceData.student.id}`, { headers: auth });
+      const refreshed = await refresh.json();
+      if (refresh.ok && refreshed.ok) setAdvanceData(refreshed);
+      window.dispatchEvent(new Event("fees-updated"));
+    } catch { setStatus(t("fees.advanceFailed")); }
+  }
+
+  const monthlyFee = Number(advanceData?.student?.fees_amount || 0);
+  const totalAdvance = selectedMonths.length * monthlyFee;
+  const monthLabel = (value: string) => new Date(`${value.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString(document.documentElement.lang === "en" ? "en-US" : "ar-EG", { month: "long", year: "numeric", timeZone: "UTC" });
+
   return <section className="admin-editor fees-panel">
-    <div className="section-heading">
-      <p className="eyebrow">{t("admin.tabs.fees")}</p>
-      <h2>{t("fees.title")}</h2>
-    </div>
+    <div className="section-heading"><p className="eyebrow">{t("admin.tabs.fees")}</p><h2>{mode === "advance" ? t("fees.advanceTitle") : t("fees.title")}</h2></div>
     <div className="internal-tabs">
-      <button className="active" type="button">{t("fees.newPayment")}</button>
+      <button className={mode === "new" ? "active" : ""} type="button" onClick={() => { setMode("new"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setStatus(""); }}>{t("fees.newPayment")}</button>
+      <button className={mode === "advance" ? "active" : ""} type="button" onClick={() => { setMode("advance"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setStatus(""); }}>{t("fees.advancePayment")}</button>
     </div>
-    <form onSubmit={lookup}>
-      <label>{t("fees.scanStudent")}<input autoFocus type="text" value={code} onChange={(event) => setCode(normalizeDigits(event.target.value))} placeholder="A-2303" /></label>
-      <button className="primary-button" type="submit">{t("fees.find")}</button>
-    </form>
-    {summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary">
-      <strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong>
-      <span className="paid-summary-status">{t("fees.paidStudentStatus")}</span>
-    </div> : <div className="status-panel success">
-      <strong>{summary.full_name}</strong>
-      <span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>
-      <span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span>
-      <span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>
-      <small>{t("fees.fullOnly")}</small>
-      <button className="secondary-button" type="button" onClick={pay}>{t("fees.payFull")}</button>
-    </div> : null}
+    <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input autoFocus type="text" value={code} onChange={(event) => setCode(normalizeDigits(event.target.value))} placeholder="A-2303" /></label><button className="primary-button" type="submit">{t("fees.find")}</button></form>
+    {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span><span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay}>{t("fees.payFull")}</button></div> : null}
+    {mode === "advance" && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div><h3>{t("fees.advanceMonths")}</h3><div className="advance-month-grid">{(advanceData.months || []).filter((month: any) => month.available).map((month: any) => <label className="advance-month-option" key={month.month}><input type="checkbox" checked={selectedMonths.includes(month.month.slice(0, 7))} onChange={(event) => setSelectedMonths((current) => event.target.checked ? [...current, month.month.slice(0, 7)] : current.filter((item) => item !== month.month.slice(0, 7)))} /><span>{monthLabel(month.month)}</span><b>{Number(month.remaining_amount).toFixed(2)} EGP</b></label>)}</div>{!(advanceData.months || []).some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length} onClick={saveAdvance}>{t("fees.advancePayment")}</button></>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
   </section>;
 }
@@ -2981,6 +3015,12 @@ function PaymentReportsPanel({ session, t }: { session: TeacherSession; t: Trans
     finally { setLoading(false); }
   }
 
+  useEffect(() => {
+    const refreshReports = () => { searchReport().catch(() => undefined); };
+    window.addEventListener("fees-updated", refreshReports);
+    return () => window.removeEventListener("fees-updated", refreshReports);
+  }, [from, to, query, group, grade]);
+
   function setToday() {
     const today = localDateInputValue(); setFrom(today); setTo(today); searchReport(today, today).catch(() => undefined);
   }
@@ -2990,8 +3030,8 @@ function PaymentReportsPanel({ session, t }: { session: TeacherSession; t: Trans
   }
 
   function exportCsv() {
-    const headers = [t("fees.paymentDate"), t("fees.paymentTime"), t("admin.studentName"), t("admin.studentCode"), t("admin.scanSerial"), t("admin.selectGroup"), t("admin.grade"), t("fees.amount"), t("fees.paidBy"), t("fees.coveredMonth")];
-    const csvRows = rows.map((row) => { const date = new Date(row.paid_at); const months = Array.isArray(row.payment_months) ? row.payment_months.map((item: any) => String(item.month || "").slice(0, 7)).join("; ") : ""; return [date.toLocaleDateString(), date.toLocaleTimeString(), row.full_name, row.student_code, row.scan_serial, row.group_name, row.grade_level, row.amount, row.paid_by, months]; });
+    const headers = [t("fees.paymentDate"), t("fees.paymentTime"), t("admin.studentName"), t("admin.studentCode"), t("admin.scanSerial"), t("admin.selectGroup"), t("admin.grade"), t("fees.amount"), t("fees.paidBy"), t("fees.coveredMonth"), t("fees.paymentType")];
+    const csvRows = rows.map((row) => { const date = new Date(row.paid_at); const months = Array.isArray(row.payment_months) ? row.payment_months.map((item: any) => String(item.month || "").slice(0, 7)).join("; ") : ""; return [date.toLocaleDateString(), date.toLocaleTimeString(), row.full_name, row.student_code, row.scan_serial, row.group_name, row.grade_level, row.amount, row.paid_by, months, row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")]; });
     const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const csv = [headers, ...csvRows].map((row) => row.map(escape).join(",")).join("\r\n");
     const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `payments-report-${localDateInputValue()}.csv`; link.click(); URL.revokeObjectURL(url);
@@ -3008,7 +3048,7 @@ function PaymentReportsPanel({ session, t }: { session: TeacherSession; t: Trans
     </div>
     <div className="report-actions"><button className="secondary-button compact-button" type="button" onClick={setToday}>{t("fees.today")}</button><button className="secondary-button compact-button" type="button" onClick={setThisMonth}>{t("fees.thisMonth")}</button><button className="primary-button compact-button" type="button" disabled={loading} onClick={() => searchReport().catch(() => undefined)}>{t("fees.find")}</button><button className="secondary-button compact-button" type="button" disabled={!rows.length} onClick={exportCsv}>{t("fees.exportExcel")}</button></div>
     <p className="report-total">{t("fees.totalPaid")}: {totalPaid.toFixed(2)} EGP · {t("fees.paymentCount")}: {paymentCount}</p>
-    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentDate")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, document.documentElement.lang === "en" ? "en" : "ar")}</td><td>{row.amount} EGP</td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td></tr>)}</tbody></table></div> : <p className="empty-state">{status || t("fees.noMatchingResults")}</p>}
+    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, document.documentElement.lang === "en" ? "en" : "ar")}</td><td>{row.amount} EGP</td><td>{row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")}</td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td></tr>)}</tbody></table></div> : <p className="empty-state">{status || t("fees.noMatchingResults")}</p>}
   </section>;
 }
 

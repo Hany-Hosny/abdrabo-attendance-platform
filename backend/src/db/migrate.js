@@ -320,8 +320,37 @@ export async function migrate() {
       paid_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       paid_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       payment_months JSONB NOT NULL DEFAULT '[]'::jsonb,
+      payment_type TEXT NOT NULL DEFAULT 'normal',
+      student_name_snapshot TEXT,
+      student_code_snapshot TEXT,
+      student_serial_snapshot TEXT,
+      scan_serial_snapshot TEXT,
+      group_name_snapshot TEXT,
+      grade_level_snapshot TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_type TEXT NOT NULL DEFAULT 'normal';
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_serial_snapshot TEXT;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS scan_serial_snapshot TEXT;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS group_name_snapshot TEXT;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS grade_level_snapshot TEXT;
+    UPDATE payments p
+    SET student_name_snapshot = COALESCE(p.student_name_snapshot, s.full_name),
+        student_code_snapshot = COALESCE(p.student_code_snapshot, s.student_code),
+        student_serial_snapshot = COALESCE(p.student_serial_snapshot, s.student_serial),
+        scan_serial_snapshot = COALESCE(p.scan_serial_snapshot, s.scan_serial),
+        group_name_snapshot = COALESCE(p.group_name_snapshot, COALESCE(g.display_name, g.name)),
+        grade_level_snapshot = COALESCE(p.grade_level_snapshot, COALESCE(g.grade_level, g.grade))
+    FROM students s
+    JOIN groups g ON g.id = p.group_id
+    WHERE s.id = p.student_id
+      AND (
+        p.student_name_snapshot IS NULL OR p.student_code_snapshot IS NULL
+        OR p.student_serial_snapshot IS NULL OR p.scan_serial_snapshot IS NULL
+        OR p.group_name_snapshot IS NULL OR p.grade_level_snapshot IS NULL
+      );
     CREATE TABLE IF NOT EXISTS payment_change_requests (
       id BIGSERIAL PRIMARY KEY, 
       payment_id BIGINT REFERENCES payments(id) ON DELETE SET NULL,
