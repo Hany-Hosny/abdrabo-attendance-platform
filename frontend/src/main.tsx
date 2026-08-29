@@ -238,6 +238,9 @@ const translations = {
     "fees.advanceNoMonths": "لا توجد أشهر متاحة للدفع مقدماً.",
     "fees.advanceFailed": "تعذر تسجيل الدفع المقدم.",
     "fees.advanceAlreadyPaid": "هذا الشهر مدفوع بالفعل.",
+    "fees.advanceCurrentMonthUnpaid": "يجب سداد الشهر الحالي أولاً قبل الدفع مقدماً.",
+    "fees.dueMonth": "الشهر المستحق: {{months}}",
+    "fees.dueMonths": "الأشهر المستحقة: {{months}}",
     "fees.advancePaymentLabel": "دفع مقدم",
     "fees.paymentType": "نوع الدفع",
     "fees.normalPayment": "دفع عادي",
@@ -445,6 +448,11 @@ const translations = {
     "studentFees.currentCycleFee": "مصروف الشهر الحالي",
     "studentFees.currentCyclePaid": "المدفوع في الشهر الحالي",
     "studentFees.currentCycleOutstanding": "المتبقي للشهر الحالي",
+    "studentFees.unpaidMonths": "الأشهر غير المدفوعة",
+    "studentFees.monthCountSingular": "{{count}} شهر",
+    "studentFees.monthCountPlural": "{{count}} أشهر",
+    "studentFees.totalRemaining": "إجمالي المتبقي",
+    "studentFees.currentMonth": "الشهر الحالي",
     "studentFees.historicalPaid": "إجمالي المدفوع تاريخياً",
     "studentFees.required": "إجمالي المستحق حتى الآن",
     "studentFees.paid": "إجمالي المدفوع",
@@ -599,6 +607,9 @@ const translations = {
     "fees.advanceNoMonths": "No future months are available for advance payment.",
     "fees.advanceFailed": "Advance payment could not be recorded.",
     "fees.advanceAlreadyPaid": "This month is already paid.",
+    "fees.advanceCurrentMonthUnpaid": "The current month must be paid before making an advance payment.",
+    "fees.dueMonth": "Due month: {{months}}",
+    "fees.dueMonths": "Due months: {{months}}",
     "fees.advancePaymentLabel": "Advance payment",
     "fees.paymentType": "Payment type",
     "fees.normalPayment": "Normal payment",
@@ -806,6 +817,11 @@ const translations = {
     "studentFees.currentCycleFee": "Current cycle fee",
     "studentFees.currentCyclePaid": "Paid this cycle",
     "studentFees.currentCycleOutstanding": "Current cycle outstanding",
+    "studentFees.unpaidMonths": "Unpaid months",
+    "studentFees.monthCountSingular": "{{count}} month",
+    "studentFees.monthCountPlural": "{{count}} months",
+    "studentFees.totalRemaining": "Total remaining",
+    "studentFees.currentMonth": "Current month",
     "studentFees.historicalPaid": "Total historical payments",
     "studentFees.required": "Total due to date",
     "studentFees.paid": "Total paid",
@@ -2968,6 +2984,10 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
   const monthlyFee = Number(advanceData?.student?.fees_amount || 0);
   const totalAdvance = selectedMonths.length * monthlyFee;
   const monthLabel = (value: string) => new Date(`${value.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString(document.documentElement.lang === "en" ? "en-US" : "ar-EG", { month: "long", year: "numeric", timeZone: "UTC" });
+  const dueMonths = summary && Array.isArray(summary.monthly_dues)
+    ? summary.monthly_dues.filter((due: any) => Number(due?.remaining_amount || 0) > 0).map((due: any) => monthLabel(String(due.month))).join(document.documentElement.lang === "en" ? ", " : "، ")
+    : "";
+  const dueMonthsKey = dueMonths && dueMonths.split(document.documentElement.lang === "en" ? "," : "،").length > 1 ? "fees.dueMonths" : "fees.dueMonth";
 
   return <section className="admin-editor fees-panel">
     <div className="section-heading"><p className="eyebrow">{t("admin.tabs.fees")}</p><h2>{mode === "advance" ? t("fees.advanceTitle") : t("fees.title")}</h2></div>
@@ -2976,8 +2996,8 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
       <button className={mode === "advance" ? "active" : ""} type="button" onClick={() => { setMode("advance"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setStatus(""); }}>{t("fees.advancePayment")}</button>
     </div>
     <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input autoFocus type="text" value={code} onChange={(event) => setCode(normalizeDigits(event.target.value))} placeholder="A-2303" /></label><button className="primary-button" type="submit">{t("fees.find")}</button></form>
-    {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span><span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay}>{t("fees.payFull")}</button></div> : null}
-    {mode === "advance" && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div><h3>{t("fees.advanceMonths")}</h3><div className="advance-month-grid">{(advanceData.months || []).filter((month: any) => month.available).map((month: any) => <label className="advance-month-option" key={month.month}><input type="checkbox" checked={selectedMonths.includes(month.month.slice(0, 7))} onChange={(event) => setSelectedMonths((current) => event.target.checked ? [...current, month.month.slice(0, 7)] : current.filter((item) => item !== month.month.slice(0, 7)))} /><span>{monthLabel(month.month)}</span><b>{Number(month.remaining_amount).toFixed(2)} EGP</b></label>)}</div>{!(advanceData.months || []).some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length} onClick={saveAdvance}>{t("fees.advancePayment")}</button></>}</div> : null}
+    {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay}>{t("fees.payFull")}</button></div> : null}
+    {mode === "advance" && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : <><h3>{t("fees.advanceMonths")}</h3><div className="advance-month-grid">{(advanceData.months || []).filter((month: any) => month.available).map((month: any) => <label className="advance-month-option" key={month.month}><input type="checkbox" checked={selectedMonths.includes(month.month.slice(0, 7))} onChange={(event) => setSelectedMonths((current) => event.target.checked ? [...current, month.month.slice(0, 7)] : current.filter((item) => item !== month.month.slice(0, 7)))} /><span>{monthLabel(month.month)}</span><b>{Number(month.remaining_amount).toFixed(2)} EGP</b></label>)}</div>{!(advanceData.months || []).some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length} onClick={saveAdvance}>{t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
   </section>;
 }
@@ -3685,6 +3705,23 @@ function StudentFeesPanel({
   const coveredMonths = (payment: any) => Array.isArray(payment.payment_months)
     ? payment.payment_months.map((item: any) => item?.month ? new Date(item.month).toLocaleDateString(language === "ar" ? "ar-EG" : "en-US", { month: "long", year: "numeric" }) : "").filter(Boolean).join(", ") || "—"
     : "—";
+  const unpaidMonths = Array.isArray(summary.monthly_dues)
+    ? summary.monthly_dues.filter((due: any) => Number(due?.remaining_amount || 0) > 0)
+    : [];
+  const formatDueMonth = (value: unknown) => {
+    const month = String(value || "").slice(0, 7);
+    const date = new Date(`${month}-01T00:00:00Z`);
+    return month && !Number.isNaN(date.getTime())
+      ? date.toLocaleDateString(language === "ar" ? "ar-EG" : "en-US", { month: "long", year: "numeric", timeZone: "UTC" })
+      : month;
+  };
+  const unpaidMonthNames = unpaidMonths
+    .map((due: any) => formatDueMonth(due?.due_month || due?.month || due?.billing_month))
+    .filter(Boolean)
+    .join(language === "ar" ? "، " : ", ");
+  const unpaidCountLabel = unpaidMonths.length === 1
+    ? t("studentFees.monthCountSingular", { count: String(unpaidMonths.length) })
+    : t("studentFees.monthCountPlural", { count: String(unpaidMonths.length) });
   return <div className="student-fees-panel">
     <div className="fees-summary-grid">
       <Metric label={t("studentFees.currentCycleFee")} value={amount(summary.current_cycle_fee)} />
@@ -3692,6 +3729,12 @@ function StudentFeesPanel({
       <Metric label={t("studentFees.remaining")} value={amount(summary.remaining_balance)} />
       <Metric label={t("studentFees.historicalPaid")} value={amount(summary.total_historical_payments)} />
     </div>
+    {unpaidMonths.length ? <div className="student-fees-unpaid-summary" aria-live="polite">
+      <strong>{t("studentFees.unpaidMonths")}: {unpaidCountLabel}</strong>
+      <span>{unpaidMonthNames}</span>
+      <span><b>{t("studentFees.totalRemaining")}</b>: {amount(summary.remaining_balance)}</span>
+      <span><b>{t("studentFees.currentMonth")}</b>: {amount(summary.current_cycle_fee)} · {t("studentFees.currentCycleOutstanding")}: {amount(summary.current_cycle_outstanding)}</span>
+    </div> : null}
     <p className="student-fees-status"><span>{t("studentFees.status")}</span><strong className={statusClass}>{statusText}</strong></p>
     <h3>{t("studentFees.history")}</h3>
     <div className="table-wrap"><table><thead><tr><th>{t("studentFees.date")}</th><th>{t("studentFees.time")}</th><th>{t("studentFees.amount")}</th><th>{t("studentFees.paidBy")}</th><th>{t("studentFees.coveredCycle")}</th><th>{t("studentFees.notes")}</th></tr></thead><tbody>{(data.payments || []).map((payment: any) => { const paidAt = payment.paid_at || payment.payment_date; const date = paidAt ? new Date(paidAt) : null; return <tr key={payment.id}><td>{date ? date.toLocaleDateString(language === "ar" ? "ar-EG" : "en-US") : "—"}</td><td>{date ? date.toLocaleTimeString(language === "ar" ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" }) : "—"}</td><td>{amount(payment.amount)}</td><td>{payment.paid_by || "—"}</td><td>{coveredMonths(payment)}</td><td>{payment.notes || "—"}</td></tr>; })}{!data.payments?.length ? <EmptyRow columns={6} t={t} /> : null}</tbody></table></div>

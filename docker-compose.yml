@@ -21,7 +21,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgresql://neondb_owner:npg_D8lAMpnqj5uf@ep-calm-silence-ay9096lp-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+      DATABASE_URL: ${DATABASE_URL}
       CORS_ORIGIN: ${CORS_ORIGIN}
       TOKEN_SECRET: ${TOKEN_SECRET}
       ADMIN_NAME: ${ADMIN_NAME}
@@ -31,9 +31,9 @@ services:
       TRUST_PROXY: "1"
     ports:
       - "${BACKEND_PORT:-4000}:4000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    #depends_on:
+      #postgres:
+        #condition: service_healthy
 
   frontend:
     build:
@@ -43,6 +43,7 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
+      # - postgres
       - backend
 
 volumes:

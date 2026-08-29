@@ -23,10 +23,12 @@ function searchableSql(field) {
   return `LOWER(${field}) ILIKE '%' || $SEARCH || '%' OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${field},'إ','ا'),'أ','ا'),'آ','ا'),'ٱ','ا'),'ى','ي'),'ة','ه')) ILIKE '%' || $SEARCH || '%'`;
 }
 
+const activePaymentFilter = "NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)";
+
 operationsRouter.get("/payments/report", async (req, res, next) => {
   try {
     const values = [];
-    const filters = ["s.deleted_at IS NULL"];
+    const filters = ["TRUE"];
     const paymentTimestamp = "COALESCE(p.paid_at, p.payment_date::timestamp AT TIME ZONE 'Africa/Cairo')";
     const add = (sql, value) => { values.push(value); filters.push(sql.replaceAll("?", `$${values.length}`)); };
     const search = normalizedSearch(req.query.q);
@@ -36,7 +38,7 @@ operationsRouter.get("/payments/report", async (req, res, next) => {
       const nationalIdHash = crypto.createHash("sha256").update(normalizeDigits(req.query.q).trim()).digest("hex");
       values.push(nationalIdHash);
       const hashParam = `$${values.length}`;
-      filters.push(`(s.full_name ILIKE ${searchParam} OR s.student_code ILIKE ${searchParam} OR s.student_serial ILIKE ${searchParam} OR s.scan_serial ILIKE ${searchParam} OR s.phone ILIKE ${searchParam} OR s.guardian_phone ILIKE ${searchParam} OR COALESCE(g.display_name,g.name) ILIKE ${searchParam} OR COALESCE(g.grade_level,g.grade) ILIKE ${searchParam} OR s.national_id_hash = ${hashParam})`);
+      filters.push(`(COALESCE(p.student_name_snapshot,s.full_name) ILIKE ${searchParam} OR COALESCE(p.student_code_snapshot,s.student_code) ILIKE ${searchParam} OR COALESCE(p.student_serial_snapshot,s.student_serial) ILIKE ${searchParam} OR COALESCE(p.scan_serial_snapshot,s.scan_serial) ILIKE ${searchParam} OR s.phone ILIKE ${searchParam} OR s.guardian_phone ILIKE ${searchParam} OR COALESCE(p.group_name_snapshot,COALESCE(g.display_name,g.name)) ILIKE ${searchParam} OR COALESCE(p.grade_level_snapshot,COALESCE(g.grade_level,g.grade)) ILIKE ${searchParam} OR s.national_id_hash = ${hashParam})`);
     }
     if (req.query.date_from) add(`${paymentTimestamp} >= (?::date::timestamp AT TIME ZONE 'Africa/Cairo')`, normalizeDigits(req.query.date_from).trim());
     if (req.query.date_to) add(`${paymentTimestamp} < (((?::date + INTERVAL '1 day')::timestamp) AT TIME ZONE 'Africa/Cairo')`, normalizeDigits(req.query.date_to).trim());
@@ -47,13 +49,134 @@ operationsRouter.get("/payments/report", async (req, res, next) => {
     }
     if (req.query.grade_level) add("COALESCE(g.grade_level,g.grade) ILIKE ?", `%${normalizeDigits(req.query.grade_level).trim()}%`);
     const result = await query(`SELECT p.id, ${paymentTimestamp} AS paid_at, p.amount, p.payment_months, p.payment_type,
-        s.full_name, s.student_code, s.student_serial, s.scan_serial,
-        COALESCE(g.display_name,g.name) AS group_name, COALESCE(g.grade_level,g.grade) AS grade_level,
+        COALESCE(p.student_name_snapshot,s.full_name) AS full_name,
+        COALESCE(p.student_code_snapshot,s.student_code) AS student_code,
+        COALESCE(p.student_serial_snapshot,s.student_serial) AS student_serial,
+        COALESCE(p.scan_serial_snapshot,s.scan_serial) AS scan_serial,
+        COALESCE(p.group_name_snapshot,COALESCE(g.display_name,g.name)) AS group_name,
+        COALESCE(p.grade_level_snapshot,COALESCE(g.grade_level,g.grade)) AS grade_level,
         COALESCE(u.name,u.username,u.email,'Staff') AS paid_by
       FROM payments p JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id
       LEFT JOIN teachers u ON u.id=COALESCE(p.paid_by,p.recorded_by)
-      WHERE ${filters.join(" AND ")} ORDER BY ${paymentTimestamp} DESC`, values);
+      WHERE ${filters.join(" AND ")} AND ${activePaymentFilter} ORDER BY ${paymentTimestamp} DESC`, values);
     res.json({ ok: true, payments: result.rows, total_paid: result.rows.reduce((sum, row) => sum + Number(row.amount), 0), payment_count: result.rowCount });
+  } catch (error) { next(error); }
+});
+
+operationsRouter.post("/fees/payments/:paymentId/reverse", requireRoles("admin"), async (req, res, next) => {
+  const paymentId = Number(req.params.paymentId);
+  const reason = String(req.body?.reason || "").trim();
+  if (!Number.isSafeInteger(paymentId) || paymentId <= 0) return res.status(400).json({ ok: false, status: "invalid_payment" });
+  if (reason.length < 3 || reason.length > 500) return res.status(400).json({ ok: false, status: "invalid_reason", message: "A reversal reason is required. / يجب إدخال سبب عكس الدفعة." });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const paymentResult = await client.query(`
+      SELECT p.*, s.full_name, s.student_code, s.student_serial, s.scan_serial,
+        COALESCE(g.display_name, g.name) AS group_name,
+        COALESCE(g.grade_level, g.grade) AS grade_level
+      FROM payments p
+      JOIN students s ON s.id = p.student_id
+      JOIN groups g ON g.id = p.group_id
+      WHERE p.id = $1
+      FOR UPDATE
+    `, [paymentId]);
+    if (!paymentResult.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "payment_not_found" });
+    }
+    const payment = paymentResult.rows[0];
+    const existing = await client.query("SELECT id, created_at FROM payment_reversals WHERE payment_id = $1", [paymentId]);
+    if (existing.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ ok: false, status: "already_reversed", reversal: existing.rows[0] });
+    }
+
+    const reversal = await client.query(`
+      INSERT INTO payment_reversals (payment_id, reversed_by, reason, original_amount)
+      VALUES ($1, $2, $3, $4)
+      RETURNING id, payment_id, reversed_by, reason, original_amount, created_at
+    `, [paymentId, req.teacher.id, reason, payment.amount]);
+
+    const months = Array.isArray(payment.payment_months) ? payment.payment_months : [];
+    for (const covered of months) {
+      const month = String(covered?.month || "").slice(0, 10);
+      const amount = Number(covered?.amount || 0);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount <= 0) continue;
+      await client.query(`
+        UPDATE fee_dues
+        SET paid_amount = GREATEST(0, paid_amount - $1)
+        WHERE student_id = $2 AND due_month = $3::date
+      `, [amount, payment.student_id, month]);
+    }
+
+    await client.query(`
+      INSERT INTO audit_logs (action, actor_id, student_id, payment_id, details)
+      VALUES ('payment_reversed', $1, $2, $3, $4)
+    `, [req.teacher.id, payment.student_id, paymentId, JSON.stringify({
+      reversal_id: reversal.rows[0].id,
+      reason,
+      original_amount: Number(payment.amount),
+      payment_date: payment.payment_date,
+      payment_type: payment.payment_type,
+      payment_method: payment.payment_method,
+      payment_months: months,
+      student_name_snapshot: payment.student_name_snapshot || payment.full_name,
+      student_code_snapshot: payment.student_code_snapshot || payment.student_code,
+      student_serial_snapshot: payment.student_serial_snapshot || payment.student_serial,
+      group_name_snapshot: payment.group_name_snapshot || payment.group_name,
+      grade_level_snapshot: payment.grade_level_snapshot || payment.grade_level
+    })]);
+    await client.query("COMMIT");
+    return res.status(201).json({ ok: true, reversal: reversal.rows[0] });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    next(error);
+  } finally {
+    client.release();
+  }
+});
+
+operationsRouter.get("/audit-logs", requireRoles("admin"), async (req, res, next) => {
+  try {
+    const values = [];
+    const filters = ["TRUE"];
+    const add = (sql, value) => { values.push(value); filters.push(sql.replaceAll("?", `$${values.length}`)); };
+    const search = normalizedSearch(req.query.q || req.query.search);
+    if (search) add(`(a.action ILIKE ? OR COALESCE(t.name,'') ILIKE ? OR COALESCE(t.username,'') ILIKE ? OR COALESCE(t.email,'') ILIKE ? OR COALESCE(s.full_name,'') ILIKE ? OR COALESCE(s.student_code,'') ILIKE ? OR a.details::text ILIKE ?)`, `%${search}%`);
+    if (req.query.action) add("a.action = ?", String(req.query.action).trim());
+    if (req.query.actor_id || req.query.user_id) add("a.actor_id = ?", Number(req.query.actor_id || req.query.user_id));
+    if (req.query.student_id) add("a.student_id = ?", Number(req.query.student_id));
+    if (req.query.payment_id) add("a.payment_id = ?", Number(req.query.payment_id));
+    if (req.query.date_from) add("a.created_at >= ?::date", String(req.query.date_from).trim());
+    if (req.query.date_to) add("a.created_at < (?::date + INTERVAL '1 day')", String(req.query.date_to).trim());
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+    values.push(limit, (page - 1) * limit);
+    const result = await query(`
+      SELECT a.id, a.action, a.actor_id, a.student_id, a.payment_id, a.session_id, a.details, a.created_at,
+        t.name AS actor_name, t.username AS actor_username, t.email AS actor_email, t.role AS actor_role,
+        COALESCE(s.full_name, p.student_name_snapshot) AS student_name,
+        COALESCE(s.student_code, p.student_code_snapshot) AS student_code,
+        p.amount AS payment_amount, p.payment_type, pr.id AS reversal_id, pr.reason AS reversal_reason
+      FROM audit_logs a
+      LEFT JOIN teachers t ON t.id = a.actor_id
+      LEFT JOIN students s ON s.id = a.student_id
+      LEFT JOIN payments p ON p.id = a.payment_id
+      LEFT JOIN payment_reversals pr ON pr.payment_id = a.payment_id
+      WHERE ${filters.join(" AND ")}
+      ORDER BY a.created_at DESC, a.id DESC
+      LIMIT $${values.length - 1} OFFSET $${values.length}
+    `, values);
+    const countResult = await query(`
+      SELECT COUNT(*)::int AS total
+      FROM audit_logs a
+      LEFT JOIN teachers t ON t.id = a.actor_id
+      LEFT JOIN students s ON s.id = a.student_id
+      WHERE ${filters.join(" AND ")}
+    `, values.slice(0, -2));
+    res.json({ ok: true, logs: result.rows, page, limit, total: countResult.rows[0]?.total || 0 });
   } catch (error) { next(error); }
 });
 
@@ -207,20 +330,25 @@ operationsRouter.post("/scanner/attendance", async (req, res, next) => {
 operationsRouter.get("/fees/payments", async (req, res, next) => {
   try {
     const term = normalizedSearch(req.query.search ?? req.query.student);
-    const values = [term, term ? crypto.createHash("sha256").update(String(req.query.search ?? req.query.student).trim()).digest("hex") : ""];
-    const filters = [req.query.include_deleted === "true" ? "TRUE" : "s.deleted_at IS NULL"];
+    const values = [];
+    const filters = ["TRUE"];
     if (term) {
-      const fields = ["s.full_name", "s.student_serial", "s.student_code", "s.phone", "s.guardian_phone", "COALESCE(g.display_name,g.name)", "COALESCE(g.grade_level,g.grade)"];
+      values.push(`%${term}%`, crypto.createHash("sha256").update(String(req.query.search ?? req.query.student).trim()).digest("hex"));
+      const fields = ["COALESCE(p.student_name_snapshot,s.full_name)", "COALESCE(p.student_serial_snapshot,s.student_serial)", "COALESCE(p.student_code_snapshot,s.student_code)", "s.phone", "s.guardian_phone", "COALESCE(p.group_name_snapshot,COALESCE(g.display_name,g.name))", "COALESCE(p.grade_level_snapshot,COALESCE(g.grade_level,g.grade))"];
       filters.push(`(${fields.map(searchableSql).join(" OR ")} OR s.national_id_hash = $2)` .replaceAll("$SEARCH", "$1"));
     }
     if (req.query.from) { values.push(String(req.query.from)); filters.push(`COALESCE(p.paid_at,p.payment_date) >= $${values.length}::date`); }
     if (req.query.to) { values.push(String(req.query.to)); filters.push(`COALESCE(p.paid_at,p.payment_date) < ($${values.length}::date + INTERVAL '1 day')`); }
-    const result = await query(`SELECT p.*, s.full_name, s.student_serial, s.student_code, s.phone, s.guardian_phone,
-      COALESCE(g.grade_level,g.grade) AS grade_level, COALESCE(g.display_name,g.name) AS group_name,
+    const result = await query(`SELECT p.*, COALESCE(p.student_name_snapshot,s.full_name) AS full_name,
+      COALESCE(p.student_serial_snapshot,s.student_serial) AS student_serial,
+      COALESCE(p.student_code_snapshot,s.student_code) AS student_code,
+      s.phone, s.guardian_phone,
+      COALESCE(p.grade_level_snapshot,COALESCE(g.grade_level,g.grade)) AS grade_level,
+      COALESCE(p.group_name_snapshot,COALESCE(g.display_name,g.name)) AS group_name,
       u.name AS recorded_by_name
       FROM payments p JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id
       LEFT JOIN teachers u ON u.id=COALESCE(p.paid_by,p.recorded_by)
-      WHERE ${filters.join(" AND ")} ORDER BY COALESCE(p.paid_at,p.payment_date) DESC`, values);
+      WHERE ${filters.join(" AND ")} AND ${activePaymentFilter} ORDER BY COALESCE(p.paid_at,p.payment_date) DESC`, values);
     res.json({ ok: true, payments: result.rows, total_collected: result.rows.reduce((sum, row) => sum + Number(row.amount), 0) });
   } catch (error) { next(error); }
 });
@@ -265,6 +393,7 @@ operationsRouter.post("/fees/advance-payments", async (req, res, next) => {
       notes: req.body?.notes || null
     });
     if (result.error === "student_not_found") return res.status(404).json({ ok: false, status: result.error });
+    if (result.error === "current_month_unpaid") return res.status(409).json({ ok: false, status: result.error, message: "The current month must be paid before making an advance payment. / يجب سداد الشهر الحالي أولاً قبل الدفع مقدماً." });
     if (result.error === "invalid_months") return res.status(400).json({ ok: false, status: result.error, message: "Invalid advance months. / أشهر الدفع المقدم غير صحيحة." });
     if (result.error === "month_already_paid") return res.status(409).json({ ok: false, status: result.error, month: result.month, message: "This month is already paid. / هذا الشهر مدفوع بالفعل." });
     res.status(201).json({ ok: true, payment: result.payment, months: result.months });

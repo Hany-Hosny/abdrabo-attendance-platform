@@ -41,7 +41,9 @@ export async function getFeeSummary(studentId) {
       COALESCE((SELECT SUM(amount) FROM current_due), 0) AS current_cycle_fee,
       COALESCE((SELECT SUM(paid_amount) FROM current_due), 0) AS current_cycle_paid,
       COALESCE((SELECT SUM(amount - paid_amount) FROM current_due), 0) AS current_cycle_outstanding,
-      COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.student_id = s.id), 0) AS total_historical_payments,
+      COALESCE((SELECT SUM(p.amount) FROM payments p
+        WHERE p.student_id = s.id
+          AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)), 0) AS total_historical_payments,
       CASE WHEN totals.remaining_balance <= 0 THEN 'paid'
         WHEN totals.has_overdue THEN 'overdue' ELSE 'unpaid' END AS payment_status,
       COALESCE(jsonb_agg(
@@ -128,10 +130,14 @@ function advanceMonthKeys(currentMonth, count = 6) {
 }
 
 export async function getAdvanceOptions(studentId) {
+  await ensureMonthlyFees();
   const result = await query(`
     SELECT s.id, s.full_name, s.student_code, s.student_serial,
       g.id AS group_id, g.name AS group_name, g.fees_amount,
-      to_char(date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')), 'YYYY-MM') AS current_month
+      to_char(date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')), 'YYYY-MM') AS current_month,
+      COALESCE((SELECT SUM(fd.amount - fd.paid_amount) FROM fee_dues fd
+        WHERE fd.student_id=s.id
+          AND fd.due_month=date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo'))::date), 0) AS current_cycle_outstanding
     FROM students s
     JOIN groups g ON g.id = s.group_id
     WHERE s.id=$1 AND s.deleted_at IS NULL AND s.is_active=TRUE
@@ -149,6 +155,7 @@ export async function getAdvanceOptions(studentId) {
     ORDER BY due_month
   `, [studentId, `${currentMonth}-01`]);
   const dueByMonth = new Map(dues.rows.map((due) => [String(due.due_month).slice(0, 7), due]));
+  const currentCycleOutstanding = Number(student.current_cycle_outstanding || 0);
   return {
     student: {
       id: student.id,
@@ -160,7 +167,9 @@ export async function getAdvanceOptions(studentId) {
       fees_amount: student.fees_amount
     },
     current_month: currentMonth,
-    months: keys.map((month) => {
+    current_cycle_outstanding: currentCycleOutstanding,
+    advance_locked: currentCycleOutstanding > 0,
+    months: currentCycleOutstanding > 0 ? [] : keys.map((month) => {
       const due = dueByMonth.get(month);
       const amount = Number(due?.amount ?? student.fees_amount ?? 0);
       const paidAmount = Number(due?.paid_amount ?? 0);
@@ -170,6 +179,7 @@ export async function getAdvanceOptions(studentId) {
 }
 
 export async function recordAdvancePayment({ studentId, actorId, months, paymentMethod = "cash", notes = null }) {
+  await ensureMonthlyFees();
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -190,6 +200,17 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
 
     const todayResult = await client.query("SELECT to_char(date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')), 'YYYY-MM') AS current_month");
     const currentMonth = String(todayResult.rows[0].current_month).slice(0, 7);
+    const currentDueResult = await client.query(`
+      SELECT amount, paid_amount
+      FROM fee_dues
+      WHERE student_id=$1 AND due_month=$2::date
+      FOR UPDATE
+    `, [student.id, `${currentMonth}-01`]);
+    const currentOutstanding = currentDueResult.rows.reduce((sum, due) => sum + Number(due.amount) - Number(due.paid_amount), 0);
+    if (currentOutstanding > 0) {
+      await client.query("ROLLBACK");
+      return { error: "current_month_unpaid" };
+    }
     const allowedMonths = new Set(advanceMonthKeys(currentMonth));
     const selectedMonths = [...new Set((Array.isArray(months) ? months : []).map((month) => String(month).trim().slice(0, 7)))];
     if (!selectedMonths.length || selectedMonths.some((month) => !/^\d{4}-\d{2}$/.test(month) || !allowedMonths.has(month))) {

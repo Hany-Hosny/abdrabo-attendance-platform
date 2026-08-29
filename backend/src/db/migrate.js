@@ -304,10 +304,15 @@ export async function migrate() {
       action TEXT NOT NULL,
       actor_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
+      payment_id BIGINT,
       session_id INTEGER REFERENCES attendance_sessions(id) ON DELETE SET NULL,
       details JSONB NOT NULL DEFAULT '{}'::jsonb, 
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS payment_id BIGINT;
+    CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at DESC);
+    CREATE INDEX IF NOT EXISTS audit_logs_actor_idx ON audit_logs(actor_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, created_at DESC);
     CREATE TABLE IF NOT EXISTS payments (
       id BIGSERIAL PRIMARY KEY,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
@@ -336,6 +341,16 @@ export async function migrate() {
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS scan_serial_snapshot TEXT;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS group_name_snapshot TEXT;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS grade_level_snapshot TEXT;
+
+    CREATE TABLE IF NOT EXISTS payment_reversals (
+      id BIGSERIAL PRIMARY KEY,
+      payment_id BIGINT NOT NULL UNIQUE REFERENCES payments(id) ON DELETE RESTRICT,
+      reversed_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      reason TEXT NOT NULL,
+      original_amount NUMERIC(10,2) NOT NULL CHECK (original_amount > 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS payment_reversals_created_at_idx ON payment_reversals(created_at DESC);
 
     UPDATE payments
     SET student_name_snapshot = COALESCE(payments.student_name_snapshot, s.full_name),

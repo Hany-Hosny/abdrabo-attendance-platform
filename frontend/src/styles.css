@@ -901,6 +901,25 @@ input:disabled {
   color: var(--muted);
 }
 
+.student-fees-unpaid-summary {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 174, 61, 0.35);
+  border-radius: 10px;
+  background: rgba(104, 70, 24, 0.16);
+  color: var(--muted);
+}
+
+.student-fees-unpaid-summary strong {
+  color: var(--accent);
+}
+
+.student-fees-unpaid-summary b {
+  color: var(--text);
+}
+
 .student-fees-panel h3 {
   margin: 0 0 14px;
 }
@@ -1716,6 +1735,16 @@ textarea:focus-visible {
 .advance-total {
   margin: 0;
   color: var(--accent);
+  font-weight: 800;
+}
+
+.advance-lock-message {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 200, 87, 0.45);
+  border-radius: 12px;
+  background: rgba(96, 68, 22, 0.2);
+  color: var(--warning);
   font-weight: 800;
 }
 
