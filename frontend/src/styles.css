@@ -145,6 +145,10 @@ a {
 
 .inbox-thread.active { border-color: var(--accent); background: var(--surface-strong); }
 .inbox-thread span, .inbox-thread small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inbox-phone { color: var(--accent-strong) !important; }
+.inbox-contact-details { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: -2px 0 6px; color: var(--muted); }
+.inbox-contact-details a { color: var(--accent-strong); text-decoration: none; }
+.inbox-contact-details a:hover, .inbox-contact-details a:focus-visible { text-decoration: underline; }
 .inbox-thread b { position: absolute; inset-inline-end: 10px; top: 10px; color: var(--accent-strong); }
 .inbox-messages { display: flex; flex: 1; flex-direction: column; gap: 10px; min-height: 180px; }
 .inbox-message { align-self: flex-start; max-width: 80%; padding: 10px 12px; border-radius: 10px; background: var(--surface-strong); }
