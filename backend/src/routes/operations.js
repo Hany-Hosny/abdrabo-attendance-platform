@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import { pool, query } from "../db/pool.js";
 import { requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
+import { createAuditAccessToken, hashPassword, verifyAuditAccessToken, verifyPassword } from "../services/auth.js";
 import { ensureMonthlyFees, getAdvanceOptions, getFeeSummary, recordAdvancePayment, recordFullPayment } from "../services/fees.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 
@@ -24,6 +25,13 @@ function searchableSql(field) {
 }
 
 const activePaymentFilter = "NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)";
+
+function requireAuditAccess(req, res, next) {
+  if (!verifyAuditAccessToken(req.headers["x-audit-access-token"], req.teacher.id)) {
+    return res.status(403).json({ ok: false, status: "audit_access_required" });
+  }
+  return next();
+}
 
 operationsRouter.get("/payments/report", async (req, res, next) => {
   try {
@@ -138,7 +146,48 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requireRoles("admin")
   }
 });
 
-operationsRouter.get("/audit-logs", requireRoles("admin"), async (req, res, next) => {
+operationsRouter.get("/audit-logs/status", requireRoles("admin"), async (req, res, next) => {
+  try {
+    const result = await query("SELECT audit_pin_hash IS NOT NULL AS configured FROM teachers WHERE id = $1", [req.teacher.id]);
+    res.json({ ok: true, configured: Boolean(result.rows[0]?.configured) });
+  } catch (error) { next(error); }
+});
+
+operationsRouter.post("/audit-logs/pin", requireRoles("admin"), async (req, res, next) => {
+  try {
+    const pin = normalizeDigits(req.body?.pin || "").trim();
+    const currentPassword = String(req.body?.current_password || "");
+    if (!/^\d{4}$/.test(pin)) return res.status(400).json({ ok: false, status: "invalid_pin", message: "PIN must contain exactly 4 digits. / يجب أن يتكون الرقم السري من 4 أرقام." });
+    const admin = await query("SELECT password_hash FROM teachers WHERE id = $1 AND role = 'admin' AND is_active = TRUE AND deleted_at IS NULL", [req.teacher.id]);
+    if (!admin.rowCount || !verifyPassword(currentPassword, admin.rows[0].password_hash)) return res.status(403).json({ ok: false, status: "invalid_admin_password" });
+    await query("UPDATE teachers SET audit_pin_hash = $1, audit_pin_failed_attempts = 0, audit_pin_locked_until = NULL, updated_at = NOW() WHERE id = $2", [hashPassword(pin), req.teacher.id]);
+    await query("INSERT INTO audit_logs (action, actor_id, details) VALUES ('audit_pin_changed', $1, $2)", [req.teacher.id, JSON.stringify({ pin_digits: 4 })]);
+    res.json({ ok: true });
+  } catch (error) { next(error); }
+});
+
+operationsRouter.post("/audit-logs/unlock", requireRoles("admin"), async (req, res, next) => {
+  const pin = normalizeDigits(req.body?.pin || "").trim();
+  if (!/^\d{4}$/.test(pin)) return res.status(400).json({ ok: false, status: "invalid_pin" });
+  try {
+    const admin = await query("SELECT audit_pin_hash, audit_pin_failed_attempts, audit_pin_locked_until FROM teachers WHERE id = $1 AND role = 'admin' AND is_active = TRUE AND deleted_at IS NULL", [req.teacher.id]);
+    if (!admin.rowCount || !admin.rows[0].audit_pin_hash) return res.status(409).json({ ok: false, status: "audit_pin_not_configured" });
+    const record = admin.rows[0];
+    if (record.audit_pin_locked_until && new Date(record.audit_pin_locked_until).getTime() > Date.now()) return res.status(429).json({ ok: false, status: "audit_pin_locked", retry_after_seconds: Math.ceil((new Date(record.audit_pin_locked_until).getTime() - Date.now()) / 1000) });
+    if (!verifyPassword(pin, record.audit_pin_hash)) {
+      const failedAttempts = Number(record.audit_pin_failed_attempts || 0) + 1;
+      const lockedUntil = failedAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null;
+      await query("UPDATE teachers SET audit_pin_failed_attempts = $1, audit_pin_locked_until = $2 WHERE id = $3", [lockedUntil ? 0 : failedAttempts, lockedUntil, req.teacher.id]);
+      await query("INSERT INTO audit_logs (action, actor_id, details) VALUES ('audit_pin_failed', $1, $2)", [req.teacher.id, JSON.stringify({ locked: Boolean(lockedUntil) })]);
+      return res.status(401).json({ ok: false, status: lockedUntil ? "audit_pin_locked" : "invalid_pin", retry_after_seconds: lockedUntil ? 900 : undefined });
+    }
+    await query("UPDATE teachers SET audit_pin_failed_attempts = 0, audit_pin_locked_until = NULL WHERE id = $1", [req.teacher.id]);
+    await query("INSERT INTO audit_logs (action, actor_id, details) VALUES ('audit_logs_unlocked', $1, $2)", [req.teacher.id, JSON.stringify({ access_duration_minutes: 10 })]);
+    res.json({ ok: true, audit_access_token: createAuditAccessToken(req.teacher.id), expires_in_seconds: 600 });
+  } catch (error) { next(error); }
+});
+
+operationsRouter.get("/audit-logs", requireRoles("admin"), requireAuditAccess, async (req, res, next) => {
   try {
     const values = [];
     const filters = ["TRUE"];
@@ -176,7 +225,17 @@ operationsRouter.get("/audit-logs", requireRoles("admin"), async (req, res, next
       LEFT JOIN students s ON s.id = a.student_id
       WHERE ${filters.join(" AND ")}
     `, values.slice(0, -2));
-    res.json({ ok: true, logs: result.rows, page, limit, total: countResult.rows[0]?.total || 0 });
+    const logs = result.rows.map((row) => {
+      let action = row.action;
+      if (action !== "system_request") return { ...row, details: { ...(row.details || {}), _audit_action: action, _payment_id: row.payment_id, _payment_amount: row.payment_amount, _student_name: row.student_name, _student_code: row.student_code } };
+      const path = String(row.details?.path || "");
+      if (path.includes("/reset-password")) action = "user_password_reset";
+      else if (path.endsWith("/users") && row.details?.method === "POST") action = "user_created";
+      else if (path.includes("/users/") && row.details?.method === "PUT") action = "user_updated";
+      else if (path.includes("/users/") && row.details?.method === "DELETE") action = "user_archived";
+      return { ...row, action, details: { ...(row.details || {}), _audit_action: action, _payment_id: row.payment_id, _payment_amount: row.payment_amount, _student_name: row.student_name, _student_code: row.student_code } };
+    });
+    res.json({ ok: true, logs, page, limit, total: countResult.rows[0]?.total || 0 });
   } catch (error) { next(error); }
 });
 

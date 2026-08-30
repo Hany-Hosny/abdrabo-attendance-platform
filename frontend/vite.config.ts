@@ -3,7 +3,8 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
-  const targetUrl = env.VITE_API_URL || "https://abdrabobackend-production.up.railway.app";
+  const defaultUrl = mode === "development" ? "http://127.0.0.1:4000" : "https://abdrabobackend-production.up.railway.app";
+  const targetUrl = env.VITE_API_URL || defaultUrl;
 
   return {
     plugins: [react()],

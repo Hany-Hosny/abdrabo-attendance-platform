@@ -1,9 +1,9 @@
-import "dotenv/config";
+import "./config/env.js";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import { migrate } from "./db/migrate.js";
-import { pool } from "./db/pool.js";
+import { pool, query } from "./db/pool.js";
 import { studentRouter } from "./routes/student.js";
 import { teacherRouter } from "./routes/teacher.js";
 import { adminSiteRouter, siteRouter } from "./routes/site.js";
@@ -29,6 +29,58 @@ app.use(
   })
 );
 app.use(express.json({ limit: "100kb" }));
+
+function auditSafeBody(value) {
+  if (!value || typeof value !== "object") return {};
+  const sensitive = new Set(["password", "current_password", "pin", "token", "authorization", "national_id", "national_id_hash"]);
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, sensitive.has(key.toLowerCase()) ? "[REDACTED]" : entry]));
+}
+
+function auditRequestAction(req) {
+  const path = req.path;
+  if (req.method === "POST" && /\/fees\/payments$/.test(path)) return "payment_created";
+  if (req.method === "POST" && /\/fees\/advance-payments$/.test(path)) return "advance_payment_created";
+  if (req.method === "POST" && /\/fees\/payments\/\d+\/reverse$/.test(path)) return "payment_reversed";
+  if (req.method === "POST" && /\/students$/.test(path)) return "student_created";
+  if (req.method === "PUT" && /\/students\/\d+$/.test(path)) return "student_updated";
+  if (req.method === "PATCH" && /\/students\/\d+\/status$/.test(path)) return "student_status_changed";
+  if (req.method === "PATCH" && /\/students\/\d+\/restore$/.test(path)) return "student_restored";
+  if (req.method === "DELETE" && /\/students\/\d+$/.test(path)) return "student_archived";
+  if (req.method === "POST" && /\/users$/.test(path)) return "user_created";
+  if (req.method === "PUT" && /\/users\/\d+$/.test(path)) return "user_updated";
+  if (req.method === "POST" && /\/users\/\d+\/reset-password$/.test(path)) return "user_password_reset";
+  if (req.method === "PATCH" && /\/users\/\d+\/status$/.test(path)) return "user_status_changed";
+  if (req.method === "DELETE" && /\/users\/\d+$/.test(path)) return "user_archived";
+  if (req.method === "POST" && /\/attendance\//.test(path)) return "attendance_recorded";
+  if (req.method === "POST" && /\/inbox/.test(path)) return "message_action";
+  if (req.method === "POST" && /\/notes/.test(path)) return "note_action";
+  return "system_request";
+}
+
+function auditEntityId(req, type) {
+  const bodyValue = Number(req.body?.[`${type}_id`]);
+  if (Number.isSafeInteger(bodyValue) && bodyValue > 0) return bodyValue;
+  const match = req.path.match(type === "student" ? /\/students\/(\d+)/ : /\/payments\/(\d+)/);
+  const pathValue = Number(match?.[1]);
+  return Number.isSafeInteger(pathValue) && pathValue > 0 ? pathValue : null;
+}
+
+app.use((req, res, next) => {
+  res.on("finish", () => {
+    if (!req.teacher || req.path.includes("/audit-logs") || /\/fees\/payments(?:\/\d+\/reverse)?$/.test(req.path) || /\/fees\/advance-payments$/.test(req.path)) return;
+    const mutating = !["GET", "HEAD", "OPTIONS"].includes(req.method);
+    const adminSensitiveRead = req.path.includes("/audit-logs") || req.path.includes("/payments/report") || req.path.includes("/fees/payments");
+    if (!mutating && !adminSensitiveRead) return;
+    query(`INSERT INTO audit_logs (action, actor_id, student_id, payment_id, details) VALUES ($1, $2, $3, $4, $5)`, [auditRequestAction(req), req.teacher.id, auditEntityId(req, "student"), auditEntityId(req, "payment"), JSON.stringify({
+      method: req.method,
+      path: req.originalUrl.split("?")[0],
+      status_code: res.statusCode,
+      query: Object.fromEntries(Object.entries(req.query || {}).filter(([key]) => !["token", "pin", "password"].includes(key.toLowerCase()))),
+      body: auditSafeBody(req.body)
+    })]).catch((error) => console.error("Failed to write audit log", error));
+  });
+  next();
+});
 
 app.get("/api/health", async (_req, res, next) => {
   try {

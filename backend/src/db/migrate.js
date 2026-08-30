@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../config/env.js";
 import crypto from "node:crypto";
 import { pool, query } from "./pool.js";
 import { hashPassword } from "../services/auth.js";
@@ -124,10 +124,16 @@ export async function migrate() {
       print_student_labels BOOLEAN NOT NULL DEFAULT FALSE,
       max_label_reprints INTEGER NOT NULL DEFAULT 2 CHECK (max_label_reprints >= 0),
       can_use_inbox BOOLEAN NOT NULL DEFAULT FALSE,
+      audit_pin_hash TEXT,
+      audit_pin_failed_attempts INTEGER NOT NULL DEFAULT 0,
+      audit_pin_locked_until TIMESTAMPTZ,
       deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS audit_pin_hash TEXT;
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS audit_pin_failed_attempts INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS audit_pin_locked_until TIMESTAMPTZ;
 
     CREATE TABLE IF NOT EXISTS site_pages (
       id SERIAL PRIMARY KEY,
@@ -507,7 +513,7 @@ export async function migrate() {
   const adminEmail = process.env.ADMIN_EMAIL || "teacher@abdrabo.local";
   const adminPassword = process.env.ADMIN_PASSWORD || "change_me_123";
   const adminPasswordHash = hashPassword(adminPassword);
-  const existingAdmin = await query(
+  let existingAdmin = await query(
     `
       SELECT id
       FROM teachers
@@ -517,6 +523,9 @@ export async function migrate() {
     `,
     [adminEmail, adminUsername]
   );
+  if (!existingAdmin.rowCount) {
+    existingAdmin = await query("SELECT id FROM teachers WHERE role = 'admin' ORDER BY id LIMIT 1");
+  }
 
   if (existingAdmin.rowCount) {
     await query(

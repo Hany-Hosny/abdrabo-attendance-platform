@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import "../config/env.js";
 
 const tokenSecret = process.env.TOKEN_SECRET || "dev_change_this_token_secret";
 
@@ -58,4 +59,30 @@ export function verifyTeacherToken(token) {
   const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
   return data;
+}
+
+export function createAuditAccessToken(adminId) {
+  const payload = base64UrlEncode({
+    sub: Number(adminId),
+    scope: "audit:read",
+    exp: Math.floor(Date.now() / 1000) + 10 * 60
+  });
+  const unsignedToken = `audit.${payload}`;
+  return `${unsignedToken}.${crypto.createHmac("sha256", tokenSecret).update(unsignedToken).digest("base64url")}`;
+}
+
+export function verifyAuditAccessToken(token, adminId) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3 || parts[0] !== "audit") return false;
+  const unsignedToken = `${parts[0]}.${parts[1]}`;
+  const expected = crypto.createHmac("sha256", tokenSecret).update(unsignedToken).digest("base64url");
+  const expectedBuffer = Buffer.from(expected);
+  const signatureBuffer = Buffer.from(parts[2]);
+  if (expectedBuffer.length !== signatureBuffer.length || !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    return payload.scope === "audit:read" && Number(payload.sub) === Number(adminId) && Number(payload.exp) > Math.floor(Date.now() / 1000);
+  } catch (_error) {
+    return false;
+  }
 }

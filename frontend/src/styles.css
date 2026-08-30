@@ -71,6 +71,22 @@ a {
 }
 
 .homework-list { display: grid; gap: 12px; }
+.audit-logs-panel { display: grid; gap: 18px; }
+.audit-pin-form { max-width: 520px; display: grid; gap: 14px; }
+.audit-details { max-width: 420px; max-height: 220px; overflow: auto; white-space: pre-wrap; color: var(--muted); font-size: 0.78rem; text-align: start; direction: ltr; }
+.audit-student-code { display: block; color: var(--muted); margin-top: 4px; }
+.audit-logs-panel .table-wrap { overflow-x: auto; }
+.audit-logs-panel table { min-width: 1120px; }
+.audit-logs-panel td:last-child { min-width: 390px; vertical-align: top; }
+.audit-detail-list { min-width: 260px; display: grid; gap: 8px; padding: 8px 0; }
+.audit-detail-item { display: grid; grid-template-columns: 155px minmax(210px, 1fr); gap: 12px; text-align: start; align-items: start; }
+.audit-detail-item b { color: var(--accent-strong); text-transform: capitalize; }
+.audit-detail-item span { white-space: pre-wrap; overflow-wrap: anywhere; }
+.audit-pagination { align-items: center; justify-content: center; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, 0.68); }
+.modal-card { width: min(520px, 100%); padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-strong); box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45); }
+.modal-card h3 { margin-top: 0; }
+.modal-card label { display: grid; gap: 8px; }
 .homework-card { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: rgba(13, 27, 46, 0.72); }
 .homework-card h3 { margin: 0 0 8px; }
 .homework-card p { margin: 0 0 10px; color: var(--muted); white-space: pre-wrap; }

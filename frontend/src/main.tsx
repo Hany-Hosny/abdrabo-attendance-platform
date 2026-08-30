@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import JsBarcode from "jsbarcode";
 import "./styles.css";
@@ -122,7 +122,7 @@ type AdminStudent = {
 };
 
 type SiteSlug = "about-teacher" | "about-center" | "contact" | "tips";
-type AdminTab = "overview" | "add-user" | "users" | "site-content" | "students" | "groups" | "attendance" | "scanner" | "fees" | "exams" | "inbox";
+type AdminTab = "overview" | "add-user" | "users" | "site-content" | "students" | "groups" | "attendance" | "scanner" | "fees" | "exams" | "inbox" | "audit-logs";
 
 type SitePage = {
   slug: SiteSlug;
@@ -204,6 +204,7 @@ const translations = {
     "admin.tabs.fees": "المصروفات",
     "admin.tabs.exams": "الامتحانات",
     "admin.tabs.inbox": "الرسائل",
+    "admin.tabs.auditLogs": "سجل النشاط",
     "inbox.title": "الرسائل",
     "inbox.newMessage": "رسالة جديدة",
     "inbox.subject": "الموضوع",
@@ -284,7 +285,82 @@ const translations = {
     "fees.totalExpectedUnpaid": "إجمالي المتوقع تحصيله",
     "fees.lastPaymentDate": "آخر تاريخ دفع",
     "fees.reportLoadFailed": "تعذر تحميل التقرير.",
+    "fees.reversePayment": "عكس الدفعة",
+    "fees.confirmReversal": "تأكيد عكس الدفعة",
+    "fees.reversalSaved": "تم عكس الدفعة وتسجيل العملية.",
+    "fees.reversalFailed": "تعذر عكس الدفعة.",
     "fees.showDeleted": "إظهار الطلاب المحذوفين",
+    "audit.title": "سجل النشاط الكامل",
+    "audit.pin": "الرقم السري المكون من 4 أرقام",
+    "audit.adminPassword": "كلمة مرور المدير",
+    "audit.unlock": "فتح سجل النشاط",
+    "audit.setup": "إعداد الرقم السري",
+    "audit.changePin": "تغيير الرقم السري",
+    "audit.reason": "السبب",
+    "audit.search": "بحث في السجل",
+    "audit.action": "الإجراء",
+    "audit.user": "المستخدم",
+    "audit.payment": "رقم الدفعة",
+    "audit.student": "رقم الطالب",
+    "audit.dateFrom": "من تاريخ",
+    "audit.dateTo": "إلى تاريخ",
+    "audit.refresh": "تحديث",
+    "audit.date": "التاريخ والوقت",
+    "audit.details": "التفاصيل",
+    "audit.noLogs": "لا توجد سجلات.",
+    "audit.pinSaved": "تم حفظ الرقم السري.",
+    "audit.locked": "تم إيقاف المحاولة مؤقتاً بسبب محاولات فاشلة.",
+    "audit.invalidPin": "الرقم السري غير صحيح.",
+    "audit.action.paymentCreated": "تم تسجيل دفع المصروفات",
+    "audit.action.advancePaymentCreated": "تم تسجيل دفع مقدم",
+    "audit.action.paymentReversed": "تم عكس دفعة",
+    "audit.action.studentCreated": "تم إنشاء طالب",
+    "audit.action.studentUpdated": "تم تعديل بيانات طالب",
+    "audit.action.studentStatusChanged": "تم تغيير حالة طالب",
+    "audit.action.studentRestored": "تم استرجاع طالب",
+    "audit.action.studentArchived": "تم أرشفة طالب",
+    "audit.action.attendanceRecorded": "تم تسجيل الحضور",
+    "audit.action.messageAction": "تم تنفيذ إجراء على رسالة",
+    "audit.action.noteAction": "تم تنفيذ إجراء على ملاحظة",
+    "audit.action.pinChanged": "تم تغيير رقم سجل النشاط",
+    "audit.action.logsUnlocked": "تم فتح سجل النشاط",
+    "audit.action.pinFailed": "فشلت محاولة فتح سجل النشاط",
+    "audit.action.systemRequest": "إجراء بالنظام",
+    "audit.action.userCreated": "تم إنشاء مستخدم",
+    "audit.action.userUpdated": "تم تعديل مستخدم",
+    "audit.action.userPasswordReset": "تم تغيير كلمة مرور مستخدم",
+    "audit.action.userStatusChanged": "تم تغيير حالة مستخدم",
+    "audit.action.userArchived": "تمت أرشفة مستخدم",
+    "audit.detail.body": "البيانات المرسلة",
+    "audit.detail.path": "العملية",
+    "audit.detail.query": "بيانات البحث",
+    "audit.detail.method": "نوع الطلب",
+    "audit.detail.statusCode": "نتيجة العملية",
+    "audit.detail.accessDuration": "مدة فتح السجل",
+    "audit.detail.reason": "السبب",
+    "audit.detail.originalAmount": "المبلغ الأصلي",
+    "audit.detail.paymentDate": "تاريخ الدفع",
+    "audit.detail.paymentType": "نوع الدفع",
+    "audit.detail.paymentMethod": "طريقة الدفع",
+    "audit.detail.paymentMonths": "الأشهر المغطاة",
+    "audit.detail.reversalId": "رقم عملية العكس",
+    "audit.detail.locked": "تم إيقاف المحاولة",
+    "audit.detail.pinDigits": "عدد أرقام الرقم السري",
+    "audit.narrative.userCreated": "تم إنشاء المستخدم: {{name}} — اسم المستخدم: {{username}} — الدور: {{role}}",
+    "audit.narrative.userUpdated": "تم تعديل المستخدم: {{name}} — اسم المستخدم: {{username}}",
+    "audit.narrative.userPasswordReset": "تم تغيير كلمة مرور المستخدم: {{name}}",
+    "audit.narrative.userArchived": "تم حذف المستخدم: {{name}}",
+    "audit.narrative.student": "تم {{action}} الطالب: {{name}} — كود الطالب: {{code}}",
+    "audit.narrative.payment": "تم تسجيل دفع مصروفات للطالب: {{name}} — الكود: {{code}} — المبلغ: {{amount}} جنيه",
+    "audit.narrative.advancePayment": "تم تسجيل دفع مقدم للطالب: {{name}} — الكود: {{code}} — المبلغ: {{amount}} جنيه",
+    "audit.narrative.reversed": "تم عكس الدفعة رقم {{payment}} للطالب: {{name}} — المبلغ: {{amount}} جنيه — السبب: {{reason}}",
+    "audit.narrative.attendance": "تم تسجيل حضور الطالب: {{name}} — كود الطالب: {{code}}",
+    "audit.narrative.generic": "تم تنفيذ إجراء: {{action}}",
+    "audit.word.created": "إنشاء",
+    "audit.word.updated": "تعديل",
+    "audit.word.deleted": "حذف",
+    "audit.word.restored": "استرجاع",
+    "audit.word.statusChanged": "تغيير حالة",
     "admin.siteContent": "محتوى الموقع",
     "admin.selectPage": "اختر الصفحة",
     "admin.titleAr": "العنوان بالعربي",
@@ -573,6 +649,7 @@ const translations = {
     "admin.tabs.fees": "Fees",
     "admin.tabs.exams": "Exams",
     "admin.tabs.inbox": "Inbox",
+    "admin.tabs.auditLogs": "Audit Logs",
     "inbox.title": "Inbox",
     "inbox.newMessage": "New message",
     "inbox.subject": "Subject",
@@ -653,7 +730,82 @@ const translations = {
     "fees.totalExpectedUnpaid": "Total expected unpaid",
     "fees.lastPaymentDate": "Last payment date",
     "fees.reportLoadFailed": "Could not load the report.",
+    "fees.reversePayment": "Reverse payment",
+    "fees.confirmReversal": "Confirm reversal",
+    "fees.reversalSaved": "Payment reversed and recorded.",
+    "fees.reversalFailed": "Could not reverse the payment.",
     "fees.showDeleted": "Show deleted students",
+    "audit.title": "Complete Audit Logs",
+    "audit.pin": "4-digit audit PIN",
+    "audit.adminPassword": "Admin password",
+    "audit.unlock": "Unlock audit logs",
+    "audit.setup": "Set audit PIN",
+    "audit.changePin": "Change PIN",
+    "audit.reason": "Reason",
+    "audit.search": "Search logs",
+    "audit.action": "Action",
+    "audit.user": "User",
+    "audit.payment": "Payment ID",
+    "audit.student": "Student ID",
+    "audit.dateFrom": "Date from",
+    "audit.dateTo": "Date to",
+    "audit.refresh": "Refresh",
+    "audit.date": "Date and time",
+    "audit.details": "Details",
+    "audit.noLogs": "No audit logs found.",
+    "audit.pinSaved": "PIN saved.",
+    "audit.locked": "Access is temporarily locked after failed attempts.",
+    "audit.invalidPin": "The PIN is incorrect.",
+    "audit.action.paymentCreated": "Payment recorded",
+    "audit.action.advancePaymentCreated": "Advance payment recorded",
+    "audit.action.paymentReversed": "Payment reversed",
+    "audit.action.studentCreated": "Student created",
+    "audit.action.studentUpdated": "Student updated",
+    "audit.action.studentStatusChanged": "Student status changed",
+    "audit.action.studentRestored": "Student restored",
+    "audit.action.studentArchived": "Student archived",
+    "audit.action.attendanceRecorded": "Attendance recorded",
+    "audit.action.messageAction": "Message action",
+    "audit.action.noteAction": "Note action",
+    "audit.action.pinChanged": "Audit PIN changed",
+    "audit.action.logsUnlocked": "Audit logs unlocked",
+    "audit.action.pinFailed": "Audit PIN attempt failed",
+    "audit.action.systemRequest": "System action",
+    "audit.action.userCreated": "User created",
+    "audit.action.userUpdated": "User updated",
+    "audit.action.userPasswordReset": "User password changed",
+    "audit.action.userStatusChanged": "User status changed",
+    "audit.action.userArchived": "User archived",
+    "audit.detail.body": "Submitted data",
+    "audit.detail.path": "Operation",
+    "audit.detail.query": "Search parameters",
+    "audit.detail.method": "Request method",
+    "audit.detail.statusCode": "Result",
+    "audit.detail.accessDuration": "Access duration",
+    "audit.detail.reason": "Reason",
+    "audit.detail.originalAmount": "Original amount",
+    "audit.detail.paymentDate": "Payment date",
+    "audit.detail.paymentType": "Payment type",
+    "audit.detail.paymentMethod": "Payment method",
+    "audit.detail.paymentMonths": "Covered months",
+    "audit.detail.reversalId": "Reversal ID",
+    "audit.detail.locked": "Attempt locked",
+    "audit.detail.pinDigits": "PIN digit count",
+    "audit.narrative.userCreated": "User created: {{name}} — Username: {{username}} — Role: {{role}}",
+    "audit.narrative.userUpdated": "User updated: {{name}} — Username: {{username}}",
+    "audit.narrative.userPasswordReset": "User password changed: {{name}}",
+    "audit.narrative.userArchived": "User deleted: {{name}}",
+    "audit.narrative.student": "Student {{action}}: {{name}} — Student code: {{code}}",
+    "audit.narrative.payment": "Payment recorded for student: {{name}} — Code: {{code}} — Amount: {{amount}} EGP",
+    "audit.narrative.advancePayment": "Advance payment recorded for student: {{name}} — Code: {{code}} — Amount: {{amount}} EGP",
+    "audit.narrative.reversed": "Payment #{{payment}} reversed for student: {{name}} — Amount: {{amount}} EGP — Reason: {{reason}}",
+    "audit.narrative.attendance": "Attendance recorded for student: {{name}} — Student code: {{code}}",
+    "audit.narrative.generic": "Action completed: {{action}}",
+    "audit.word.created": "created",
+    "audit.word.updated": "updated",
+    "audit.word.deleted": "deleted",
+    "audit.word.restored": "restored",
+    "audit.word.statusChanged": "status changed",
     "admin.siteContent": "Site Content",
     "admin.selectPage": "Select Page",
     "admin.titleAr": "Arabic Title",
@@ -1886,6 +2038,7 @@ function TeacherDashboard({
     { id: "add-user", label: t("admin.tabs.addUser"), adminOnly: true },
     { id: "users", label: t("admin.tabs.users"), adminOnly: true },
     { id: "site-content", label: t("admin.tabs.siteContent"), adminOnly: true },
+    { id: "audit-logs", label: t("admin.tabs.auditLogs"), adminOnly: true },
     { id: "students", label: t("admin.tabs.students") },
     { id: "groups", label: t("admin.tabs.groups") },
     { id: "attendance", label: t("admin.tabs.attendance") },
@@ -2026,6 +2179,7 @@ function TeacherDashboard({
           {activeTab === "add-user" && isAdmin ? <UsersTeamManager mode="create" session={session} t={t} /> : null}
           {activeTab === "users" && isAdmin ? <UsersTeamManager mode="list" session={session} t={t} /> : null}
           {activeTab === "site-content" && isAdmin ? <SiteContentEditor session={session} language={language} t={t} /> : null}
+          {activeTab === "audit-logs" && isAdmin ? <AuditLogsPanel session={session} language={language} t={t} /> : null}
           {activeTab === "groups" ? <AcademicManager kind="groups" session={session} t={t} /> : null}
           {activeTab === "students" ? <AcademicManager kind="students" session={session} t={t} /> : null}
           {activeTab === "scanner" ? <ScannerPanel session={session} t={t} /> : null}
@@ -2074,6 +2228,7 @@ function UsersTeamManager({
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<RecordStatusFilter>("active");
+  const editorFormRef = useRef<HTMLFormElement>(null);
 
   async function loadUsers() {
     const response = await fetch(`${API_BASE_URL}/admin/users?status=${statusFilter}`, {
@@ -2103,6 +2258,7 @@ function UsersTeamManager({
       max_label_reprints: user.max_label_reprints ?? 2,
       can_use_inbox: user.can_use_inbox ?? false
     });
+    window.requestAnimationFrame(() => editorFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
   function resetForm() {
@@ -2234,7 +2390,7 @@ function UsersTeamManager({
       </div>
 
       {mode === "create" || editingId ? (
-      <form onSubmit={saveUser}>
+      <form ref={editorFormRef} onSubmit={saveUser}>
         <div className="editor-grid">
           <label>
             {t("admin.name")}
@@ -3002,6 +3158,168 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
   </section>;
 }
 
+function auditActionKey(action: string, details: Record<string, unknown> = {}): TranslationKey {
+  if (action === "system_request") {
+    const path = String(details.path || "");
+    if (path.includes("/reset-password")) return "audit.action.userPasswordReset";
+    if (path.endsWith("/users") && details.method === "POST") return "audit.action.userCreated";
+    if (path.includes("/users/") && details.method === "PUT") return "audit.action.userUpdated";
+    if (path.includes("/users/") && details.method === "DELETE") return "audit.action.userArchived";
+  }
+  const keys: Record<string, TranslationKey> = {
+    payment_created: "audit.action.paymentCreated",
+    advance_payment_created: "audit.action.advancePaymentCreated",
+    payment_reversed: "audit.action.paymentReversed",
+    student_created: "audit.action.studentCreated",
+    student_updated: "audit.action.studentUpdated",
+    student_status_changed: "audit.action.studentStatusChanged",
+    student_restored: "audit.action.studentRestored",
+    student_archived: "audit.action.studentArchived",
+    attendance_recorded: "audit.action.attendanceRecorded",
+    message_action: "audit.action.messageAction",
+    note_action: "audit.action.noteAction",
+    audit_pin_changed: "audit.action.pinChanged",
+    audit_logs_unlocked: "audit.action.logsUnlocked",
+    audit_pin_failed: "audit.action.pinFailed",
+    system_request: "audit.action.systemRequest",
+    user_created: "audit.action.userCreated",
+    user_updated: "audit.action.userUpdated",
+    user_password_reset: "audit.action.userPasswordReset",
+    user_status_changed: "audit.action.userStatusChanged",
+    user_archived: "audit.action.userArchived"
+  };
+  return keys[action] || "audit.action.systemRequest";
+}
+
+function auditDetailLabelKey(key: string): TranslationKey | null {
+  const keys: Record<string, TranslationKey> = {
+    body: "audit.detail.body", path: "audit.detail.path", query: "audit.detail.query", method: "audit.detail.method",
+    status_code: "audit.detail.statusCode", access_duration_minutes: "audit.detail.accessDuration", reason: "audit.detail.reason",
+    original_amount: "audit.detail.originalAmount", payment_date: "audit.detail.paymentDate", payment_type: "audit.detail.paymentType",
+    payment_method: "audit.detail.paymentMethod", payment_months: "audit.detail.paymentMonths", reversal_id: "audit.detail.reversalId",
+    locked: "audit.detail.locked", pin_digits: "audit.detail.pinDigits"
+  };
+  return keys[key] || null;
+}
+
+function auditDetailText(key: string, value: unknown, language: Language, t: Translator): string {
+  if (key === "body") return language === "ar" ? "تم تسجيل البيانات (المعلومات الحساسة مخفية)" : "Data recorded (sensitive values hidden)";
+  if (key === "query" && (!value || (typeof value === "object" && Object.keys(value as object).length === 0))) return language === "ar" ? "لا توجد بيانات بحث" : "No search parameters";
+  if (key === "path") {
+    const path = String(value);
+    if (path.includes("/reset-password")) return t("audit.action.userPasswordReset");
+    if (path.includes("/fees/payments") && path.includes("/reverse")) return t("audit.action.paymentReversed");
+    if (path.endsWith("/fees/payments")) return t("audit.action.paymentCreated");
+    if (path.endsWith("/fees/advance-payments")) return t("audit.action.advancePaymentCreated");
+  }
+  if (key === "method") return ({ GET: language === "ar" ? "عرض" : "View", POST: language === "ar" ? "إضافة" : "Create", PUT: language === "ar" ? "تعديل" : "Update", PATCH: language === "ar" ? "تحديث" : "Update", DELETE: language === "ar" ? "حذف" : "Delete" } as Record<string, string>)[String(value)] || String(value);
+  if (key === "status_code") return Number(value) >= 200 && Number(value) < 300 ? (language === "ar" ? "تمت بنجاح" : "Successful") : String(value);
+  if (key === "payment_type") return value === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment");
+  return formatAuditDetailValue(value, language);
+}
+
+function auditNarrativeFromDetails(action: string, details: Record<string, any>, language: Language, t: Translator) {
+  const body = details.body && typeof details.body === "object" ? details.body : {};
+  const name = String(details.student_name_snapshot || details._student_name || details.full_name || body.full_name || details.student_name || "—");
+  const code = String(details.student_code_snapshot || details._student_code || details.student_code || body.student_code || "—");
+  const role = body.role ? roleLabel(String(body.role), t) : "—";
+  if (action === "user_created") return t("audit.narrative.userCreated", { name: String(body.name || name), username: String(body.username || "—"), role });
+  if (action === "user_updated") return t("audit.narrative.userUpdated", { name: String(body.name || name), username: String(body.username || "—") });
+  if (action === "user_password_reset") return t("audit.narrative.userPasswordReset", { name: String(body.name || name) });
+  if (action === "user_archived") return t("audit.narrative.userArchived", { name: String(body.name || name) });
+  if (action === "student_created" || action === "student_updated" || action === "student_status_changed" || action === "student_restored" || action === "student_archived") {
+    const word = action === "student_created" ? t("audit.word.created") : action === "student_updated" ? t("audit.word.updated") : action === "student_restored" ? t("audit.word.restored") : action === "student_status_changed" ? t("audit.word.statusChanged") : t("audit.word.deleted");
+    return t("audit.narrative.student", { action: word, name, code });
+  }
+  if (action === "payment_reversed") return t("audit.narrative.reversed", { payment: String(details._payment_id || details.payment_id || "—"), name, amount: String(details.original_amount || details._payment_amount || "—"), reason: String(details.reason || "—") });
+  if (action === "payment_created") return t("audit.narrative.payment", { name, code, amount: String(details.amount || details.original_amount || details._payment_amount || "—") });
+  if (action === "advance_payment_created") return t("audit.narrative.advancePayment", { name, code, amount: String(details.amount || details._payment_amount || "—") });
+  if (action === "attendance_recorded") return t("audit.narrative.attendance", { name, code });
+  return t("audit.narrative.generic", { action: t(auditActionKey(action)) });
+}
+
+function formatAuditDetailValue(value: unknown, language: Language) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? (language === "ar" ? "نعم" : "Yes") : (language === "ar" ? "لا" : "No");
+  if (typeof value === "object") return JSON.stringify(value, null, 2);
+  return String(value);
+}
+
+function formatAuditDetails(details: Record<string, unknown>, language: Language, t: Translator = createTranslator(language)) {
+  if (details?._audit_action) return [{ key: "", value: auditNarrativeFromDetails(String(details._audit_action), details as Record<string, any>, language, t) }];
+  return Object.entries(details || {}).filter(([key]) => key !== "pin_digits").map(([key, value]) => ({
+    key: auditDetailLabelKey(key) ? t(auditDetailLabelKey(key) as TranslationKey) : key.replaceAll("_", " "), value: auditDetailText(key, value, language, t)
+  }));
+}
+
+function AuditLogsPanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
+  const [accessToken, setAccessToken] = useState("");
+  const [pin, setPin] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [showChangePin, setShowChangePin] = useState(false);
+  const [search, setSearch] = useState("");
+  const [action, setAction] = useState("");
+  const [userId, setUserId] = useState("");
+  const [paymentId, setPaymentId] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [logs, setLogs] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const auth = { Authorization: `Bearer ${session.token}` };
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/admin/audit-logs/status`, { headers: auth })
+      .then((response) => response.json())
+      .then((data) => { setConfigured(Boolean(data.configured)); if (!data.configured) setStatus(""); })
+      .catch(() => setStatus(t("fees.reportLoadFailed")));
+  }, [session.token]);
+
+  async function savePin(event: React.FormEvent) {
+    event.preventDefault(); setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/audit-logs/pin`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ pin: newPin, current_password: adminPassword }) });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.status || "pin_failed");
+      setConfigured(true); setNewPin(""); setAdminPassword(""); setShowChangePin(false); setStatus(t("audit.pinSaved"));
+    } catch { setStatus(t("audit.invalidPin")); }
+  }
+
+  async function unlock(event: React.FormEvent) {
+    event.preventDefault(); setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/audit-logs/unlock`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.status || "unlock_failed");
+      setAccessToken(data.audit_access_token); setUnlocked(true); setPin(""); setPage(1); await loadLogs(1, data.audit_access_token);
+    } catch (error) { setStatus(error instanceof Error && error.message === "audit_pin_locked" ? t("audit.locked") : t("audit.invalidPin")); }
+  }
+
+  async function loadLogs(nextPage = page, token = accessToken) {
+    if (!token) return;
+    setLoading(true); setStatus("");
+    try {
+      const params = new URLSearchParams({ page: String(nextPage), limit: "50" });
+      if (search.trim()) params.set("search", search.trim()); if (action) params.set("action", action); if (userId.trim()) params.set("user_id", userId.trim()); if (paymentId.trim()) params.set("payment_id", paymentId.trim()); if (studentId.trim()) params.set("student_id", studentId.trim()); if (dateFrom) params.set("date_from", dateFrom); if (dateTo) params.set("date_to", dateTo);
+      const response = await fetch(`${API_BASE_URL}/admin/audit-logs?${params}`, { headers: { ...auth, "X-Audit-Access-Token": token } });
+      const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.status || "logs_failed");
+      setLogs(Array.isArray(data.logs) ? data.logs : []); setTotal(Number(data.total || 0)); setPage(nextPage);
+    } catch (error) { if (error instanceof Error && error.message === "audit_access_required") { setUnlocked(false); setAccessToken(""); } setStatus(t("fees.reportLoadFailed")); }
+    finally { setLoading(false); }
+  }
+
+  if (configured === null) return <section className="admin-editor audit-logs-panel"><p className="field-hint">{t("fees.reportLoadFailed")}</p></section>;
+  if (!configured || showChangePin) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{configured ? t("audit.changePin") : t("audit.setup")}</h2></div><form onSubmit={savePin} className="audit-pin-form"><label>{t("audit.pin")}<input value={newPin} onChange={(event) => setNewPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="new-password" /></label><label>{t("audit.adminPassword")}<input value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} type="password" autoComplete="current-password" /></label><div className="report-actions"><button className="primary-button" type="submit">{t("audit.setup")}</button>{configured ? <button className="secondary-button" type="button" onClick={() => setShowChangePin(false)}>{t("admin.cancel")}</button> : null}</div>{status ? <p className="form-error">{status}</p> : null}</form></section>;
+  if (!unlocked) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><p className="field-hint">{t("audit.pin")}</p><form onSubmit={unlock} className="audit-pin-form"><label>{t("audit.pin")}<input value={pin} onChange={(event) => setPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><button className="primary-button" type="submit">{t("audit.unlock")}</button>{status ? <p className="form-error">{status}</p> : null}</form></section>;
+  return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><div className="report-filters payment-report-filters"><label>{t("audit.search")}<input value={search} onChange={(event) => setSearch(event.target.value)} /></label><label>{t("audit.action")}<input value={action} onChange={(event) => setAction(event.target.value)} placeholder="payment_reversed" /></label><label>{t("audit.user")}<input value={userId} onChange={(event) => setUserId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.payment")}<input value={paymentId} onChange={(event) => setPaymentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.student")}<input value={studentId} onChange={(event) => setStudentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.dateFrom")}<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={() => loadLogs(1)}>{t("audit.refresh")}</button><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div><p className="report-total">{total} · {t("audit.title")}</p>{logs.length ? <div className="table-wrap"><table><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.student")}</th><th>{t("audit.payment")}</th><th>{t("audit.details")}</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td>{new Date(log.created_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</td><td>{log.actor_name || log.actor_username || "—"}</td><td>{t(auditActionKey(log.action))}</td><td><strong>{log.student_name || "—"}</strong>{log.student_code ? <small className="audit-student-code">{log.student_code}</small> : log.student_id ? <small className="audit-student-code">ID: {log.student_id}</small> : null}</td><td>{log.payment_id ? `${log.payment_id}${log.payment_amount ? ` · ${log.payment_amount} EGP` : ""}` : "—"}</td><td><details><summary>{t("audit.details")}</summary><div className="audit-detail-list">{formatAuditDetails(log.details || {}, language).map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}{log.reversal_reason ? <div className="audit-detail-item"><b>{t("audit.reason")}</b><span>{log.reversal_reason}</span></div> : null}</div></details></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("audit.noLogs")}</p>}<div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => loadLogs(page - 1)}>{"‹"}</button><span>{page} / {Math.max(1, Math.ceil(total / 50))}</span><button className="secondary-button compact-button" type="button" disabled={page >= Math.max(1, Math.ceil(total / 50)) || loading} onClick={() => loadLogs(page + 1)}>{"›"}</button></div>{status ? <p className="form-error">{status}</p> : null}</section>;
+}
+
 function PaymentReportsPanel({ session, t }: { session: TeacherSession; t: Translator }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -3013,6 +3331,9 @@ function PaymentReportsPanel({ session, t }: { session: TeacherSession; t: Trans
   const [paymentCount, setPaymentCount] = useState(0);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState<any>(null);
+  const [reverseReason, setReverseReason] = useState("");
+  const [reversing, setReversing] = useState(false);
   const auth = { Authorization: `Bearer ${session.token}` };
 
   async function searchReport(nextFrom = from, nextTo = to) {
@@ -3057,6 +3378,17 @@ function PaymentReportsPanel({ session, t }: { session: TeacherSession; t: Trans
     const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `payments-report-${localDateInputValue()}.csv`; link.click(); URL.revokeObjectURL(url);
   }
 
+  async function reversePayment() {
+    if (!reverseTarget || reverseReason.trim().length < 3) return;
+    setReversing(true); setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/fees/payments/${reverseTarget.id}/reverse`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ reason: reverseReason.trim() }) });
+      const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.status || "reverse_failed");
+      setReverseTarget(null); setReverseReason(""); setStatus(t("fees.reversalSaved")); await searchReport(); window.dispatchEvent(new Event("fees-updated"));
+    } catch { setStatus(t("fees.reversalFailed")); }
+    finally { setReversing(false); }
+  }
+
   return <section className="admin-editor payment-reports">
     <div className="section-heading reports-header"><p className="eyebrow">{t("fees.reports")}</p><h2>{t("fees.reports")}</h2></div>
     <div className="report-filters payment-report-filters">
@@ -3068,7 +3400,8 @@ function PaymentReportsPanel({ session, t }: { session: TeacherSession; t: Trans
     </div>
     <div className="report-actions"><button className="secondary-button compact-button" type="button" onClick={setToday}>{t("fees.today")}</button><button className="secondary-button compact-button" type="button" onClick={setThisMonth}>{t("fees.thisMonth")}</button><button className="primary-button compact-button" type="button" disabled={loading} onClick={() => searchReport().catch(() => undefined)}>{t("fees.find")}</button><button className="secondary-button compact-button" type="button" disabled={!rows.length} onClick={exportCsv}>{t("fees.exportExcel")}</button></div>
     <p className="report-total">{t("fees.totalPaid")}: {totalPaid.toFixed(2)} EGP · {t("fees.paymentCount")}: {paymentCount}</p>
-    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, document.documentElement.lang === "en" ? "en" : "ar")}</td><td>{row.amount} EGP</td><td>{row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")}</td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td></tr>)}</tbody></table></div> : <p className="empty-state">{status || t("fees.noMatchingResults")}</p>}
+    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th><th>{t("fees.reversePayment")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, document.documentElement.lang === "en" ? "en" : "ar")}</td><td>{row.amount} EGP</td><td>{row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")}</td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td><td><button className="secondary-button compact-button" type="button" onClick={() => { setReverseTarget(row); setReverseReason(""); }}>{t("fees.reversePayment")}</button></td></tr>)}</tbody></table></div> : <p className="empty-state">{status || t("fees.noMatchingResults")}</p>}
+    {reverseTarget ? <div className="modal-backdrop"><div className="modal-card" role="dialog" aria-modal="true"><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => setReverseReason(event.target.value)} rows={4} autoFocus /></label><div className="report-actions"><button className="primary-button" type="button" disabled={reversing || reverseReason.trim().length < 3} onClick={reversePayment}>{t("fees.confirmReversal")}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></div></div> : null}
   </section>;
 }
 

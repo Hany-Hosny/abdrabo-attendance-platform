@@ -107,6 +107,10 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
       dues.rows[0].full_name, dues.rows[0].student_code, dues.rows[0].student_serial,
       dues.rows[0].scan_serial, dues.rows[0].group_name, dues.rows[0].grade_level
     ]);
+    await client.query(`INSERT INTO audit_logs (action, actor_id, student_id, payment_id, details) VALUES ('payment_created', $1, $2, $3, $4)`, [actorId, studentId, payment.rows[0].id, JSON.stringify({
+      _audit_action: "payment_created", amount: Number(remaining), payment_type: "normal", payment_method: paymentMethod,
+      payment_months: coveredMonths, student_name_snapshot: dues.rows[0].full_name, student_code_snapshot: dues.rows[0].student_code
+    })]);
     await client.query("COMMIT");
     return payment.rows[0];
   } catch (error) {
@@ -252,6 +256,10 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
       student.full_name, student.student_code, student.student_serial,
       student.scan_serial, student.group_name, student.grade_level
     ]);
+    await client.query(`INSERT INTO audit_logs (action, actor_id, student_id, payment_id, details) VALUES ('advance_payment_created', $1, $2, $3, $4)`, [actorId, student.id, payment.rows[0].id, JSON.stringify({
+      _audit_action: "advance_payment_created", amount: Number(amount), payment_type: "advance", payment_method: paymentMethod,
+      payment_months: coveredMonths, student_name_snapshot: student.full_name, student_code_snapshot: student.student_code
+    })]);
     await client.query("COMMIT");
     return { payment: payment.rows[0], months: coveredMonths };
   } catch (error) {
