@@ -24,7 +24,7 @@ export async function getDashboardData(studentId) {
 
   const exams = await query(
     `
-      SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note
+      SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment
       FROM exam_results er
       JOIN exams e ON e.id = er.exam_id
       WHERE er.student_id = $1 AND EXISTS (SELECT 1 FROM students active_student WHERE active_student.id = er.student_id AND active_student.deleted_at IS NULL)

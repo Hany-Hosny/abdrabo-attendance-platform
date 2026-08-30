@@ -110,6 +110,7 @@ type AdminStudent = {
   full_name: string;
   phone?: string | null;
   guardian_phone: string;
+  gender?: "male" | "female" | "unknown";
   group_name: string;
   is_active: boolean;
   student_serial?: string;
@@ -138,7 +139,7 @@ type SitePage = {
 const translations = {
   ar: {
     "site.name": "مستر أحمد عبدربه",
-    "site.description": "مدرس العلوم المتكاملة",
+    "site.description": "مدرس العلوم",
     "site.mark": "ع",
     "nav.studentLogin": "دخول الطالب",
     "nav.teacherLogin": "دخول المستر",
@@ -152,6 +153,7 @@ const translations = {
     "public.availableGroups": "المجموعات المتاحة",
     "public.features": "مميزات السنتر",
     "public.address": "العنوان",
+    "public.loading": "جاري تحميل المحتوى...",
     "contact.whatsapp": "واتساب",
     "contact.facebook": "فيسبوك",
     "contact.youtube": "يوتيوب",
@@ -177,6 +179,9 @@ const translations = {
     "student.lookupResult": "الاستعلام التجريبي: A1001",
     "student.lookupFound": "كود الطالب: {{code}}",
     "student.lookupNotFound": "لم يتم العثور على كود مطابق.",
+    "student.copyCode": "نسخ الكود",
+    "student.codeCopied": "تم نسخ الكود",
+    "student.copyFailed": "تعذر نسخ الكود. اضغط مطولاً على الكود لنسخه.",
     "student.close": "إغلاق",
     "student.logout": "تسجيل الخروج",
     "teacher.loginTitle": "دخول المستر",
@@ -191,6 +196,7 @@ const translations = {
     "teacher.dashboardSubtitle": "إدارة الحضور والطلاب والدرجات ستتوسع في الإصدارات القادمة.",
     "teacher.account": "الحساب",
     "teacher.role": "الدور",
+    "teacher.serviceAvailable": "متاح الآن",
     "teacher.protectedMessage": "هذه الصفحة محمية وتتطلب جلسة مستر صالحة.",
     "teacher.loginFailed": "بيانات الدخول غير صحيحة.",
     "admin.tabs.overview": "الرئيسية",
@@ -214,7 +220,9 @@ const translations = {
     "inbox.unread": "غير مقروءة",
     "inbox.read": "مقروءة",
     "inbox.refresh": "تحديث",
+    "inbox.refreshing": "جاري التحديث...",
     "inbox.markRead": "تحديد كمقروء",
+    "inbox.markingRead": "جاري التحديد...",
     "inbox.markedRead": "تم تحديد الرسائل كمقروءة.",
     "inbox.all": "الكل",
     "inbox.search": "بحث باسم الطالب أو المسلسل أو المجموعة",
@@ -222,6 +230,11 @@ const translations = {
     "inbox.showing": "الرسائل",
     "inbox.noMessages": "لا توجد رسائل بعد.",
     "inbox.sent": "تم إرسال الرسالة.",
+    "inbox.sending": "جاري الإرسال...",
+    "inbox.sentStatus": "تم الإرسال",
+    "inbox.loadFailed": "تعذر تحميل الرسائل. حاول مرة أخرى.",
+    "inbox.sendFailed": "تعذر إرسال الرسالة. حاول مرة أخرى.",
+    "inbox.markReadFailed": "تعذر تحديد الرسالة كمقروءة. حاول مرة أخرى.",
     "inbox.selectThread": "اختر محادثة لعرض الرسائل.",
     "inbox.deleteMessage": "حذف الرسالة",
     "inbox.confirmDeleteMessage": "هل أنت متأكد من حذف هذه الرسالة؟",
@@ -394,7 +407,11 @@ const translations = {
     "admin.disable": "تعطيل",
     "admin.enable": "تفعيل",
     "admin.create": "إنشاء",
+    "admin.creating": "جاري الإنشاء...",
+    "admin.created": "تم الإنشاء",
     "admin.update": "تحديث",
+    "admin.updating": "جاري التحديث...",
+    "admin.updated": "تم التحديث",
     "admin.cancel": "إلغاء",
     "admin.userSaved": "تم حفظ المستخدم.",
     "admin.passwordReset": "تم تحديث كلمة المرور.",
@@ -413,6 +430,7 @@ const translations = {
     "admin.center": "السنتر",
     "admin.studentName": "اسم الطالب",
     "admin.studentCode": "كود الطالب",
+    "admin.fieldRequired": "هذا الحقل مطلوب.",
     "admin.studentCodeFormat": "كود الطالب يجب أن يكون مثل A1234",
     "admin.generateCodeSerial": "توليد الكود والسريال",
     "admin.labelDetails": "بيانات الليبل",
@@ -424,14 +442,25 @@ const translations = {
     "admin.regenerateScanSerial": "إعادة توليد السريال",
     "admin.phone": "رقم الهاتف",
     "admin.guardianPhone": "رقم ولي الأمر",
+    "admin.gender": "النوع",
+    "admin.male": "ذكر",
+    "admin.female": "أنثى",
+    "admin.unknownGender": "غير محدد",
     "admin.nationalId": "الرقم القومي (اختياري)",
     "admin.selectGroup": "اختر المجموعة",
+    "admin.showStudents": "إظهار الطلاب",
+    "admin.hideStudents": "إخفاء الطلاب",
+    "admin.selectStudent": "اختر الطالب",
+    "admin.allGroups": "كل المجموعات",
     "admin.generateCode": "توليد كود",
     "admin.groupSaved": "تم حفظ المجموعة.",
     "admin.studentSaved": "تم حفظ الطالب. الكود: {{code}}",
     "admin.noGroups": "لا توجد مجموعات بعد.",
     "admin.noStudents": "لا يوجد طلاب بعد.",
     "admin.searchStudents": "ابحث باسم الطالب أو الكود أو الهاتف أو المجموعة",
+    "admin.searchExamStudent": "ابحث بكود الطالب أو الاسم",
+    "admin.selectedStudent": "الطالب المختار",
+    "admin.selectedGroup": "المجموعة المختارة",
     "admin.viewProfile": "الملف الشخصي",
     "admin.studentProfile": "ملف الطالب",
     "admin.basicInfo": "البيانات الأساسية",
@@ -459,6 +488,30 @@ const translations = {
     "admin.profileLoadFailed": "تعذر تحميل ملف الطالب.",
     "admin.noProfileAttendance": "لا يوجد سجل حضور بعد.",
     "admin.noProfileExams": "لا توجد درجات امتحانات بعد.",
+    "admin.examRecords": "سجل نتائج الامتحانات",
+    "admin.noExamResults": "لا توجد نتائج امتحانات لهذا الطالب.",
+    "admin.searchExamRecords": "ابحث بكود الطالب أو اسمه أو مجموعته",
+    "admin.examRecordsShow": "إظهار النتائج",
+    "admin.examRecordsHide": "إخفاء النتائج",
+    "admin.editExamResult": "تعديل النتيجة",
+    "admin.deleteExamResult": "مسح النتيجة",
+    "admin.examTitle": "اسم الامتحان",
+    "admin.examDate": "تاريخ الامتحان",
+    "admin.maxScore": "الدرجة النهائية",
+    "admin.studentScore": "درجة الطالب",
+    "admin.assessment": "التقييم",
+    "admin.assessmentPlaceholder": "اكتب تقييمًا مختصرًا للطالب",
+    "admin.saveExamResult": "حفظ نتيجة الامتحان",
+    "admin.examResultSaved": "تم حفظ نتيجة الامتحان والتقييم.",
+    "admin.examResultDeleted": "تم مسح نتيجة الامتحان.",
+    "admin.confirmDeleteExamResult": "هل تريد مسح نتيجة هذا الطالب؟",
+    "admin.invalidExamResult": "راجع بيانات الامتحان والدرجة.",
+    "admin.evaluationPreview": "التقييم التلقائي",
+    "score.weak": "يحتاج إلى تحسين",
+    "score.average": "متوسط الأداء",
+    "score.good": "جيد",
+    "score.veryGood": "جيد جدًا",
+    "score.excellent": "امتياز",
     "admin.noProfileNotes": "لا توجد ملاحظات بعد.",
     "admin.noProfilePayments": "لا توجد مدفوعات بعد.",
     "admin.noProfileMessages": "لا توجد محادثات بعد.",
@@ -487,6 +540,12 @@ const translations = {
     "dashboard.studentCode": "كود الطالب",
     "dashboard.group": "المجموعة",
     "dashboard.lastScore": "آخر درجة",
+    "dashboard.latestExamDate": "تاريخ الامتحان",
+    "dashboard.latestExamPercentage": "النسبة",
+    "dashboard.refresh": "تحديث البيانات",
+    "dashboard.refreshing": "جاري التحديث...",
+    "dashboard.refreshed": "تم تحديث البيانات",
+    "dashboard.refreshFailed": "تعذر تحديث البيانات.",
     "dashboard.attendanceSuccess": "تم تسجيل حضورك بنجاح.",
     "dashboard.attendancePending": "تم تسجيل حضورك وهو قيد المراجعة.",
     "dashboard.noOpenSession": "لا توجد حصة مفتوحة الآن.",
@@ -496,6 +555,7 @@ const translations = {
     "dashboard.unknownStatus": "لم يتم تسجيل الحضور.",
     "dashboard.tabs.attendance": "الحضور والغياب",
     "dashboard.tabs.exams": "درجات الامتحانات",
+    "dashboard.tabs.examResults": "نتائج الامتحانات والتقييمات",
     "dashboard.tabs.schedule": "جدول الحصص",
     "dashboard.tabs.homework": "الواجبات",
     "homework.noAvailable": "لا توجد واجبات حالياً.",
@@ -553,6 +613,7 @@ const translations = {
     "table.status": "الحالة",
     "table.exam": "الامتحان",
     "table.score": "الدرجة",
+    "table.assessment": "التقييم",
     "table.note": "ملاحظة",
     "table.day": "اليوم",
     "table.subject": "المادة",
@@ -566,7 +627,7 @@ const translations = {
     "attendance.alreadyRegistered": "تم تسجيل حضور هذا الطالب بالفعل.",
     "attendance.updateFailed": "تعذر تحديث الحضور.",
     "empty.noData": "لا توجد بيانات حاليا.",
-    "data.integratedScience": "العلوم المتكاملة",
+    "data.integratedScience": "العلوم",
     "data.saturdayGroup": "مجموعة السبت 6 مساء",
     "data.firstUnitExam": "امتحان الوحدة الأولى",
     "data.goodLevel": "مستوى جيد جدا",
@@ -583,7 +644,7 @@ const translations = {
   },
   en: {
     "site.name": "Mr. Ahmed Abdrabo",
-    "site.description": "Integrated Science Teacher",
+    "site.description": "Science Teacher",
     "site.mark": "A",
     "nav.studentLogin": "Student Login",
     "nav.teacherLogin": "Teacher Login",
@@ -597,6 +658,7 @@ const translations = {
     "public.availableGroups": "Available Groups",
     "public.features": "Center Features",
     "public.address": "Address",
+    "public.loading": "Loading content...",
     "contact.whatsapp": "WhatsApp",
     "contact.facebook": "Facebook",
     "contact.youtube": "YouTube",
@@ -622,6 +684,9 @@ const translations = {
     "student.lookupResult": "Demo lookup result: A1001",
     "student.lookupFound": "Student code: {{code}}",
     "student.lookupNotFound": "No matching student code was found.",
+    "student.copyCode": "Copy code",
+    "student.codeCopied": "Code copied",
+    "student.copyFailed": "Could not copy the code. Press and hold the code to copy it.",
     "student.close": "Close",
     "student.logout": "Logout",
     "teacher.loginTitle": "Teacher Login",
@@ -636,6 +701,7 @@ const translations = {
     "teacher.dashboardSubtitle": "Attendance, students, and exams management will expand in the next versions.",
     "teacher.account": "Account",
     "teacher.role": "Role",
+    "teacher.serviceAvailable": "Available now",
     "teacher.protectedMessage": "This page is protected and requires a valid teacher session.",
     "teacher.loginFailed": "Invalid login credentials.",
     "admin.tabs.overview": "Overview",
@@ -659,7 +725,9 @@ const translations = {
     "inbox.unread": "Unread",
     "inbox.read": "Read",
     "inbox.refresh": "Refresh",
+    "inbox.refreshing": "Refreshing...",
     "inbox.markRead": "Mark as read",
+    "inbox.markingRead": "Marking...",
     "inbox.markedRead": "Messages marked as read.",
     "inbox.all": "All",
     "inbox.search": "Search by student, serial, or group",
@@ -667,6 +735,11 @@ const translations = {
     "inbox.showing": "Messages",
     "inbox.noMessages": "No messages yet.",
     "inbox.sent": "Message sent.",
+    "inbox.sending": "Sending...",
+    "inbox.sentStatus": "Sent",
+    "inbox.loadFailed": "Could not load messages. Please try again.",
+    "inbox.sendFailed": "Could not send the message. Please try again.",
+    "inbox.markReadFailed": "Could not mark the message as read. Please try again.",
     "inbox.selectThread": "Select a conversation to view messages.",
     "inbox.deleteMessage": "Delete message",
     "inbox.confirmDeleteMessage": "Are you sure you want to delete this message?",
@@ -839,7 +912,11 @@ const translations = {
     "admin.disable": "Disable",
     "admin.enable": "Enable",
     "admin.create": "Create",
+    "admin.creating": "Creating in progress",
+    "admin.created": "Created",
     "admin.update": "Update",
+    "admin.updating": "Updating...",
+    "admin.updated": "Updated",
     "admin.cancel": "Cancel",
     "admin.userSaved": "User saved.",
     "admin.passwordReset": "Password updated.",
@@ -858,6 +935,7 @@ const translations = {
     "admin.center": "Center",
     "admin.studentName": "Student name",
     "admin.studentCode": "Student code",
+    "admin.fieldRequired": "This field is required.",
     "admin.studentCodeFormat": "Student code must look like A1234",
     "admin.generateCodeSerial": "Generate Code & Serial",
     "admin.labelDetails": "Label details",
@@ -869,14 +947,25 @@ const translations = {
     "admin.regenerateScanSerial": "Regenerate scan serial",
     "admin.phone": "Phone",
     "admin.guardianPhone": "Guardian phone",
+    "admin.gender": "Gender",
+    "admin.male": "Male",
+    "admin.female": "Female",
+    "admin.unknownGender": "Not specified",
     "admin.nationalId": "National ID (optional)",
     "admin.selectGroup": "Select group",
+    "admin.showStudents": "Show students",
+    "admin.hideStudents": "Hide students",
+    "admin.selectStudent": "Select student",
+    "admin.allGroups": "All groups",
     "admin.generateCode": "Generate code",
     "admin.groupSaved": "Group saved.",
     "admin.studentSaved": "Student saved. Code: {{code}}",
     "admin.noGroups": "No groups yet.",
     "admin.noStudents": "No students yet.",
     "admin.searchStudents": "Search by student name, code, phone, or group",
+    "admin.searchExamStudent": "Search by student code or name",
+    "admin.selectedStudent": "Selected student",
+    "admin.selectedGroup": "Selected group",
     "admin.viewProfile": "Student profile",
     "admin.studentProfile": "Student profile",
     "admin.basicInfo": "Basic information",
@@ -904,6 +993,30 @@ const translations = {
     "admin.profileLoadFailed": "Could not load the student profile.",
     "admin.noProfileAttendance": "No attendance records yet.",
     "admin.noProfileExams": "No exam results yet.",
+    "admin.examRecords": "Exam result records",
+    "admin.noExamResults": "No exam results for this student.",
+    "admin.searchExamRecords": "Search by student code, name, or group",
+    "admin.examRecordsShow": "Show results",
+    "admin.examRecordsHide": "Hide results",
+    "admin.editExamResult": "Edit result",
+    "admin.deleteExamResult": "Delete result",
+    "admin.examTitle": "Exam title",
+    "admin.examDate": "Exam date",
+    "admin.maxScore": "Maximum score",
+    "admin.studentScore": "Student score",
+    "admin.assessment": "Assessment",
+    "admin.assessmentPlaceholder": "Write a short assessment for the student",
+    "admin.saveExamResult": "Save exam result",
+    "admin.examResultSaved": "Exam result and assessment saved.",
+    "admin.examResultDeleted": "Exam result deleted.",
+    "admin.confirmDeleteExamResult": "Delete this student's exam result?",
+    "admin.invalidExamResult": "Review the exam details and score.",
+    "admin.evaluationPreview": "Automatic evaluation",
+    "score.weak": "Needs improvement",
+    "score.average": "Average performance",
+    "score.good": "Good",
+    "score.veryGood": "Very good",
+    "score.excellent": "Excellent",
     "admin.noProfileNotes": "No notes yet.",
     "admin.noProfilePayments": "No payments yet.",
     "admin.noProfileMessages": "No conversations yet.",
@@ -932,6 +1045,12 @@ const translations = {
     "dashboard.studentCode": "Student Code",
     "dashboard.group": "Group",
     "dashboard.lastScore": "Latest Score",
+    "dashboard.latestExamDate": "Exam date",
+    "dashboard.latestExamPercentage": "Percentage",
+    "dashboard.refresh": "Refresh data",
+    "dashboard.refreshing": "Refreshing...",
+    "dashboard.refreshed": "Data updated",
+    "dashboard.refreshFailed": "Could not refresh the data.",
     "dashboard.attendanceSuccess": "Your attendance has been recorded successfully.",
     "dashboard.attendancePending": "Your attendance has been recorded and is pending review.",
     "dashboard.noOpenSession": "There is no open class right now.",
@@ -941,6 +1060,7 @@ const translations = {
     "dashboard.unknownStatus": "Attendance was not recorded.",
     "dashboard.tabs.attendance": "Attendance",
     "dashboard.tabs.exams": "Exam Scores",
+    "dashboard.tabs.examResults": "Exam Results & Assessments",
     "dashboard.tabs.schedule": "Class Schedule",
     "dashboard.tabs.homework": "Homework",
     "homework.noAvailable": "No homework available right now.",
@@ -998,6 +1118,7 @@ const translations = {
     "table.status": "Status",
     "table.exam": "Exam",
     "table.score": "Score",
+    "table.assessment": "Assessment",
     "table.note": "Note",
     "table.day": "Day",
     "table.subject": "Subject",
@@ -1011,7 +1132,7 @@ const translations = {
     "attendance.alreadyRegistered": "This student is already marked present.",
     "attendance.updateFailed": "Could not update attendance.",
     "empty.noData": "No data yet.",
-    "data.integratedScience": "Integrated Science",
+    "data.integratedScience": "Science",
     "data.saturdayGroup": "Saturday 6 PM Group",
     "data.firstUnitExam": "Unit One Exam",
     "data.goodLevel": "Very good level",
@@ -1036,12 +1157,12 @@ const fallbackSitePages: Record<SiteSlug, SitePage> = {
     slug: "about-teacher",
     title_ar: "عن المستر",
     title_en: "About Teacher",
-    subtitle_ar: "مستر أحمد عبدربه مدرس العلوم المتكاملة بخطة متابعة واضحة لكل طالب.",
+    subtitle_ar: "مستر أحمد عبدربه مدرس العلوم بخطة متابعة واضحة لكل طالب.",
     subtitle_en:
-      "Mr. Ahmed Abdrabo teaches Integrated Science with a clear follow-up plan for every student.",
+      "Mr. Ahmed Abdrabo teaches Science with a clear follow-up plan for every student.",
     content_ar: {
       teacherName: "مستر أحمد عبدربه",
-      subject: "العلوم المتكاملة",
+      subject: "العلوم",
       bio: "شرح منظم يربط المنهج بالتطبيقات العملية ويساعد الطالب على فهم الفكرة قبل حفظها.",
       experienceYears: "10+ سنوات خبرة",
       teachingStyle: "شرح مبسط، تدريب مستمر، ومتابعة فردية بعد كل تقييم.",
@@ -1049,7 +1170,7 @@ const fallbackSitePages: Record<SiteSlug, SitePage> = {
     },
     content_en: {
       teacherName: "Mr. Ahmed Abdrabo",
-      subject: "Integrated Science",
+      subject: "Science",
       bio: "Structured explanations that connect the curriculum to practical examples and help students understand before memorizing.",
       experienceYears: "10+ years of experience",
       teachingStyle: "Simple explanation, continuous practice, and individual follow-up after every assessment.",
@@ -1060,8 +1181,8 @@ const fallbackSitePages: Record<SiteSlug, SitePage> = {
     slug: "about-center",
     title_ar: "عن السنتر",
     title_en: "About Center",
-    subtitle_ar: "بيئة تعليمية مجهزة لحصص العلوم المتكاملة والمتابعة المنتظمة.",
-    subtitle_en: "A focused learning space for Integrated Science classes and regular follow-up.",
+    subtitle_ar: "بيئة تعليمية مجهزة لحصص العلوم والمتابعة المنتظمة.",
+    subtitle_en: "A focused learning space for Science classes and regular follow-up.",
     content_ar: {
       intro: "السنتر يوفر نظام حضور واضح، مجموعات منظمة، ومتابعة مستمرة للطلاب.",
       address: "عنوان السنتر - يتم تحديثه لاحقا",
@@ -1119,6 +1240,22 @@ function createTranslator(language: Language) {
     });
     return text;
   };
+}
+
+function scoreEvaluation(score: unknown, maxScore: unknown, t: Translator) {
+  const scoreValue = Number(score);
+  const maxValue = Number(maxScore);
+  if (!Number.isFinite(scoreValue) || !Number.isFinite(maxValue) || maxValue <= 0) return null;
+  const percentage = (scoreValue / maxValue) * 100;
+  const key = percentage < 50
+    ? "score.weak"
+    : percentage < 70
+      ? "score.average"
+      : percentage < 90
+        ? "score.veryGood"
+        : "score.excellent";
+  const tone = percentage < 50 ? "weak" : percentage < 70 ? "average" : percentage < 90 ? "very-good" : "excellent";
+  return { label: t(key), tone, percentage };
 }
 
 function displayValue(value: unknown, language: Language) {
@@ -1221,6 +1358,14 @@ function saveTeacherSession(data: TeacherSession) {
       }
     })
   );
+}
+
+function formatDateOnly(value: string | undefined, language: Language, emptyText: string) {
+  if (!value) return emptyText;
+  const dateValue = value.slice(0, 10);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? new Date(`${dateValue}T12:00:00`) : new Date(value);
+  if (Number.isNaN(date.getTime())) return emptyText;
+  return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Cairo" }).format(date);
 }
 
 function formatDateTime(value: string | undefined, language: Language, emptyText: string) {
@@ -1357,11 +1502,9 @@ function escapeHtml(value: unknown) {
 
 function DateTimeWidget({
   language,
-  t,
   compact = false
 }: {
   language: Language;
-  t: Translator;
   compact?: boolean;
 }) {
   const [now, setNow] = useState(() => new Date());
@@ -1373,7 +1516,6 @@ function DateTimeWidget({
 
   return (
     <div className={`date-time-widget ${compact ? "compact-date-time" : ""}`}>
-      <span>{t("dashboard.currentTime")}</span>
       <strong>
         {new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", {
           weekday: "long",
@@ -1398,6 +1540,9 @@ function App() {
   const [lookupValue, setLookupValue] = useState("");
   const [lookupError, setLookupError] = useState("");
   const [lookupResult, setLookupResult] = useState("");
+  const [lookupStudentCode, setLookupStudentCode] = useState("");
+  const [lookupCopied, setLookupCopied] = useState(false);
+  const lookupCopyResetTimer = useRef<number | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1434,6 +1579,12 @@ function App() {
     setLookupValue("");
     setLookupError("");
     setLookupResult("");
+    setLookupStudentCode("");
+    setLookupCopied(false);
+    if (lookupCopyResetTimer.current !== null) {
+      window.clearTimeout(lookupCopyResetTimer.current);
+      lookupCopyResetTimer.current = null;
+    }
     setLookupLoading(false);
   }
 
@@ -1468,6 +1619,8 @@ function App() {
     setLookupValue(value);
     setLookupError("");
     setLookupResult("");
+    setLookupStudentCode("");
+    setLookupCopied(false);
 
     if (!value) {
       setLookupError(t("errors.lookupRequired"));
@@ -1502,6 +1655,7 @@ function App() {
         body: JSON.stringify({ identifier: value })
       });
       const data = (await response.json()) as { ok: boolean; student_code?: string };
+      setLookupStudentCode(data.ok && data.student_code ? data.student_code : "");
       setLookupResult(
         data.ok && data.student_code
           ? t("student.lookupFound", { code: data.student_code })
@@ -1511,6 +1665,37 @@ function App() {
       setLookupError(t("errors.loginFailed"));
     } finally {
       setLookupLoading(false);
+    }
+  }
+
+  async function copyLookupStudentCode() {
+    if (!lookupStudentCode) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(lookupStudentCode);
+      } else {
+        const copyField = document.createElement("textarea");
+        copyField.value = lookupStudentCode;
+        copyField.setAttribute("readonly", "");
+        copyField.style.position = "fixed";
+        copyField.style.opacity = "0";
+        document.body.appendChild(copyField);
+        copyField.select();
+        const copied = document.execCommand("copy");
+        copyField.remove();
+        if (!copied) throw new Error("copy_failed");
+      }
+      setLookupCopied(true);
+      if (lookupCopyResetTimer.current !== null) {
+        window.clearTimeout(lookupCopyResetTimer.current);
+      }
+      lookupCopyResetTimer.current = window.setTimeout(() => {
+        setLookupCopied(false);
+        lookupCopyResetTimer.current = null;
+      }, 1500);
+    } catch (_error) {
+      setLookupError(t("student.copyFailed"));
     }
   }
 
@@ -1689,7 +1874,7 @@ function App() {
           <h1 id="hero-title">{t("home.title")}</h1>
           <p className="subtitle">{t("home.subtitle")}</p>
           <div className="teacher-strip">
-            <span className="teacher-mark">{t("site.mark")}</span>
+            <img className="teacher-mark teacher-avatar" src="/assets/teacher-profile.png" alt="" aria-hidden="true" />
             <div>
               <strong>{t("site.name")}</strong>
               <span>{t("site.description")}</span>
@@ -1747,7 +1932,23 @@ function App() {
               <button className="primary-button" type="submit" disabled={lookupLoading}>
                 {lookupLoading ? t("student.lookupLoading") : t("student.lookupButton")}
               </button>
-              {lookupResult ? <p className="lookup-result">{lookupResult}</p> : null}
+              {lookupResult ? (
+                <div className="lookup-result-row" aria-live="polite">
+                  <p className="lookup-result">{lookupResult}</p>
+                  {lookupStudentCode ? (
+                    <>
+                      <button
+                        className="copy-code-button"
+                        type="button"
+                        onClick={copyLookupStudentCode}
+                      aria-label={t("student.copyCode")}
+                    >
+                      {lookupCopied ? t("student.codeCopied") : t("student.copyCode")}
+                    </button>
+                  </>
+                  ) : null}
+                </div>
+              ) : null}
             </form>
           </section>
         </div>
@@ -1771,23 +1972,29 @@ function PublicContentPage({
   setLanguage: (language: Language) => void;
   t: Translator;
 }) {
-  const [page, setPage] = useState<SitePage>(() => fallbackSitePages[slug]);
+  const [page, setPage] = useState<SitePage | null>(null);
+  const [loadedSlug, setLoadedSlug] = useState<SiteSlug | null>(null);
   const [contactSent, setContactSent] = useState(false);
   const [contactError, setContactError] = useState("");
   const [contactForm, setContactForm] = useState({ name: "", phone: "", message: "" });
-  const view = localizedPage(page, language);
+  const isLoading = loadedSlug !== slug;
+  const view = page && !isLoading ? localizedPage(page, language) : null;
 
   useEffect(() => {
     let ignore = false;
-    setPage(fallbackSitePages[slug]);
+    setPage(null);
+    setLoadedSlug(null);
 
     fetch(`${API_BASE_URL}/site/pages/${slug}`)
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((data: { page?: SitePage }) => {
-        if (!ignore && data.page) setPage(data.page);
+        if (!ignore) setPage(data.page || fallbackSitePages[slug]);
       })
       .catch(() => {
         if (!ignore) setPage(fallbackSitePages[slug]);
+      })
+      .finally(() => {
+        if (!ignore) setLoadedSlug(slug);
       });
 
     return () => {
@@ -1805,33 +2012,49 @@ function PublicContentPage({
     if (response.ok) { setContactSent(true); setContactForm({ name: "", phone: "", message: "" }); }
   }
 
+  if (!view) {
+    return (
+      <Shell language={language} setLanguage={setLanguage} t={t}>
+        <main className="content-page">
+          <section className="content-hero content-loading" aria-live="polite">
+            <p>{t("public.loading")}</p>
+          </section>
+        </main>
+      </Shell>
+    );
+  }
+
   return (
     <Shell language={language} setLanguage={setLanguage} t={t}>
       <main className="content-page">
         <section className="content-hero">
-          <p className="eyebrow">
-            {t(
-              `nav.${
-                slug === "about-teacher"
-                  ? "aboutTeacher"
-                  : slug === "about-center"
+          {slug !== "about-teacher" ? (
+            <p className="eyebrow">
+              {t(
+                `nav.${
+                  slug === "about-center"
                     ? "aboutCenter"
                     : slug === "tips"
                       ? "tips"
                       : "contact"
-              }` as TranslationKey
-            )}
-          </p>
+                }` as TranslationKey
+              )}
+            </p>
+          ) : null}
           <h1>{view.title}</h1>
           <p>{view.subtitle}</p>
         </section>
 
         {slug === "about-teacher" ? (
           <section className="content-grid">
-            <article className="content-panel wide">
-              <span>{t("table.subject")}</span>
-              <h2>{view.content.teacherName}</h2>
-              <p>{view.content.bio}</p>
+            <article className="content-panel wide teacher-profile-panel">
+              <div className="teacher-profile-photo">
+                <img src="/assets/teacher-profile.png" alt={view.content.teacherName} />
+              </div>
+              <div className="teacher-profile-copy">
+                <h2>{view.content.teacherName}</h2>
+                <p>{view.content.bio}</p>
+              </div>
             </article>
             <article className="content-panel">
               <span>{t("public.statExperience")}</span>
@@ -2078,7 +2301,7 @@ function TeacherDashboard({
           href="/teacher/dashboard"
           style={{ flexShrink: 0, minWidth: "fit-content", display: "inline-flex", alignItems: "center", gap: "10px" }}
         >
-          <span className="brand-icon">{t("site.mark")}</span>
+          <img className="brand-icon teacher-avatar" src="/assets/teacher-profile.png" alt="" aria-hidden="true" />
           <span>
             <strong>{t("teacher.dashboardTitle")}</strong>
             <small>{t("site.name")}</small>
@@ -2144,7 +2367,7 @@ function TeacherDashboard({
             <p className="eyebrow">{t("teacher.protectedMessage")}</p>
             <h1>{t("teacher.dashboardTitle")}</h1>
             <p>{t("teacher.dashboardSubtitle")}</p>
-            <DateTimeWidget language={language} t={t} />
+            <DateTimeWidget language={language} />
           </div>
           <div className="status-panel success">
             <span>{t("teacher.account")}</span>
@@ -2158,8 +2381,8 @@ function TeacherDashboard({
 
         <section className="summary-grid">
           <Metric label={t("teacher.role")} value={roleLabel(session.teacher.role, t)} />
-          <Metric label={t("dashboard.tabs.attendance")} value="V1" />
-          <Metric label={t("dashboard.tabs.exams")} value="V1" />
+          <Metric label={t("dashboard.tabs.attendance")} value={t("teacher.serviceAvailable")} />
+          <Metric label={t("dashboard.tabs.exams")} value={t("teacher.serviceAvailable")} />
         </section>
 
         <section className="admin-tab-panel">
@@ -2185,8 +2408,9 @@ function TeacherDashboard({
           {activeTab === "scanner" ? <ScannerPanel session={session} t={t} /> : null}
           {activeTab === "fees" ? <><FeesPanel session={session} t={t} /><PaymentReportsPanel session={session} t={t} /><LatePaymentsReportPanel session={session} t={t} /></> : null}
           {activeTab === "attendance" ? <AttendancePanel session={session} language={language} t={t} /> : null}
+          {activeTab === "exams" ? <ExamResultsManager session={session} t={t} /> : null}
           {activeTab === "inbox" ? <StaffInboxControls session={session} language={language} t={t} onUnreadCountChange={setInboxUnread} /> : null}
-          {activeTab !== "overview" && activeTab !== "attendance" && placeholderTitles[activeTab] ? (
+          {activeTab !== "overview" && activeTab !== "attendance" && activeTab !== "exams" && placeholderTitles[activeTab] ? (
             <div className="admin-editor placeholder-panel">
               <p className="eyebrow">V1</p>
               <h2>{placeholderTitles[activeTab]}</h2>
@@ -2195,6 +2419,9 @@ function TeacherDashboard({
           ) : null}
         </section>
       </main>
+      <footer className="site-footer" dir="ltr" lang="en">
+        © 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny
+      </footer>
     </div>
   );
 }
@@ -2227,6 +2454,7 @@ function UsersTeamManager({
   const [resetPassword, setResetPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "loading" | "success">("idle");
   const [statusFilter, setStatusFilter] = useState<RecordStatusFilter>("active");
   const editorFormRef = useRef<HTMLFormElement>(null);
 
@@ -2284,6 +2512,7 @@ function UsersTeamManager({
     }
 
     setLoading(true);
+    setSaveState("loading");
     try {
       const response = await fetch(
         editingId ? `${API_BASE_URL}/admin/users/${editingId}` : `${API_BASE_URL}/admin/users`,
@@ -2305,8 +2534,10 @@ function UsersTeamManager({
       await loadUsers();
       resetForm();
       setStatus(t("admin.userSaved"));
+      setSaveState("success");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+      setSaveState("idle");
     } finally {
       setLoading(false);
     }
@@ -2438,7 +2669,13 @@ function UsersTeamManager({
 
         <div className="form-actions">
           <button className="primary-button editor-save" type="submit" disabled={loading}>
-            {editingId ? t("admin.update") : t("admin.create")}
+            {saveState === "loading"
+              ? t(editingId ? "admin.updating" : "admin.creating")
+              : saveState === "success"
+                ? t(editingId ? "admin.updated" : "admin.created")
+                : editingId
+                  ? t("admin.update")
+                  : t("admin.create")}
           </button>
           {editingId ? (
             <button className="secondary-button compact-button" type="button" onClick={resetForm}>
@@ -2553,6 +2790,7 @@ const emptyStudentForm = {
   scan_serial: "",
   phone: "",
   guardian_phone: "",
+  gender: "unknown" as const,
   national_id: "",
   group_id: "",
   is_active: true
@@ -2577,6 +2815,9 @@ function AcademicManager({
   const [editingId, setEditingId] = useState<number | null>(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "loading" | "success">("idle");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [showStudents, setShowStudents] = useState(false);
   const [statusFilter, setStatusFilter] = useState<RecordStatusFilter>("active");
   const [groupDetails, setGroupDetails] = useState<any>(null);
   const [detailFilter, setDetailFilter] = useState<RecordStatusFilter>("all");
@@ -2609,6 +2850,7 @@ function AcademicManager({
   function resetForm() {
     setEditingId(null);
     setStatus("");
+    setFieldErrors({});
     setGroupForm({ ...emptyGroupForm, center_id: centers[0] ? String(centers[0].id) : "" });
     setStudentForm(emptyStudentForm);
     setScheduleRows([defaultScheduleDraft()]);
@@ -2671,15 +2913,27 @@ function AcademicManager({
 
   function editStudent(student: AdminStudent) {
     setEditingId(student.id);
+    setFieldErrors({});
     setStudentForm({
       full_name: student.full_name,
       student_code: normalizeAdminStudentCode(student.student_code),
       scan_serial: student.scan_serial || student.student_serial || "",
       phone: student.phone || "",
       guardian_phone: student.guardian_phone || "",
+      gender: student.gender || "unknown",
       national_id: "",
       group_id: String(student.group_id),
       is_active: student.is_active
+    });
+  }
+
+  function updateStudentField(field: keyof typeof emptyStudentForm, value: string) {
+    setStudentForm((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
     });
   }
 
@@ -2690,12 +2944,22 @@ function AcademicManager({
       const phone = normalizeDigits(studentForm.phone).trim();
       const guardianPhone = normalizeDigits(studentForm.guardian_phone).trim();
       const nationalId = normalizeDigits(studentForm.national_id).trim();
+      const errors: Record<string, string> = {};
+      if (!studentForm.full_name.trim()) errors.full_name = t("admin.fieldRequired");
+      if (!studentForm.student_code.trim()) errors.student_code = t("admin.fieldRequired");
+      if (!studentForm.scan_serial.trim()) errors.scan_serial = t("admin.generateCodeSerial");
+      if (!guardianPhone) errors.guardian_phone = t("admin.fieldRequired");
+      if (!studentForm.group_id) errors.group_id = t("admin.fieldRequired");
+      if (phone && !/^\d{11}$/.test(phone)) errors.phone = t("errors.phoneLength");
+      if (guardianPhone && !/^\d{11}$/.test(guardianPhone)) errors.guardian_phone = t("errors.phoneLength");
+      if (nationalId && !/^\d{14}$/.test(nationalId)) errors.national_id = t("errors.nationalIdLength");
+      setFieldErrors(errors);
+      if (Object.keys(errors).length) return;
       setStudentForm((value) => ({ ...value, phone, guardian_phone: guardianPhone, national_id: nationalId }));
-      if (phone && !/^\d{11}$/.test(phone)) { setStatus(t("errors.phoneLength")); return; }
-      if (!/^\d{11}$/.test(guardianPhone)) { setStatus(t("errors.phoneLength")); return; }
-      if (nationalId && !/^\d{14}$/.test(nationalId)) { setStatus(t("errors.nationalIdLength")); return; }
     }
     setLoading(true);
+    setSaveState("loading");
+    const saveStartedAt = Date.now();
     try {
       const isGroup = kind === "groups";
       const normalizedStudentForm = {
@@ -2719,12 +2983,18 @@ function AcademicManager({
       );
       const data = (await response.json()) as { ok: boolean; status?: string; student?: { student_code?: string } };
       if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
-      const savedCode = data.student?.student_code || normalizeStudentCode(studentForm.student_code);
       await loadData();
+      const remainingLoadingTime = 1200 - (Date.now() - saveStartedAt);
+      if (remainingLoadingTime > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, remainingLoadingTime));
+      }
       resetForm();
-      setStatus(isGroup ? t("admin.groupSaved") : t("admin.studentSaved", { code: savedCode }));
+      setStatus(isGroup ? t("admin.groupSaved") : "");
+      setSaveState("success");
+      window.setTimeout(() => setSaveState("idle"), 2000);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+      setSaveState("idle");
     } finally {
       setLoading(false);
     }
@@ -2875,7 +3145,7 @@ function AcademicManager({
         <p className="eyebrow">{t(`admin.tabs.${kind}` as TranslationKey)}</p>
         <h2>{editingId ? t("admin.update") : t(`admin.tabs.${kind}` as TranslationKey)}</h2>
       </div>
-      <form onSubmit={save}>
+      <form onSubmit={save} noValidate={kind === "students"}>
         {kind === "groups" ? (
           <div className="editor-grid">
             <label>{t("admin.groupName")}<input required value={groupForm.name} onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })} /></label>
@@ -2888,12 +3158,13 @@ function AcademicManager({
         ) : (
           <>
           <div className="editor-grid">
-            <label>{t("admin.studentName")}<input required value={studentForm.full_name} onChange={(e) => setStudentForm({ ...studentForm, full_name: e.target.value })} /></label>
-            <label>{t("admin.studentCode")}<input required type="text" inputMode="text" autoCapitalize="characters" value={studentForm.student_code} onChange={(e) => setStudentForm({ ...studentForm, student_code: normalizeAdminStudentCode(e.target.value) })} /><div className="serial-actions"><button className="secondary-button compact-button" type="button" onClick={generateStudentIdentifiers} disabled={Boolean(editingId)}>{t("admin.generateCodeSerial")}</button></div></label>
-            <label>{t("admin.phone")}<input type="text" inputMode="numeric" value={studentForm.phone} onChange={(e) => setStudentForm({ ...studentForm, phone: normalizeDigits(e.target.value) })} /></label>
-            <label>{t("admin.guardianPhone")}<input required type="text" inputMode="numeric" value={studentForm.guardian_phone} onChange={(e) => setStudentForm({ ...studentForm, guardian_phone: normalizeDigits(e.target.value) })} /></label>
-            <label>{t("admin.nationalId")}<input type="text" inputMode="numeric" value={studentForm.national_id} onChange={(e) => setStudentForm({ ...studentForm, national_id: normalizeDigits(e.target.value) })} /></label>
-            <label>{t("admin.selectGroup")}<select required value={studentForm.group_id} onChange={(e) => setStudentForm({ ...studentForm, group_id: e.target.value })}><option value="">{t("admin.selectGroup")}</option>{groups.filter((group) => group.is_active).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+            <label>{t("admin.studentName")}<input required value={studentForm.full_name} onChange={(e) => updateStudentField("full_name", e.target.value)} />{fieldErrors.full_name ? <small className="field-error">{fieldErrors.full_name}</small> : null}</label>
+            <label>{t("admin.gender")}<select required value={studentForm.gender} onChange={(e) => setStudentForm({ ...studentForm, gender: e.target.value as "male" | "female" | "unknown" })}><option value="male">{t("admin.male")}</option><option value="female">{t("admin.female")}</option><option value="unknown">{t("admin.unknownGender")}</option></select></label>
+            <label>{t("admin.studentCode")}<input required type="text" inputMode="text" autoCapitalize="characters" value={studentForm.student_code} onChange={(e) => updateStudentField("student_code", normalizeAdminStudentCode(e.target.value))} />{fieldErrors.student_code ? <small className="field-error">{fieldErrors.student_code}</small> : null}<div className="serial-actions"><button className="secondary-button compact-button" type="button" onClick={generateStudentIdentifiers} disabled={Boolean(editingId)}>{t("admin.generateCodeSerial")}</button></div></label>
+            <label>{t("admin.phone")}<input type="text" inputMode="numeric" value={studentForm.phone} onChange={(e) => updateStudentField("phone", normalizeDigits(e.target.value))} />{fieldErrors.phone ? <small className="field-error">{fieldErrors.phone}</small> : null}</label>
+            <label>{t("admin.guardianPhone")}<input required type="text" inputMode="numeric" value={studentForm.guardian_phone} onChange={(e) => updateStudentField("guardian_phone", normalizeDigits(e.target.value))} />{fieldErrors.guardian_phone ? <small className="field-error">{fieldErrors.guardian_phone}</small> : null}</label>
+            <label>{t("admin.nationalId")}<input type="text" inputMode="numeric" value={studentForm.national_id} onChange={(e) => updateStudentField("national_id", normalizeDigits(e.target.value))} />{fieldErrors.national_id ? <small className="field-error">{fieldErrors.national_id}</small> : null}</label>
+            <label>{t("admin.selectGroup")}<select required value={studentForm.group_id} onChange={(e) => updateStudentField("group_id", e.target.value)}><option value="">{t("admin.selectGroup")}</option>{groups.filter((group) => group.is_active).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select>{fieldErrors.group_id ? <small className="field-error">{fieldErrors.group_id}</small> : null}</label>
             <label className="checkbox-label"><input type="checkbox" checked={studentForm.is_active} onChange={(e) => setStudentForm({ ...studentForm, is_active: e.target.checked })} />{t("admin.active")}</label>
           </div>
           <section className="student-label-details" aria-label={t("admin.labelDetails")}>
@@ -2902,21 +3173,21 @@ function AcademicManager({
               <div><span>{t("admin.loginCode")}</span><strong>{studentForm.student_code || "—"}</strong></div>
               <div><span>{t("admin.scanSerial")}</span><strong>{studentForm.scan_serial || "—"}</strong></div>
             </div>
-            {studentForm.scan_serial ? <div className="student-label-preview"><strong>{t("admin.labelPreview")}</strong><span>مستر أحمد عبدربه / Mr. Ahmed Abdrabo</span><span>{studentForm.full_name || "Student name"} · {studentForm.student_code}</span><BarcodePreview value={studentForm.scan_serial} /><div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printGeneratedLabel}>{t("admin.printLabel")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={regenerateScanSerial} disabled={loading}>{t("admin.regenerateScanSerial")}</button> : null}</div></div> : <p className="field-hint">{t("admin.generateCodeSerial")}</p>}
+            {studentForm.scan_serial ? <div className="student-label-preview"><strong>{t("admin.labelPreview")}</strong><span>مستر أحمد عبدربه / Mr. Ahmed Abdrabo</span><span>{studentForm.full_name || "Student name"} · {studentForm.student_code}</span><BarcodePreview value={studentForm.scan_serial} /><div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printGeneratedLabel}>{t("admin.printLabel")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={regenerateScanSerial} disabled={loading}>{t("admin.regenerateScanSerial")}</button> : null}</div></div> : <><p className="field-hint">{t("admin.generateCodeSerial")}</p>{fieldErrors.scan_serial ? <small className="field-error">{fieldErrors.scan_serial}</small> : null}</>}
           </section>
           </>
         )}
-        <div className="form-actions"><button className="primary-button compact-button" type="submit" disabled={loading}>{editingId ? t("admin.update") : t("admin.create")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={resetForm}>{t("admin.cancel")}</button> : null}</div>
+        <div className="form-actions"><button className={`primary-button compact-button ${saveState === "success" ? "success-button" : ""}`} type="submit" disabled={loading}>{saveState === "loading" ? t(editingId ? "admin.updating" : "admin.creating") : saveState === "success" ? t(editingId ? "admin.updated" : "admin.created") : editingId ? t("admin.update") : t("admin.create")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={resetForm}>{t("admin.cancel")}</button> : null}</div>
       </form>
 
-      {kind === "students" && session.teacher.role === "admin" ? <div className="status-filter-buttons">{(["active","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div> : null}
+      {kind === "students" && session.teacher.role === "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons">{(["active","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
 
       {kind === "students" ? <label className="student-search-field">{t("admin.searchStudents")}<input value={studentSearch} onChange={(e) => setStudentSearch(normalizeDigits(e.target.value))} placeholder={t("admin.searchStudents")} /></label> : null}
       {kind === "students" ? <div className="student-profile-picker"><select value={profilePickerId} onChange={(e) => setProfilePickerId(e.target.value)}><option value="">{t("admin.viewProfile")}</option>{students.map((student) => <option key={student.id} value={student.id}>{student.full_name} · {student.student_code}</option>)}</select><button className="secondary-button compact-button" type="button" disabled={!profilePickerId} onClick={() => setProfileStudentId(Number(profilePickerId))}>{t("admin.viewProfile")}</button></div> : null}
-      <div className="academic-list">
+      {kind === "groups" || showStudents ? <div className="academic-list">
         {kind === "groups" ? groups.map((group) => <article className="academic-row" key={group.id}><div><strong>{group.display_name || group.name}</strong><span>{group.grade_level || group.grade} · {group.subject} · {group.day_of_week != null && group.start_time && group.end_time ? `${t(`days.${group.day_of_week}` as TranslationKey)} ${group.start_time.slice(0, 5)} - ${group.end_time.slice(0, 5)} · ` : ""}{group.fees_amount ?? 0} EGP</span><span className="student-count-badge">Students / عدد الطلاب: {group.students_count ?? 0}</span></div><span className={group.is_active ? "status-active" : "status-disabled"}>{group.is_active ? t("admin.active") : t("admin.disabled")}</span><div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => openGroupDetails(group.id)}>Details / التفاصيل</button><button className="secondary-button compact-button" type="button" onClick={() => editGroup(group)}>{t("admin.editGroup")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => updateStatus(group.id, !group.is_active, "groups")}>{group.is_active ? t("admin.disable") : t("admin.enable")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => deleteGroup(group.id)}>Delete / حذف</button></div></article>) : students.map((student) => <article className="academic-row" key={student.id}><div><strong>{student.full_name}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.guardian_phone}</span>{student.deleted_at && purgeDaysLeft(student.purge_after) !== null ? <small className="purge-countdown">{t("admin.purgeDaysLeft", { days: String(purgeDaysLeft(student.purge_after)) })}</small> : null}</div><span className={student.deleted_at ? "status-deleted" : student.is_active ? "status-active" : "status-disabled"}>{recordStatusLabel(student, t)}</span><div className="row-actions">{student.deleted_at ? <><button className="secondary-button compact-button" type="button" disabled={loading || !student.purge_after} onClick={() => restoreStudent(student.id)}>{t("admin.restore")}</button><button className="danger-button compact-button" type="button" disabled={loading} onClick={() => permanentlyDeleteStudent(student.id)}>{t("admin.permanentDelete")}</button></> : <><button className="secondary-button compact-button" type="button" onClick={() => editStudent(student)}>{t("admin.editUser")}</button>{student.qr_token ? <button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => printStudentLabel(student)}>Print Label / طباعة الليبل</button> : null}<button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => updateStatus(student.id, !student.is_active, "students")}>{student.is_active ? t("admin.disable") : t("admin.enable")}</button>{session.teacher.role === "admin" ? <button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => deleteStudent(student.id)}>Delete / حذف</button> : null}</>}</div></article>)}
         {((kind === "groups" && groups.length === 0) || (kind === "students" && students.length === 0)) ? <p className="empty-state">{t(kind === "groups" ? "admin.noGroups" : "admin.noStudents")}</p> : null}
-      </div>
+      </div> : null}
       {status ? <p className={status === t("admin.groupSaved") || status === t("admin.studentSaved") ? "lookup-result" : "form-error"}>{status}</p> : null}
       {groupDetails ? <div className="modal-backdrop" role="presentation"><section className="modal group-details-modal" role="dialog" aria-modal="true"><button className="close-button" type="button" onClick={()=>setGroupDetails(null)}>×</button><p className="eyebrow">Group details / تفاصيل المجموعة</p><h2>{groupDetails.group.display_name || groupDetails.group.name}</h2><p>{groupDetails.group.grade_level || groupDetails.group.grade} · {groupDetails.group.subject} · {groupDetails.group.fees_amount} EGP</p><div className="detail-stats"><span>Total: {groupDetails.group.students_count ?? 0}</span><span>Active: {groupDetails.group.active_students_count ?? 0}</span><span>Disabled: {groupDetails.group.disabled_students_count ?? 0}</span><span>Deleted: {groupDetails.group.deleted_students_count ?? 0}</span></div><div className="status-filter-buttons group-details-filters" role="group" aria-label="Student status filters">{(["all","active","disabled","deleted"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={detailFilter===filter?"active":""} type="button" onClick={()=>setDetailFilter(filter)}>{recordStatusFilterLabel(filter,t)}</button>)}</div><div className="schedule-detail-list">{groupDetails.schedules.map((schedule:any)=><span key={schedule.id}>{t(`days.${schedule.day_of_week}` as TranslationKey)} · {schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</span>)}</div><div className="academic-list group-student-list">{groupDetails.students.filter((student:any)=>detailFilter==="all"||(detailFilter==="deleted"?student.deleted_at:!student.deleted_at&&(detailFilter==="active"?student.is_active:!student.is_active))).map((student:any)=><article className="academic-row group-student-row" key={student.id}><div className="group-student-info"><div className="group-student-heading"><strong>{student.full_name}</strong><span className={student.deleted_at?"status-deleted":student.is_active?"status-active":"status-disabled"}>{recordStatusLabel(student,t)}</span></div><span>Code / الكود: {student.student_serial || student.student_code || "—"}</span><span>Phone / الهاتف: {student.phone || "—"} · Guardian / ولي الأمر: {student.guardian_phone || "—"}</span></div></article>)}</div></section></div> : null}
     </section>
@@ -2972,7 +3243,7 @@ function StudentProfileModal({ studentId, session, t, onClose }: { studentId: nu
         <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b>{profile.student.student_code || "—"}</span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
       </div></section>
       <section className="profile-section"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.attendancePercentage")}</b>{Number(profile.attendance.attendance_percentage || 0).toFixed(1)}%</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div key={`${row.session_id}-${row.session_date}`}><span>{row.session_date} · {row.start_time?.slice(0, 5)}–{row.end_time?.slice(0, 5)}</span><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section>
-      <section className="profile-section"><h3>{t("admin.examHistory")}</h3>{profile.exams?.length ? <div className="profile-record-list">{profile.exams.map((row: any) => <div key={row.id}><span>{row.title} · {row.exam_date}</span><strong>{row.score == null ? "—" : `${row.score}/${row.max_score} (${((Number(row.score) / Number(row.max_score || 1)) * 100).toFixed(1)}%)`}</strong></div>)}</div> : <p className="empty-state">{t("admin.noProfileExams")}</p>}</section>
+      <section className="profile-section"><h3>{t("admin.examHistory")}</h3>{profile.exams?.length ? <div className="profile-record-list profile-exam-list">{profile.exams.map((row: any) => { const evaluation = scoreEvaluation(row.score, row.max_score, t); return <div className="profile-exam-record" key={row.id}><div className="profile-exam-details"><strong>{displayValue(row.title, language)}</strong><small>{t("dashboard.latestExamDate")}: {formatDateOnly(String(row.exam_date || ""), language, "—")}</small>{row.note ? <small>{t("admin.assessment")}: {displayValue(row.note, language)}</small> : null}</div><div className="profile-exam-score">{row.score == null ? <strong>—</strong> : <><strong className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</strong>{evaluation ? <small className={`profile-exam-evaluation score-${evaluation.tone}`}>{evaluation.percentage.toFixed(0)}% — {evaluation.label}</small> : null}</>}</div></div>; })}</div> : <p className="empty-state">{t("admin.noProfileExams")}</p>}</section>
       <section className="profile-section"><h3>{t("admin.notes")}</h3><form className="profile-note-form" onSubmit={saveNote}><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder={t("admin.notePlaceholder")} rows={3} /><button className="secondary-button compact-button" type="submit">{editingNoteId ? t("admin.editNote") : t("admin.addNote")}</button></form>{profile.notes?.length ? <div className="profile-record-list">{profile.notes.map((note: any) => <div key={note.id}><span>{note.body}<small>{note.author_name} · {new Date(note.created_at).toLocaleString()}</small></span><div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setEditingNoteId(Number(note.id)); setNoteBody(note.body); }}>{t("admin.editNote")}</button><button className="secondary-button compact-button" type="button" onClick={() => deleteNote(Number(note.id))}>{t("admin.deleteNote")}</button></div></div>)}</div> : <p className="empty-state">{t("admin.noProfileNotes")}</p>}</section>
       <section className="profile-section"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments?.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div key={row.id}><span>{new Date(row.paid_at || row.payment_date).toLocaleString()} · {row.paid_by || "—"}</span><strong>{money(row.amount)}</strong></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</section>
       <section className="profile-section"><h3>{t("admin.profileMessages")}</h3>{profile.inbox?.length ? <div className="profile-record-list">{profile.inbox.map((row: any) => <div key={row.id}><span>{row.subject}<small>{row.last_message || "—"}</small></span><strong>{row.message_count}</strong></div>)}</div> : <p className="empty-state">{t("admin.noProfileMessages")}</p>}</section>
@@ -3470,16 +3741,163 @@ function formatInboxTimestamp(value: unknown, language: Language) {
   }).format(date);
 }
 
+function inboxMessageStatus(message: any, viewer: "student" | "staff", t: Translator) {
+  const outgoing = viewer === "student"
+    ? message.sender_type === "student"
+    : ["admin", "teacher", "assistant"].includes(message.sender_type);
+  if (outgoing && !message.is_read) return t("inbox.sentStatus");
+  return message.is_read ? t("inbox.read") : t("inbox.unread");
+}
+
+async function parseInboxResponse(response: Response) {
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.ok === false) {
+    throw new Error(typeof data.message === "string" ? data.message : typeof data.status === "string" ? data.status : "inbox_request_failed");
+  }
+  return data;
+}
+
 function StaffInboxControls({ session, language, t, onUnreadCountChange }: { session: TeacherSession; language: Language; t: Translator; onUnreadCountChange: (count: number) => void }) {
-  const [threads, setThreads] = useState<any[]>([]); const [selected, setSelected] = useState<any>(null); const [messages, setMessages] = useState<any[]>([]); const [filter, setFilter] = useState(""); const [readFilter, setReadFilter] = useState<"all"|"unread"|"read">("all"); const [date, setDate] = useState(""); const [reply, setReply] = useState(""); const [status, setStatus] = useState("");
-  const auth={Authorization:`Bearer ${session.token}`}, jsonAuth={...auth,"Content-Type":"application/json"};
-  async function refresh(){const params=new URLSearchParams();if(filter.trim())params.set("search",filter.trim());if(readFilter!=="all")params.set("read",readFilter);if(date)params.set("date",date);const [threadsResponse,countResponse]=await Promise.all([fetch(`${API_BASE_URL}/admin/inbox?${params}`,{headers:auth}),fetch(`${API_BASE_URL}/admin/inbox/unread-count`,{headers:auth})]);const threadsData=await threadsResponse.json(),countData=await countResponse.json();setThreads(threadsData.threads||[]);onUnreadCountChange(Number(countData.count||0));}
-  async function openThread(thread:any){const response=await fetch(`${API_BASE_URL}/admin/inbox/${thread.id}`,{headers:auth});const data=await response.json();if(!response.ok||!data.ok){setStatus(data.message||t("inbox.noMessages"));return;}setSelected({...thread,unread_count:0,read_status:"read"});setMessages(data.messages||[]);await refresh();}
-  useEffect(()=>{refresh().catch(()=>setStatus(t("inbox.noMessages")));},[filter,readFilter,date,session.token]);
-  async function markRead(){const ids=selected?[selected.id]:threads.filter((thread)=>Number(thread.unread_count)>0).map((thread)=>thread.id);const endpoint=selected?`${API_BASE_URL}/admin/inbox/${selected.id}/read`:`${API_BASE_URL}/admin/inbox/read-visible`;const response=await fetch(endpoint,{method:selected?"PUT":"POST",headers:jsonAuth,body:selected?undefined:JSON.stringify({thread_ids:ids})});if(response.ok){setStatus(t("inbox.markedRead"));await refresh();if(selected)openThread({...selected,unread_count:0,read_status:"read"});}}
-  async function deleteMessage(messageId:number){if(!selected||!window.confirm(t("inbox.confirmDeleteMessage")))return;const response=await fetch(`${API_BASE_URL}/admin/inbox/${selected.id}/messages/${messageId}`,{method:"DELETE",headers:auth});const data=await response.json();if(response.ok&&data.ok){setStatus(t("inbox.deleteMessage"));await openThread(selected);}else setStatus(data.message||data.status||t("inbox.noMessages"));}
-  async function sendReply(event:React.FormEvent){event.preventDefault();if(!selected||!reply.trim())return;const response=await fetch(`${API_BASE_URL}/admin/inbox/${selected.id}/messages`,{method:"POST",headers:jsonAuth,body:JSON.stringify({body:reply.trim()})});const data=await response.json();if(data.ok){setReply("");setStatus(t("inbox.sent"));openThread(selected);}}
-  return <section className="admin-editor inbox-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.inbox")}</p><h2>{t("inbox.title")}</h2></div><div className="inbox-filters"><input value={filter} onChange={(e)=>setFilter(e.target.value)} placeholder={t("inbox.search")} /><input type="date" value={date} onChange={(e)=>setDate(e.target.value)} aria-label={t("inbox.date")} /><button type="button" className={readFilter==="all"?"active":""} onClick={()=>setReadFilter("all")}>{t("inbox.all")}</button><button type="button" className={readFilter==="unread"?"active":""} onClick={()=>setReadFilter("unread")}>{t("inbox.unread")}</button><button type="button" className={readFilter==="read"?"active":""} onClick={()=>setReadFilter("read")}>{t("inbox.read")}</button><button type="button" onClick={()=>refresh()}>{t("inbox.refresh")}</button><button type="button" onClick={markRead}>{t("inbox.markRead")}</button></div><div className="inbox-layout"><div className="inbox-list">{threads.length?threads.map((thread)=><button className={`inbox-thread ${selected?.id===thread.id?"active":""}`} key={thread.id} type="button" onClick={()=>openThread(thread)}><strong>{thread.subject}</strong><span>{thread.full_name||thread.public_name||thread.public_phone||t("inbox.showing")}</span><small>{thread.group_name||""} · {thread.last_message}</small><em>{thread.read_status==="unread"?t("inbox.unread"):t("inbox.read")}</em>{Number(thread.unread_count)>0?<b>{thread.unread_count}</b>:null}</button>):<p className="empty-state">{t("inbox.noMessages")}</p>}</div><div className="inbox-conversation">{selected?<><h3>{selected.subject}</h3><div className="inbox-messages">{messages.length?messages.map((message)=><article className={`inbox-message ${["admin","teacher","assistant"].includes(message.sender_type)?"mine":""}`} key={message.id}><p>{message.body}</p><small className="message-meta"><span>{message.sender_name||message.sender_type}</span><span className="message-read-status">{message.is_read?t("inbox.read"):t("inbox.unread")}</span><time dateTime={typeof message.created_at === "string" ? message.created_at : undefined}>{formatInboxTimestamp(message.created_at, language)}</time></small>{session.teacher.role==="admin"?<button type="button" className="message-delete-button" onClick={()=>deleteMessage(Number(message.id))}>{t("inbox.deleteMessage")}</button>:null}</article>):<p className="empty-state">{t("inbox.noMessages")}</p>}</div><form onSubmit={sendReply}><textarea value={reply} onChange={(e)=>setReply(e.target.value)} placeholder={t("inbox.reply")} rows={3}/><button className="primary-button" type="submit">{t("inbox.reply")}</button></form></>:<p className="empty-state">{t("inbox.selectThread")}</p>}</div></div>{status?<p className="lookup-result">{status}</p>:null}</section>;
+  const [threads, setThreads] = useState<any[]>([]);
+  const [selected, setSelected] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [filter, setFilter] = useState("");
+  const [readFilter, setReadFilter] = useState<"all" | "unread" | "read">("all");
+  const [date, setDate] = useState("");
+  const [reply, setReply] = useState("");
+  const [status, setStatus] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [markingRead, setMarkingRead] = useState(false);
+  const [replyState, setReplyState] = useState<"idle" | "sending" | "sent">("idle");
+  const auth = { Authorization: `Bearer ${session.token}` };
+  const jsonAuth = { ...auth, "Content-Type": "application/json" };
+  const unreadVisibleIds = threads.filter((thread) => Number(thread.unread_count) > 0).map((thread) => thread.id);
+  const canMarkRead = selected ? Number(selected.unread_count) > 0 : unreadVisibleIds.length > 0;
+
+  async function refresh() {
+    setRefreshing(true);
+    setStatus("");
+    try {
+      const params = new URLSearchParams();
+      if (filter.trim()) params.set("search", filter.trim());
+      if (readFilter !== "all") params.set("read", readFilter);
+      if (date) params.set("date", date);
+      const [threadsResponse, countResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/admin/inbox?${params}`, { headers: auth }),
+        fetch(`${API_BASE_URL}/admin/inbox/unread-count`, { headers: auth })
+      ]);
+      const [threadsData, countData] = await Promise.all([
+        parseInboxResponse(threadsResponse),
+        parseInboxResponse(countResponse)
+      ]);
+      setThreads(Array.isArray(threadsData.threads) ? threadsData.threads : []);
+      onUnreadCountChange(Number(countData.count || 0));
+    } catch (_error) {
+      setStatus(t("inbox.loadFailed"));
+      throw _error;
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function openThread(thread: any) {
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/inbox/${thread.id}`, { headers: auth });
+      const data = await parseInboxResponse(response);
+      setSelected(thread);
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+    } catch (_error) {
+      setStatus(t("inbox.loadFailed"));
+    }
+  }
+
+  useEffect(() => { refresh().catch(() => undefined); }, [filter, readFilter, date, session.token]);
+
+  async function markRead() {
+    if (!canMarkRead || markingRead) return;
+    setMarkingRead(true);
+    setStatus("");
+    try {
+      const ids = selected ? [selected.id] : unreadVisibleIds;
+      const endpoint = selected ? `${API_BASE_URL}/admin/inbox/${selected.id}/read` : `${API_BASE_URL}/admin/inbox/read-visible`;
+      const response = await fetch(endpoint, {
+        method: selected ? "PUT" : "POST",
+        headers: jsonAuth,
+        body: selected ? undefined : JSON.stringify({ thread_ids: ids })
+      });
+      await parseInboxResponse(response);
+      setMessages((current) => current.map((message) => message.sender_type === "student" || message.sender_type === "public" ? { ...message, is_read: true } : message));
+      setSelected((current) => current ? { ...current, unread_count: 0, read_status: "read" } : current);
+      await refresh();
+      setStatus(t("inbox.markedRead"));
+    } catch (_error) {
+      setStatus(t("inbox.markReadFailed"));
+    } finally {
+      setMarkingRead(false);
+    }
+  }
+
+  async function deleteMessage(messageId: number) {
+    if (!selected || !window.confirm(t("inbox.confirmDeleteMessage"))) return;
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/inbox/${selected.id}/messages/${messageId}`, { method: "DELETE", headers: auth });
+      await parseInboxResponse(response);
+      await openThread(selected);
+    } catch (_error) {
+      setStatus(t("inbox.loadFailed"));
+    }
+  }
+
+  async function sendReply(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selected || !reply.trim() || replyState === "sending") return;
+    setReplyState("sending");
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/inbox/${selected.id}/messages`, {
+        method: "POST",
+        headers: jsonAuth,
+        body: JSON.stringify({ body: reply.trim() })
+      });
+      await parseInboxResponse(response);
+      setReply("");
+      await openThread(selected);
+      setReplyState("sent");
+      window.setTimeout(() => setReplyState("idle"), 2000);
+    } catch (_error) {
+      setReplyState("idle");
+      setStatus(t("inbox.sendFailed"));
+    }
+  }
+
+  return <section className="admin-editor inbox-panel">
+    <div className="section-heading"><p className="eyebrow">{t("admin.tabs.inbox")}</p><h2>{t("inbox.title")}</h2></div>
+    <div className="inbox-filters">
+      <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t("inbox.search")} />
+      <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label={t("inbox.date")} />
+      <button type="button" className={readFilter === "all" ? "active" : ""} onClick={() => setReadFilter("all")}>{t("inbox.all")}</button>
+      <button type="button" className={readFilter === "unread" ? "active" : ""} onClick={() => setReadFilter("unread")}>{t("inbox.unread")}</button>
+      <button type="button" className={readFilter === "read" ? "active" : ""} onClick={() => setReadFilter("read")}>{t("inbox.read")}</button>
+      <button type="button" onClick={() => markRead()} disabled={!canMarkRead || markingRead}>{markingRead ? t("inbox.markingRead") : t("inbox.markRead")}</button>
+      <button type="button" onClick={() => refresh()} disabled={refreshing}>{refreshing ? t("inbox.refreshing") : t("inbox.refresh")}</button>
+    </div>
+    <div className="inbox-layout">
+      <div className="inbox-list">{threads.length ? threads.map((thread) => <button className={`inbox-thread ${selected?.id === thread.id ? "active" : ""}`} key={thread.id} type="button" onClick={() => openThread(thread)}>
+        <strong>{thread.subject}</strong><span>{thread.full_name || thread.public_name || thread.public_phone || t("inbox.showing")}</span><small>{thread.group_name || ""} · {thread.last_message}</small><em>{thread.read_status === "unread" ? t("inbox.unread") : t("inbox.read")}</em>{Number(thread.unread_count) > 0 ? <b>{thread.unread_count}</b> : null}
+      </button>) : <p className="empty-state">{t("inbox.noMessages")}</p>}</div>
+      <div className="inbox-conversation">{selected ? <>
+        <h3>{selected.subject}</h3>
+        <div className="inbox-messages">{messages.length ? messages.map((message) => <article className={`inbox-message ${["admin", "teacher", "assistant"].includes(message.sender_type) ? "mine" : ""}`} key={message.id}>
+          <p>{message.body}</p>
+          <small className="message-meta"><span>{message.sender_name || message.sender_type}</span><span className="message-read-status">{inboxMessageStatus(message, "staff", t)}</span><time dateTime={typeof message.created_at === "string" ? message.created_at : undefined}>{formatInboxTimestamp(message.created_at, language)}</time></small>
+          {session.teacher.role === "admin" ? <button type="button" className="message-delete-button" onClick={() => deleteMessage(Number(message.id))}>{t("inbox.deleteMessage")}</button> : null}
+        </article>) : <p className="empty-state">{t("inbox.noMessages")}</p>}</div>
+        <form onSubmit={sendReply}><textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder={t("inbox.reply")} rows={3}/><button className={`primary-button ${replyState === "sent" ? "success-button" : ""}`} type="submit" disabled={replyState === "sending"}>{replyState === "sending" ? t("inbox.sending") : replyState === "sent" ? t("inbox.sentStatus") : t("inbox.reply")}</button></form>
+      </> : <p className="empty-state">{t("inbox.selectThread")}</p>}</div>
+    </div>
+    {status ? <p className="lookup-result">{status}</p> : null}
+  </section>;
 }
 
 function SiteContentEditor({
@@ -3648,6 +4066,175 @@ function SiteContentEditor({
   );
 }
 
+function ExamResultsManager({ session, t }: { session: TeacherSession; t: Translator }) {
+  const [groups, setGroups] = useState<AdminGroup[]>([]);
+  const [students, setStudents] = useState<AdminStudent[]>([]);
+  const [records, setRecords] = useState<Array<Record<string, any>>>([]);
+  const [selectedGroup, setSelectedGroup] = useState("");
+  const [search, setSearch] = useState("");
+  const [recordSearch, setRecordSearch] = useState("");
+  const [recordsExpanded, setRecordsExpanded] = useState(false);
+  const [form, setForm] = useState({ student_id: "", title: "", exam_date: localDateInputValue(), max_score: "10", score: "", assessment: "" });
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deletingRecordId, setDeletingRecordId] = useState<number | null>(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetch(`${API_BASE_URL}/admin/groups`, { headers: { Authorization: `Bearer ${session.token}` } }).then((response) => response.json()),
+      fetch(`${API_BASE_URL}/admin/students?status=active`, { headers: { Authorization: `Bearer ${session.token}` } }).then((response) => response.json())
+    ])
+      .then(([groupData, studentData]) => {
+        if (!groupData.ok || !studentData.ok) throw new Error(t("admin.profileLoadFailed"));
+        setGroups(Array.isArray(groupData.groups) ? groupData.groups : []);
+        setStudents(Array.isArray(studentData.students) ? studentData.students : []);
+      })
+      .catch((error) => setStatus(error instanceof Error ? error.message : t("admin.profileLoadFailed")))
+      .finally(() => setLoading(false));
+  }, [session.token, t]);
+
+  useEffect(() => {
+    setRecordsLoading(true);
+    const params = new URLSearchParams();
+    if (selectedGroup) params.set("group_id", selectedGroup);
+    if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
+    fetch(`${API_BASE_URL}/admin/exams/results?${params.toString()}`, { headers: { Authorization: `Bearer ${session.token}` } })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(t("admin.profileLoadFailed"));
+        setRecords(Array.isArray(data.results) ? data.results : []);
+      })
+      .catch((error) => setStatus(error instanceof Error ? error.message : t("admin.profileLoadFailed")))
+      .finally(() => setRecordsLoading(false));
+  }, [selectedGroup, recordSearch, session.token, t]);
+
+  const visibleStudents = students.filter((student) => {
+    const matchesGroup = !selectedGroup || String(student.group_id) === selectedGroup;
+    const query = normalizeDigits(search).trim().toLowerCase();
+    const matchesSearch = !query || student.full_name.toLowerCase().includes(query) || student.student_code.toLowerCase().includes(query) || String(student.scan_serial || "").toLowerCase().includes(query);
+    return matchesGroup && matchesSearch;
+  });
+
+  useEffect(() => {
+    const normalizedSearch = normalizeStudentCode(search).trim();
+    if (!/^A-\d{4}$/.test(normalizedSearch)) return;
+    const exactStudent = students.find((student) => normalizeStudentCode(student.student_code) === normalizedSearch && (!selectedGroup || String(student.group_id) === selectedGroup));
+    if (exactStudent && String(exactStudent.id) !== form.student_id) {
+      setForm((current) => ({ ...current, student_id: String(exactStudent.id) }));
+    }
+  }, [search, selectedGroup, students, form.student_id]);
+
+  const selectedStudent = students.find((student) => String(student.id) === form.student_id);
+  const liveEvaluation = scoreEvaluation(form.score, form.max_score, t);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setStatus("");
+    const maxScore = Number(normalizeDigits(form.max_score));
+    const score = Number(normalizeDigits(form.score));
+    if (!form.student_id || !form.title.trim() || !form.exam_date || !form.max_score.trim() || !form.score.trim() || !Number.isFinite(maxScore) || maxScore <= 0 || !Number.isFinite(score) || score < 0 || score > maxScore) {
+      setStatus(t("admin.invalidExamResult"));
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/exams/results`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ ...form, student_id: Number(form.student_id), max_score: maxScore, score })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.status === "invalid_exam_result" ? t("admin.invalidExamResult") : t("errors.loginFailed"));
+      setStatus(t("admin.examResultSaved"));
+      setForm((current) => ({ ...current, score: "", assessment: "" }));
+      const params = new URLSearchParams();
+      if (selectedGroup) params.set("group_id", selectedGroup);
+      if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
+      const refreshed = await fetch(`${API_BASE_URL}/admin/exams/results?${params.toString()}`, { headers: { Authorization: `Bearer ${session.token}` } });
+      const refreshedData = await refreshed.json();
+      if (refreshed.ok && refreshedData.ok) setRecords(Array.isArray(refreshedData.results) ? refreshedData.results : []);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteRecord(recordId: number) {
+    if (!window.confirm(t("admin.confirmDeleteExamResult"))) return;
+    setDeletingRecordId(recordId);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/exams/results/${recordId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session.token}` }
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(t("errors.loginFailed"));
+      setRecords((current) => current.filter((record) => Number(record.id) !== recordId));
+      setStatus(t("admin.examResultDeleted"));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+    } finally {
+      setDeletingRecordId(null);
+    }
+  }
+
+  return (
+    <section className="admin-editor exam-results-manager">
+      <div className="section-heading">
+        <p className="eyebrow">{t("admin.tabs.exams")}</p>
+        <h2>{t("dashboard.tabs.examResults")}</h2>
+      </div>
+      <form onSubmit={save} className="exam-result-form">
+        <div className="exam-filter-grid">
+          <label>{t("admin.selectGroup")}
+            <select value={selectedGroup} onChange={(event) => { setSelectedGroup(event.target.value); setForm((current) => ({ ...current, student_id: "" })); }} disabled={loading}>
+              <option value="">{t("admin.allGroups")}</option>
+              {groups.map((group) => <option key={group.id} value={group.id}>{group.display_name || group.name}</option>)}
+            </select>
+          </label>
+          <label>{t("admin.searchExamStudent")}
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="A-6251" />
+          </label>
+          <label>{t("admin.selectStudent")}
+            <select value={form.student_id} onChange={(event) => setForm((current) => ({ ...current, student_id: event.target.value }))} disabled={loading}>
+              <option value="">{loading ? t("admin.profileLoading") : t("admin.selectStudent")}</option>
+              {visibleStudents.map((student) => <option key={student.id} value={student.id}>{student.full_name} · {student.student_code}</option>)}
+            </select>
+          </label>
+        </div>
+        {selectedStudent ? <div className="exam-selected-student"><span><b>{t("admin.selectedStudent")}</b>{selectedStudent.full_name}</span><span><b>{t("admin.selectedGroup")}</b>{selectedStudent.group_name}</span><span><b>{t("admin.studentCode")}</b>{selectedStudent.student_code}</span></div> : null}
+        <label>{t("admin.examTitle")}<input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} /></label>
+        <label>{t("admin.examDate")}<input type="date" value={form.exam_date} onChange={(event) => setForm((current) => ({ ...current, exam_date: event.target.value }))} /></label>
+        <label>{t("admin.maxScore")}<input type="number" min="0.01" step="0.01" value={form.max_score} onChange={(event) => setForm((current) => ({ ...current, max_score: normalizeDigits(event.target.value) }))} /></label>
+        <label>{t("admin.studentScore")}<input type="number" min="0" step="0.01" value={form.score} onChange={(event) => setForm((current) => ({ ...current, score: normalizeDigits(event.target.value) }))} /></label>
+        {liveEvaluation ? <div className={`score-evaluation score-${liveEvaluation.tone}`}><span>{t("admin.evaluationPreview")}</span><strong>{liveEvaluation.label}</strong><small>{liveEvaluation.percentage.toFixed(0)}%</small></div> : null}
+        <label className="exam-assessment-field">{t("admin.assessment")}<textarea rows={4} value={form.assessment} onChange={(event) => setForm((current) => ({ ...current, assessment: event.target.value }))} placeholder={t("admin.assessmentPlaceholder")} /></label>
+        <button className="primary-button" type="submit" disabled={saving || loading}>{saving ? t("admin.saving") : t("admin.saveExamResult")}</button>
+        {status ? <p className={status === t("admin.examResultSaved") || status === t("admin.examResultDeleted") ? "lookup-result" : "form-error"}>{status}</p> : null}
+      </form>
+      <div className="exam-records">
+        <div className="exam-records-heading">
+          <h3>{t("admin.examRecords")}</h3>
+          <button className="secondary-button compact-button" type="button" onClick={() => setRecordsExpanded((current) => !current)} aria-expanded={recordsExpanded}>
+            <span className="records-toggle-icon" aria-hidden="true">{recordsExpanded ? "▴" : "▾"}</span>
+            {recordsExpanded ? t("admin.examRecordsHide") : t("admin.examRecordsShow")}
+          </button>
+        </div>
+        {recordsExpanded ? <>
+          <label className="exam-records-search">{t("admin.searchExamRecords")}
+            <input value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="A-6251" />
+          </label>
+          {recordsLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : records.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("table.exam")}</th><th>{t("table.date")}</th><th>{t("table.score")}</th><th>{t("table.assessment")}</th><th>{t("admin.editExamResult")}</th><th>{t("admin.deleteExamResult")}</th></tr></thead><tbody>{records.map((record) => <tr key={record.id}><td>{record.full_name}</td><td>{record.student_code}</td><td>{record.title}</td><td>{record.exam_date}</td><td>{record.score}/{record.max_score}</td><td>{record.assessment || record.note || "—"}</td><td><button className="secondary-button compact-button" type="button" onClick={() => setForm({ student_id: String(record.student_id), title: String(record.title || ""), exam_date: String(record.exam_date || "").slice(0, 10), max_score: String(record.max_score || "10"), score: String(record.score ?? ""), assessment: String(record.assessment || record.note || "") })}>{t("admin.editExamResult")}</button></td><td><button className="danger-button compact-button" type="button" onClick={() => deleteRecord(Number(record.id))} disabled={deletingRecordId === Number(record.id)}>{deletingRecordId === Number(record.id) ? t("admin.saving") : t("admin.deleteExamResult")}</button></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("admin.noExamResults")}</p>}
+        </> : null}
+      </div>
+    </section>
+  );
+}
+
 function Shell({
   children,
   language,
@@ -3680,7 +4267,7 @@ function Shell({
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${onLogout ? "student-shell" : ""}`}>
       <header
         className="site-header"
         style={{
@@ -3703,13 +4290,13 @@ function Shell({
           }}
         >
           <a className="brand" href="/" style={{ flexShrink: 0 }}>
-            <span className="brand-icon">{t("site.mark")}</span>
+            <img className="brand-icon teacher-avatar" src="/assets/teacher-profile.png" alt="" aria-hidden="true" />
             <span>
               <strong>{t("site.name")}</strong>
               <small>{t("site.description")}</small>
             </span>
           </a>
-          <DateTimeWidget language={language} t={t} compact />
+          <DateTimeWidget language={language} compact />
         </div>
         <div
           className="header-actions"
@@ -3792,6 +4379,9 @@ function Shell({
         </div>
       </header>
       {children}
+      <footer className="site-footer" dir="ltr" lang="en">
+        © 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny
+      </footer>
     </div>
   );
 }
@@ -3807,7 +4397,7 @@ function getActiveNavKey() {
   return "student-login";
 }
 
-function HomeworkPanel({ studentCode, t, language }: { studentCode: string; t: Translator; language: Language }) {
+function HomeworkPanel({ studentCode, t, language, refreshKey = 0 }: { studentCode: string; t: Translator; language: Language; refreshKey?: number }) {
   const [homeworks, setHomeworks] = useState<Array<Record<string, any>>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -3817,7 +4407,7 @@ function HomeworkPanel({ studentCode, t, language }: { studentCode: string; t: T
     catch { setHomeworks([]); setError(true); }
     finally { setLoading(false); }
   }
-  useEffect(() => { loadHomework().catch(() => undefined); }, [studentCode]);
+  useEffect(() => { loadHomework().catch(() => undefined); }, [studentCode, refreshKey]);
   if (loading) return <p className="field-hint">{t("homework.loading")}</p>;
   if (error) return <div><p className="form-error">{t("homework.loadError")}</p><button className="secondary-button" type="button" onClick={loadHomework}>{t("homework.retry")}</button></div>;
   if (!homeworks.length) return <p className="empty-state">{t("homework.noAvailable")}</p>;
@@ -3825,7 +4415,7 @@ function HomeworkPanel({ studentCode, t, language }: { studentCode: string; t: T
   return <div className="homework-list">{homeworks.map((homework, index) => <article className="homework-card" key={homework.id || index}><h3>{String(homework.title || "")}</h3>{homework.description ? <p>{String(homework.description)}</p> : null}<div className="homework-meta"><span>{statusLabel(String(homework.status || "new"))}</span>{homework.due_date ? <span>{t("homework.dueDate")}: {formatDateTime(String(homework.due_date), language, "—")}</span> : null}</div>{homework.attachment_url ? <a href={String(homework.attachment_url)} target="_blank" rel="noreferrer">{t("homework.attachment")}</a> : null}</article>)}</div>;
 }
 
-function StudentNotesPanel({ studentCode, language, t, onUnreadCountChange }: { studentCode: string; language: Language; t: Translator; onUnreadCountChange: (count: number) => void }) {
+function StudentNotesPanel({ studentCode, language, t, onUnreadCountChange, refreshKey = 0 }: { studentCode: string; language: Language; t: Translator; onUnreadCountChange: (count: number) => void; refreshKey?: number }) {
   const [notes, setNotes] = useState<Array<Record<string, any>>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -3854,7 +4444,7 @@ function StudentNotesPanel({ studentCode, language, t, onUnreadCountChange }: { 
     }
   }
 
-  useEffect(() => { loadNotes().catch(() => undefined); }, [studentCode]);
+  useEffect(() => { loadNotes().catch(() => undefined); }, [studentCode, refreshKey]);
   if (loading) return <p className="field-hint">{language === "ar" ? "جاري تحميل الملاحظات..." : "Loading notes..."}</p>;
   if (error) return <div><p className="form-error">{t("notes.loadError")}</p><button className="secondary-button compact-button" type="button" onClick={loadNotes}>{t("notes.refresh")}</button></div>;
   return <section className="student-notes-panel">
@@ -3877,13 +4467,20 @@ function StudentDashboard({
   t: Translator;
 }) {
   const [activeTab, setActiveTab] = useState("attendance");
+  const [dashboardData, setDashboardData] = useState<DashboardData | undefined>(data.dashboard);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState("");
   const [studentFees, setStudentFees] = useState<any>(null);
   const [feesLoading, setFeesLoading] = useState(false);
   const [feesError, setFeesError] = useState("");
+  const [examRows, setExamRows] = useState<Array<Record<string, any>>>([]);
+  const [examLoaded, setExamLoaded] = useState(false);
+  const [examLoading, setExamLoading] = useState(false);
   const [notesUnread, setNotesUnread] = useState(0);
   const student = data.student!;
   const [inboxUnread, setInboxUnread] = useState(0);
-  const rawDashboard: Partial<DashboardData> = data.dashboard || {};
+  const rawDashboard: Partial<DashboardData> = dashboardData || {};
   const dashboard = {
     attendance: Array.isArray(rawDashboard.attendance) ? rawDashboard.attendance : [],
     exams: Array.isArray(rawDashboard.exams) ? rawDashboard.exams : [],
@@ -3914,7 +4511,22 @@ function StudentDashboard({
       })
       .finally(() => { if (!cancelled) setFeesLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, student.student_code, t]);
+  }, [activeTab, refreshKey, student.student_code, t]);
+
+  useEffect(() => {
+    if (activeTab !== "exams") return;
+    let cancelled = false;
+    setExamLoading(true);
+    fetch(`${API_BASE_URL}/student/me/exams`, { headers: { "X-Student-Code": student.student_code } })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error(t("studentFees.loadError"));
+        if (!cancelled) { setExamRows(Array.isArray(result.exams) ? result.exams : []); setExamLoaded(true); }
+      })
+      .catch(() => { if (!cancelled) setExamLoaded(true); })
+      .finally(() => { if (!cancelled) setExamLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, refreshKey, student.student_code, t]);
 
   useEffect(() => {
     if (!student.id) return;
@@ -3922,7 +4534,28 @@ function StudentDashboard({
       .then((response) => response.json())
       .then((payload) => setInboxUnread(Number(payload.count || 0)))
       .catch(() => undefined);
-  }, [activeTab, student.id]);
+  }, [activeTab, refreshKey, student.id]);
+
+  async function refreshDashboard() {
+    setRefreshing(true);
+    setRefreshStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/student/me/dashboard`, { headers: { "X-Student-Code": student.student_code } });
+      const result = await response.json();
+      if (!response.ok || !result.ok) throw new Error(t("dashboard.refreshFailed"));
+      const nextDashboard = result.dashboard as DashboardData;
+      setDashboardData(nextDashboard);
+      setExamRows(Array.isArray(nextDashboard.exams) ? nextDashboard.exams : []);
+      setExamLoaded(true);
+      setRefreshKey((current) => current + 1);
+      setRefreshStatus(t("dashboard.refreshed"));
+      window.setTimeout(() => setRefreshStatus(""), 2000);
+    } catch (error) {
+      setRefreshStatus(error instanceof Error ? error.message : t("dashboard.refreshFailed"));
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   return (
     <Shell language={language} setLanguage={setLanguage} t={t} onLogout={onLogout}>
@@ -3937,7 +4570,7 @@ function StudentDashboard({
                 group: displayValue(data.today_session?.group_name || student.group_name, language)
               })}
             </p>
-            <DateTimeWidget language={language} t={t} />
+            <DateTimeWidget language={language} />
           </div>
           <div className={`status-panel ${statusTone}`}>
             <span>{t("dashboard.attendanceLabel")}</span>
@@ -3957,60 +4590,71 @@ function StudentDashboard({
         <section className="summary-grid">
           <Metric label={t("dashboard.studentCode")} value={student.student_code} />
           <Metric label={t("dashboard.group")} value={displayValue(student.group_name, language)} />
-          <Metric
-            label={t("dashboard.lastScore")}
-            value={
-              dashboard.exams[0]
-                ? `${dashboard.exams[0].score}/${dashboard.exams[0].max_score}`
-                : "-"
-            }
-          />
+          <LatestExamMetric exam={dashboard.exams[0]} language={language} t={t} />
         </section>
 
         <section className="tabs-surface">
-          <div
-            className="tabs"
-            role="tablist"
-            aria-label={language === "ar" ? "بيانات الطالب" : "Student data"}
-          >
+          <div className="tabs-toolbar">
+            <div className="tabs" role="tablist" aria-label={language === "ar" ? "بيانات الطالب" : "Student data"}>
             <Tab
               id="attendance"
               active={activeTab}
               onClick={setActiveTab}
               label={t("dashboard.tabs.attendance")}
             />
-            <Tab id="exams" active={activeTab} onClick={setActiveTab} label={t("dashboard.tabs.exams")} />
-            <Tab
-              id="schedule"
-              active={activeTab}
-              onClick={setActiveTab}
-              label={t("dashboard.tabs.schedule")}
-            />
+            <Tab id="exams" active={activeTab} onClick={setActiveTab} label={t("dashboard.tabs.examResults")} />
+            <Tab id="fees" active={activeTab} onClick={setActiveTab} label={t("dashboard.tabs.fees")} />
             <Tab
               id="assignments"
               active={activeTab}
               onClick={setActiveTab}
               label={t("dashboard.tabs.homework")}
             />
+            <Tab
+              id="schedule"
+              active={activeTab}
+              onClick={setActiveTab}
+              label={t("dashboard.tabs.schedule")}
+            />
             <Tab id="notes" active={activeTab} onClick={setActiveTab} label={`${t("dashboard.tabs.notes")}${notesUnread ? ` (${notesUnread})` : ""}`} />
-            <Tab id="fees" active={activeTab} onClick={setActiveTab} label={t("dashboard.tabs.fees")} />
             <Tab id="inbox" active={activeTab} onClick={setActiveTab} label={`${t("admin.tabs.inbox")}${inboxUnread ? ` (${inboxUnread})` : ""}`} />
+            </div>
+            <div className="refresh-control">
+              <button className={`secondary-button compact-button ${refreshStatus === t("dashboard.refreshed") ? "refresh-success" : ""}`} type="button" onClick={() => refreshDashboard()} disabled={refreshing}>
+                {refreshing ? <span className="refresh-icon is-spinning" aria-hidden="true">↻</span> : null}
+                {refreshing ? t("dashboard.refreshing") : refreshStatus || t("dashboard.refresh")}
+              </button>
+            </div>
           </div>
 
           {activeTab === "attendance" ? (
             <AttendanceTable rows={dashboard.attendance} language={language} t={t} />
           ) : null}
-          {activeTab === "exams" ? <ExamsTable rows={dashboard.exams} language={language} t={t} /> : null}
+          {activeTab === "exams" ? examLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : <ExamsTable rows={examLoaded ? examRows : dashboard.exams} language={language} t={t} /> : null}
           {activeTab === "schedule" ? (
             <ScheduleTable rows={dashboard.schedules} language={language} t={t} />
           ) : null}
-          {activeTab === "assignments" ? <HomeworkPanel studentCode={student.student_code} language={language} t={t} /> : null}
-          {activeTab === "notes" ? <StudentNotesPanel studentCode={student.student_code} language={language} t={t} onUnreadCountChange={setNotesUnread} /> : null}
+          {activeTab === "assignments" ? <HomeworkPanel studentCode={student.student_code} language={language} t={t} refreshKey={refreshKey} /> : null}
+          {activeTab === "notes" ? <StudentNotesPanel studentCode={student.student_code} language={language} t={t} onUnreadCountChange={setNotesUnread} refreshKey={refreshKey} /> : null}
           {activeTab === "fees" ? <StudentFeesPanel data={studentFees} loading={feesLoading} error={feesError} language={language} t={t} /> : null}
-          {activeTab === "inbox" ? <StudentInboxControls studentCode={student.student_code} language={language} t={t} onUnreadCountChange={setInboxUnread} /> : null}
+          {activeTab === "inbox" ? <StudentInboxControls studentCode={student.student_code} language={language} t={t} onUnreadCountChange={setInboxUnread} refreshKey={refreshKey} /> : null}
         </section>
       </main>
     </Shell>
+  );
+}
+
+function LatestExamMetric({ exam, language, t }: { exam?: Record<string, any>; language: Language; t: Translator }) {
+  const evaluation = exam ? scoreEvaluation(exam.score, exam.max_score, t) : null;
+  return (
+    <div className="metric latest-exam-metric">
+      <span>{t("dashboard.lastScore")}</span>
+      {exam ? <>
+        <strong className={`score-value score-${evaluation?.tone || ""}`}>{exam.score}/{exam.max_score}</strong>
+        {evaluation ? <small className={`latest-exam-evaluation score-${evaluation.tone}`}>{evaluation.percentage.toFixed(0)}% — {evaluation.label}</small> : null}
+        <small className="latest-exam-date">{t("dashboard.latestExamDate")}: {formatDateOnly(String(exam.exam_date || ""), language, "—")}</small>
+      </> : <strong>—</strong>}
+    </div>
   );
 }
 
@@ -4107,15 +4751,125 @@ function StudentInbox({ studentId, studentCode, t }: { studentId: number; studen
   return <div className="inbox-layout"><div className="inbox-list"><form onSubmit={sendNew} className="inbox-compose"><h3>{t("inbox.newMessage")}</h3><input value={subject} onChange={(e)=>setSubject(e.target.value)} placeholder={t("inbox.subject")} /><textarea value={body} onChange={(e)=>setBody(e.target.value)} placeholder={t("inbox.message")} rows={3}/><button className="primary-button" type="submit">{t("inbox.send")}</button></form>{threads.length?threads.map((thread)=><button className={`inbox-thread ${selected?.id===thread.id?"active":""}`} key={thread.id} type="button" onClick={()=>openThread(thread)}><strong>{thread.subject}</strong><span>{thread.last_message}</span>{Number(thread.unread_count)>0?<b>{thread.unread_count}</b>:null}</button>):<p className="empty-state">{t("inbox.noMessages")}</p>}</div><div className="inbox-conversation">{selected?<><h3>{selected.subject}</h3><div className="inbox-messages">{messages.map((message)=><article className={`inbox-message ${message.sender_type==="student"?"mine":""}`} key={message.id}><p>{message.body}</p><small>{new Date(message.created_at).toLocaleString()}</small></article>)}</div><form onSubmit={sendReply}><textarea value={reply} onChange={(e)=>setReply(e.target.value)} placeholder={t("inbox.reply")} rows={3}/><button className="primary-button" type="submit">{t("inbox.reply")}</button></form></>:<p className="empty-state">{t("inbox.selectThread")}</p>}</div>{status?<p className="lookup-result">{status}</p>:null}</div>;
 }
 
-function StudentInboxControls({ studentCode, language, t, onUnreadCountChange }: { studentCode: string; language: Language; t: Translator; onUnreadCountChange: (count:number)=>void }) {
-  const [threads,setThreads]=useState<any[]>([]);const [selected,setSelected]=useState<any>(null);const [messages,setMessages]=useState<any[]>([]);const [subject,setSubject]=useState("");const [body,setBody]=useState("");const [reply,setReply]=useState("");const [status,setStatus]=useState("");const headers={"Content-Type":"application/json","X-Student-Code":studentCode};
-  async function refresh(){const response=await fetch(`${API_BASE_URL}/student/inbox`,{headers});const data=await response.json();setThreads(data.threads||[]);onUnreadCountChange(Number(data.unread_count||0));}
-  async function openThread(thread:any){const response=await fetch(`${API_BASE_URL}/student/${thread.student_id}/inbox/${thread.id}/messages`,{headers});const data=await response.json();if(!response.ok||!data.ok){setStatus(data.message||t("inbox.noMessages"));return;}setSelected({...thread,unread_count:0});setMessages(data.messages||[]);await refresh();}
-  useEffect(()=>{refresh().catch(()=>setStatus(t("inbox.noMessages")));},[studentCode]);
-  async function sendNew(event:React.FormEvent){event.preventDefault();if(!subject.trim()||!body.trim())return;const response=await fetch(`${API_BASE_URL}/student/inbox/messages`,{method:"POST",headers,body:JSON.stringify({subject:subject.trim(),body:body.trim()})});const data=await response.json();if(data.ok){setSubject("");setBody("");setStatus(t("inbox.sent"));await refresh();await openThread(data.thread);}else setStatus(data.message||t("inbox.noMessages"));}
-  async function sendReply(event:React.FormEvent){event.preventDefault();if(!selected||!reply.trim())return;const response=await fetch(`${API_BASE_URL}/student/${selected.student_id}/inbox/${selected.id}/messages`,{method:"POST",headers,body:JSON.stringify({body:reply.trim()})});const data=await response.json();if(data.ok){setReply("");setStatus(t("inbox.sent"));await openThread(selected);}else setStatus(data.message||t("inbox.noMessages"));}
-  async function markRead(){if(!selected)return;const response=await fetch(`${API_BASE_URL}/student/inbox/${selected.id}/read`,{method:"PUT",headers});if(response.ok){setStatus(t("inbox.markedRead"));await refresh();setSelected({...selected,unread_count:0});}}
-  return <div className="inbox-panel"><div className="inbox-actions"><button type="button" onClick={()=>refresh()}>{t("inbox.refresh")}</button><button type="button" onClick={markRead} disabled={!selected}>{t("inbox.markRead")}</button></div><div className="inbox-layout"><div className="inbox-list"><form onSubmit={sendNew} className="inbox-compose"><h3>{t("inbox.newMessage")}</h3><input value={subject} onChange={(e)=>setSubject(e.target.value)} placeholder={t("inbox.subject")} /><textarea value={body} onChange={(e)=>setBody(e.target.value)} placeholder={t("inbox.message")} rows={3}/><button className="primary-button" type="submit">{t("inbox.send")}</button></form>{threads.length?threads.map((thread)=><button className={`inbox-thread ${selected?.id===thread.id?"active":""}`} key={thread.id} type="button" onClick={()=>openThread(thread)}><strong>{thread.subject}</strong><span>{thread.last_message}</span><em>{Number(thread.unread_count)>0?t("inbox.unread"):t("inbox.read")}</em>{Number(thread.unread_count)>0?<b>{thread.unread_count}</b>:null}</button>):<p className="empty-state">{t("inbox.noMessages")}</p>}</div><div className="inbox-conversation">{selected?<><h3>{selected.subject}</h3><div className="inbox-messages">{messages.map((message)=><article className={`inbox-message ${message.sender_type==="student"?"mine":""}`} key={message.id}><p>{message.body}</p><small className="message-meta"><span>{message.sender_name||message.sender_type}</span><span className="message-read-status">{message.is_read?t("inbox.read"):t("inbox.unread")}</span><time dateTime={typeof message.created_at === "string" ? message.created_at : undefined}>{formatInboxTimestamp(message.created_at, language)}</time></small></article>)}</div><form onSubmit={sendReply}><textarea value={reply} onChange={(e)=>setReply(e.target.value)} placeholder={t("inbox.reply")} rows={3}/><button className="primary-button" type="submit">{t("inbox.reply")}</button></form></>:<p className="empty-state">{t("inbox.selectThread")}</p>}</div></div>{status?<p className="lookup-result">{status}</p>:null}</div>;
+function StudentInboxControls({ studentCode, language, t, onUnreadCountChange, refreshKey = 0 }: { studentCode: string; language: Language; t: Translator; onUnreadCountChange: (count: number) => void; refreshKey?: number }) {
+  const [threads, setThreads] = useState<any[]>([]);
+  const [selected, setSelected] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [reply, setReply] = useState("");
+  const [status, setStatus] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [markingRead, setMarkingRead] = useState(false);
+  const [sendState, setSendState] = useState<"idle" | "sending" | "sent">("idle");
+  const [replyState, setReplyState] = useState<"idle" | "sending" | "sent">("idle");
+  const headers = { "Content-Type": "application/json", "X-Student-Code": studentCode };
+  const canMarkRead = Boolean(selected && Number(selected.unread_count) > 0);
+
+  async function refresh() {
+    setRefreshing(true);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/student/inbox`, { headers });
+      const data = await parseInboxResponse(response);
+      setThreads(Array.isArray(data.threads) ? data.threads : []);
+      onUnreadCountChange(Number(data.unread_count || 0));
+    } catch (_error) {
+      setStatus(t("inbox.loadFailed"));
+      throw _error;
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function openThread(thread: any) {
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/student/${thread.student_id}/inbox/${thread.id}/messages`, { headers });
+      const data = await parseInboxResponse(response);
+      setSelected(thread);
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+    } catch (_error) {
+      setStatus(t("inbox.loadFailed"));
+    }
+  }
+
+  useEffect(() => { refresh().catch(() => undefined); }, [studentCode, refreshKey]);
+
+  async function sendNew(event: React.FormEvent) {
+    event.preventDefault();
+    if (!subject.trim() || !body.trim() || sendState === "sending") return;
+    setSendState("sending");
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/student/inbox/messages`, { method: "POST", headers, body: JSON.stringify({ subject: subject.trim(), body: body.trim() }) });
+      const data = await parseInboxResponse(response);
+      setSubject("");
+      setBody("");
+      await refresh();
+      await openThread(data.thread);
+      setSendState("sent");
+      window.setTimeout(() => setSendState("idle"), 2000);
+    } catch (_error) {
+      setSendState("idle");
+      setStatus(t("inbox.sendFailed"));
+    }
+  }
+
+  async function sendReply(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selected || !reply.trim() || replyState === "sending") return;
+    setReplyState("sending");
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/student/${selected.student_id}/inbox/${selected.id}/messages`, { method: "POST", headers, body: JSON.stringify({ body: reply.trim() }) });
+      await parseInboxResponse(response);
+      setReply("");
+      await openThread(selected);
+      setReplyState("sent");
+      window.setTimeout(() => setReplyState("idle"), 2000);
+    } catch (_error) {
+      setReplyState("idle");
+      setStatus(t("inbox.sendFailed"));
+    }
+  }
+
+  async function markRead() {
+    if (!selected || !canMarkRead || markingRead) return;
+    setMarkingRead(true);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/student/inbox/${selected.id}/read`, { method: "PUT", headers });
+      await parseInboxResponse(response);
+      setMessages((current) => current.map((message) => message.sender_type !== "student" ? { ...message, is_read: true } : message));
+      setSelected((current) => current ? { ...current, unread_count: 0 } : current);
+      await refresh();
+      setStatus(t("inbox.markedRead"));
+    } catch (_error) {
+      setStatus(t("inbox.markReadFailed"));
+    } finally {
+      setMarkingRead(false);
+    }
+  }
+
+  return <div className="inbox-panel">
+    <div className="inbox-actions">
+      <button type="button" onClick={() => markRead()} disabled={!canMarkRead || markingRead}>{markingRead ? t("inbox.markingRead") : t("inbox.markRead")}</button>
+      <button type="button" onClick={() => refresh()} disabled={refreshing}>{refreshing ? t("inbox.refreshing") : t("inbox.refresh")}</button>
+    </div>
+    <div className="inbox-layout">
+      <div className="inbox-list">
+        <form onSubmit={sendNew} className="inbox-compose"><h3>{t("inbox.newMessage")}</h3><input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t("inbox.subject")} /><textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("inbox.message")} rows={3}/><button className={`primary-button ${sendState === "sent" ? "success-button" : ""}`} type="submit" disabled={sendState === "sending"}>{sendState === "sending" ? t("inbox.sending") : sendState === "sent" ? t("inbox.sentStatus") : t("inbox.send")}</button></form>
+        {threads.length ? threads.map((thread) => <button className={`inbox-thread ${selected?.id === thread.id ? "active" : ""}`} key={thread.id} type="button" onClick={() => openThread(thread)}><strong>{thread.subject}</strong><span>{thread.last_message}</span><em>{Number(thread.unread_count) > 0 ? t("inbox.unread") : t("inbox.read")}</em>{Number(thread.unread_count) > 0 ? <b>{thread.unread_count}</b> : null}</button>) : <p className="empty-state">{t("inbox.noMessages")}</p>}
+      </div>
+      <div className="inbox-conversation">{selected ? <>
+        <h3>{selected.subject}</h3>
+        <div className="inbox-messages">{messages.map((message) => <article className={`inbox-message ${message.sender_type === "student" ? "mine" : ""}`} key={message.id}><p>{message.body}</p><small className="message-meta"><span>{message.sender_name || message.sender_type}</span><span className="message-read-status">{inboxMessageStatus(message, "student", t)}</span><time dateTime={typeof message.created_at === "string" ? message.created_at : undefined}>{formatInboxTimestamp(message.created_at, language)}</time></small></article>)}</div>
+        <form onSubmit={sendReply}><textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder={t("inbox.reply")} rows={3}/><button className={`primary-button ${replyState === "sent" ? "success-button" : ""}`} type="submit" disabled={replyState === "sending"}>{replyState === "sending" ? t("inbox.sending") : replyState === "sent" ? t("inbox.sentStatus") : t("inbox.reply")}</button></form>
+      </> : <p className="empty-state">{t("inbox.selectThread")}</p>}</div>
+    </div>
+    {status ? <p className="lookup-result">{status}</p> : null}
+  </div>;
 }
 
 function Tab({
@@ -4191,7 +4945,7 @@ function ExamsTable({
             <th>{t("table.exam")}</th>
             <th>{t("table.date")}</th>
             <th>{t("table.score")}</th>
-            <th>{t("table.note")}</th>
+            <th>{t("table.assessment")}</th>
           </tr>
         </thead>
         <tbody>
@@ -4200,9 +4954,12 @@ function ExamsTable({
               <td>{displayValue(row.title, language)}</td>
               <td>{formatDateTime(row.exam_date, language, t("dashboard.notCheckedIn"))}</td>
               <td>
-                {row.score}/{row.max_score}
+                <span className={`score-value score-${scoreEvaluation(row.score, row.max_score, t)?.tone || ""}`}>
+                  {row.score}/{row.max_score}
+                </span>
+                {scoreEvaluation(row.score, row.max_score, t) ? <small className="score-evaluation-label">{scoreEvaluation(row.score, row.max_score, t)?.label}</small> : null}
               </td>
-              <td>{row.note ? displayValue(row.note, language) : "-"}</td>
+              <td>{row.assessment || row.note ? displayValue(row.assessment || row.note, language) : "-"}</td>
             </tr>
           ))}
           {!rows.length ? <EmptyRow columns={4} t={t} /> : null}

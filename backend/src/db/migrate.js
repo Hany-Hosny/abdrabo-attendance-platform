@@ -198,9 +198,12 @@ export async function migrate() {
     ALTER TABLE students ADD COLUMN IF NOT EXISTS student_serial TEXT;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS scan_serial TEXT;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS qr_token TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS gender TEXT NOT NULL DEFAULT 'unknown';
     ALTER TABLE students ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
     ALTER TABLE students ADD COLUMN IF NOT EXISTS purge_after TIMESTAMPTZ;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    ALTER TABLE students DROP CONSTRAINT IF EXISTS students_gender_check;
+    ALTER TABLE students ADD CONSTRAINT students_gender_check CHECK (gender IN ('male', 'female', 'unknown'));
 
     ALTER TABLE attendance_records DROP CONSTRAINT IF EXISTS attendance_records_status_check;
     ALTER TABLE attendance_records ADD CONSTRAINT attendance_records_status_check CHECK (status IN ('present','absent','late','pending_review','rejected'));
@@ -300,6 +303,8 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS inbox_threads_student_idx ON inbox_threads(student_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS inbox_messages_thread_idx ON inbox_messages(thread_id, created_at);
     CREATE INDEX IF NOT EXISTS inbox_messages_unread_idx ON inbox_messages(is_read, created_at);
+    ALTER TABLE inbox_messages
+      ADD COLUMN IF NOT EXISTS sender_student_id INTEGER REFERENCES students(id) ON DELETE SET NULL;
   `);
 
   await query(`
@@ -447,7 +452,7 @@ export async function migrate() {
       WHERE NOT EXISTS (SELECT 1 FROM groups WHERE name = $2)
       RETURNING id
     `,
-    [centerId, "مجموعة السبت 6 مساء", "الصف الأول الثانوي", "العلوم المتكاملة"]
+    [centerId, "مجموعة السبت 6 مساء", "الصف الأول الثانوي", "العلوم"]
   );
 
   const groupId =
@@ -559,12 +564,12 @@ export async function migrate() {
       slug: "about-teacher",
       title_ar: "عن المستر",
       title_en: "About Teacher",
-      subtitle_ar: "مستر أحمد عبدربه مدرس العلوم المتكاملة بخطة متابعة واضحة لكل طالب.",
+      subtitle_ar: "مستر أحمد عبدربه مدرس العلوم بخطة متابعة واضحة لكل طالب.",
       subtitle_en:
-        "Mr. Ahmed Abdrabo teaches Integrated Science with a clear follow-up plan for every student.",
+        "Mr. Ahmed Abdrabo teaches Science with a clear follow-up plan for every student.",
       content_ar: {
         teacherName: "مستر أحمد عبدربه",
-        subject: "العلوم المتكاملة",
+        subject: "العلوم",
         bio: "شرح منظم يربط المنهج بالتطبيقات العملية ويساعد الطالب على فهم الفكرة قبل حفظها.",
         experienceYears: "10+ سنوات خبرة",
         teachingStyle: "شرح مبسط، تدريب مستمر، ومتابعة فردية بعد كل تقييم.",
@@ -572,7 +577,7 @@ export async function migrate() {
       },
       content_en: {
         teacherName: "Mr. Ahmed Abdrabo",
-        subject: "Integrated Science",
+        subject: "Science",
         bio: "Structured explanations that connect the curriculum to practical examples and help students understand before memorizing.",
         experienceYears: "10+ years of experience",
         teachingStyle: "Simple explanation, continuous practice, and individual follow-up after every assessment.",
@@ -583,8 +588,8 @@ export async function migrate() {
       slug: "about-center",
       title_ar: "عن السنتر",
       title_en: "About Center",
-      subtitle_ar: "بيئة تعليمية مجهزة لحصص العلوم المتكاملة والمتابعة المنتظمة.",
-      subtitle_en: "A focused learning space for Integrated Science classes and regular follow-up.",
+      subtitle_ar: "بيئة تعليمية مجهزة لحصص العلوم والمتابعة المنتظمة.",
+      subtitle_en: "A focused learning space for Science classes and regular follow-up.",
       content_ar: {
         intro: "السنتر يوفر نظام حضور واضح، مجموعات منظمة، ومتابعة مستمرة للطلاب.",
         address: "عنوان السنتر - يتم تحديثه لاحقا",
@@ -665,6 +670,20 @@ export async function migrate() {
       ]
     );
   }
+
+  // Keep existing local seed data aligned with the current Arabic branding.
+  await query("UPDATE groups SET subject = $1 WHERE subject = $2", ["العلوم", "العلوم المتكاملة"]);
+  await query(
+    `
+      UPDATE site_pages
+      SET subtitle_ar = REPLACE(subtitle_ar, $1, $2),
+          content_ar = REPLACE(content_ar::text, $1, $2)::jsonb,
+          subtitle_en = REPLACE(subtitle_en, $4, $5),
+          content_en = REPLACE(content_en::text, $4, $5)::jsonb
+      WHERE subtitle_ar LIKE $3 OR content_ar::text LIKE $3 OR subtitle_en LIKE $6 OR content_en::text LIKE $6
+    `,
+    ["العلوم المتكاملة", "العلوم", "%العلوم المتكاملة%", "Integrated Science", "Science", "%Integrated Science%"]
+  );
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -272,7 +272,7 @@ adminAcademicRouter.get("/groups/:id/details", async (req, res, next) => {
 });
 
 const studentSelect = `
-  SELECT s.id, s.group_id, s.student_code, s.student_serial, s.scan_serial, s.qr_token, s.full_name, s.phone, s.guardian_phone,
+  SELECT s.id, s.group_id, s.student_code, s.student_serial, s.scan_serial, s.qr_token, s.full_name, s.phone, s.guardian_phone, s.gender,
     s.is_active, s.deleted_at, s.purge_after, s.created_at, g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
   FROM students s JOIN groups g ON g.id = s.group_id
 `;
@@ -315,8 +315,8 @@ adminAcademicRouter.get("/students/:id/profile", async (req, res, next) => {
         WHERE s.group_id = $2 AND s.schedule_id IS NOT NULL
         ORDER BY s.session_date DESC, cs.start_time DESC`, [studentId, student.group_id]),
       query(`SELECT e.id, e.title, e.exam_date, e.max_score, er.score, er.note
-        FROM exams e LEFT JOIN exam_results er ON er.exam_id = e.id AND er.student_id = $1
-        WHERE e.group_id = $2 ORDER BY e.exam_date DESC`, [studentId, student.group_id]),
+        FROM exams e JOIN exam_results er ON er.exam_id = e.id AND er.student_id = $1
+        WHERE e.group_id = $2 ORDER BY e.exam_date DESC, e.id DESC`, [studentId, student.group_id]),
       query(`SELECT n.id, n.student_id, n.body, n.created_at, n.updated_at, n.is_read, n.author_id,
           COALESCE(t.name, t.username, t.email, 'Staff') AS author_name
         FROM student_notes n LEFT JOIN teachers t ON t.id = n.author_id
@@ -350,6 +350,89 @@ adminAcademicRouter.get("/students/:id/profile", async (req, res, next) => {
       fees: { ...(feeSummary || {}), payments: payments.rows },
       inbox: threads.rows
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminAcademicRouter.get("/exams/results", async (req, res, next) => {
+  try {
+    const values = [];
+    const filters = ["s.deleted_at IS NULL", "s.is_active = TRUE"];
+    const groupId = Number(normalizeDigits(req.query.group_id || ""));
+    const studentId = Number(normalizeDigits(req.query.student_id || ""));
+    const search = normalizeDigits(req.query.search || "").trim();
+    if (Number.isInteger(groupId) && groupId > 0) { values.push(groupId); filters.push(`s.group_id = $${values.length}`); }
+    if (Number.isInteger(studentId) && studentId > 0) { values.push(studentId); filters.push(`s.id = $${values.length}`); }
+    if (search) {
+      values.push(`%${search}%`);
+      filters.push(`(s.full_name ILIKE $${values.length} OR s.student_code ILIKE $${values.length} OR s.student_serial ILIKE $${values.length} OR s.scan_serial ILIKE $${values.length} OR g.name ILIKE $${values.length})`);
+    }
+    const result = await query(
+      `SELECT er.id, er.student_id, s.full_name, s.student_code, s.group_id, g.name AS group_name,
+              e.id AS exam_id, e.title, e.exam_date, e.max_score, er.score, er.note, er.note AS assessment
+       FROM exam_results er
+       JOIN exams e ON e.id = er.exam_id
+       JOIN students s ON s.id = er.student_id
+       JOIN groups g ON g.id = s.group_id
+       WHERE ${filters.join(" AND ")}
+       ORDER BY e.exam_date DESC, s.full_name ASC, e.id DESC`,
+      values
+    );
+    res.json({ ok: true, results: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminAcademicRouter.post("/exams/results", requireRoles("admin", "teacher"), async (req, res, next) => {
+  try {
+    const studentId = Number(normalizeDigits(req.body?.student_id));
+    const title = String(req.body?.title || "").trim();
+    const examDate = String(req.body?.exam_date || "").trim();
+    const maxScoreValue = String(req.body?.max_score ?? "").trim();
+    const scoreValue = String(req.body?.score ?? "").trim();
+    const maxScore = Number(normalizeDigits(maxScoreValue));
+    const score = Number(normalizeDigits(scoreValue));
+    const assessment = String(req.body?.assessment || req.body?.note || "").trim();
+
+    if (!Number.isInteger(studentId) || studentId <= 0 || !title || !/^\d{4}-\d{2}-\d{2}$/.test(examDate) || !maxScoreValue || !scoreValue || !Number.isFinite(maxScore) || maxScore <= 0 || !Number.isFinite(score) || score < 0 || score > maxScore) {
+      return res.status(400).json({ ok: false, status: "invalid_exam_result" });
+    }
+
+    const student = await query("SELECT id, group_id FROM students WHERE id = $1 AND deleted_at IS NULL", [studentId]);
+    if (!student.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+
+    const existingExam = await query(
+      "SELECT id FROM exams WHERE group_id = $1 AND title = $2 AND exam_date = $3::date LIMIT 1",
+      [student.rows[0].group_id, title, examDate]
+    );
+    const examId = existingExam.rows[0]?.id || (await query(
+      "INSERT INTO exams (group_id, title, max_score, exam_date) VALUES ($1, $2, $3, $4::date) RETURNING id",
+      [student.rows[0].group_id, title, maxScore, examDate]
+    )).rows[0].id;
+
+    const result = await query(
+      `INSERT INTO exam_results (exam_id, student_id, score, note)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (exam_id, student_id)
+       DO UPDATE SET score = EXCLUDED.score, note = EXCLUDED.note
+       RETURNING id, exam_id, student_id, score, note AS assessment`,
+      [examId, studentId, score, assessment || null]
+    );
+    res.status(201).json({ ok: true, result: result.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminAcademicRouter.delete("/exams/results/:id", requireRoles("admin", "teacher"), async (req, res, next) => {
+  try {
+    const resultId = Number(normalizeDigits(req.params.id));
+    if (!Number.isInteger(resultId) || resultId <= 0) return res.status(400).json({ ok: false, status: "invalid_exam_result" });
+    const result = await query("DELETE FROM exam_results WHERE id = $1 RETURNING id", [resultId]);
+    if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    res.json({ ok: true, deleted_id: result.rows[0].id });
   } catch (error) {
     next(error);
   }
@@ -391,6 +474,7 @@ adminAcademicRouter.post("/students", async (req, res, next) => {
     const fullName = String(req.body?.full_name || "").trim();
     const requestedCode = normalizeStudentCode(req.body?.student_code || "");
     const guardianPhone = normalizeDigits(req.body?.guardian_phone || "").trim();
+    const gender = ["male", "female", "unknown"].includes(String(req.body?.gender || "")) ? String(req.body.gender) : "unknown";
     const groupId = Number(normalizeDigits(req.body?.group_id));
     const phone = normalizeDigits(req.body?.phone || "").trim() || null;
     const nationalId = normalizeDigits(req.body?.national_id || "").trim();
@@ -414,9 +498,9 @@ adminAcademicRouter.post("/students", async (req, res, next) => {
     const group = await query("SELECT id FROM groups WHERE id = $1 AND is_active = TRUE", [groupId]);
     if (!group.rowCount) return res.status(400).json({ ok: false, status: "invalid_group" });
     const result = await query(
-      `INSERT INTO students (group_id, student_code, student_serial, scan_serial, qr_token, full_name, phone, guardian_phone, national_id_hash, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-      [groupId, studentCode, studentSerial, scanSerial, crypto.randomBytes(24).toString("hex"), fullName, phone, guardianPhone, nationalId ? hashNationalId(nationalId) : null, isActive]
+      `INSERT INTO students (group_id, student_code, student_serial, scan_serial, qr_token, full_name, phone, guardian_phone, national_id_hash, gender, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+      [groupId, studentCode, studentSerial, scanSerial, crypto.randomBytes(24).toString("hex"), fullName, phone, guardianPhone, nationalId ? hashNationalId(nationalId) : null, gender, isActive]
     );
     const student = await query(`${studentSelect} WHERE s.id = $1`, [result.rows[0].id]);
     res.status(201).json({ ok: true, student: student.rows[0] });
@@ -448,6 +532,7 @@ adminAcademicRouter.put("/students/:id", async (req, res, next) => {
     const fullName = String(req.body?.full_name || "").trim();
     const requestedCode = normalizeStudentCode(req.body?.student_code || "");
     const guardianPhone = normalizeDigits(req.body?.guardian_phone || "").trim();
+    const gender = ["male", "female", "unknown"].includes(String(req.body?.gender || "")) ? String(req.body.gender) : "unknown";
     const groupId = Number(normalizeDigits(req.body?.group_id));
     const phone = normalizeDigits(req.body?.phone || "").trim() || null;
     const nationalId = normalizeDigits(req.body?.national_id || "").trim();
@@ -468,8 +553,8 @@ adminAcademicRouter.put("/students/:id", async (req, res, next) => {
     }
     const result = await query(
       `UPDATE students SET group_id = $1, student_code = $2, student_serial = $3, full_name = $4, phone = $5,
-        guardian_phone = $6, national_id_hash = COALESCE($7, national_id_hash), is_active = $8, updated_at=NOW() WHERE id = $9 RETURNING id`,
-      [groupId, studentCode, studentSerial, fullName, phone, guardianPhone, nationalId ? hashNationalId(nationalId) : null, isActive, studentId]
+        guardian_phone = $6, national_id_hash = COALESCE($7, national_id_hash), gender = $8, is_active = $9, updated_at=NOW() WHERE id = $10 RETURNING id`,
+      [groupId, studentCode, studentSerial, fullName, phone, guardianPhone, nationalId ? hashNationalId(nationalId) : null, gender, isActive, studentId]
     );
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const student = await query(`${studentSelect} WHERE s.id = $1`, [studentId]);

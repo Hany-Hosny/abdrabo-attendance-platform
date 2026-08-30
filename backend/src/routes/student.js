@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { query } from "../db/pool.js";
 import { loginAndRecordAttendance } from "../services/attendance.js";
 import { getFeeSummary } from "../services/fees.js";
+import { getDashboardData } from "../services/dashboard.js";
 import { normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.js";
 
 export const studentRouter = express.Router();
@@ -94,6 +95,17 @@ studentRouter.post("/find-code", async (req, res, next) => {
   }
 });
 
+studentRouter.get("/me/dashboard", async (req, res, next) => {
+  try {
+    const student = await authenticatedStudent(req);
+    if (!student) return res.status(401).json({ ok: false, status: "unauthorized" });
+    const dashboard = await getDashboardData(student.id);
+    return res.json({ ok: true, dashboard });
+  } catch (error) {
+    next(error);
+  }
+});
+
 studentRouter.get("/me/fees", async (req, res, next) => {
   try {
     const studentCode = normalizeStudentCode(req.headers["x-student-code"] || "");
@@ -155,6 +167,22 @@ studentRouter.put("/me/notes/read", async (req, res, next) => {
 
 studentRouter.get("/homework", async (req,res,next)=>{try{const student=await authenticatedStudent(req);if(!student)return res.status(401).json({ok:false,status:"unauthorized",homework:[]});const result=await query(`SELECT h.id,h.title,h.description,h.due_date,h.attachment_url,COALESCE(hs.status,CASE WHEN h.due_date IS NOT NULL AND h.due_date<CURRENT_TIMESTAMP THEN 'late' ELSE 'new' END) AS status,hs.submitted_at FROM homeworks h LEFT JOIN homework_submissions hs ON hs.homework_id=h.id AND hs.student_id=$1 WHERE h.group_id=$2 ORDER BY h.due_date NULLS LAST,h.created_at DESC`,[student.id,student.group_id]);res.json({ok:true,homework:result.rows||[]});}catch(error){next(error);}});
 
+studentRouter.get("/me/exams", async (req, res, next) => {
+  try {
+    const student = await authenticatedStudent(req);
+    if (!student) return res.status(401).json({ ok: false, status: "unauthorized", exams: [] });
+    const result = await query(
+      `SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment
+       FROM exam_results er JOIN exams e ON e.id = er.exam_id
+       WHERE er.student_id = $1 ORDER BY e.exam_date DESC, e.id DESC`,
+      [student.id]
+    );
+    res.json({ ok: true, exams: result.rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
 studentRouter.get("/:id/attendance", async (req, res, next) => {
   try {
     const result = await query(
@@ -178,7 +206,7 @@ studentRouter.get("/:id/exams", async (req, res, next) => {
   try {
     const result = await query(
       `
-        SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note
+        SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment
         FROM exam_results er
         JOIN exams e ON e.id = er.exam_id
         WHERE er.student_id = $1
