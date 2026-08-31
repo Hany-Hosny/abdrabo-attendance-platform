@@ -3628,6 +3628,7 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
       setStatus(t("fees.studentNotFound"));
       return;
     }
+    setCode("");
     try {
       const response = await fetch(`${API_BASE_URL}/admin/students?status=all&q=${encodeURIComponent(value)}`, { headers: auth });
       const data = await response.json();
