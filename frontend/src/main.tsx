@@ -212,6 +212,9 @@ const translations = {
     "scanner.submit": "تسجيل الحضور",
     "scanner.recorded": "تم تسجيل الحضور بنجاح",
     "scanner.invalidCode": "لم يتم العثور على طالب بهذا الليبل.",
+    "scanner.scanRequired": "لم يتم استقبال بيانات من الاسكانر.",
+    "scanner.profileOpened": "تم فتح الملف الشخصي للطالب.",
+    "scanner.scanProfilePlaceholder": "امسح الليبل لفتح الملف الشخصي",
     "scanner.inactiveStudent": "هذا الطالب غير مفعل.",
     "scanner.closedSession": "لا توجد حصة مفتوحة لهذه المجموعة الآن.",
     "scanner.duplicate": "تم تسجيل حضور هذا الطالب بالفعل.",
@@ -449,6 +452,7 @@ const translations = {
     "admin.scanSerial": "السريال",
     "admin.labelPreview": "معاينة الليبل",
     "admin.printLabel": "طباعة الليبل",
+    "admin.printingLabel": "جاري تجهيز الليبل...",
     "admin.regenerateScanSerialConfirm": "إعادة توليد السريال ستؤثر على الليبل المطبوع. هل تريد المتابعة؟",
     "admin.regenerateScanSerial": "إعادة توليد السريال",
     "admin.phone": "رقم الهاتف",
@@ -728,6 +732,9 @@ const translations = {
     "scanner.submit": "Record attendance",
     "scanner.recorded": "Attendance recorded successfully",
     "scanner.invalidCode": "No student was found for this label.",
+    "scanner.scanRequired": "No data was received from the scanner.",
+    "scanner.profileOpened": "The student profile was opened.",
+    "scanner.scanProfilePlaceholder": "Scan the label to open the profile",
     "scanner.inactiveStudent": "This student is inactive.",
     "scanner.closedSession": "There is no open class for this group right now.",
     "scanner.duplicate": "This student’s attendance was already recorded.",
@@ -965,6 +972,7 @@ const translations = {
     "admin.scanSerial": "Scan serial",
     "admin.labelPreview": "Label preview",
     "admin.printLabel": "Print Label",
+    "admin.printingLabel": "Preparing label...",
     "admin.regenerateScanSerialConfirm": "Regenerating the scan serial affects printed labels. Continue?",
     "admin.regenerateScanSerial": "Regenerate scan serial",
     "admin.phone": "Phone",
@@ -1435,6 +1443,7 @@ function scannerStatusMessage(status: string, t: Translator) {
   const statusKey: Record<string, TranslationKey> = {
     attendance_recorded: "scanner.recorded",
     invalid_qr_token: "scanner.invalidCode",
+    scan_value_required: "scanner.scanRequired",
     inactive_student: "scanner.inactiveStudent",
     closed_session: "scanner.closedSession",
     duplicate_attendance: "scanner.duplicate"
@@ -1524,6 +1533,15 @@ function normalizeStudentCode(value: string) {
   return normalizeDigits(value).trim().toUpperCase().replace(/^A(\d{4})$/, "A-$1");
 }
 
+function normalizeScanValue(value: unknown) {
+  return normalizeDigits(value)
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .trim()
+    .replace(/^\](?:C[0-3]|Q[0-9]|d[0-9])/i, "")
+    .trim()
+    .toUpperCase();
+}
+
 function normalizeAdminStudentCode(value: string) {
   const normalized = normalizeStudentCode(value);
   return normalized.replace(/^A(\d{4})$/, "A-$1");
@@ -1531,6 +1549,41 @@ function normalizeAdminStudentCode(value: string) {
 
 function escapeHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character] || character));
+}
+
+function labelScanSerial(student: Record<string, any>) {
+  return String(student.scan_serial || student.student_serial || "").trim();
+}
+
+function buildStudentLabelMarkup(student: Record<string, any>) {
+  const scanSerial = labelScanSerial(student);
+  const barcode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  if (scanSerial) {
+    JsBarcode(barcode, scanSerial, { format: "CODE128", displayValue: false, height: 52, width: 1.45, margin: 0 });
+  }
+  const grade = student.grade || student.grade_level || "";
+  const group = student.group_name || student.group || "";
+  const gradeAndGroup = [grade, group].filter(Boolean).join(" · ");
+  return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>Student Label</title><style>
+    @page{size:58mm 32mm;margin:0}
+    *{box-sizing:border-box}
+    html,body{width:58mm;min-height:32mm;margin:0;padding:0}
+    body{display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1mm 2mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff}
+    .brand,.name,.code,.grade,.scan-value{max-width:54mm;white-space:nowrap;overflow:hidden;text-overflow:clip}
+    .brand{font-size:10px;line-height:1.05;font-weight:700}
+    .name{font-size:12.5px;line-height:1.05;font-weight:700;margin:.8mm 0 .35mm}
+    .code{font-size:11px;line-height:1.05;font-weight:800}
+    .grade{font-size:8.5px;line-height:1.05;margin-top:.35mm}
+    .barcode{display:flex;align-items:center;justify-content:center;width:54mm;height:8.5mm;margin:.7mm auto 0;overflow:hidden}
+    .barcode svg{display:block;width:54mm;height:8.5mm}
+    .scan-value{font-size:9.2px;line-height:1;font-weight:700;margin-top:.2mm;letter-spacing:.15px}
+  </style></head><body>
+    <div class="brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</div>
+    <div class="name">${escapeHtml(student.full_name || "")}</div>
+    <div class="code">Student code / كود الطالب: ${escapeHtml(student.student_code || "")}</div>
+    <div class="grade">${escapeHtml(gradeAndGroup)}</div>
+    ${scanSerial ? `<div class="barcode">${barcode.outerHTML}</div><div class="scan-value">${escapeHtml(scanSerial)}</div>` : ""}
+  </body></html>`;
 }
 
 function DateTimeWidget({
@@ -2857,6 +2910,10 @@ function AcademicManager({
   const [studentSearch, setStudentSearch] = useState("");
   const [profileStudentId, setProfileStudentId] = useState<number | null>(null);
   const [profilePickerId, setProfilePickerId] = useState("");
+  const [profileScanValue, setProfileScanValue] = useState("");
+  const [profileScanStatus, setProfileScanStatus] = useState("");
+  const [profileScanLoading, setProfileScanLoading] = useState(false);
+  const profileScanRef = useRef<HTMLInputElement>(null);
 
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` };
 
@@ -3117,6 +3174,43 @@ function AcademicManager({
     catch(error){setStatus(error instanceof Error?error.message:t("errors.loginFailed"));}
   }
 
+  async function openStudentProfileFromScan() {
+    if (profileScanLoading) return;
+    const value = normalizeScanValue(profileScanValue);
+    setProfileScanValue("");
+    setProfileScanStatus("");
+    if (!value) {
+      setProfileScanStatus(t("scanner.scanRequired"));
+      profileScanRef.current?.focus();
+      return;
+    }
+
+    setProfileScanLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/students?status=all&q=${encodeURIComponent(value)}`, { headers });
+      const data = (await response.json()) as { ok: boolean; students?: AdminStudent[] };
+      if (!response.ok || !data.ok) throw new Error(t("errors.loginFailed"));
+      const student = (data.students || []).find((item) =>
+        normalizeScanValue(item.scan_serial) === value ||
+        normalizeScanValue(item.student_serial) === value ||
+        normalizeScanValue(item.student_code) === value ||
+        normalizeScanValue(item.qr_token) === value
+      );
+      if (!student) {
+        setProfileScanStatus(t("scanner.invalidCode"));
+        return;
+      }
+      setProfilePickerId(String(student.id));
+      setProfileStudentId(student.id);
+      setProfileScanStatus(t("scanner.profileOpened"));
+    } catch (error) {
+      setProfileScanStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+    } finally {
+      setProfileScanLoading(false);
+      window.setTimeout(() => profileScanRef.current?.focus(), 0);
+    }
+  }
+
   function generateStudentIdentifiers() {
     let candidate = "";
     let attempts = 0;
@@ -3152,10 +3246,7 @@ function AcademicManager({
       const response = await fetch(`${API_BASE_URL}/admin/students/${student.id}/print-label`, { method: "POST", headers });
       const data = await response.json();
       if (!response.ok || !data.ok || !(data.student?.scan_serial || data.student?.student_serial)) throw new Error(data.status === "label_print_limit_reached" ? "Label print permission or limit reached / انتهت صلاحية أو عدد طباعة الليبل" : t("errors.loginFailed"));
-      const scanSerial = data.student.scan_serial || data.student.student_serial;
-      const barcode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      JsBarcode(barcode, scanSerial, { format: "CODE128", displayValue: true, fontSize: 13, height: 48, width: 1.5, margin: 0 });
-      printWindow.document.write(`<!doctype html><html dir="rtl"><head><title>Student Label</title><style>@page{size:58mm 50mm;margin:0}*{box-sizing:border-box}body{width:58mm;margin:0;padding:3mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111}.brand{font-size:12px;font-weight:700}.name{font-size:14px;font-weight:700;margin:2mm 0 1mm}.code{font-size:13px;font-weight:800}.grade{font-size:10px;margin-top:1mm}.barcode{width:50mm;height:18mm;margin:2mm auto 0}button{margin-top:3mm;padding:2mm 4mm}@media print{button{display:none}}</style></head><body><div class="brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</div><div class="name">${escapeHtml(data.student.full_name)}</div><div class="code">Student code / كود الطالب: ${escapeHtml(data.student.student_code)}</div><div class="grade">${escapeHtml(data.student.grade || data.student.grade_level || "")} · ${escapeHtml(data.student.group_name || "")}</div><div class="barcode">${barcode.outerHTML}</div></body></html>`); printWindow.document.close(); printWindow.focus(); setTimeout(()=>printWindow.print(),250); setStatus("Label ready for printing / الليبل جاهز للطباعة");
+      printWindow.document.write(buildStudentLabelMarkup(data.student)); printWindow.document.close(); printWindow.focus(); setTimeout(() => printWindow.print(), 250); setStatus("Label ready for printing / الليبل جاهز للطباعة");
     } catch (error) { printWindow.close(); setStatus(error instanceof Error ? error.message : t("errors.loginFailed")); }
   }
 
@@ -3163,10 +3254,8 @@ function AcademicManager({
     if (!studentForm.full_name || !studentForm.student_code || !studentForm.scan_serial) return;
     const printWindow = window.open("", "_blank", "width=420,height=620");
     if (!printWindow) { setStatus("Please allow pop-ups to print labels / اسمح بالنوافذ المنبثقة للطباعة"); return; }
-    const barcode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    JsBarcode(barcode, studentForm.scan_serial, { format: "CODE128", displayValue: true, fontSize: 13, height: 48, width: 1.5, margin: 0 });
     const group = groups.find((item) => String(item.id) === studentForm.group_id);
-    printWindow.document.write(`<!doctype html><html dir="rtl"><head><title>Student Label</title><style>@page{size:58mm 50mm;margin:0}*{box-sizing:border-box}body{width:58mm;margin:0;padding:3mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111}.brand{font-size:12px;font-weight:700}.name{font-size:14px;font-weight:700;margin:2mm 0 1mm}.code{font-size:13px;font-weight:800}.grade{font-size:10px;margin-top:1mm}.barcode{width:50mm;height:18mm;margin:2mm auto 0}button{margin-top:3mm;padding:2mm 4mm}@media print{button{display:none}}</style></head><body><div class="brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</div><div class="name">${escapeHtml(studentForm.full_name)}</div><div class="code">Student code / كود الطالب: ${escapeHtml(studentForm.student_code)}</div><div class="grade">${escapeHtml(group?.grade_level || group?.grade || "")} · ${escapeHtml(group?.display_name || group?.name || "")}</div><div class="barcode">${barcode.outerHTML}</div></body></html>`);
+    printWindow.document.write(buildStudentLabelMarkup({ full_name: studentForm.full_name, student_code: studentForm.student_code, scan_serial: studentForm.scan_serial, grade: group?.grade_level || group?.grade, group_name: group?.display_name || group?.name }));
     printWindow.document.close(); printWindow.focus(); setTimeout(() => printWindow.print(), 250);
     setStatus("Label ready for printing / الليبل جاهز للطباعة");
   }
@@ -3206,7 +3295,7 @@ function AcademicManager({
               <div><span>{t("admin.loginCode")}</span><strong>{studentForm.student_code || "—"}</strong></div>
               <div><span>{t("admin.scanSerial")}</span><strong>{studentForm.scan_serial || "—"}</strong></div>
             </div>
-            {studentForm.scan_serial ? <div className="student-label-preview"><strong>{t("admin.labelPreview")}</strong><span>مستر أحمد عبدربه / Mr. Ahmed Abdrabo</span><span>{studentForm.full_name || "Student name"} · {studentForm.student_code}</span><BarcodePreview value={studentForm.scan_serial} /><div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printGeneratedLabel}>{t("admin.printLabel")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={regenerateScanSerial} disabled={loading}>{t("admin.regenerateScanSerial")}</button> : null}</div></div> : <><p className="field-hint">{t("admin.generateCodeSerial")}</p>{fieldErrors.scan_serial ? <small className="field-error">{fieldErrors.scan_serial}</small> : null}</>}
+            {studentForm.scan_serial ? <div className="student-label-preview"><strong>{t("admin.labelPreview")}</strong><span>مستر أحمد عبدربه / Mr. Ahmed Abdrabo</span><span>{studentForm.full_name || "Student name"} · {studentForm.student_code}</span><BarcodePreview value={studentForm.scan_serial} displayValue={false} /><strong className="label-preview-serial">{studentForm.scan_serial}</strong><div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printGeneratedLabel}>{t("admin.printLabel")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={regenerateScanSerial} disabled={loading}>{t("admin.regenerateScanSerial")}</button> : null}</div></div> : <><p className="field-hint">{t("admin.generateCodeSerial")}</p>{fieldErrors.scan_serial ? <small className="field-error">{fieldErrors.scan_serial}</small> : null}</>}
           </section>
           </>
         )}
@@ -3216,7 +3305,32 @@ function AcademicManager({
       {kind === "students" && session.teacher.role === "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons">{(["active","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
 
       {kind === "students" ? <label className="student-search-field">{t("admin.searchStudents")}<input value={studentSearch} onChange={(e) => setStudentSearch(normalizeDigits(e.target.value))} placeholder={t("admin.searchStudents")} /></label> : null}
-      {kind === "students" ? <div className="student-profile-picker"><select value={profilePickerId} onChange={(e) => setProfilePickerId(e.target.value)}><option value="">{t("admin.viewProfile")}</option>{students.map((student) => <option key={student.id} value={student.id}>{student.full_name} · {student.student_code}</option>)}</select><button className="secondary-button compact-button" type="button" disabled={!profilePickerId} onClick={() => setProfileStudentId(Number(profilePickerId))}>{t("admin.viewProfile")}</button></div> : null}
+      {kind === "students" ? <div className="student-profile-picker">
+        <div className="student-profile-scan">
+          <input
+            ref={profileScanRef}
+            value={profileScanValue}
+            onChange={(event) => setProfileScanValue(normalizeScanValue(event.target.value))}
+            onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void openStudentProfileFromScan(); } }}
+            placeholder={t("scanner.scanProfilePlaceholder")}
+            aria-label={t("scanner.scanProfilePlaceholder")}
+            autoComplete="off"
+            disabled={profileScanLoading}
+          />
+          <button className="secondary-button compact-button scanner-action-button" type="button" onClick={() => void openStudentProfileFromScan()} disabled={profileScanLoading || !profileScanValue.trim()}>
+            <span className="barcode-icon" aria-hidden="true">▥</span>
+            {profileScanLoading ? t("dashboard.refreshing") : t("admin.tabs.scanner")}
+          </button>
+        </div>
+        <div className="student-profile-select">
+          <select value={profilePickerId} onChange={(e) => setProfilePickerId(e.target.value)}>
+            <option value="">{t("admin.viewProfile")}</option>
+            {students.map((student) => <option key={student.id} value={student.id}>{student.full_name} · {student.student_code}</option>)}
+          </select>
+        </div>
+        <button className="secondary-button compact-button profile-open-button" type="button" disabled={!profilePickerId} onClick={() => setProfileStudentId(Number(profilePickerId))}>{t("admin.viewProfile")}</button>
+        {profileScanStatus ? <small className={`profile-scan-status ${profileScanStatus === t("scanner.profileOpened") ? "success" : "error"}`} role="status">{profileScanStatus}</small> : null}
+      </div> : null}
       {kind === "groups" || showStudents ? <div className="academic-list">
         {kind === "groups" ? groups.map((group) => <article className="academic-row" key={group.id}><div><strong>{group.display_name || group.name}</strong><span>{group.grade_level || group.grade} · {group.subject} · {group.day_of_week != null && group.start_time && group.end_time ? `${t(`days.${group.day_of_week}` as TranslationKey)} ${group.start_time.slice(0, 5)} - ${group.end_time.slice(0, 5)} · ` : ""}{group.fees_amount ?? 0} EGP</span><span className="student-count-badge">Students / عدد الطلاب: {group.students_count ?? 0}</span></div><span className={group.is_active ? "status-active" : "status-disabled"}>{group.is_active ? t("admin.active") : t("admin.disabled")}</span><div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => openGroupDetails(group.id)}>Details / التفاصيل</button><button className="secondary-button compact-button" type="button" onClick={() => editGroup(group)}>{t("admin.editGroup")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => updateStatus(group.id, !group.is_active, "groups")}>{group.is_active ? t("admin.disable") : t("admin.enable")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => deleteGroup(group.id)}>Delete / حذف</button></div></article>) : students.map((student) => <article className="academic-row" key={student.id}><div><strong>{student.full_name}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.guardian_phone}</span>{student.deleted_at && purgeDaysLeft(student.purge_after) !== null ? <small className="purge-countdown">{t("admin.purgeDaysLeft", { days: String(purgeDaysLeft(student.purge_after)) })}</small> : null}</div><span className={student.deleted_at ? "status-deleted" : student.is_active ? "status-active" : "status-disabled"}>{recordStatusLabel(student, t)}</span><div className="row-actions">{student.deleted_at ? <><button className="secondary-button compact-button" type="button" disabled={loading || !student.purge_after} onClick={() => restoreStudent(student.id)}>{t("admin.restore")}</button><button className="danger-button compact-button" type="button" disabled={loading} onClick={() => permanentlyDeleteStudent(student.id)}>{t("admin.permanentDelete")}</button></> : <><button className="secondary-button compact-button" type="button" onClick={() => editStudent(student)}>{t("admin.editUser")}</button>{student.qr_token ? <button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => printStudentLabel(student)}>Print Label / طباعة الليبل</button> : null}<button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => updateStatus(student.id, !student.is_active, "students")}>{student.is_active ? t("admin.disable") : t("admin.enable")}</button>{session.teacher.role === "admin" ? <button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => deleteStudent(student.id)}>Delete / حذف</button> : null}</>}</div></article>)}
         {((kind === "groups" && groups.length === 0) || (kind === "students" && students.length === 0)) ? <p className="empty-state">{t(kind === "groups" ? "admin.noGroups" : "admin.noStudents")}</p> : null}
@@ -3231,9 +3345,12 @@ function StudentProfileModal({ studentId, session, t, onClose }: { studentId: nu
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
+  const [labelPrinting, setLabelPrinting] = useState(false);
+  const [serialRegenerating, setSerialRegenerating] = useState(false);
   const [noteBody, setNoteBody] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
   const auth = { Authorization: `Bearer ${session.token}` };
+  const language: Language = document.documentElement.lang === "en" ? "en" : "ar";
 
   async function loadProfile() {
     setLoading(true);
@@ -3267,6 +3384,38 @@ function StudentProfileModal({ studentId, session, t, onClose }: { studentId: nu
     if (response.ok) await loadProfile(); else setStatus(t("admin.profileLoadFailed"));
   }
 
+  async function printProfileLabel() {
+    if (!profile?.student || labelPrinting) return;
+    const printWindow = window.open("", "_blank", "width=420,height=620");
+    if (!printWindow) { setStatus("Please allow pop-ups to print labels / اسمح بالنوافذ المنبثقة للطباعة"); return; }
+    setLabelPrinting(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/students/${studentId}/print-label`, { method: "POST", headers: auth });
+      const data = await response.json();
+      if (!response.ok || !data.ok || !(data.student?.scan_serial || data.student?.student_serial)) throw new Error(data.status === "label_print_limit_reached" ? "Label print permission or limit reached / انتهت صلاحية أو عدد طباعة الليبل" : t("errors.loginFailed"));
+      printWindow.document.write(buildStudentLabelMarkup(data.student));
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => printWindow.print(), 250);
+    } catch (error) {
+      printWindow.close();
+      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+    } finally { setLabelPrinting(false); }
+  }
+
+  async function regenerateProfileScanSerial() {
+    if (session.teacher.role !== "admin" || serialRegenerating || !window.confirm(t("admin.regenerateScanSerialConfirm"))) return;
+    setSerialRegenerating(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/students/${studentId}/regenerate-scan-serial`, { method: "POST", headers: auth });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(t("errors.loginFailed"));
+      await loadProfile();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+    } finally { setSerialRegenerating(false); }
+  }
+
   const money = (value: unknown) => `${Number(value || 0).toFixed(2)} EGP`;
   return <div className="modal-backdrop" role="presentation"><section className="modal student-profile-modal" role="dialog" aria-modal="true" aria-label={t("admin.studentProfile")}>
     <button className="close-button" type="button" onClick={onClose}>×</button>
@@ -3275,6 +3424,7 @@ function StudentProfileModal({ studentId, session, t, onClose }: { studentId: nu
       <section className="profile-section"><h3>{t("admin.basicInfo")}</h3><div className="profile-info-grid">
         <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b>{profile.student.student_code || "—"}</span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
       </div></section>
+      <section className="profile-section profile-label-section"><h3>{t("admin.labelDetails")}</h3><div className="profile-label-card"><StudentLabelPreview student={profile.student} /><div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printProfileLabel} disabled={labelPrinting || !labelScanSerial(profile.student)}>{labelPrinting ? t("admin.printingLabel") : t("admin.printLabel")}</button>{session.teacher.role === "admin" ? <button className="secondary-button compact-button" type="button" onClick={regenerateProfileScanSerial} disabled={serialRegenerating}>{serialRegenerating ? t("admin.updating") : t("admin.regenerateScanSerial")}</button> : null}</div></div></section>
       <section className="profile-section"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.attendancePercentage")}</b>{Number(profile.attendance.attendance_percentage || 0).toFixed(1)}%</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div key={`${row.session_id}-${row.session_date}`}><span>{row.session_date} · {row.start_time?.slice(0, 5)}–{row.end_time?.slice(0, 5)}</span><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section>
       <section className="profile-section"><h3>{t("admin.examHistory")}</h3>{profile.exams?.length ? <div className="profile-record-list profile-exam-list">{profile.exams.map((row: any) => { const evaluation = scoreEvaluation(row.score, row.max_score, t); return <div className="profile-exam-record" key={row.id}><div className="profile-exam-details"><strong>{displayValue(row.title, language)}</strong><small>{t("dashboard.latestExamDate")}: {formatDateOnly(String(row.exam_date || ""), language, "—")}</small>{row.note ? <small>{t("admin.assessment")}: {displayValue(row.note, language)}</small> : null}</div><div className="profile-exam-score">{row.score == null ? <strong>—</strong> : <><strong className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</strong>{evaluation ? <small className={`profile-exam-evaluation score-${evaluation.tone}`}>{evaluation.percentage.toFixed(0)}% — {evaluation.label}</small> : null}</>}</div></div>; })}</div> : <p className="empty-state">{t("admin.noProfileExams")}</p>}</section>
       <section className="profile-section"><h3>{t("admin.notes")}</h3><form className="profile-note-form" onSubmit={saveNote}><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder={t("admin.notePlaceholder")} rows={3} /><button className="secondary-button compact-button" type="submit">{editingNoteId ? t("admin.editNote") : t("admin.addNote")}</button></form>{profile.notes?.length ? <div className="profile-record-list">{profile.notes.map((note: any) => <div key={note.id}><span>{note.body}<small>{note.author_name} · {new Date(note.created_at).toLocaleString()}</small></span><div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setEditingNoteId(Number(note.id)); setNoteBody(note.body); }}>{t("admin.editNote")}</button><button className="secondary-button compact-button" type="button" onClick={() => deleteNote(Number(note.id))}>{t("admin.deleteNote")}</button></div></div>)}</div> : <p className="empty-state">{t("admin.noProfileNotes")}</p>}</section>
@@ -3319,13 +3469,21 @@ function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }
   const [scanState, setScanState] = useState<"idle" | "success" | "error">("idle");
   const [scanning, setScanning] = useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const successMessageTimerRef = React.useRef<number | null>(null);
   useEffect(() => { inputRef.current?.focus(); }, [message, scanning]);
+  useEffect(() => () => {
+    if (successMessageTimerRef.current !== null) window.clearTimeout(successMessageTimerRef.current);
+  }, []);
 
   async function scan(event: React.FormEvent) {
     event.preventDefault();
     if (scanning) return;
+    if (successMessageTimerRef.current !== null) {
+      window.clearTimeout(successMessageTimerRef.current);
+      successMessageTimerRef.current = null;
+    }
 
-    const token = normalizeDigits(code).trim();
+    const token = normalizeScanValue(code);
     setCode("");
     setMessage("");
     setStudent(null);
@@ -3354,6 +3512,13 @@ function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }
       if (response.ok && data.ok) {
         setScanState("success");
         setMessage(t("scanner.recorded"));
+        successMessageTimerRef.current = window.setTimeout(() => {
+          setMessage("");
+          setStudent(null);
+          setScanState("idle");
+          successMessageTimerRef.current = null;
+          inputRef.current?.focus();
+        }, 1800);
       } else {
         setScanState("error");
         setMessage(scannerStatusMessage(String(data.status || ""), t));
@@ -3380,7 +3545,7 @@ function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }
             autoFocus
             type="text"
             value={code}
-            onChange={(event) => setCode(normalizeDigits(event.target.value))}
+            onChange={(event) => setCode(normalizeScanValue(event.target.value))}
             placeholder={t("scanner.inputPlaceholder")}
             autoComplete="off"
             disabled={scanning}
@@ -3441,7 +3606,7 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
     setSummary(null);
     setAdvanceData(null);
     setSelectedMonths([]);
-    const value = normalizeDigits(code).trim().toUpperCase();
+    const value = normalizeScanValue(code);
     if (!value) {
       setStatus(t("fees.studentNotFound"));
       return;
@@ -3454,7 +3619,10 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
         return;
       }
       const student = (data.students || []).find((item: any) =>
-        item.scan_serial === value || item.student_serial === value || item.student_code === value || item.qr_token === code.trim()
+        normalizeScanValue(item.scan_serial) === value ||
+        normalizeScanValue(item.student_serial) === value ||
+        normalizeScanValue(item.student_code) === value ||
+        normalizeScanValue(item.qr_token) === value
       );
       if (!student) {
         setStatus(t("fees.studentNotFound"));
@@ -3530,7 +3698,7 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
       <button className={mode === "new" ? "active" : ""} type="button" onClick={() => { setMode("new"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setStatus(""); }}>{t("fees.newPayment")}</button>
       <button className={mode === "advance" ? "active" : ""} type="button" onClick={() => { setMode("advance"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setStatus(""); }}>{t("fees.advancePayment")}</button>
     </div>
-    <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input autoFocus type="text" value={code} onChange={(event) => setCode(normalizeDigits(event.target.value))} placeholder="A-2303" /></label><button className="primary-button" type="submit">{t("fees.find")}</button></form>
+    <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input autoFocus type="text" value={code} onChange={(event) => setCode(normalizeScanValue(event.target.value))} placeholder="A-2303" autoComplete="off" /></label><button className="primary-button" type="submit">{t("fees.find")}</button></form>
     {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay}>{t("fees.payFull")}</button></div> : null}
     {mode === "advance" && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : <><h3>{t("fees.advanceMonths")}</h3><div className="advance-month-grid">{(advanceData.months || []).filter((month: any) => month.available).map((month: any) => <label className="advance-month-option" key={month.month}><input type="checkbox" checked={selectedMonths.includes(month.month.slice(0, 7))} onChange={(event) => setSelectedMonths((current) => event.target.checked ? [...current, month.month.slice(0, 7)] : current.filter((item) => item !== month.month.slice(0, 7)))} /><span>{monthLabel(month.month)}</span><b>{Number(month.remaining_amount).toFixed(2)} EGP</b></label>)}</div>{!(advanceData.months || []).some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length} onClick={saveAdvance}>{t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
@@ -4827,17 +4995,29 @@ function StudentFeesPanel({
   </div>;
 }
 
-function BarcodePreview({ value }: { value: string }) {
+function BarcodePreview({ value, displayValue = true }: { value: string; displayValue?: boolean }) {
   const barcodeRef = React.useRef<SVGSVGElement>(null);
   useEffect(() => {
     if (!barcodeRef.current || !value) return;
     try {
-      JsBarcode(barcodeRef.current, value, { format: "CODE128", displayValue: true, fontSize: 12, height: 42, width: 1.4, margin: 0 });
+      JsBarcode(barcodeRef.current, value, { format: "CODE128", displayValue, fontSize: 12, height: 42, width: 1.4, margin: 0 });
     } catch (_error) {
       if (barcodeRef.current) barcodeRef.current.innerHTML = "";
     }
-  }, [value]);
+  }, [value, displayValue]);
   return <svg ref={barcodeRef} className="barcode-preview" aria-label={`Barcode ${value}`} />;
+}
+
+function StudentLabelPreview({ student }: { student: Record<string, any> }) {
+  const scanSerial = labelScanSerial(student);
+  const gradeAndGroup = [student.grade || student.grade_level, student.group_name || student.group].filter(Boolean).join(" · ");
+  return <div className="profile-label-preview" dir="rtl">
+    <strong className="profile-label-brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</strong>
+    <strong className="profile-label-name">{student.full_name || "—"}</strong>
+    <strong className="profile-label-code">Student code / كود الطالب: {student.student_code || "—"}</strong>
+    <span className="profile-label-grade">{gradeAndGroup || "—"}</span>
+    {scanSerial ? <><BarcodePreview value={scanSerial} displayValue={false} /><strong className="profile-label-serial">{scanSerial}</strong></> : <span className="empty-state">—</span>}
+  </div>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

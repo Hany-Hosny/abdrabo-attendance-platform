@@ -20,6 +20,15 @@ function normalizedSearch(value) {
     .replace(/[إأآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/ـ/g, "");
 }
 
+function normalizeScanValue(value) {
+  return normalizeDigits(String(value ?? ""))
+    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .trim()
+    .replace(/^\](?:C[0-3]|Q[0-9]|d[0-9])/i, "")
+    .trim()
+    .toUpperCase();
+}
+
 function searchableSql(field) {
   return `LOWER(${field}) ILIKE '%' || $SEARCH || '%' OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${field},'إ','ا'),'أ','ا'),'آ','ا'),'ٱ','ا'),'ى','ي'),'ة','ه')) ILIKE '%' || $SEARCH || '%'`;
 }
@@ -365,10 +374,18 @@ operationsRouter.post("/attendance/manual", async (req, res, next) => {
 
 operationsRouter.post("/scanner/attendance", async (req, res, next) => {
   try {
-    const token=normalizeDigits(req.body?.qr_token||"").trim();
-    const studentResult=await query(`${studentDetails} WHERE s.qr_token=$1 OR s.scan_serial=$1 OR s.student_serial=$1 OR s.student_code=$1 LIMIT 1`,[token]);
+    const token = normalizeScanValue(req.body?.qr_token);
+    if (!token) return res.status(400).json({ ok: false, status: "scan_value_required" });
+    const studentResult = await query(
+      `${studentDetails} WHERE LOWER(COALESCE(s.qr_token, '')) = LOWER($1)
+        OR LOWER(COALESCE(s.scan_serial, '')) = LOWER($1)
+        OR LOWER(COALESCE(s.student_serial, '')) = LOWER($1)
+        OR LOWER(COALESCE(s.student_code, '')) = LOWER($1) LIMIT 1`,
+      [token]
+    );
     if (!studentResult.rowCount) { await query("INSERT INTO audit_logs(action,actor_id,details) VALUES ('suspicious_scan',$1,$2)",[req.teacher.id,JSON.stringify({reason:"invalid_qr_token",ip:req.ip})]); return res.status(404).json({ok:false,status:"invalid_qr_token"}); }
     const student=studentResult.rows[0];
+    if (!student.is_active || !student.group_active) return res.status(409).json({ok:false,status:"inactive_student",student});
     await query(`INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, status)
       SELECT cs.group_id, cs.id, (NOW() AT TIME ZONE 'Africa/Cairo')::date,
         (((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
@@ -378,7 +395,6 @@ operationsRouter.post("/scanner/attendance", async (req, res, next) => {
       WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Africa/Cairo'))::INTEGER
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id]);
     const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(NOW() AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND NOW() BETWEEN s.opens_at AND s.closes_at ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
-    if (!student.is_active || !student.group_active) return res.status(409).json({ok:false,status:"inactive_student",student});
     if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"closed_session",student});
     const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId:req.body?.device_id});
     if (saved.duplicate) { await query("INSERT INTO audit_logs(action,actor_id,student_id,session_id,details) VALUES ('suspicious_scan',$1,$2,$3,$4)",[req.teacher.id,student.id,sessionResult.rows[0].id,JSON.stringify({reason:"duplicate_student_scan"})]); return res.status(409).json({ok:false,status:"duplicate_attendance",student}); }
