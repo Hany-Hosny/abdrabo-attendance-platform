@@ -1,4 +1,5 @@
 import { pool } from "../db/pool.js";
+import { auditLog } from "./audit.js";
 
 // Preserve the student row so historical foreign keys remain valid.
 export async function purgeDeletedStudents() {
@@ -18,10 +19,7 @@ export async function purgeDeletedStudents() {
             purge_after = NULL, updated_at = NOW()
         WHERE id = $1
       `, [row.id]);
-      await client.query(`
-        INSERT INTO audit_logs(action, student_id, details)
-        VALUES ('student_personal_data_purged', $1, $2)
-      `, [row.id, JSON.stringify({ reason: "retention_window_expired" })]);
+      await auditLog({ db: client, action: "student_personal_data_purged", studentId: row.id, details: { reason: "retention_window_expired", purged_fields: ["full_name", "phone", "guardian_phone", "national_id_hash", "qr_token"], status_after: "anonymized" } });
     }
     await client.query("COMMIT");
     return result.rowCount;

@@ -1,9 +1,10 @@
 import express from "express";
 import { query } from "../db/pool.js";
-import { requireAdmin } from "../middleware/requireTeacher.js";
+import { requirePermission, requireTeacher } from "../middleware/requireTeacher.js";
 import { createPublicInquiry } from "./inbox.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { isPhoneNumber } from "../utils/normalizeDigits.js";
+import { auditLog } from "../services/audit.js";
 
 export const siteRouter = express.Router();
 export const adminSiteRouter = express.Router();
@@ -21,7 +22,7 @@ siteRouter.post("/contact", async (req, res, next) => {
     const studentId = studentCheck.rowCount ? requestedStudentId : null;
     if (!name || !phone || !body) return res.status(400).json({ ok: false, status: "invalid_contact" });
     if (!isPhoneNumber(phone)) return res.status(400).json({ ok: false, status: "invalid_phone", message: "يجب إدخال ١١ رقمًا لرقم الهاتف. / Phone number must contain exactly 11 digits." });
-    const result = await createPublicInquiry({ studentId: Number.isFinite(studentId) ? studentId : null, name, phone, subject: "Public inquiry", body });
+    const result = await createPublicInquiry({ studentId: Number.isFinite(studentId) ? studentId : null, name, phone, subject: "Public inquiry", body, request: req });
     res.status(201).json({ ok: true, thread_id: result.thread.id });
   } catch (error) { next(error); }
 });
@@ -48,7 +49,7 @@ siteRouter.get("/pages/:slug", async (req, res, next) => {
   }
 });
 
-adminSiteRouter.put("/pages/:slug", requireAdmin, async (req, res, next) => {
+adminSiteRouter.put("/pages/:slug", requireTeacher, requirePermission("settings.manage"), async (req, res, next) => {
   try {
     const allowedSlugs = ["about-teacher", "about-center", "contact", "tips"];
     if (!allowedSlugs.includes(req.params.slug)) {
@@ -68,6 +69,7 @@ adminSiteRouter.put("/pages/:slug", requireAdmin, async (req, res, next) => {
       return res.status(400).json({ ok: false, status: "missing_fields" });
     }
 
+    const before = await query("SELECT slug, title_ar, title_en, subtitle_ar, subtitle_en, content_ar, content_en FROM site_pages WHERE slug=$1", [req.params.slug]);
     const result = await query(
       `
         INSERT INTO site_pages (
@@ -102,6 +104,7 @@ adminSiteRouter.put("/pages/:slug", requireAdmin, async (req, res, next) => {
       ]
     );
 
+    await auditLog({ action: "site_page_updated", actorId: req.teacher.id, details: { page_slug: req.params.slug, before: before.rows[0] || null, after: result.rows[0] }, request: req });
     return res.json({ ok: true, page: result.rows[0] });
   } catch (error) {
     next(error);

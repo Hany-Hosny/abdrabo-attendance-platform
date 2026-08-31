@@ -33,6 +33,7 @@ export function createTeacherToken(teacher) {
     name: teacher.name,
     email: teacher.email,
     username: teacher.username,
+    permissions: Array.isArray(teacher.permissions) ? teacher.permissions : [],
     exp: Math.floor(Date.now() / 1000) + 8 * 60 * 60
   });
   const unsignedToken = `${header}.${payload}`;

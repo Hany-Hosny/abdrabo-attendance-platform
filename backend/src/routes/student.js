@@ -5,6 +5,7 @@ import { loginAndRecordAttendance } from "../services/attendance.js";
 import { getFeeSummary } from "../services/fees.js";
 import { getDashboardData } from "../services/dashboard.js";
 import { normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.js";
+import { auditLog } from "../services/audit.js";
 
 export const studentRouter = express.Router();
 const studentCodePattern = /^A-\d{4}$/;
@@ -25,10 +26,12 @@ studentRouter.post("/login", async (req, res, next) => {
     const normalizedCode = normalizeStudentCode(student_code || "");
 
     if (!normalizedCode) {
+      await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: "", reason: "student_code_required" }, request: req });
       return res.status(400).json({ ok: false, status: "student_code_required", message: "Student code is required." });
     }
 
     if (!studentCodePattern.test(normalizedCode)) {
+      await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: normalizedCode, reason: "invalid_student_code" }, request: req });
       return res.status(400).json({
         ok: false,
         status: "invalid_student_code",
@@ -37,6 +40,7 @@ studentRouter.post("/login", async (req, res, next) => {
     }
 
     if (!device_id || typeof device_id !== "string") {
+      await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: normalizedCode, reason: "device_id_required" }, request: req });
       return res.status(400).json({ ok: false, status: "device_id_required", message: "Device ID is required." });
     }
 
@@ -49,12 +53,41 @@ studentRouter.post("/login", async (req, res, next) => {
     });
 
     if (!result.ok && result.status === "invalid_student") {
+      await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: normalizedCode, reason: result.status }, request: req });
       return res.status(401).json(result);
+    }
+
+    if (result.student?.id) {
+      await auditLog({
+        action: "login_succeeded",
+        studentId: result.student.id,
+        details: { actor_type: "student", student_id: result.student.id, student_name: result.student.full_name, student_code: result.student.student_code, login_status: result.status },
+        request: req
+      });
+      if (["attendance_recorded", "pending_review"].includes(result.status)) {
+        await auditLog({
+          action: "attendance_recorded",
+          studentId: result.student.id,
+          sessionId: result.today_session?.id || result.attendance_record?.session_id || null,
+          details: { method: "student_login_gps", status_after: result.attendance_record?.status || result.status, student_name: result.student.full_name, student_code: result.student.student_code },
+          request: req
+        });
+      }
     }
 
     return res.json(result);
   } catch (error) {
     next(error);
+  }
+});
+
+studentRouter.post("/logout", async (req, res, next) => {
+  try {
+    const student = await authenticatedStudent(req);
+    if (student) await auditLog({ action: "logout", studentId: student.id, details: { actor_type: "student", student_id: student.id, logout_status: "requested" }, request: req });
+    return res.json({ ok: true });
+  } catch (error) {
+    return next(error);
   }
 });
 

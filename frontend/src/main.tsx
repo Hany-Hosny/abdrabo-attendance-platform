@@ -54,6 +54,7 @@ type TeacherSession = {
     email: string;
     username?: string;
     role: string;
+    permissions?: string[];
   };
 };
 
@@ -62,7 +63,7 @@ type AdminUser = {
   name: string;
   username: string;
   email: string;
-  role: "admin" | "teacher" | "assistant";
+  role: "owner" | "admin" | "staff";
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -70,6 +71,8 @@ type AdminUser = {
   print_student_labels?: boolean;
   max_label_reprints?: number;
   can_use_inbox?: boolean;
+  permissions?: PermissionKey[];
+  is_owner?: boolean;
 };
 
 type AdminGroup = {
@@ -124,6 +127,22 @@ type AdminStudent = {
 
 type SiteSlug = "about-teacher" | "about-center" | "contact" | "tips";
 type AdminTab = "overview" | "add-user" | "users" | "site-content" | "students" | "groups" | "attendance" | "scanner" | "fees" | "exams" | "inbox" | "audit-logs";
+
+const adminTabIds: AdminTab[] = ["overview", "add-user", "users", "site-content", "students", "groups", "attendance", "scanner", "fees", "exams", "inbox", "audit-logs"];
+
+function adminTabFromLocation(): AdminTab {
+  const requestedTab = new URLSearchParams(window.location.search).get("tab");
+  return requestedTab && adminTabIds.includes(requestedTab as AdminTab) ? requestedTab as AdminTab : "overview";
+}
+
+function persistAdminTab(tab: AdminTab) {
+  const params = new URLSearchParams(window.location.search);
+  if (tab === "overview") params.delete("tab");
+  else params.set("tab", tab);
+  const query = params.toString();
+  const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+  window.history.replaceState({}, "", nextUrl);
+}
 
 type SitePage = {
   slug: SiteSlug;
@@ -325,12 +344,40 @@ const translations = {
     "audit.reason": "السبب",
     "audit.search": "بحث في السجل",
     "audit.action": "الإجراء",
+    "audit.allActions": "كل الإجراءات",
     "audit.user": "المستخدم",
     "audit.payment": "رقم الدفعة",
     "audit.student": "رقم الطالب",
     "audit.dateFrom": "من تاريخ",
     "audit.dateTo": "إلى تاريخ",
     "audit.refresh": "تحديث",
+    "audit.refreshing": "جاري التحديث...",
+    "audit.refreshed": "تم التحديث",
+    "audit.maintenance": "صيانة متقدمة",
+    "audit.maintenanceWarning": "حذف سجل النشاط نهائي ولا يمكن التراجع عنه.",
+    "audit.maintenanceFrom": "من تاريخ",
+    "audit.maintenanceTo": "إلى تاريخ",
+    "audit.maintenancePin": "رقم سجل النشاط",
+    "audit.maintenancePassword": "كلمة مرور المدير",
+    "audit.maintenanceReason": "سبب الحذف",
+    "audit.maintenanceReasonPlaceholder": "اكتب سبب حذف السجلات",
+    "audit.maintenanceConfirmation": "التأكيد الكتابي",
+    "audit.maintenanceConfirmationHint": "اكتب DELETE AUDIT LOGS للتأكيد",
+    "audit.maintenancePreview": "معاينة السجلات",
+    "audit.maintenancePreviewing": "جاري المعاينة...",
+    "audit.maintenancePreviewFirst": "قم بمعاينة السجلات أولاً قبل الحذف.",
+    "audit.maintenanceCount": "عدد السجلات المطابقة: {{count}}",
+    "audit.maintenanceDelete": "حذف السجلات",
+    "audit.maintenanceDeleting": "جاري الحذف...",
+    "audit.maintenanceDeleted": "تم حذف {{count}} سجل بنجاح.",
+    "audit.maintenanceInvalidDates": "اختر تاريخين صحيحين.",
+    "audit.maintenancePreviewFailed": "تعذر معاينة السجلات.",
+    "audit.maintenanceDeleteFailed": "تعذر حذف السجلات.",
+    "audit.maintenanceInvalidPassword": "كلمة مرور المدير غير صحيحة.",
+    "audit.maintenancePasswordRequired": "اكتب كلمة مرور المدير.",
+    "audit.maintenanceInvalidConfirmation": "اكتب DELETE AUDIT LOGS كما هو للتأكيد.",
+    "audit.maintenanceReasonRequired": "اكتب سبب الحذف (3 أحرف على الأقل).",
+    "audit.maintenancePinNotConfigured": "يجب إعداد رقم سجل النشاط أولاً.",
     "audit.date": "التاريخ والوقت",
     "audit.details": "التفاصيل",
     "audit.noLogs": "لا توجد سجلات.",
@@ -342,9 +389,13 @@ const translations = {
     "audit.action.paymentReversed": "تم عكس دفعة",
     "audit.action.studentCreated": "تم إنشاء طالب",
     "audit.action.studentUpdated": "تم تعديل بيانات طالب",
+    "audit.action.studentChanged": "تم تعديل الطالب",
     "audit.action.studentStatusChanged": "تم تغيير حالة طالب",
     "audit.action.studentRestored": "تم استرجاع طالب",
     "audit.action.studentArchived": "تم أرشفة طالب",
+    "audit.action.studentsBulkArchived": "تمت أرشفة طلاب محددون",
+    "audit.action.studentLabelPrinted": "تمت طباعة ليبل الطالب",
+    "audit.action.studentPurged": "تم حذف البيانات الشخصية للطالب",
     "audit.action.attendanceRecorded": "تم تسجيل الحضور",
     "audit.action.messageAction": "تم تنفيذ إجراء على رسالة",
     "audit.action.noteAction": "تم تنفيذ إجراء على ملاحظة",
@@ -354,9 +405,62 @@ const translations = {
     "audit.action.systemRequest": "إجراء بالنظام",
     "audit.action.userCreated": "تم إنشاء مستخدم",
     "audit.action.userUpdated": "تم تعديل مستخدم",
+    "audit.action.permissionsChanged": "تم تعديل صلاحيات مستخدم",
+    "audit.action.roleChanged": "تم تغيير دور مستخدم",
+    "audit.action.ownershipTransferred": "تم نقل ملكية النظام",
     "audit.action.userPasswordReset": "تم تغيير كلمة مرور مستخدم",
     "audit.action.userStatusChanged": "تم تغيير حالة مستخدم",
     "audit.action.userArchived": "تمت أرشفة مستخدم",
+    "audit.action.userRestored": "تم استرجاع مستخدم",
+    "audit.action.userPermanentlyDeleted": "تم حذف مستخدم نهائياً",
+    "audit.action.loginSucceeded": "تم تسجيل الدخول",
+    "audit.action.loginFailed": "فشلت محاولة تسجيل الدخول",
+    "audit.action.logout": "تم تسجيل الخروج",
+    "audit.action.groupCreated": "تم إنشاء مجموعة",
+    "audit.action.groupUpdated": "تم تعديل المجموعة",
+    "audit.action.groupStatusChanged": "تم تغيير حالة المجموعة",
+    "audit.action.groupArchived": "تمت أرشفة المجموعة",
+    "audit.action.examResultCreated": "تم تسجيل نتيجة امتحان",
+    "audit.action.examResultUpdated": "تم تعديل نتيجة امتحان",
+    "audit.action.examResultDeleted": "تم حذف نتيجة امتحان",
+    "audit.action.homeworkCreated": "تم إنشاء واجب",
+    "audit.action.homeworkUpdated": "تم تعديل واجب",
+    "audit.action.homeworkDeleted": "تم حذف واجب",
+    "audit.action.noteCreated": "تمت إضافة ملاحظة",
+    "audit.action.noteUpdated": "تم تعديل ملاحظة",
+    "audit.action.noteDeleted": "تم حذف ملاحظة",
+    "audit.action.messageSent": "تم إرسال رسالة",
+    "audit.action.messageDeleted": "تم حذف رسالة",
+    "audit.action.messageRead": "تم تحديث حالة قراءة الرسالة",
+    "audit.action.attendanceChanged": "تم تغيير الحضور",
+    "audit.action.attendanceScanned": "تم تنفيذ مسح الحضور",
+    "audit.action.attendanceSessionCreated": "تم إنشاء جلسة حضور",
+    "audit.action.suspiciousScan": "تم تسجيل محاولة مسح مشبوهة",
+    "audit.action.studentScanSerialRegenerated": "تم تجديد سريال مسح الطالب",
+    "audit.action.studentPermanentlyAnonymized": "تم إخفاء بيانات الطالب نهائياً",
+    "audit.action.sitePageUpdated": "تم تعديل محتوى صفحة الموقع",
+    "audit.action.publicInquiryCreated": "تم إنشاء استفسار عام",
+    "audit.action.systemAction": "إجراء إداري بالنظام",
+    "audit.detail.summary": "وصف العملية",
+    "audit.detail.before": "قبل التغيير",
+    "audit.detail.after": "بعد التغيير",
+    "audit.detail.changes": "التغييرات",
+    "audit.detail.studentId": "معرّف الطالب",
+    "audit.detail.studentName": "اسم الطالب",
+    "audit.detail.studentCode": "كود الطالب",
+    "audit.detail.userId": "معرّف المستخدم",
+    "audit.detail.targetUser": "المستخدم المتأثر",
+    "audit.detail.groupId": "معرّف المجموعة",
+    "audit.detail.examId": "معرّف الامتحان",
+    "audit.detail.resultId": "معرّف النتيجة",
+    "audit.detail.noteId": "معرّف الملاحظة",
+    "audit.detail.threadId": "معرّف المحادثة",
+    "audit.detail.messageId": "معرّف الرسالة",
+    "audit.detail.recordId": "معرّف سجل الحضور",
+    "audit.detail.statusBefore": "الحالة قبل التغيير",
+    "audit.detail.statusAfter": "الحالة بعد التغيير",
+    "audit.detail.amount": "المبلغ",
+    "audit.detail.scannedValue": "القيمة الممسوحة",
     "audit.detail.body": "البيانات المرسلة",
     "audit.detail.path": "العملية",
     "audit.detail.query": "بيانات البحث",
@@ -372,6 +476,27 @@ const translations = {
     "audit.detail.reversalId": "رقم عملية العكس",
     "audit.detail.locked": "تم إيقاف المحاولة",
     "audit.detail.pinDigits": "عدد أرقام الرقم السري",
+    "audit.detail.actor": "بواسطة",
+    "audit.detail.outcome": "النتيجة",
+    "audit.detail.printType": "نوع الطباعة",
+    "audit.detail.serial": "السريال",
+    "audit.detail.scanSerial": "سريال المسح",
+    "audit.detail.remainingPrintCount": "عدد مرات الطباعة المتبقية",
+    "audit.detail.sessionDate": "تاريخ الجلسة",
+    "audit.detail.checkinTime": "وقت التسجيل",
+    "audit.detail.guardianPhone": "رقم ولي الأمر",
+    "audit.detail.phone": "رقم الهاتف",
+    "audit.detail.grade": "الصف الدراسي",
+    "audit.detail.groupName": "المجموعة",
+    "audit.detail.field": "الحقل",
+    "audit.detail.valueBefore": "القيمة السابقة",
+    "audit.detail.valueAfter": "القيمة الجديدة",
+    "audit.detail.content": "المحتوى",
+    "audit.value.success": "نجحت",
+    "audit.value.failure": "فشلت",
+    "audit.value.reprint": "إعادة طباعة",
+    "audit.value.initialPrint": "طباعة",
+    "audit.value.set": "تم التعيين",
     "audit.narrative.userCreated": "تم إنشاء المستخدم: {{name}} — اسم المستخدم: {{username}} — الدور: {{role}}",
     "audit.narrative.userUpdated": "تم تعديل المستخدم: {{name}} — اسم المستخدم: {{username}}",
     "audit.narrative.userPasswordReset": "تم تغيير كلمة مرور المستخدم: {{name}}",
@@ -381,6 +506,10 @@ const translations = {
     "audit.narrative.advancePayment": "تم تسجيل دفع مقدم للطالب: {{name}} — الكود: {{code}} — المبلغ: {{amount}} جنيه",
     "audit.narrative.reversed": "تم عكس الدفعة رقم {{payment}} للطالب: {{name}} — المبلغ: {{amount}} جنيه — السبب: {{reason}}",
     "audit.narrative.attendance": "تم تسجيل حضور الطالب: {{name}} — كود الطالب: {{code}}",
+    "audit.narrative.labelPrinted": "تمت {{printType}} ليبل الطالب: {{name}} — كود الطالب: {{code}}",
+    "audit.narrative.serialRegenerated": "تم تجديد سريال مسح الطالب: {{name}} — كود الطالب: {{code}}",
+    "audit.narrative.logsUnlocked": "قام المستخدم {{actor}} بفتح سجل النشاط بنجاح.",
+    "audit.narrative.pinFailed": "فشلت محاولة المستخدم {{actor}} لفتح سجل النشاط.",
     "audit.narrative.generic": "تم تنفيذ إجراء: {{action}}",
     "audit.word.created": "إنشاء",
     "audit.word.updated": "تعديل",
@@ -413,8 +542,21 @@ const translations = {
     "admin.disabled": "معطل",
     "admin.deleted": "محذوف",
     "admin.restore": "استرجاع",
+    "admin.restoring": "جاري الاسترجاع...",
+    "admin.restored": "تم الاسترجاع",
+    "admin.loadingDetails": "جاري تحميل التفاصيل...",
+    "admin.detailsLoaded": "تم تحميل التفاصيل",
+    "admin.disabling": "جاري التعطيل...",
+    "admin.disabledSuccessfully": "تم التعطيل",
+    "admin.enabling": "جاري التفعيل...",
+    "admin.enabledSuccessfully": "تم التفعيل",
+    "admin.deleting": "جاري الحذف...",
+    "admin.deletedSuccessfully": "تم الحذف",
     "admin.permanentDelete": "حذف نهائي",
     "admin.permanentDeleteConfirm": "سيتم حذف الطالب نهائياً ولا يمكن استرجاعه. هل أنت متأكد؟",
+    "admin.permanentDeleteUserConfirm": "سيتم حذف المستخدم نهائياً من قاعدة البيانات ولا يمكن استرجاعه. هل أنت متأكد؟",
+    "admin.permanentlyDeleting": "جاري الحذف النهائي...",
+    "admin.permanentlyDeleted": "تم الحذف",
     "admin.purgeDaysLeft": "سيتم الحذف النهائي بعد {{days}} يوم",
     "admin.status": "الحالة",
     "admin.resetPassword": "إعادة تعيين كلمة المرور",
@@ -429,10 +571,48 @@ const translations = {
     "admin.cancel": "إلغاء",
     "admin.userSaved": "تم حفظ المستخدم.",
     "admin.passwordReset": "تم تحديث كلمة المرور.",
+    "admin.resettingPassword": "جاري إعادة تعيين كلمة المرور...",
+    "admin.deleteUser": "حذف",
+    "admin.ownershipTransferred": "تم نقل ملكية النظام بنجاح.",
     "admin.adminOnly": "هذا القسم متاح للمدير فقط.",
+    "admin.ownerBadge": "مالك النظام",
+    "admin.primaryAdmin": "المدير الأساسي",
+    "admin.role.owner": "مالك النظام",
     "admin.role.admin": "مدير",
-    "admin.role.teacher": "مدرس",
-    "admin.role.assistant": "مساعد",
+    "admin.role.staff": "موظف",
+    "admin.permissions": "الصلاحيات",
+    "admin.permissionPreset": "قالب الصلاحيات",
+    "admin.permissionPreset.full": "صلاحيات كاملة",
+    "admin.permissionPreset.students": "إدارة الطلاب",
+    "admin.permissionPreset.finance": "الحسابات",
+    "admin.permissionPreset.readOnly": "عرض فقط",
+    "admin.permissionPreset.custom": "صلاحيات مخصصة",
+    "admin.permissionGroup.students": "الطلاب",
+    "admin.permissionGroup.attendance": "الحضور والغياب",
+    "admin.permissionGroup.exams": "الامتحانات والتقييمات",
+    "admin.permissionGroup.homework": "الواجبات",
+    "admin.permissionGroup.schedule": "الجداول والحصص",
+    "admin.permissionGroup.payments": "المصروفات",
+    "admin.permissionGroup.messages": "الرسائل",
+    "admin.permissionGroup.notes": "الملاحظات",
+    "admin.permissionGroup.users": "المستخدمون",
+    "admin.permissionGroup.activity": "سجل النشاط",
+    "admin.permissionGroup.settings": "الإعدادات",
+    "admin.permission.view": "عرض",
+    "admin.permission.manage": "إدارة",
+    "admin.permission.reverse": "إلغاء / عكس دفعة",
+    "admin.permission.create": "إنشاء مستخدم",
+    "admin.permission.edit": "تعديل",
+    "admin.permission.disable": "تعطيل",
+    "admin.permission.delete": "حذف",
+    "admin.transferOwnership": "نقل الملكية",
+    "admin.transferOwnershipConfirm": "سيتم نقل ملكية النظام لهذا المستخدم. أدخل كلمة مرورك للتأكيد.",
+    "admin.currentPassword": "كلمة المرور الحالية",
+    "admin.ownerProtected": "هذا هو مالك النظام ولا يمكن للمديرين تعديل دوره أو صلاحياته أو تعطيله أو حذفه.",
+    "admin.permissionGrantForbidden": "لا يمكنك منح صلاحيات لا تملكها.",
+    "admin.ownerOnly": "هذا الإجراء متاح لمالك النظام فقط.",
+    "admin.role.teacher": "موظف",
+    "admin.role.assistant": "موظف",
     "admin.groupName": "اسم المجموعة",
     "admin.grade": "الصف الدراسي",
     "admin.subject": "المادة",
@@ -445,6 +625,9 @@ const translations = {
     "admin.studentName": "اسم الطالب",
     "admin.studentCode": "كود الطالب",
     "admin.fieldRequired": "هذا الحقل مطلوب.",
+    "admin.scheduleRequired": "اختر يوم حصة واحدًا على الأقل.",
+    "admin.scheduleTimeRequired": "اختر وقت البداية والنهاية.",
+    "admin.invalidNumber": "أدخل قيمة رقمية صحيحة.",
     "admin.studentCodeFormat": "كود الطالب يجب أن يكون مثل A1234",
     "admin.generateCodeSerial": "توليد الكود والسريال",
     "admin.labelDetails": "بيانات الليبل",
@@ -466,13 +649,35 @@ const translations = {
     "admin.showStudents": "إظهار الطلاب",
     "admin.hideStudents": "إخفاء الطلاب",
     "admin.selectStudent": "اختر الطالب",
-    "admin.allGroups": "كل المجموعات",
     "admin.generateCode": "توليد كود",
     "admin.groupSaved": "تم حفظ المجموعة.",
+    "admin.groupHasStudents": "لا يمكن حذف مجموعة بها طلاب. قم بنقل الطلاب أو تعطيل المجموعة.",
+    "admin.groupDeletePinTitle": "حذف مجموعة بها طلاب",
+    "admin.groupDeletePinDescription": "تحتوي هذه المجموعة على {{count}} طلاب. أدخل الرمز السري لسجل النشاطات للسماح بالحذف. سيتم أرشفة المجموعة فقط ولن يتم حذف سجلات الطلاب.",
+    "admin.groupDeletePin": "الرمز السري لسجل النشاطات",
+    "admin.groupDeletePinAction": "تأكيد حذف المجموعة",
+    "admin.groupDeletePinLoading": "جاري حذف المجموعة...",
+    "admin.groupDeletePinRequired": "أدخل الرمز السري لسجل النشاطات.",
+    "admin.groupDeletePinInvalid": "الرمز السري لسجل النشاطات غير صحيح.",
+    "admin.groupDeletePinLocked": "تم قفل الرمز السري مؤقتًا. حاول مرة أخرى لاحقًا.",
+    "admin.groupDeletePinNotConfigured": "لم يتم إعداد الرمز السري لسجل النشاطات.",
     "admin.studentSaved": "تم حفظ الطالب. الكود: {{code}}",
     "admin.noGroups": "لا توجد مجموعات بعد.",
     "admin.noStudents": "لا يوجد طلاب بعد.",
     "admin.searchStudents": "ابحث باسم الطالب أو الكود أو الهاتف أو المجموعة",
+    "admin.groupFilter": "المجموعة",
+    "admin.allGroups": "كل المجموعات",
+    "admin.selectAll": "تحديد الكل",
+    "admin.deselectAll": "إلغاء تحديد الكل",
+    "admin.clearDaySelection": "إلغاء تحديد الأيام",
+    "admin.selectStudentCheckbox": "تحديد الطالب",
+    "admin.selectedStudents": "تم تحديد {{count}} طلاب",
+    "admin.bulkDelete": "حذف المحدد ({{count}})",
+    "admin.bulkDeleteLoading": "جاري حذف {{count}} طلاب...",
+    "admin.bulkDeleteSuccess": "تم حذف {{count}} طلاب",
+    "admin.bulkDeleteConfirm": "هل أنت متأكد من حذف {{count}} طلاب؟ سيؤثر هذا الإجراء على عدة سجلات.",
+    "admin.actionFailedDelete": "تعذر الحذف",
+    "admin.actionFailedSave": "تعذر الحفظ",
     "admin.searchExamStudent": "ابحث بكود الطالب أو الاسم",
     "admin.selectedStudent": "الطالب المختار",
     "admin.selectedGroup": "المجموعة المختارة",
@@ -538,6 +743,13 @@ const translations = {
     "errors.userExists": "البريد الإلكتروني أو اسم المستخدم موجود بالفعل.",
     "errors.selfDisable": "لا يمكنك تعطيل حسابك الحالي",
     "errors.selfRole": "لا يمكنك تغيير دور حسابك الحالي من مدير.",
+    "errors.ownerProtected": "لا يمكن تعديل أو تعطيل أو حذف مالك النظام.",
+    "errors.permissionRequired": "ليس لديك الصلاحية لتنفيذ هذا الإجراء.",
+    "errors.ownerOnly": "هذا الإجراء متاح لمالك النظام فقط.",
+    "errors.ownerTransferRequired": "لا يمكن تعيين مالك جديد من خلال تعديل عادي. استخدم نقل الملكية.",
+    "errors.permissionGrantForbidden": "لا يمكنك منح صلاحيات لا تملكها.",
+    "errors.invalidOwnerPassword": "كلمة مرور مالك النظام غير صحيحة.",
+    "errors.invalidOwnerTarget": "المستخدم المختار غير صالح لنقل الملكية.",
     "errors.lookupRequired": "أدخل الرقم أولا.",
     "errors.digitsOnly": "يُسمح بالأرقام فقط.",
     "errors.lookupLength": "يجب إدخال 11 رقمًا لرقم الموبايل أو 14 رقمًا للرقم القومي.",
@@ -845,12 +1057,40 @@ const translations = {
     "audit.reason": "Reason",
     "audit.search": "Search logs",
     "audit.action": "Action",
+    "audit.allActions": "All actions",
     "audit.user": "User",
     "audit.payment": "Payment ID",
     "audit.student": "Student ID",
     "audit.dateFrom": "Date from",
     "audit.dateTo": "Date to",
     "audit.refresh": "Refresh",
+    "audit.refreshing": "Refreshing...",
+    "audit.refreshed": "Updated",
+    "audit.maintenance": "Advanced maintenance",
+    "audit.maintenanceWarning": "Deleting audit logs is permanent and cannot be undone.",
+    "audit.maintenanceFrom": "Date from",
+    "audit.maintenanceTo": "Date to",
+    "audit.maintenancePin": "Audit PIN",
+    "audit.maintenancePassword": "Admin password",
+    "audit.maintenanceReason": "Deletion reason",
+    "audit.maintenanceReasonPlaceholder": "Write the reason for deleting these records",
+    "audit.maintenanceConfirmation": "Typed confirmation",
+    "audit.maintenanceConfirmationHint": "Type DELETE AUDIT LOGS to confirm",
+    "audit.maintenancePreview": "Preview records",
+    "audit.maintenancePreviewing": "Previewing...",
+    "audit.maintenancePreviewFirst": "Preview the records before deleting them.",
+    "audit.maintenanceCount": "Matching records: {{count}}",
+    "audit.maintenanceDelete": "Delete records",
+    "audit.maintenanceDeleting": "Deleting...",
+    "audit.maintenanceDeleted": "{{count}} records deleted successfully.",
+    "audit.maintenanceInvalidDates": "Choose two valid dates.",
+    "audit.maintenancePreviewFailed": "Could not preview the records.",
+    "audit.maintenanceDeleteFailed": "Could not delete the records.",
+    "audit.maintenanceInvalidPassword": "The admin password is incorrect.",
+    "audit.maintenancePasswordRequired": "Enter the admin password.",
+    "audit.maintenanceInvalidConfirmation": "Type DELETE AUDIT LOGS exactly to confirm.",
+    "audit.maintenanceReasonRequired": "Write a deletion reason (at least 3 characters).",
+    "audit.maintenancePinNotConfigured": "Set up the audit PIN first.",
     "audit.date": "Date and time",
     "audit.details": "Details",
     "audit.noLogs": "No audit logs found.",
@@ -862,9 +1102,13 @@ const translations = {
     "audit.action.paymentReversed": "Payment reversed",
     "audit.action.studentCreated": "Student created",
     "audit.action.studentUpdated": "Student updated",
+    "audit.action.studentChanged": "Student changed",
     "audit.action.studentStatusChanged": "Student status changed",
     "audit.action.studentRestored": "Student restored",
     "audit.action.studentArchived": "Student archived",
+    "audit.action.studentsBulkArchived": "Students archived in bulk",
+    "audit.action.studentLabelPrinted": "Student label printed",
+    "audit.action.studentPurged": "Student personal data purged",
     "audit.action.attendanceRecorded": "Attendance recorded",
     "audit.action.messageAction": "Message action",
     "audit.action.noteAction": "Note action",
@@ -874,9 +1118,62 @@ const translations = {
     "audit.action.systemRequest": "System action",
     "audit.action.userCreated": "User created",
     "audit.action.userUpdated": "User updated",
+    "audit.action.permissionsChanged": "User permissions changed",
+    "audit.action.roleChanged": "User role changed",
+    "audit.action.ownershipTransferred": "System ownership transferred",
     "audit.action.userPasswordReset": "User password changed",
     "audit.action.userStatusChanged": "User status changed",
     "audit.action.userArchived": "User archived",
+    "audit.action.userRestored": "User restored",
+    "audit.action.userPermanentlyDeleted": "User permanently deleted",
+    "audit.action.loginSucceeded": "Login successful",
+    "audit.action.loginFailed": "Login attempt failed",
+    "audit.action.logout": "Logged out",
+    "audit.action.groupCreated": "Group created",
+    "audit.action.groupUpdated": "Group updated",
+    "audit.action.groupStatusChanged": "Group status changed",
+    "audit.action.groupArchived": "Group archived",
+    "audit.action.examResultCreated": "Exam result recorded",
+    "audit.action.examResultUpdated": "Exam result updated",
+    "audit.action.examResultDeleted": "Exam result deleted",
+    "audit.action.homeworkCreated": "Homework created",
+    "audit.action.homeworkUpdated": "Homework updated",
+    "audit.action.homeworkDeleted": "Homework deleted",
+    "audit.action.noteCreated": "Note added",
+    "audit.action.noteUpdated": "Note updated",
+    "audit.action.noteDeleted": "Note deleted",
+    "audit.action.messageSent": "Message sent",
+    "audit.action.messageDeleted": "Message deleted",
+    "audit.action.messageRead": "Message read status updated",
+    "audit.action.attendanceChanged": "Attendance changed",
+    "audit.action.attendanceScanned": "Attendance scan processed",
+    "audit.action.attendanceSessionCreated": "Attendance session created",
+    "audit.action.suspiciousScan": "Suspicious scan recorded",
+    "audit.action.studentScanSerialRegenerated": "Student scan serial regenerated",
+    "audit.action.studentPermanentlyAnonymized": "Student data permanently anonymized",
+    "audit.action.sitePageUpdated": "Site page content updated",
+    "audit.action.publicInquiryCreated": "Public inquiry created",
+    "audit.action.systemAction": "Administrative system action",
+    "audit.detail.summary": "Operation summary",
+    "audit.detail.before": "Before change",
+    "audit.detail.after": "After change",
+    "audit.detail.changes": "Changes",
+    "audit.detail.studentId": "Student ID",
+    "audit.detail.studentName": "Student name",
+    "audit.detail.studentCode": "Student code",
+    "audit.detail.userId": "User ID",
+    "audit.detail.targetUser": "Affected user",
+    "audit.detail.groupId": "Group ID",
+    "audit.detail.examId": "Exam ID",
+    "audit.detail.resultId": "Result ID",
+    "audit.detail.noteId": "Note ID",
+    "audit.detail.threadId": "Thread ID",
+    "audit.detail.messageId": "Message ID",
+    "audit.detail.recordId": "Attendance record ID",
+    "audit.detail.statusBefore": "Status before",
+    "audit.detail.statusAfter": "Status after",
+    "audit.detail.amount": "Amount",
+    "audit.detail.scannedValue": "Scanned value",
     "audit.detail.body": "Submitted data",
     "audit.detail.path": "Operation",
     "audit.detail.query": "Search parameters",
@@ -892,6 +1189,27 @@ const translations = {
     "audit.detail.reversalId": "Reversal ID",
     "audit.detail.locked": "Attempt locked",
     "audit.detail.pinDigits": "PIN digit count",
+    "audit.detail.actor": "Performed by",
+    "audit.detail.outcome": "Outcome",
+    "audit.detail.printType": "Print type",
+    "audit.detail.serial": "Serial",
+    "audit.detail.scanSerial": "Scan serial",
+    "audit.detail.remainingPrintCount": "Remaining print count",
+    "audit.detail.sessionDate": "Session date",
+    "audit.detail.checkinTime": "Check-in time",
+    "audit.detail.guardianPhone": "Guardian phone",
+    "audit.detail.phone": "Phone",
+    "audit.detail.grade": "Grade level",
+    "audit.detail.groupName": "Group",
+    "audit.detail.field": "Field",
+    "audit.detail.valueBefore": "Previous value",
+    "audit.detail.valueAfter": "New value",
+    "audit.detail.content": "Content",
+    "audit.value.success": "Success",
+    "audit.value.failure": "Failed",
+    "audit.value.reprint": "Reprint",
+    "audit.value.initialPrint": "Print",
+    "audit.value.set": "Set",
     "audit.narrative.userCreated": "User created: {{name}} — Username: {{username}} — Role: {{role}}",
     "audit.narrative.userUpdated": "User updated: {{name}} — Username: {{username}}",
     "audit.narrative.userPasswordReset": "User password changed: {{name}}",
@@ -901,6 +1219,10 @@ const translations = {
     "audit.narrative.advancePayment": "Advance payment recorded for student: {{name}} — Code: {{code}} — Amount: {{amount}} EGP",
     "audit.narrative.reversed": "Payment #{{payment}} reversed for student: {{name}} — Amount: {{amount}} EGP — Reason: {{reason}}",
     "audit.narrative.attendance": "Attendance recorded for student: {{name}} — Student code: {{code}}",
+    "audit.narrative.labelPrinted": "Student label {{printType}}: {{name}} — Student code: {{code}}",
+    "audit.narrative.serialRegenerated": "Student scan serial regenerated: {{name}} — Student code: {{code}}",
+    "audit.narrative.logsUnlocked": "User {{actor}} unlocked the activity log successfully.",
+    "audit.narrative.pinFailed": "User {{actor}} failed to unlock the activity log.",
     "audit.narrative.generic": "Action completed: {{action}}",
     "audit.word.created": "created",
     "audit.word.updated": "updated",
@@ -933,8 +1255,21 @@ const translations = {
     "admin.disabled": "Disabled",
     "admin.deleted": "Deleted",
     "admin.restore": "Restore",
+    "admin.restoring": "Restoring...",
+    "admin.restored": "Restored",
+    "admin.loadingDetails": "Loading details...",
+    "admin.detailsLoaded": "Details loaded",
+    "admin.disabling": "Disabling...",
+    "admin.disabledSuccessfully": "Disabled",
+    "admin.enabling": "Enabling...",
+    "admin.enabledSuccessfully": "Enabled",
+    "admin.deleting": "Deleting...",
+    "admin.deletedSuccessfully": "Deleted",
     "admin.permanentDelete": "Permanent Delete",
     "admin.permanentDeleteConfirm": "This student will be permanently deleted and cannot be restored. Are you sure?",
+    "admin.permanentDeleteUserConfirm": "This user will be permanently deleted from the database and cannot be restored. Are you sure?",
+    "admin.permanentlyDeleting": "Permanently deleting...",
+    "admin.permanentlyDeleted": "Deleted",
     "admin.purgeDaysLeft": "Permanent deletion in {{days}} days",
     "admin.status": "Status",
     "admin.resetPassword": "Reset Password",
@@ -949,10 +1284,48 @@ const translations = {
     "admin.cancel": "Cancel",
     "admin.userSaved": "User saved.",
     "admin.passwordReset": "Password updated.",
+    "admin.resettingPassword": "Resetting password...",
+    "admin.deleteUser": "Delete",
+    "admin.ownershipTransferred": "System ownership transferred successfully.",
     "admin.adminOnly": "This section is available to admins only.",
+    "admin.ownerBadge": "System Owner",
+    "admin.primaryAdmin": "Primary Admin",
+    "admin.role.owner": "Owner",
     "admin.role.admin": "Admin",
-    "admin.role.teacher": "Teacher",
-    "admin.role.assistant": "Assistant",
+    "admin.role.staff": "Staff",
+    "admin.permissions": "Permissions",
+    "admin.permissionPreset": "Permission preset",
+    "admin.permissionPreset.full": "Full permissions",
+    "admin.permissionPreset.students": "Student management",
+    "admin.permissionPreset.finance": "Accounts",
+    "admin.permissionPreset.readOnly": "Read only",
+    "admin.permissionPreset.custom": "Custom permissions",
+    "admin.permissionGroup.students": "Students",
+    "admin.permissionGroup.attendance": "Attendance",
+    "admin.permissionGroup.exams": "Exams and assessments",
+    "admin.permissionGroup.homework": "Homework",
+    "admin.permissionGroup.schedule": "Schedules and classes",
+    "admin.permissionGroup.payments": "Payments",
+    "admin.permissionGroup.messages": "Messages",
+    "admin.permissionGroup.notes": "Notes",
+    "admin.permissionGroup.users": "Users",
+    "admin.permissionGroup.activity": "Activity log",
+    "admin.permissionGroup.settings": "Settings",
+    "admin.permission.view": "View",
+    "admin.permission.manage": "Manage",
+    "admin.permission.reverse": "Reverse payment",
+    "admin.permission.create": "Create user",
+    "admin.permission.edit": "Edit",
+    "admin.permission.disable": "Disable",
+    "admin.permission.delete": "Delete",
+    "admin.transferOwnership": "Transfer ownership",
+    "admin.transferOwnershipConfirm": "Ownership will be transferred to this user. Enter your password to confirm.",
+    "admin.currentPassword": "Current password",
+    "admin.ownerProtected": "This is the system owner. Admins cannot change the owner role or permissions, disable, or delete this account.",
+    "admin.permissionGrantForbidden": "You cannot grant permissions that you do not have.",
+    "admin.ownerOnly": "This action is available only to the system owner.",
+    "admin.role.teacher": "Staff",
+    "admin.role.assistant": "Staff",
     "admin.groupName": "Group name",
     "admin.grade": "Grade",
     "admin.subject": "Subject",
@@ -965,6 +1338,9 @@ const translations = {
     "admin.studentName": "Student name",
     "admin.studentCode": "Student code",
     "admin.fieldRequired": "This field is required.",
+    "admin.scheduleRequired": "Select at least one class day.",
+    "admin.scheduleTimeRequired": "Select both a start and end time.",
+    "admin.invalidNumber": "Enter a valid number.",
     "admin.studentCodeFormat": "Student code must look like A1234",
     "admin.generateCodeSerial": "Generate Code & Serial",
     "admin.labelDetails": "Label details",
@@ -989,10 +1365,32 @@ const translations = {
     "admin.allGroups": "All groups",
     "admin.generateCode": "Generate code",
     "admin.groupSaved": "Group saved.",
+    "admin.groupHasStudents": "Cannot delete a group that has students. Move students or disable the group.",
+    "admin.groupDeletePinTitle": "Delete group with students",
+    "admin.groupDeletePinDescription": "This group contains {{count}} students. Enter the Activity Log PIN to allow deletion. Only the group will be archived; student records will not be deleted.",
+    "admin.groupDeletePin": "Activity Log PIN",
+    "admin.groupDeletePinAction": "Confirm group deletion",
+    "admin.groupDeletePinLoading": "Deleting group...",
+    "admin.groupDeletePinRequired": "Enter the Activity Log PIN.",
+    "admin.groupDeletePinInvalid": "The Activity Log PIN is incorrect.",
+    "admin.groupDeletePinLocked": "The PIN is temporarily locked. Try again later.",
+    "admin.groupDeletePinNotConfigured": "Set up the Activity Log PIN first.",
     "admin.studentSaved": "Student saved. Code: {{code}}",
     "admin.noGroups": "No groups yet.",
     "admin.noStudents": "No students yet.",
     "admin.searchStudents": "Search by student name, code, phone, or group",
+    "admin.groupFilter": "Group",
+    "admin.selectAll": "Select All",
+    "admin.deselectAll": "Deselect All",
+    "admin.clearDaySelection": "Clear day selection",
+    "admin.selectStudentCheckbox": "Select student",
+    "admin.selectedStudents": "{{count}} students selected",
+    "admin.bulkDelete": "Delete selected ({{count}})",
+    "admin.bulkDeleteLoading": "Deleting {{count}} students...",
+    "admin.bulkDeleteSuccess": "Deleted {{count}} students",
+    "admin.bulkDeleteConfirm": "Are you sure you want to delete {{count}} students? This action affects multiple records.",
+    "admin.actionFailedDelete": "Delete failed",
+    "admin.actionFailedSave": "Save failed",
     "admin.searchExamStudent": "Search by student code or name",
     "admin.selectedStudent": "Selected student",
     "admin.selectedGroup": "Selected group",
@@ -1058,6 +1456,13 @@ const translations = {
     "errors.userExists": "Email or username already exists.",
     "errors.selfDisable": "You cannot disable your own account",
     "errors.selfRole": "You cannot change your own admin role.",
+    "errors.ownerProtected": "The system owner cannot be modified, disabled, or deleted.",
+    "errors.permissionRequired": "You do not have permission to perform this action.",
+    "errors.ownerOnly": "This action is available only to the system owner.",
+    "errors.ownerTransferRequired": "A new owner must be assigned through the secure ownership transfer action.",
+    "errors.permissionGrantForbidden": "You cannot grant permissions that you do not have.",
+    "errors.invalidOwnerPassword": "The system owner password is incorrect.",
+    "errors.invalidOwnerTarget": "The selected user cannot receive ownership.",
     "errors.lookupRequired": "Enter the number first.",
     "errors.digitsOnly": "Digits only are allowed.",
     "errors.lookupLength": "Please enter an 11-digit mobile number or a 14-digit national ID.",
@@ -1181,6 +1586,86 @@ const translations = {
 
 type TranslationKey = keyof typeof translations.ar;
 type Translator = ReturnType<typeof createTranslator>;
+type PermissionKey =
+  | "students.view" | "students.manage" | "students.delete"
+  | "attendance.view" | "attendance.manage"
+  | "exams.view" | "exams.manage"
+  | "homework.view" | "homework.manage"
+  | "schedule.view" | "schedule.manage"
+  | "payments.view" | "payments.manage" | "payments.reverse"
+  | "messages.view" | "messages.manage"
+  | "notes.view" | "notes.manage"
+  | "users.view" | "users.create" | "users.edit" | "users.disable" | "users.delete"
+  | "activity_log.view" | "settings.manage";
+
+const allRbacPermissions: PermissionKey[] = [
+  "students.view", "students.manage", "students.delete", "attendance.view", "attendance.manage", "exams.view", "exams.manage",
+  "homework.view", "homework.manage", "schedule.view", "schedule.manage", "payments.view", "payments.manage", "payments.reverse",
+  "messages.view", "messages.manage", "notes.view", "notes.manage", "users.view", "users.create", "users.edit", "users.disable",
+  "users.delete", "activity_log.view", "settings.manage"
+];
+
+const permissionGroups: Array<{ label: TranslationKey; permissions: Array<{ key: PermissionKey; label: TranslationKey }> }> = [
+  { label: "admin.permissionGroup.students", permissions: [{ key: "students.view", label: "admin.permission.view" }, { key: "students.manage", label: "admin.permission.manage" }, { key: "students.delete", label: "admin.permission.delete" }] },
+  { label: "admin.permissionGroup.attendance", permissions: [{ key: "attendance.view", label: "admin.permission.view" }, { key: "attendance.manage", label: "admin.permission.manage" }] },
+  { label: "admin.permissionGroup.exams", permissions: [{ key: "exams.view", label: "admin.permission.view" }, { key: "exams.manage", label: "admin.permission.manage" }] },
+  { label: "admin.permissionGroup.homework", permissions: [{ key: "homework.view", label: "admin.permission.view" }, { key: "homework.manage", label: "admin.permission.manage" }] },
+  { label: "admin.permissionGroup.schedule", permissions: [{ key: "schedule.view", label: "admin.permission.view" }, { key: "schedule.manage", label: "admin.permission.manage" }] },
+  { label: "admin.permissionGroup.payments", permissions: [{ key: "payments.view", label: "admin.permission.view" }, { key: "payments.manage", label: "admin.permission.manage" }, { key: "payments.reverse", label: "admin.permission.reverse" }] },
+  { label: "admin.permissionGroup.messages", permissions: [{ key: "messages.view", label: "admin.permission.view" }, { key: "messages.manage", label: "admin.permission.manage" }] },
+  { label: "admin.permissionGroup.notes", permissions: [{ key: "notes.view", label: "admin.permission.view" }, { key: "notes.manage", label: "admin.permission.manage" }] },
+  { label: "admin.permissionGroup.users", permissions: [{ key: "users.view", label: "admin.permission.view" }, { key: "users.create", label: "admin.permission.create" }, { key: "users.edit", label: "admin.permission.edit" }, { key: "users.disable", label: "admin.permission.disable" }, { key: "users.delete", label: "admin.permission.delete" }] },
+  { label: "admin.permissionGroup.activity", permissions: [{ key: "activity_log.view", label: "admin.permission.view" }] },
+  { label: "admin.permissionGroup.settings", permissions: [{ key: "settings.manage", label: "admin.permission.manage" }] }
+];
+
+const permissionPresets: Array<{ key: string; label: TranslationKey; permissions: PermissionKey[] }> = [
+  { key: "full", label: "admin.permissionPreset.full", permissions: allRbacPermissions },
+  { key: "students", label: "admin.permissionPreset.students", permissions: ["students.view", "students.manage", "attendance.view", "attendance.manage", "exams.view", "exams.manage", "homework.view", "homework.manage"] },
+  { key: "finance", label: "admin.permissionPreset.finance", permissions: ["students.view", "payments.view", "payments.manage", "payments.reverse"] },
+  { key: "readOnly", label: "admin.permissionPreset.readOnly", permissions: allRbacPermissions.filter((permission) => permission.endsWith(".view")) },
+  { key: "custom", label: "admin.permissionPreset.custom", permissions: [] }
+];
+
+function sessionHasPermission(session: TeacherSession, permission: PermissionKey) {
+  return session.teacher.role === "owner" || session.teacher.permissions?.includes(permission) === true;
+}
+
+type ActionButtonState = "idle" | "loading" | "success" | "error";
+
+function useActionFeedback() {
+  const [state, setState] = useState<ActionButtonState>("idle");
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+  }, []);
+
+  async function run(action: () => Promise<void>, successDuration = 1800) {
+    if (state === "loading") return false;
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    setState("loading");
+    try {
+      await action();
+      setState("success");
+      timerRef.current = window.setTimeout(() => setState("idle"), successDuration);
+      return true;
+    } catch (error) {
+      setState("error");
+      timerRef.current = window.setTimeout(() => setState("idle"), 1800);
+      throw error;
+    }
+  }
+
+  return { state, run };
+}
+
+function actionButtonText(state: ActionButtonState, labels: { idle: string; loading: string; success: string; error: string }) {
+  if (state === "loading") return labels.loading;
+  if (state === "success") return `✓ ${labels.success}`;
+  if (state === "error") return labels.error;
+  return labels.idle;
+}
 
 const fallbackSitePages: Record<SiteSlug, SitePage> = {
   "about-teacher": {
@@ -1374,7 +1859,11 @@ function loadStoredTeacherSession() {
 }
 
 function saveTeacherSession(data: TeacherSession) {
-  const key = data.teacher.role === "admin" ? ADMIN_SESSION_STORAGE_KEY : data.teacher.role === "assistant" ? ASSISTANT_SESSION_STORAGE_KEY : TEACHER_SESSION_STORAGE_KEY;
+  const key = data.teacher.role === "owner" || data.teacher.role === "admin"
+    ? ADMIN_SESSION_STORAGE_KEY
+    : data.teacher.role === "assistant"
+      ? ASSISTANT_SESSION_STORAGE_KEY
+      : TEACHER_SESSION_STORAGE_KEY;
   sessionStorage.setItem(
     key,
     JSON.stringify({
@@ -1384,7 +1873,8 @@ function saveTeacherSession(data: TeacherSession) {
         name: data.teacher.name,
         email: data.teacher.email,
         username: data.teacher.username,
-        role: data.teacher.role
+        role: data.teacher.role,
+        permissions: data.teacher.permissions || []
       }
     })
   );
@@ -1490,11 +1980,25 @@ function adminApiErrorMessage(status: string | undefined, t: Translator) {
   if (status === "password_too_short") return t("errors.passwordLength");
   if (status === "self_disable_forbidden") return t("errors.selfDisable");
   if (status === "self_role_forbidden") return t("errors.selfRole");
+  if (status === "owner_protected") return t("errors.ownerProtected");
+  if (status === "owner_only") return t("errors.ownerOnly");
+  if (status === "owner_transfer_required") return t("errors.ownerTransferRequired");
+  if (status === "permission_grant_forbidden") return t("errors.permissionGrantForbidden");
+  if (status === "permission_required") return t("errors.permissionRequired");
+  if (status === "invalid_owner_password") return t("errors.invalidOwnerPassword");
+  if (status === "invalid_owner_target" || status === "invalid_transfer_payload") return t("errors.invalidOwnerTarget");
+  if (status === "group_delete_pin_required") return t("admin.groupDeletePinRequired");
+  if (status === "invalid_audit_pin") return t("admin.groupDeletePinInvalid");
+  if (status === "audit_pin_locked") return t("admin.groupDeletePinLocked");
+  if (status === "audit_pin_not_configured") return t("admin.groupDeletePinNotConfigured");
   if (status === "student_code_exists") return t("admin.codeExists");
   if (status === "invalid_student_code") return t("admin.invalidStudentCode");
   if (status === "invalid_phone") return t("errors.phoneLength");
   if (status === "invalid_national_id") return t("errors.nationalIdLength");
   if (status === "invalid_group" || status === "invalid_group_payload" || status === "invalid_student_payload") {
+    return t("admin.invalidPayload");
+  }
+  if (status === "invalid_student_ids" || status === "student_not_found" || status === "student_already_deleted" || status === "bulk_delete_conflict") {
     return t("admin.invalidPayload");
   }
   return t("errors.loginFailed");
@@ -1660,6 +2164,21 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    if (!teacherSession?.token) return;
+    let cancelled = false;
+    fetch(`${API_BASE_URL}/teacher/me`, { headers: { Authorization: `Bearer ${teacherSession.token}` } })
+      .then((response) => response.json().then((data) => ({ response, data })))
+      .then(({ response, data }) => {
+        if (cancelled || !response.ok || !data.ok || !data.teacher) return;
+        const refreshed = { token: teacherSession.token, teacher: data.teacher } as TeacherSession;
+        saveTeacherSession(refreshed);
+        setTeacherSession(refreshed);
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [teacherSession?.token]);
+
+  useEffect(() => {
     const updatePath = () => setPath(window.location.pathname);
     window.addEventListener("popstate", updatePath);
     return () => window.removeEventListener("popstate", updatePath);
@@ -1699,7 +2218,9 @@ function App() {
     setLookupOpen(false);
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    const code = loginData?.student?.student_code;
+    if (code) await fetch(`${API_BASE_URL}/student/logout`, { method: "POST", headers: { "X-Student-Code": code } }).catch(() => undefined);
     sessionStorage.removeItem(STUDENT_SESSION_STORAGE_KEY);
     setLoginData(null);
     setStudentCode("");
@@ -1708,7 +2229,8 @@ function App() {
     navigate("/");
   }
 
-  function handleTeacherLogout() {
+  async function handleTeacherLogout() {
+    if (teacherSession?.token) await fetch(`${API_BASE_URL}/teacher/logout`, { method: "POST", headers: { Authorization: `Bearer ${teacherSession.token}` } }).catch(() => undefined);
     [ADMIN_SESSION_STORAGE_KEY, TEACHER_SESSION_STORAGE_KEY, ASSISTANT_SESSION_STORAGE_KEY].forEach((key) => sessionStorage.removeItem(key));
     setTeacherSession(null);
     navigate("/teacher/login");
@@ -2349,7 +2871,9 @@ function TeacherDashboard({
   onLogout: () => void;
   t: Translator;
 }) {
-  const isAdmin = session.teacher.role === "admin";
+  const isOwner = session.teacher.role === "owner";
+  const isAdmin = isOwner || session.teacher.role === "admin";
+  const can = (permission: PermissionKey) => sessionHasPermission(session, permission);
   const [inboxUnread, setInboxUnread] = useState(0);
   useEffect(() => {
     fetch(`${API_BASE_URL}/admin/inbox/unread-count`, { headers: { Authorization: `Bearer ${session.token}` } })
@@ -2359,19 +2883,19 @@ function TeacherDashboard({
   }, [session.token]);
   const adminTabs = ([
     { id: "overview", label: t("admin.tabs.overview") },
-    { id: "add-user", label: t("admin.tabs.addUser"), adminOnly: true },
-    { id: "users", label: t("admin.tabs.users"), adminOnly: true },
-    { id: "site-content", label: t("admin.tabs.siteContent"), adminOnly: true },
-    { id: "audit-logs", label: t("admin.tabs.auditLogs"), adminOnly: true },
-    { id: "students", label: t("admin.tabs.students") },
-    { id: "groups", label: t("admin.tabs.groups") },
-    { id: "attendance", label: t("admin.tabs.attendance") },
-    { id: "scanner", label: t("admin.tabs.scanner") },
-    { id: "fees", label: t("admin.tabs.fees") },
-    { id: "exams", label: t("admin.tabs.exams") },
-    { id: "inbox", label: `${t("admin.tabs.inbox")}${inboxUnread ? ` (${inboxUnread})` : ""}` }
-  ] satisfies Array<{ id: AdminTab; label: string; adminOnly?: boolean }>).filter((tab) => !tab.adminOnly || isAdmin);
-  const [activeTab, setActiveTab] = useState<AdminTab>("overview");
+    { id: "add-user", label: t("admin.tabs.addUser"), permission: "users.create" },
+    { id: "users", label: t("admin.tabs.users"), permission: "users.view" },
+    { id: "site-content", label: t("admin.tabs.siteContent"), permission: "settings.manage" },
+    { id: "audit-logs", label: t("admin.tabs.auditLogs"), permission: "activity_log.view" },
+    { id: "students", label: t("admin.tabs.students"), permission: "students.view" },
+    { id: "groups", label: t("admin.tabs.groups"), permission: "schedule.view" },
+    { id: "attendance", label: t("admin.tabs.attendance"), permission: "attendance.view" },
+    { id: "scanner", label: t("admin.tabs.scanner"), permission: "attendance.manage" },
+    { id: "fees", label: t("admin.tabs.fees"), permission: "payments.view" },
+    { id: "exams", label: t("admin.tabs.exams"), permission: "exams.view" },
+    { id: "inbox", label: `${t("admin.tabs.inbox")}${inboxUnread ? ` (${inboxUnread})` : ""}`, permission: "messages.view" }
+  ] satisfies Array<{ id: AdminTab; label: string; permission?: PermissionKey }>).filter((tab) => !tab.permission || can(tab.permission));
+  const [activeTab, setActiveTab] = useState<AdminTab>(() => adminTabFromLocation());
 
   const placeholderTitles: Partial<Record<AdminTab, string>> = {
     attendance: t("admin.tabs.attendance"),
@@ -2381,8 +2905,13 @@ function TeacherDashboard({
   useEffect(() => {
     if (!adminTabs.some((tab) => tab.id === activeTab)) {
       setActiveTab("overview");
+      persistAdminTab("overview");
     }
   }, [activeTab, adminTabs]);
+
+  useEffect(() => {
+    persistAdminTab(activeTab);
+  }, [activeTab]);
 
   return (
     <div className="app-shell admin-shell">
@@ -2500,17 +3029,17 @@ function TeacherDashboard({
               </div>
             </div>
           ) : null}
-          {activeTab === "add-user" && isAdmin ? <UsersTeamManager mode="create" session={session} t={t} /> : null}
-          {activeTab === "users" && isAdmin ? <UsersTeamManager mode="list" session={session} t={t} /> : null}
-          {activeTab === "site-content" && isAdmin ? <SiteContentEditor session={session} language={language} t={t} /> : null}
-          {activeTab === "audit-logs" && isAdmin ? <AuditLogsPanel session={session} language={language} t={t} /> : null}
-          {activeTab === "groups" ? <AcademicManager kind="groups" session={session} t={t} /> : null}
-          {activeTab === "students" ? <AcademicManager kind="students" session={session} t={t} /> : null}
-          {activeTab === "scanner" ? <ScannerPanel session={session} t={t} /> : null}
-          {activeTab === "fees" ? <><FeesPanel session={session} t={t} /><PaymentReportsPanel session={session} t={t} /><LatePaymentsReportPanel session={session} t={t} /></> : null}
-          {activeTab === "attendance" ? <AttendancePanel session={session} language={language} t={t} /> : null}
-          {activeTab === "exams" ? <ExamResultsManager session={session} t={t} /> : null}
-          {activeTab === "inbox" ? <StaffInboxControls session={session} language={language} t={t} onUnreadCountChange={setInboxUnread} /> : null}
+          {activeTab === "add-user" && can("users.create") ? <UsersTeamManager mode="create" session={session} t={t} /> : null}
+          {activeTab === "users" && can("users.view") ? <UsersTeamManager mode="list" session={session} t={t} /> : null}
+          {activeTab === "site-content" && can("settings.manage") ? <SiteContentEditor session={session} language={language} t={t} /> : null}
+          {activeTab === "audit-logs" && can("activity_log.view") ? <AuditLogsPanel session={session} language={language} t={t} /> : null}
+          {activeTab === "groups" && can("schedule.view") ? <AcademicManager kind="groups" session={session} t={t} /> : null}
+          {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
+          {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} t={t} /> : null}
+          {activeTab === "fees" && can("payments.view") ? <><FeesPanel session={session} t={t} /><PaymentReportsPanel session={session} t={t} /><LatePaymentsReportPanel session={session} t={t} /></> : null}
+          {activeTab === "attendance" && can("attendance.view") ? <AttendancePanel session={session} language={language} t={t} /> : null}
+          {activeTab === "exams" && can("exams.view") ? <ExamResultsManager session={session} t={t} /> : null}
+          {activeTab === "inbox" && can("messages.view") ? <StaffInboxControls session={session} language={language} t={t} onUnreadCountChange={setInboxUnread} /> : null}
           {activeTab !== "overview" && activeTab !== "attendance" && activeTab !== "exams" && placeholderTitles[activeTab] ? (
             <div className="admin-editor placeholder-panel">
               <p className="eyebrow">V1</p>
@@ -2532,11 +3061,13 @@ const emptyUserForm = {
   username: "",
   email: "",
   password: "",
-  role: "assistant" as AdminUser["role"],
+  role: "staff" as AdminUser["role"],
   is_active: true,
   print_student_labels: false,
   max_label_reprints: 2,
-  can_use_inbox: false
+  can_use_inbox: false,
+  permissions: [] as PermissionKey[],
+  permissionPreset: "custom"
 };
 
 function UsersTeamManager({
@@ -2555,9 +3086,20 @@ function UsersTeamManager({
   const [resetPassword, setResetPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
-  const [saveState, setSaveState] = useState<"idle" | "loading" | "success">("idle");
+  const [saveState, setSaveState] = useState<ActionButtonState>("idle");
+  const [saveMode, setSaveMode] = useState<"create" | "update">("create");
+  const saveTimer = useRef<number | null>(null);
+  const resetPasswordFeedback = useActionFeedback();
+  const [userActionStates, setUserActionStates] = useState<Record<string, ActionButtonState>>({});
+  const userActionTimers = useRef<Record<string, number>>({});
+  const [userRowNotice, setUserRowNotice] = useState<{ userId: number; message: string } | null>(null);
+  const userRowNoticeTimer = useRef<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<RecordStatusFilter>("active");
+  const [transferTarget, setTransferTarget] = useState<AdminUser | null>(null);
+  const [transferPassword, setTransferPassword] = useState("");
   const editorFormRef = useRef<HTMLFormElement>(null);
+  const isOwner = session.teacher.role === "owner";
+  const actorPermissions = new Set(session.teacher.permissions || []);
 
   async function loadUsers() {
     const response = await fetch(`${API_BASE_URL}/admin/users?status=${statusFilter}`, {
@@ -2570,6 +3112,40 @@ function UsersTeamManager({
   useEffect(() => {
     loadUsers().catch(() => setStatus(t("errors.loginFailed")));
   }, [statusFilter]);
+
+  useEffect(() => () => {
+    Object.values(userActionTimers.current).forEach((timer) => window.clearTimeout(timer));
+    if (userRowNoticeTimer.current !== null) window.clearTimeout(userRowNoticeTimer.current);
+    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+  }, []);
+
+  function userActionState(key: string): ActionButtonState {
+    return userActionStates[key] || "idle";
+  }
+
+  async function runUserAction(key: string, action: () => Promise<void>) {
+    if (userActionState(key) !== "idle") return;
+    setStatus("");
+    setUserActionStates((current) => ({ ...current, [key]: "loading" }));
+    try {
+      await action();
+      setUserActionStates((current) => ({ ...current, [key]: "success" }));
+      userActionTimers.current[key] = window.setTimeout(() => {
+        setUserActionStates((current) => ({ ...current, [key]: "idle" }));
+        loadUsers().catch(() => setStatus(t("errors.loginFailed")));
+      }, 1800);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+      setUserActionStates((current) => ({ ...current, [key]: "error" }));
+      userActionTimers.current[key] = window.setTimeout(() => setUserActionStates((current) => ({ ...current, [key]: "idle" })), 1800);
+    }
+  }
+
+  function showUserRowNotice(userId: number, message: string) {
+    if (userRowNoticeTimer.current !== null) window.clearTimeout(userRowNoticeTimer.current);
+    setUserRowNotice({ userId, message });
+    userRowNoticeTimer.current = window.setTimeout(() => setUserRowNotice(null), 1800);
+  }
 
   function startEdit(user: AdminUser) {
     setEditingId(user.id);
@@ -2585,7 +3161,9 @@ function UsersTeamManager({
       is_active: user.is_active
       , print_student_labels: user.print_student_labels ?? false,
       max_label_reprints: user.max_label_reprints ?? 2,
-      can_use_inbox: user.can_use_inbox ?? false
+      can_use_inbox: user.can_use_inbox ?? false,
+      permissions: user.permissions || [],
+      permissionPreset: "custom"
     });
     window.requestAnimationFrame(() => editorFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
@@ -2596,6 +3174,27 @@ function UsersTeamManager({
     setResetPassword("");
     setStatus("");
     setForm(emptyUserForm);
+  }
+
+  function applyPermissionPreset(presetKey: string) {
+    const preset = permissionPresets.find((item) => item.key === presetKey);
+    if (!preset || preset.key === "custom") {
+      setForm((value) => ({ ...value, permissionPreset: "custom" }));
+      return;
+    }
+    const available = isOwner ? preset.permissions : preset.permissions.filter((permission) => actorPermissions.has(permission));
+    setForm((value) => ({ ...value, permissions: available, permissionPreset: preset.key }));
+  }
+
+  function togglePermission(permission: PermissionKey) {
+    if (!isOwner && !actorPermissions.has(permission)) return;
+    setForm((value) => ({
+      ...value,
+      permissionPreset: "custom",
+      permissions: value.permissions.includes(permission)
+        ? value.permissions.filter((item) => item !== permission)
+        : [...value.permissions, permission]
+    }));
   }
 
   async function saveUser(event: React.FormEvent) {
@@ -2612,13 +3211,15 @@ function UsersTeamManager({
       return;
     }
 
+    const savedUserId = editingId;
     setLoading(true);
     setSaveState("loading");
+    setSaveMode(savedUserId ? "update" : "create");
     try {
       const response = await fetch(
-        editingId ? `${API_BASE_URL}/admin/users/${editingId}` : `${API_BASE_URL}/admin/users`,
+        savedUserId ? `${API_BASE_URL}/admin/users/${savedUserId}` : `${API_BASE_URL}/admin/users`,
         {
-          method: editingId ? "PUT" : "POST",
+          method: savedUserId ? "PUT" : "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.token}`
@@ -2634,8 +3235,15 @@ function UsersTeamManager({
 
       await loadUsers();
       resetForm();
-      setStatus(t("admin.userSaved"));
+      if (savedUserId) {
+        setStatus("");
+        showUserRowNotice(savedUserId, t("admin.userSaved"));
+      } else {
+        setStatus(t("admin.userSaved"));
+      }
       setSaveState("success");
+      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+      saveTimer.current = window.setTimeout(() => setSaveState("idle"), 1800);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
       setSaveState("idle");
@@ -2646,7 +3254,6 @@ function UsersTeamManager({
 
   async function updateStatus(user: AdminUser, isActive: boolean) {
     setLoading(true);
-    setStatus("");
     try {
       const response = await fetch(`${API_BASE_URL}/admin/users/${user.id}/status`, {
         method: "PATCH",
@@ -2658,9 +3265,8 @@ function UsersTeamManager({
       });
       const data = (await response.json()) as { ok: boolean; status?: string };
       if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
-      await loadUsers();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -2669,20 +3275,41 @@ function UsersTeamManager({
   async function deleteUser(user: AdminUser) {
     if (user.id === session.teacher.id) { setStatus("لا يمكنك حذف حسابك الحالي / You cannot delete yourself"); return; }
     if (!window.confirm("هل أنت متأكد من حذف هذا المستخدم؟ / Are you sure you want to delete this user?")) return;
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/admin/users/${user.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${session.token}` } });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(data.status === "self_delete_forbidden" ? "لا يمكنك حذف حسابك الحالي / You cannot delete yourself" : t("errors.loginFailed"));
-      await loadUsers();
-    } catch (error) { setStatus(error instanceof Error ? error.message : t("errors.loginFailed")); }
-    finally { setLoading(false); }
+    await runUserAction(`delete:${user.id}`, async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/admin/users/${user.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${session.token}` } });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.status === "self_delete_forbidden" ? "لا يمكنك حذف حسابك الحالي / You cannot delete yourself" : t("errors.loginFailed"));
+      } finally {
+        setLoading(false);
+      }
+    });
   }
 
   async function restoreUser(user: AdminUser) {
     setLoading(true);
-    try { const response = await fetch(`${API_BASE_URL}/admin/users/${user.id}/restore`, {method:"PATCH",headers:{Authorization:`Bearer ${session.token}`}}); const data=await response.json(); if(!response.ok||!data.ok)throw new Error(t("errors.loginFailed")); await loadUsers(); }
-    catch(error){setStatus(error instanceof Error?error.message:t("errors.loginFailed"));} finally{setLoading(false);}
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/users/${user.id}/restore`, { method: "PATCH", headers: { Authorization: `Bearer ${session.token}` } });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function permanentlyDeleteUser(user: AdminUser) {
+    if (!window.confirm(t("admin.permanentDeleteUserConfirm"))) return;
+    await runUserAction(`permanent-delete:${user.id}`, async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`${API_BASE_URL}/admin/users/${user.id}/permanent`, { method: "DELETE", headers: { Authorization: `Bearer ${session.token}` } });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
+      } finally {
+        setLoading(false);
+      }
+    });
   }
 
   async function submitPasswordReset(userId: number) {
@@ -2694,19 +3321,45 @@ function UsersTeamManager({
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/reset-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.token}`
-        },
-        body: JSON.stringify({ password: resetPassword })
+      await resetPasswordFeedback.run(async () => {
+        const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/reset-password`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.token}`
+          },
+          body: JSON.stringify({ password: resetPassword })
+        });
+        const data = (await response.json()) as { ok: boolean; status?: string };
+        if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
+        setResetPassword("");
+        setStatus("");
+        showUserRowNotice(userId, t("admin.passwordReset"));
       });
-      const data = (await response.json()) as { ok: boolean; status?: string };
+      window.setTimeout(() => setResetPasswordId(null), 1800);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function transferOwnership() {
+    if (!transferTarget || !transferPassword) return;
+    setLoading(true);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/users/transfer-ownership`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ target_user_id: transferTarget.id, current_password: transferPassword })
+      });
+      const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
-      setResetPasswordId(null);
-      setResetPassword("");
-      setStatus(t("admin.passwordReset"));
+      setTransferTarget(null);
+      setTransferPassword("");
+      setStatus(t("admin.ownershipTransferred"));
+      await loadUsers();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
     } finally {
@@ -2740,11 +3393,10 @@ function UsersTeamManager({
             {t("admin.role")}
             <select
               value={form.role}
-              onChange={(event) => setForm({ ...form, role: event.target.value as AdminUser["role"] })}
-              disabled={editingId === session.teacher.id}
+              onChange={(event) => setForm({ ...form, role: event.target.value as AdminUser["role"], permissions: event.target.value === "staff" ? permissionPresets.find((item) => item.key === "students")?.permissions || [] : form.permissions })}
+              disabled={Boolean(editingId && users.find((user) => user.id === editingId)?.is_owner)}
             >
-              <option value="assistant">{t("admin.role.assistant")}</option>
-              <option value="teacher">{t("admin.role.teacher")}</option>
+              <option value="staff">{t("admin.role.staff")}</option>
               <option value="admin">{t("admin.role.admin")}</option>
             </select>
           </label>
@@ -2768,15 +3420,51 @@ function UsersTeamManager({
           <label>Max reprints / الحد الأقصى لإعادة الطباعة<input type="number" min="0" value={form.max_label_reprints} onChange={(event) => setForm({ ...form, max_label_reprints: Number(event.target.value) })} /></label>
         </div>
 
+        {form.role === "admin" ? (
+          <section className="permissions-editor" aria-labelledby="admin-permissions-title">
+            <div className="section-heading">
+              <p className="eyebrow">{t("admin.permissions")}</p>
+              <h3 id="admin-permissions-title">{t("admin.permissions")}</h3>
+            </div>
+            <label>
+              {t("admin.permissionPreset")}
+              <select value={form.permissionPreset} onChange={(event) => applyPermissionPreset(event.target.value)}>
+                {permissionPresets.map((preset) => <option key={preset.key} value={preset.key}>{t(preset.label)}</option>)}
+              </select>
+            </label>
+            <div className="permission-groups">
+              {permissionGroups.map((group) => (
+                <fieldset key={group.label} className="permission-group">
+                  <legend>{t(group.label)}</legend>
+                  {group.permissions.map(({ key, label }) => {
+                    const allowedToGrant = isOwner || actorPermissions.has(key);
+                    return (
+                      <label key={key} className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={form.permissions.includes(key)}
+                          disabled={!allowedToGrant || (editingId !== null && users.find((user) => user.id === editingId)?.is_owner === true)}
+                          onChange={() => togglePermission(key)}
+                        />
+                        {t(label)}
+                      </label>
+                    );
+                  })}
+                </fieldset>
+              ))}
+            </div>
+            {!isOwner ? <p className="form-hint">{t("admin.permissionGrantForbidden")}</p> : null}
+          </section>
+        ) : null}
+
         <div className="form-actions">
-          <button className="primary-button editor-save" type="submit" disabled={loading}>
-            {saveState === "loading"
-              ? t(editingId ? "admin.updating" : "admin.creating")
-              : saveState === "success"
-                ? t(editingId ? "admin.updated" : "admin.created")
-                : editingId
-                  ? t("admin.update")
-                  : t("admin.create")}
+          <button className={`primary-button editor-save action-feedback-${saveState} ${saveState === "success" ? "success-button" : ""}`} type="submit" disabled={loading || saveState === "loading"}>
+            {actionButtonText(saveState, {
+              idle: editingId ? t("admin.update") : t("admin.create"),
+              loading: editingId ? t("admin.updating") : t("admin.creating"),
+              success: t(saveMode === "update" ? "admin.updated" : "admin.created"),
+              error: t("admin.actionFailedSave")
+            })}
           </button>
           {editingId ? (
             <button className="secondary-button compact-button" type="button" onClick={resetForm}>
@@ -2792,8 +3480,11 @@ function UsersTeamManager({
         <div className="status-filter-buttons">{(["active","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div>
         {users.map((user) => {
           const isCurrentUser = user.id === session.teacher.id;
+          const targetIsOwner = user.is_owner || user.role === "owner";
+          const ownerLockedForActor = targetIsOwner && !isOwner;
           return (
             <article key={user.id} className="user-row">
+              {userRowNotice?.userId === user.id ? <p className="user-row-notice" role="status">{userRowNotice.message}</p> : null}
               <div>
                 <strong>{user.name}</strong>
                 <span>
@@ -2802,25 +3493,88 @@ function UsersTeamManager({
               </div>
               <span className={`role-badge role-${user.role}`}>{roleLabel(user.role, t)}</span>
               <span className={user.deleted_at ? "status-deleted" : user.is_active ? "status-active" : "status-disabled"}>{recordStatusLabel(user, t)}</span>
+              {targetIsOwner ? <p className="form-hint">{t("admin.ownerProtected")}</p> : null}
               <div className="row-actions">
-                {!user.deleted_at ? <button className="secondary-button compact-button" type="button" onClick={() => startEdit(user)}>
+                {!user.deleted_at && !ownerLockedForActor ? <button className="secondary-button compact-button" type="button" onClick={() => startEdit(user)}>
                   {t("admin.editUser")}
                 </button> : null}
-                {!user.deleted_at ? <button className="secondary-button compact-button" type="button" onClick={() => setResetPasswordId(user.id)}>
+                {!user.deleted_at && !ownerLockedForActor ? <button className="secondary-button compact-button" type="button" onClick={() => setResetPasswordId(user.id)}>
                   {t("admin.resetPassword")}
                 </button> : null}
-                {!user.deleted_at && !isCurrentUser ? (
-                  <button className="secondary-button compact-button" type="button" onClick={() => updateStatus(user, !user.is_active)} disabled={loading}>
-                    {user.is_active ? t("admin.disable") : t("admin.enable")}
+                {!user.deleted_at && !isCurrentUser && !ownerLockedForActor ? (
+                  <button
+                    className={`secondary-button compact-button action-feedback-${userActionState(`status:${user.id}`)}`}
+                    type="button"
+                    onClick={() => void runUserAction(`status:${user.id}`, () => updateStatus(user, !user.is_active))}
+                    disabled={loading || userActionState(`status:${user.id}`) !== "idle"}
+                  >
+                    {actionButtonText(userActionState(`status:${user.id}`), {
+                      idle: user.is_active ? t("admin.disable") : t("admin.enable"),
+                      loading: user.is_active ? t("admin.disabling") : t("admin.enabling"),
+                      success: user.is_active ? t("admin.disabledSuccessfully") : t("admin.enabledSuccessfully"),
+                      error: t("admin.actionFailedSave")
+                    })}
                   </button>
                 ) : null}
-                {user.deleted_at ? <button className="secondary-button compact-button" type="button" onClick={() => restoreUser(user)} disabled={loading}>Restore / استرجاع</button> : !isCurrentUser ? <button className="secondary-button compact-button" type="button" onClick={() => deleteUser(user)} disabled={loading}>Delete / حذف</button> : null}
+                {user.deleted_at && !ownerLockedForActor ? <>
+                  <button
+                    className={`secondary-button compact-button restore-user-button action-feedback-${userActionState(`restore:${user.id}`)}`}
+                    type="button"
+                    onClick={() => void runUserAction(`restore:${user.id}`, () => restoreUser(user))}
+                    disabled={loading || userActionState(`restore:${user.id}`) !== "idle" || userActionState(`permanent-delete:${user.id}`) !== "idle"}
+                  >
+                    {actionButtonText(userActionState(`restore:${user.id}`), {
+                      idle: t("admin.restore"),
+                      loading: t("admin.restoring"),
+                      success: t("admin.restored"),
+                      error: t("admin.actionFailedSave")
+                    })}
+                  </button>
+                  <button
+                    className={`secondary-button compact-button action-feedback-${userActionState(`permanent-delete:${user.id}`)}`}
+                    type="button"
+                    onClick={() => void permanentlyDeleteUser(user)}
+                    disabled={loading || userActionState(`permanent-delete:${user.id}`) !== "idle" || userActionState(`restore:${user.id}`) !== "idle"}
+                  >
+                    {actionButtonText(userActionState(`permanent-delete:${user.id}`), {
+                      idle: t("admin.permanentDelete"),
+                      loading: t("admin.permanentlyDeleting"),
+                      success: t("admin.permanentlyDeleted"),
+                      error: t("admin.actionFailedDelete")
+                    })}
+                  </button>
+                </> : !isCurrentUser && !ownerLockedForActor ? (
+                  <button
+                    className={`secondary-button compact-button action-feedback-${userActionState(`delete:${user.id}`)}`}
+                    type="button"
+                    onClick={() => void deleteUser(user)}
+                    disabled={loading || userActionState(`delete:${user.id}`) !== "idle"}
+                  >
+                    {actionButtonText(userActionState(`delete:${user.id}`), {
+                      idle: t("admin.deleteUser"),
+                      loading: t("admin.deleting"),
+                      success: t("admin.deletedSuccessfully"),
+                      error: t("admin.actionFailedDelete")
+                    })}
+                  </button>
+                ) : null}
+                {isOwner && !targetIsOwner && !user.deleted_at ? <button className="secondary-button compact-button" type="button" onClick={() => { setTransferTarget(user); setTransferPassword(""); setStatus(""); }} disabled={loading}>{t("admin.transferOwnership")}</button> : null}
               </div>
               {resetPasswordId === user.id ? (
                 <div className="password-reset-row">
                   <input type="password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} placeholder={t("admin.password")} />
-                  <button className="primary-button compact-button" type="button" onClick={() => submitPasswordReset(user.id)}>
-                    {t("admin.resetPassword")}
+                  <button
+                    className="primary-button compact-button"
+                    type="button"
+                    onClick={() => submitPasswordReset(user.id)}
+                    disabled={loading || resetPasswordFeedback.state !== "idle"}
+                  >
+                    {actionButtonText(resetPasswordFeedback.state, {
+                      idle: t("admin.resetPassword"),
+                      loading: t("admin.resettingPassword"),
+                      success: t("admin.passwordReset"),
+                      error: t("errors.loginFailed")
+                    })}
                   </button>
                 </div>
               ) : null}
@@ -2828,6 +3582,26 @@ function UsersTeamManager({
           );
         })}
       </div>
+      ) : null}
+
+      {transferTarget ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="modal admin-editor" role="dialog" aria-modal="true" aria-labelledby="transfer-ownership-title">
+            <div className="section-heading">
+              <p className="eyebrow">{t("admin.transferOwnership")}</p>
+              <h3 id="transfer-ownership-title">{transferTarget.name}</h3>
+            </div>
+            <p>{t("admin.transferOwnershipConfirm")}</p>
+            <label>
+              {t("admin.currentPassword")}
+              <input type="password" autoFocus value={transferPassword} onChange={(event) => setTransferPassword(event.target.value)} />
+            </label>
+            <div className="form-actions">
+              <button className="primary-button compact-button" type="button" onClick={transferOwnership} disabled={loading || !transferPassword}>{t("admin.transferOwnership")}</button>
+              <button className="secondary-button compact-button" type="button" onClick={() => { setTransferTarget(null); setTransferPassword(""); }}>{t("admin.cancel")}</button>
+            </div>
+          </section>
+        </div>
       ) : null}
 
       {status ? (
@@ -2844,9 +3618,9 @@ const emptyGroupForm = {
   grade: "",
   subject: "",
   center_id: "",
-  day_of_week: "6",
-  start_time: "18:00",
-  end_time: "19:30",
+  day_of_week: "",
+  start_time: "",
+  end_time: "",
   opens_before_minutes: "3",
   closes_after_minutes: "20",
   fees_amount: "0",
@@ -2865,12 +3639,30 @@ type ScheduleDraft = {
 
 const defaultScheduleDraft = (day = "6"): ScheduleDraft => ({
   day_of_week: day,
-  start_time: "18:00",
-  end_time: "19:30",
+  start_time: "08:00",
+  end_time: "08:30",
   opens_before_minutes: "3",
   closes_after_minutes: "20",
   is_active: true
 });
+
+const scheduleDayOrder = [6, 0, 1, 2, 3, 4, 5];
+const scheduleTimeOptions = [
+  ...Array.from({ length: 32 }, (_, index) => {
+    const minutes = 8 * 60 + index * 30;
+    const hour = Math.floor(minutes / 60);
+    const minute = minutes % 60;
+    const value = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    return { value, label: value };
+  }),
+  { value: "00:00", label: "00:00" }
+];
+
+function scheduleTimeLabel(value: string, language: Language) {
+  const [hour, minute] = value.split(":").map(Number);
+  const date = new Date(2026, 0, 1, hour, minute);
+  return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { hour: "numeric", minute: "2-digit", hour12: true }).format(date);
+}
 
 const gradeLevels = [
   ["خامسة ابتدائي", "Primary 5"], ["سادسة ابتدائي", "Primary 6"],
@@ -2885,7 +3677,17 @@ function gradeLevelLabel(value: unknown, language: Language) {
   return match ? (language === "en" ? match[1] : match[0]) : text;
 }
 
-const emptyStudentForm = {
+const emptyStudentForm: {
+  full_name: string;
+  student_code: string;
+  scan_serial: string;
+  phone: string;
+  guardian_phone: string;
+  gender: "male" | "female" | "unknown";
+  national_id: string;
+  group_id: string;
+  is_active: boolean;
+} = {
   full_name: "",
   student_code: "",
   scan_serial: "",
@@ -2912,17 +3714,28 @@ function AcademicManager({
   const [centers, setCenters] = useState<Array<{ id: number; name: string }>>([]);
   const [groupForm, setGroupForm] = useState(emptyGroupForm);
   const [studentForm, setStudentForm] = useState(emptyStudentForm);
-  const [scheduleRows, setScheduleRows] = useState<ScheduleDraft[]>([defaultScheduleDraft()]);
+  const [scheduleRows, setScheduleRows] = useState<ScheduleDraft[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
-  const [saveState, setSaveState] = useState<"idle" | "loading" | "success">("idle");
+  const [saveState, setSaveState] = useState<ActionButtonState>("idle");
+  const [saveMode, setSaveMode] = useState<"create" | "update">("create");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [showStudents, setShowStudents] = useState(false);
   const [statusFilter, setStatusFilter] = useState<RecordStatusFilter>("active");
   const [groupDetails, setGroupDetails] = useState<any>(null);
   const [detailFilter, setDetailFilter] = useState<RecordStatusFilter>("all");
   const [studentSearch, setStudentSearch] = useState("");
+  const [studentGroupId, setStudentGroupId] = useState("");
+  const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
+  const [groupDeletePinTarget, setGroupDeletePinTarget] = useState<AdminGroup | null>(null);
+  const [groupDeletePin, setGroupDeletePin] = useState("");
+  const bulkDeleteFeedback = useActionFeedback();
+  const studentDeleteFeedback = useActionFeedback();
+  const [groupActionStates, setGroupActionStates] = useState<Record<string, ActionButtonState>>({});
+  const [groupActionErrors, setGroupActionErrors] = useState<Record<string, string>>({});
+  const groupActionTimers = useRef<Record<string, number>>({});
   const [profileStudentId, setProfileStudentId] = useState<number | null>(null);
   const [profilePickerId, setProfilePickerId] = useState("");
   const [profileScanValue, setProfileScanValue] = useState("");
@@ -2942,6 +3755,7 @@ function AcademicManager({
 
     const params = new URLSearchParams({ status: statusFilter });
     if (studentSearch.trim()) params.set("q", studentSearch.trim());
+    if (studentGroupId) params.set("group_id", studentGroupId);
     const studentResponse = await fetch(`${API_BASE_URL}/admin/students?${params.toString()}`, { headers });
     const studentData = (await studentResponse.json()) as { ok: boolean; students?: AdminStudent[] };
     if (!studentResponse.ok || !studentData.ok) throw new Error(t("errors.loginFailed"));
@@ -2950,7 +3764,83 @@ function AcademicManager({
 
   useEffect(() => {
     loadData().catch((error) => setStatus(error instanceof Error ? error.message : t("errors.loginFailed")));
-  }, [statusFilter, studentSearch]);
+  }, [statusFilter, studentSearch, studentGroupId]);
+
+  useEffect(() => {
+    const visibleIds = new Set(students.map((student) => student.id));
+    setSelectedStudentIds((current) => current.filter((id) => visibleIds.has(id)));
+  }, [students]);
+
+  useEffect(() => () => {
+    Object.values(groupActionTimers.current).forEach((timer) => window.clearTimeout(timer));
+  }, []);
+
+  function groupActionState(key: string): ActionButtonState {
+    return groupActionStates[key] || "idle";
+  }
+
+  async function runGroupAction(key: string, action: () => Promise<void>, refresh = false, onSuccess?: () => void) {
+    if (groupActionState(key) !== "idle") return;
+    setStatus("");
+    setGroupActionErrors((current) => ({ ...current, [key]: "" }));
+    setGroupActionStates((current) => ({ ...current, [key]: "loading" }));
+    setLoading(true);
+    try {
+      await action();
+      setGroupActionStates((current) => ({ ...current, [key]: "success" }));
+      groupActionTimers.current[key] = window.setTimeout(() => {
+        setGroupActionStates((current) => ({ ...current, [key]: "idle" }));
+        if (refresh) loadData().catch((error) => setStatus(error instanceof Error ? error.message : t("errors.loginFailed")));
+        onSuccess?.();
+      }, 1800);
+    } catch (error) {
+      setGroupActionErrors((current) => ({ ...current, [key]: error instanceof Error ? error.message : t("errors.loginFailed") }));
+      setGroupActionStates((current) => ({ ...current, [key]: "error" }));
+      groupActionTimers.current[key] = window.setTimeout(() => {
+        setGroupActionStates((current) => ({ ...current, [key]: "idle" }));
+        setGroupActionErrors((current) => ({ ...current, [key]: "" }));
+      }, 1800);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const allVisibleStudentsSelected = students.length > 0 && students.every((student) => selectedStudentIds.includes(student.id));
+
+  function toggleAllVisibleStudents() {
+    setSelectedStudentIds((current) => {
+      const visibleIds = students.map((student) => student.id);
+      if (visibleIds.length && visibleIds.every((id) => current.includes(id))) return current.filter((id) => !visibleIds.includes(id));
+      return [...new Set([...current, ...visibleIds])];
+    });
+  }
+
+  function toggleStudentSelection(studentId: number) {
+    setSelectedStudentIds((current) => current.includes(studentId) ? current.filter((id) => id !== studentId) : [...current, studentId]);
+  }
+
+  function bulkDeleteStudents() {
+    const count = selectedStudentIds.length;
+    if (!count || !sessionHasPermission(session, "students.delete")) return;
+    setBulkDeleteConfirmOpen(true);
+  }
+
+  async function confirmBulkDeleteStudents() {
+    const count = selectedStudentIds.length;
+    if (!count) return;
+    setBulkDeleteConfirmOpen(false);
+    await bulkDeleteFeedback.run(async () => {
+      const response = await fetch(`${API_BASE_URL}/admin/students/bulk-delete`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ studentIds: selectedStudentIds })
+      });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
+      await loadData();
+      window.setTimeout(() => setSelectedStudentIds([]), 1800);
+    }).catch((error) => setStatus(error instanceof Error ? error.message : t("errors.loginFailed")));
+  }
 
   function resetForm() {
     setEditingId(null);
@@ -2958,62 +3848,54 @@ function AcademicManager({
     setFieldErrors({});
     setGroupForm({ ...emptyGroupForm, center_id: centers[0] ? String(centers[0].id) : "" });
     setStudentForm(emptyStudentForm);
-    setScheduleRows([defaultScheduleDraft()]);
+    setScheduleRows([]);
   }
 
   async function editGroup(group: AdminGroup) {
-    setLoading(true);
-    setStatus("");
-    try {
-      const response = await fetch(`${API_BASE_URL}/admin/groups/${group.id}/details`, { headers });
-      const data = (await response.json()) as { ok: boolean; group?: AdminGroup; schedules?: AdminGroup["schedules"] };
-      if (!response.ok || !data.ok) throw new Error(t("errors.loginFailed"));
+    const response = await fetch(`${API_BASE_URL}/admin/groups/${group.id}/details`, { headers });
+    const data = (await response.json()) as { ok: boolean; group?: AdminGroup; schedules?: AdminGroup["schedules"] };
+    if (!response.ok || !data.ok) throw new Error(t("errors.loginFailed"));
 
-      const savedGroup = data.group || group;
-      const savedSchedules = Array.isArray(data.schedules)
-        ? data.schedules
-        : Array.isArray(savedGroup.schedules) ? savedGroup.schedules : [];
-      const firstSchedule = savedSchedules[0] || savedGroup;
-      const scheduleRowsFromGroup = savedSchedules.length
-        ? savedSchedules.map((schedule) => ({
-            id: schedule.id,
-            day_of_week: String(schedule.day_of_week),
-            start_time: String(schedule.start_time || "").slice(0, 5),
-            end_time: String(schedule.end_time || "").slice(0, 5),
-            opens_before_minutes: String(schedule.opens_before_minutes ?? 3),
-            closes_after_minutes: String(schedule.closes_after_minutes ?? 20),
-            is_active: schedule.is_active !== false
-          }))
-        : savedGroup.day_of_week != null && savedGroup.start_time && savedGroup.end_time
-          ? [{
-              day_of_week: String(savedGroup.day_of_week),
-              start_time: String(savedGroup.start_time).slice(0, 5),
-              end_time: String(savedGroup.end_time).slice(0, 5),
-              opens_before_minutes: String(savedGroup.opens_before_minutes ?? 3),
-              closes_after_minutes: String(savedGroup.closes_after_minutes ?? 20),
-              is_active: savedGroup.is_active
-            }]
-          : [];
-      setEditingId(savedGroup.id);
-      setGroupForm({
-        name: savedGroup.name,
-        grade: savedGroup.grade_level || savedGroup.grade,
-        subject: savedGroup.subject,
-        center_id: String(savedGroup.center_id),
-        day_of_week: firstSchedule?.day_of_week == null ? "" : String(firstSchedule.day_of_week),
-        start_time: firstSchedule?.start_time ? String(firstSchedule.start_time).slice(0, 5) : "",
-        end_time: firstSchedule?.end_time ? String(firstSchedule.end_time).slice(0, 5) : "",
-        opens_before_minutes: String(firstSchedule?.opens_before_minutes ?? 3),
-        closes_after_minutes: String(firstSchedule?.closes_after_minutes ?? 20),
-        fees_amount: String(savedGroup.fees_amount ?? 0),
-        is_active: savedGroup.is_active
-      });
-      setScheduleRows(scheduleRowsFromGroup);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
-    } finally {
-      setLoading(false);
-    }
+    const savedGroup = data.group || group;
+    const savedSchedules = Array.isArray(data.schedules)
+      ? data.schedules
+      : Array.isArray(savedGroup.schedules) ? savedGroup.schedules : [];
+    const firstSchedule = savedSchedules[0] || savedGroup;
+    const scheduleRowsFromGroup = savedSchedules.length
+      ? savedSchedules.map((schedule) => ({
+          id: schedule.id,
+          day_of_week: String(schedule.day_of_week),
+          start_time: String(schedule.start_time || "").slice(0, 5),
+          end_time: String(schedule.end_time || "").slice(0, 5),
+          opens_before_minutes: String(schedule.opens_before_minutes ?? 3),
+          closes_after_minutes: String(schedule.closes_after_minutes ?? 20),
+          is_active: schedule.is_active !== false
+        }))
+      : savedGroup.day_of_week != null && savedGroup.start_time && savedGroup.end_time
+        ? [{
+            day_of_week: String(savedGroup.day_of_week),
+            start_time: String(savedGroup.start_time).slice(0, 5),
+            end_time: String(savedGroup.end_time).slice(0, 5),
+            opens_before_minutes: String(savedGroup.opens_before_minutes ?? 3),
+            closes_after_minutes: String(savedGroup.closes_after_minutes ?? 20),
+            is_active: savedGroup.is_active
+          }]
+        : [];
+    setEditingId(savedGroup.id);
+    setGroupForm({
+      name: savedGroup.name,
+      grade: savedGroup.grade_level || savedGroup.grade,
+      subject: savedGroup.subject,
+      center_id: String(savedGroup.center_id),
+      day_of_week: firstSchedule?.day_of_week == null ? "" : String(firstSchedule.day_of_week),
+      start_time: firstSchedule?.start_time ? String(firstSchedule.start_time).slice(0, 5) : "",
+      end_time: firstSchedule?.end_time ? String(firstSchedule.end_time).slice(0, 5) : "",
+      opens_before_minutes: String(firstSchedule?.opens_before_minutes ?? 3),
+      closes_after_minutes: String(firstSchedule?.closes_after_minutes ?? 20),
+      fees_amount: String(savedGroup.fees_amount ?? 0),
+      is_active: savedGroup.is_active
+    });
+    setScheduleRows(scheduleRowsFromGroup);
   }
 
   function editStudent(student: AdminStudent) {
@@ -3042,10 +3924,54 @@ function AcademicManager({
     });
   }
 
+  function updateGroupField(field: keyof typeof emptyGroupForm, value: string | boolean) {
+    setGroupForm((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => {
+      if (!current[field]) return current;
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+  }
+
+  function updateScheduleField(index: number, field: keyof ScheduleDraft, value: string | boolean) {
+    setScheduleRows((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row));
+    const errorKey = `schedule-${index}-${field}`;
+    const errorKeys = field === "start_time" || field === "end_time" ? [`schedule-${index}-time`] : [errorKey];
+    setFieldErrors((current) => {
+      if (!errorKeys.some((key) => current[key])) return current;
+      const next = { ...current };
+      errorKeys.forEach((key) => delete next[key]);
+      return next;
+    });
+  }
+
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setStatus("");
-    if (kind === "students") {
+    if (kind === "groups") {
+      const errors: Record<string, string> = {};
+      const feesAmount = Number(normalizeDigits(groupForm.fees_amount));
+      if (!groupForm.name.trim()) errors.name = t("admin.fieldRequired");
+      if (!groupForm.grade.trim()) errors.grade = t("admin.fieldRequired");
+      if (!groupForm.subject.trim()) errors.subject = t("admin.fieldRequired");
+      if (!groupForm.fees_amount.trim()) errors.fees_amount = t("admin.fieldRequired");
+      else if (!Number.isFinite(feesAmount) || feesAmount < 0) errors.fees_amount = t("admin.invalidNumber");
+      if (!scheduleRows.length) errors.schedules = t("admin.scheduleRequired");
+      scheduleRows.forEach((row, index) => {
+        if (!row.start_time || !row.end_time) {
+          errors[`schedule-${index}-time`] = t("admin.scheduleTimeRequired");
+        }
+        if (!/^\d+$/.test(normalizeDigits(row.opens_before_minutes)) || Number(row.opens_before_minutes) < 0) {
+          errors[`schedule-${index}-opens_before_minutes`] = t("admin.invalidNumber");
+        }
+        if (!/^\d+$/.test(normalizeDigits(row.closes_after_minutes)) || Number(row.closes_after_minutes) < 0) {
+          errors[`schedule-${index}-closes_after_minutes`] = t("admin.invalidNumber");
+        }
+      });
+      setFieldErrors(errors);
+      if (Object.keys(errors).length) return;
+    } else {
       const phone = normalizeDigits(studentForm.phone).trim();
       const guardianPhone = normalizeDigits(studentForm.guardian_phone).trim();
       const nationalId = normalizeDigits(studentForm.national_id).trim();
@@ -3064,6 +3990,7 @@ function AcademicManager({
     }
     setLoading(true);
     setSaveState("loading");
+    setSaveMode(editingId ? "update" : "create");
     const saveStartedAt = Date.now();
     try {
       const isGroup = kind === "groups";
@@ -3099,13 +4026,20 @@ function AcademicManager({
       window.setTimeout(() => setSaveState("idle"), 2000);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
-      setSaveState("idle");
+      setSaveState("error");
+      window.setTimeout(() => setSaveState("idle"), 1800);
     } finally {
       setLoading(false);
     }
   }
 
   function toggleScheduleDay(day: string) {
+    setFieldErrors((current) => {
+      if (!current.schedules) return current;
+      const next = { ...current };
+      delete next.schedules;
+      return next;
+    });
     const exists = scheduleRows.some((row) => row.day_of_week === day);
     if (exists) {
       if (scheduleRows.length === 1) return;
@@ -3133,39 +4067,71 @@ function AcademicManager({
     }
   }
 
-  async function deleteGroup(id: number) {
+  async function updateGroupStatus(id: number, isActive: boolean) {
+    const response = await fetch(`${API_BASE_URL}/admin/groups/${id}/status`, {
+      method: "PATCH", headers, body: JSON.stringify({ is_active: isActive })
+    });
+    const data = (await response.json()) as { ok: boolean; status?: string };
+    if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
+  }
+
+  async function sendGroupDeleteRequest(group: AdminGroup, pin = "") {
+    const response = await fetch(`${API_BASE_URL}/admin/groups/${group.id}`, {
+      method: "DELETE",
+      headers,
+      body: pin ? JSON.stringify({ audit_pin: pin }) : undefined
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      if (data.status === "group_delete_pin_required") {
+        setGroupDeletePinTarget(group);
+        setGroupDeletePin("");
+      }
+      throw new Error(adminApiErrorMessage(data.status, t));
+    }
+  }
+
+  async function deleteGroup(group: AdminGroup) {
     const confirmed = window.confirm("هل أنت متأكد من حذف المجموعة؟ / Are you sure you want to delete this group?");
     if (!confirmed) return;
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_BASE_URL}/admin/groups/${id}`, { method: "DELETE", headers });
-      const data = await response.json();
-      if (!response.ok || !data.ok) {
-        const reason = data.status === "group_has_students"
-          ? "لا يمكن حذف مجموعة بها طلاب. قم بنقل الطلاب أو تعطيل المجموعة. / Cannot delete a group that has students. Move students or disable the group."
-          : data.message || data.status || t("errors.loginFailed");
-        throw new Error(reason);
-      }
-      await loadData();
-    } catch (error) { setStatus(error instanceof Error ? error.message : t("errors.loginFailed")); }
-    finally { setLoading(false); }
+    if (Number(group.students_count || 0) > 0) {
+      setGroupDeletePinTarget(group);
+      setGroupDeletePin("");
+      setGroupActionErrors((current) => ({ ...current, [`delete:${group.id}`]: "" }));
+      return;
+    }
+    await runGroupAction(`delete:${group.id}`, () => sendGroupDeleteRequest(group), true);
+  }
+
+  async function confirmGroupDeleteWithPin() {
+    const group = groupDeletePinTarget;
+    const pin = normalizeDigits(groupDeletePin).trim();
+    if (!group) return;
+    if (!/^\d{4}$/.test(pin)) {
+      setGroupActionErrors((current) => ({ ...current, [`delete:${group.id}`]: t("admin.groupDeletePinRequired") }));
+      return;
+    }
+    await runGroupAction(`delete:${group.id}`, () => sendGroupDeleteRequest(group, pin), true, () => {
+      setGroupDeletePinTarget(null);
+      setGroupDeletePin("");
+    });
   }
 
   async function deleteStudent(id: number) {
-    if (session.teacher.role !== "admin") return;
+    if (!sessionHasPermission(session, "students.delete")) return;
     if (!window.confirm("هل أنت متأكد من أرشفة هذا الطالب؟ / Are you sure you want to archive this student?")) return;
-    setLoading(true);
-    try {
+    await studentDeleteFeedback.run(async () => {
+      setLoading(true);
       const response = await fetch(`${API_BASE_URL}/admin/students/${id}`, { method: "DELETE", headers });
       const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(t("errors.loginFailed"));
+      if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
       await loadData();
-    } catch (error) { setStatus(error instanceof Error ? error.message : t("errors.loginFailed")); }
-    finally { setLoading(false); }
+    }).catch((error) => setStatus(error instanceof Error ? error.message : t("errors.loginFailed")));
+    setLoading(false);
   }
 
   async function permanentlyDeleteStudent(id: number) {
-    if (session.teacher.role !== "admin") return;
+    if (!sessionHasPermission(session, "students.delete")) return;
     if (!window.confirm(t("admin.permanentDeleteConfirm"))) return;
     setLoading(true);
     try {
@@ -3185,8 +4151,11 @@ function AcademicManager({
   }
 
   async function openGroupDetails(groupId: number) {
-    try { const response=await fetch(`${API_BASE_URL}/admin/groups/${groupId}/details`,{headers}); const data=await response.json(); if(!response.ok||!data.ok)throw new Error(t("errors.loginFailed")); setDetailFilter("all"); setGroupDetails(data); }
-    catch(error){setStatus(error instanceof Error?error.message:t("errors.loginFailed"));}
+    const response = await fetch(`${API_BASE_URL}/admin/groups/${groupId}/details`, { headers });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(t("errors.loginFailed"));
+    setDetailFilter("all");
+    setGroupDetails(data);
   }
 
   async function openStudentProfileFromScan() {
@@ -3282,15 +4251,30 @@ function AcademicManager({
         <p className="eyebrow">{t(`admin.tabs.${kind}` as TranslationKey)}</p>
         <h2>{editingId ? t("admin.update") : t(`admin.tabs.${kind}` as TranslationKey)}</h2>
       </div>
-      <form onSubmit={save} noValidate={kind === "students"}>
+      <form onSubmit={save} noValidate>
         {kind === "groups" ? (
           <div className="editor-grid">
-            <label>{t("admin.groupName")}<input required value={groupForm.name} onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })} /></label>
-            <label>{t("admin.grade")}<select required value={groupForm.grade} onChange={(e) => setGroupForm({ ...groupForm, grade: e.target.value })}><option value="">{t("admin.grade")}</option>{gradeLevels.map(([ar,en]) => <option key={ar} value={ar}>{language === "en" ? en : ar}</option>)}</select></label>
-            <label>{t("admin.subject")}<input required value={groupForm.subject} onChange={(e) => setGroupForm({ ...groupForm, subject: e.target.value })} /></label>
-            <label>Fees / المصروفات<input required type="text" inputMode="decimal" value={groupForm.fees_amount} onChange={(e) => setGroupForm({ ...groupForm, fees_amount: normalizeDigits(e.target.value) })} /></label>
-            <label className="checkbox-label group-active-toggle"><input type="checkbox" checked={groupForm.is_active} onChange={(e) => setGroupForm({ ...groupForm, is_active: e.target.checked })} />{t("admin.groupActive")}</label>
-            <div className="schedule-editor"><div className="schedule-days-label">Class days / أيام الحصص (1–3)</div><div className="schedule-day-picker">{[0,1,2,3,4,5,6].map((day)=><label className="checkbox-label" key={day}><input type="checkbox" checked={scheduleRows.some((row)=>row.day_of_week===String(day))} onChange={()=>toggleScheduleDay(String(day))} />{t(`days.${day}` as TranslationKey)}</label>)}</div>{scheduleRows.map((row,index)=><div className="schedule-row" key={row.day_of_week}><strong>{t(`days.${row.day_of_week}` as TranslationKey)}</strong><label>Start / البداية<input required type="time" value={row.start_time} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,start_time:e.target.value}:item))} /></label><label>End / النهاية<input required type="time" value={row.end_time} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,end_time:e.target.value}:item))} /></label><label>Open before / فتح قبل<input type="number" min="0" value={row.opens_before_minutes} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,opens_before_minutes:e.target.value}:item))} /></label><label>Close after / إغلاق بعد<input type="number" min="0" value={row.closes_after_minutes} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,closes_after_minutes:e.target.value}:item))} /></label><label className="checkbox-label"><input type="checkbox" checked={row.is_active} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,is_active:e.target.checked}:item))} />Active / نشط</label></div>)}</div>
+            <label className={fieldErrors.name ? "field-with-error" : ""}>{t("admin.groupName")}<input required aria-invalid={Boolean(fieldErrors.name)} value={groupForm.name} onChange={(e) => updateGroupField("name", e.target.value)} />{fieldErrors.name ? <small className="field-error">{fieldErrors.name}</small> : null}</label>
+            <label className={fieldErrors.grade ? "field-with-error" : ""}>{t("admin.grade")}<select required aria-invalid={Boolean(fieldErrors.grade)} value={groupForm.grade} onChange={(e) => updateGroupField("grade", e.target.value)}><option value="">{t("admin.grade")}</option>{gradeLevels.map(([ar,en]) => <option key={ar} value={ar}>{language === "en" ? en : ar}</option>)}</select>{fieldErrors.grade ? <small className="field-error">{fieldErrors.grade}</small> : null}</label>
+            <label className={fieldErrors.subject ? "field-with-error" : ""}>{t("admin.subject")}<input required aria-invalid={Boolean(fieldErrors.subject)} value={groupForm.subject} onChange={(e) => updateGroupField("subject", e.target.value)} />{fieldErrors.subject ? <small className="field-error">{fieldErrors.subject}</small> : null}</label>
+            <label className={fieldErrors.fees_amount ? "field-with-error" : ""}>Fees / المصروفات<input required type="text" inputMode="decimal" aria-invalid={Boolean(fieldErrors.fees_amount)} value={groupForm.fees_amount} onChange={(e) => updateGroupField("fees_amount", normalizeDigits(e.target.value))} />{fieldErrors.fees_amount ? <small className="field-error">{fieldErrors.fees_amount}</small> : null}</label>
+            <label className="checkbox-label group-active-toggle"><input type="checkbox" checked={groupForm.is_active} onChange={(e) => updateGroupField("is_active", e.target.checked)} />{t("admin.groupActive")}</label>
+            <div className={`schedule-editor ${fieldErrors.schedules ? "field-with-error" : ""}`}>
+              <div className="schedule-days-label">Class days / أيام الحصص (1–3)</div>
+              <div className="schedule-day-picker">
+                <button className="secondary-button compact-button schedule-clear-days" type="button" onClick={() => setScheduleRows([])} disabled={!scheduleRows.length}>{t("admin.clearDaySelection")}</button>
+                {scheduleDayOrder.map((day) => <label className="checkbox-label" key={day}><input type="checkbox" checked={scheduleRows.some((row) => row.day_of_week === String(day))} onChange={() => toggleScheduleDay(String(day))} />{t(`days.${day}` as TranslationKey)}</label>)}
+              </div>
+              {fieldErrors.schedules ? <small className="field-error">{fieldErrors.schedules}</small> : null}
+              {scheduleRows.map((row, index) => <div className="schedule-row" key={row.day_of_week}>
+                <strong>{t(`days.${row.day_of_week}` as TranslationKey)}</strong>
+                <label className={fieldErrors[`schedule-${index}-time`] ? "field-with-error" : ""}>Start / البداية<select required aria-invalid={Boolean(fieldErrors[`schedule-${index}-time`])} value={row.start_time} onChange={(e) => updateScheduleField(index, "start_time", e.target.value)}><option value="">Select time / اختر الوقت</option>{scheduleTimeOptions.map((option) => <option key={`start-${option.value}`} value={option.value}>{scheduleTimeLabel(option.value, language)}</option>)}</select>{fieldErrors[`schedule-${index}-time`] ? <small className="field-error">{fieldErrors[`schedule-${index}-time`]}</small> : null}</label>
+                <label className={fieldErrors[`schedule-${index}-time`] ? "field-with-error" : ""}>End / النهاية<select required aria-invalid={Boolean(fieldErrors[`schedule-${index}-time`])} value={row.end_time} onChange={(e) => updateScheduleField(index, "end_time", e.target.value)}><option value="">Select time / اختر الوقت</option>{scheduleTimeOptions.map((option) => <option key={`end-${option.value}`} value={option.value}>{scheduleTimeLabel(option.value, language)}</option>)}</select></label>
+                <label className={fieldErrors[`schedule-${index}-opens_before_minutes`] ? "field-with-error" : ""}>Open before / فتح قبل<input type="number" min="0" aria-invalid={Boolean(fieldErrors[`schedule-${index}-opens_before_minutes`])} value={row.opens_before_minutes} onChange={(e) => updateScheduleField(index, "opens_before_minutes", e.target.value)} />{fieldErrors[`schedule-${index}-opens_before_minutes`] ? <small className="field-error">{fieldErrors[`schedule-${index}-opens_before_minutes`]}</small> : null}</label>
+                <label className={fieldErrors[`schedule-${index}-closes_after_minutes`] ? "field-with-error" : ""}>Close after / إغلاق بعد<input type="number" min="0" aria-invalid={Boolean(fieldErrors[`schedule-${index}-closes_after_minutes`])} value={row.closes_after_minutes} onChange={(e) => updateScheduleField(index, "closes_after_minutes", e.target.value)} />{fieldErrors[`schedule-${index}-closes_after_minutes`] ? <small className="field-error">{fieldErrors[`schedule-${index}-closes_after_minutes`]}</small> : null}</label>
+                <label className="checkbox-label schedule-active-toggle"><input type="checkbox" checked={row.is_active} onChange={(e) => updateScheduleField(index, "is_active", e.target.checked)} />Active / نشط</label>
+              </div>)}
+            </div>
           </div>
         ) : (
           <>
@@ -3314,12 +4298,32 @@ function AcademicManager({
           </section>
           </>
         )}
-        <div className="form-actions"><button className={`primary-button compact-button ${saveState === "success" ? "success-button" : ""}`} type="submit" disabled={loading}>{saveState === "loading" ? t(editingId ? "admin.updating" : "admin.creating") : saveState === "success" ? t(editingId ? "admin.updated" : "admin.created") : editingId ? t("admin.update") : t("admin.create")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={resetForm}>{t("admin.cancel")}</button> : null}</div>
+        {kind === "groups" && status ? <p className={status === t("admin.groupSaved") ? "lookup-result" : "form-error"} role="alert">{status}</p> : null}
+        <div className="form-actions"><button className={`primary-button compact-button action-feedback-${saveState} ${saveState === "success" ? "success-button" : ""}`} type="submit" disabled={loading || saveState === "loading"}>{actionButtonText(saveState, { idle: editingId ? t("admin.update") : t("admin.create"), loading: editingId ? t("admin.updating") : t("admin.creating"), success: saveMode === "update" ? t("admin.updated") : t("admin.created"), error: t("admin.actionFailedSave") })}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={resetForm}>{t("admin.cancel")}</button> : null}</div>
       </form>
 
       {kind === "students" && session.teacher.role === "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons">{(["active","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
 
+      {kind === "students" && session.teacher.role !== "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons">{(["active","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
+
       {kind === "students" ? <label className="student-search-field">{t("admin.searchStudents")}<input value={studentSearch} onChange={(e) => setStudentSearch(normalizeDigits(e.target.value))} placeholder={t("admin.searchStudents")} /></label> : null}
+      {kind === "students" ? <div className="student-bulk-toolbar">
+        <label className="student-group-filter">{t("admin.groupFilter")}
+          <select value={studentGroupId} onChange={(event) => setStudentGroupId(event.target.value)}>
+            <option value="">{t("admin.allGroups")}</option>
+            {groups.map((group) => <option key={group.id} value={group.id}>{group.display_name || group.name}</option>)}
+          </select>
+        </label>
+        <div className="student-selection-actions">
+          <button className="secondary-button compact-button" type="button" onClick={toggleAllVisibleStudents} disabled={!students.length || !showStudents}>
+            {allVisibleStudentsSelected ? t("admin.deselectAll") : t("admin.selectAll")}
+          </button>
+          {selectedStudentIds.length ? <span className="selected-student-count">{t("admin.selectedStudents", { count: String(selectedStudentIds.length) })}</span> : null}
+          {selectedStudentIds.length && sessionHasPermission(session, "students.delete") ? <button className={`danger-button compact-button action-feedback-${bulkDeleteFeedback.state}`} type="button" disabled={bulkDeleteFeedback.state === "loading"} onClick={() => void bulkDeleteStudents()}>
+            {actionButtonText(bulkDeleteFeedback.state, { idle: t("admin.bulkDelete", { count: String(selectedStudentIds.length) }), loading: t("admin.bulkDeleteLoading", { count: String(selectedStudentIds.length) }), success: t("admin.bulkDeleteSuccess", { count: String(selectedStudentIds.length) }), error: t("admin.actionFailedDelete") })}
+          </button> : null}
+        </div>
+      </div> : null}
       {kind === "students" ? <div className="student-profile-picker">
         <div className="student-profile-scan">
             <input
@@ -3347,11 +4351,77 @@ function AcademicManager({
         <button className="secondary-button compact-button profile-open-button" type="button" disabled={!profilePickerId} onClick={() => setProfileStudentId(Number(profilePickerId))}>{t("admin.viewProfile")}</button>
         {profileScanStatus ? <small className={`profile-scan-status ${profileScanStatus === t("scanner.profileOpened") ? "success" : "error"}`} role="status">{profileScanStatus}</small> : null}
       </div> : null}
-      {kind === "groups" || showStudents ? <div className="academic-list">
-        {kind === "groups" ? groups.map((group) => <article className="academic-row" key={group.id}><div><strong>{group.display_name || group.name}</strong><span>{group.grade_level || group.grade} · {group.subject} · {group.day_of_week != null && group.start_time && group.end_time ? `${t(`days.${group.day_of_week}` as TranslationKey)} ${group.start_time.slice(0, 5)} - ${group.end_time.slice(0, 5)} · ` : ""}{group.fees_amount ?? 0} EGP</span><span className="student-count-badge">Students / عدد الطلاب: {group.students_count ?? 0}</span></div><span className={group.is_active ? "status-active" : "status-disabled"}>{group.is_active ? t("admin.active") : t("admin.disabled")}</span><div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => openGroupDetails(group.id)}>Details / التفاصيل</button><button className="secondary-button compact-button" type="button" onClick={() => editGroup(group)}>{t("admin.editGroup")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => updateStatus(group.id, !group.is_active, "groups")}>{group.is_active ? t("admin.disable") : t("admin.enable")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => deleteGroup(group.id)}>Delete / حذف</button></div></article>) : students.map((student) => <article className="academic-row" key={student.id}><div><strong>{student.full_name}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.guardian_phone}</span>{student.deleted_at && purgeDaysLeft(student.purge_after) !== null ? <small className="purge-countdown">{t("admin.purgeDaysLeft", { days: String(purgeDaysLeft(student.purge_after)) })}</small> : null}</div><span className={student.deleted_at ? "status-deleted" : student.is_active ? "status-active" : "status-disabled"}>{recordStatusLabel(student, t)}</span><div className="row-actions">{student.deleted_at ? <><button className="secondary-button compact-button" type="button" disabled={loading || !student.purge_after} onClick={() => restoreStudent(student.id)}>{t("admin.restore")}</button><button className="danger-button compact-button" type="button" disabled={loading} onClick={() => permanentlyDeleteStudent(student.id)}>{t("admin.permanentDelete")}</button></> : <><button className="secondary-button compact-button" type="button" onClick={() => editStudent(student)}>{t("admin.editUser")}</button>{student.qr_token ? <button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => printStudentLabel(student)}>Print Label / طباعة الليبل</button> : null}<button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => updateStatus(student.id, !student.is_active, "students")}>{student.is_active ? t("admin.disable") : t("admin.enable")}</button>{session.teacher.role === "admin" ? <button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => deleteStudent(student.id)}>Delete / حذف</button> : null}</>}</div></article>)}
-        {((kind === "groups" && groups.length === 0) || (kind === "students" && students.length === 0)) ? <p className="empty-state">{t(kind === "groups" ? "admin.noGroups" : "admin.noStudents")}</p> : null}
+      {kind === "groups" ? <div className="academic-list">
+        {groups.map((group) => {
+          const detailsState = groupActionState(`details:${group.id}`);
+          const editState = groupActionState(`edit:${group.id}`);
+          const statusState = groupActionState(`status:${group.id}`);
+          const deleteState = groupActionState(`delete:${group.id}`);
+          const actionError = groupActionErrors[`delete:${group.id}`] || groupActionErrors[`status:${group.id}`] || groupActionErrors[`edit:${group.id}`] || groupActionErrors[`details:${group.id}`];
+          return (
+            <article className="academic-row" key={group.id}>
+              {actionError ? <p className="group-action-error" role="alert">{actionError}</p> : null}
+              <div>
+                <strong>{group.display_name || group.name}</strong>
+                <span>{group.grade_level || group.grade} · {group.subject} · {group.day_of_week != null && group.start_time && group.end_time ? `${t(`days.${group.day_of_week}` as TranslationKey)} ${group.start_time.slice(0, 5)} - ${group.end_time.slice(0, 5)} · ` : ""}{group.fees_amount ?? 0} EGP</span>
+                <span className="student-count-badge">Students / عدد الطلاب: {group.students_count ?? 0}</span>
+              </div>
+              <span className={group.is_active ? "status-active" : "status-disabled"}>{group.is_active ? t("admin.active") : t("admin.disabled")}</span>
+              <div className="row-actions">
+                <button className={`secondary-button compact-button action-feedback-${detailsState}`} type="button" disabled={loading || detailsState !== "idle"} onClick={() => void runGroupAction(`details:${group.id}`, () => openGroupDetails(group.id))}>
+                  {actionButtonText(detailsState, { idle: "Details / التفاصيل", loading: t("admin.loadingDetails"), success: t("admin.detailsLoaded"), error: t("admin.actionFailedSave") })}
+                </button>
+                <button className={`secondary-button compact-button action-feedback-${editState}`} type="button" disabled={loading || editState !== "idle"} onClick={() => void runGroupAction(`edit:${group.id}`, () => editGroup(group))}>
+                  {actionButtonText(editState, { idle: t("admin.editGroup"), loading: t("admin.updating"), success: t("admin.updated"), error: t("admin.actionFailedSave") })}
+                </button>
+                <button className={`secondary-button compact-button action-feedback-${statusState}`} type="button" disabled={loading || statusState !== "idle"} onClick={() => void runGroupAction(`status:${group.id}`, () => updateGroupStatus(group.id, !group.is_active), true)}>
+                  {actionButtonText(statusState, { idle: group.is_active ? t("admin.disable") : t("admin.enable"), loading: group.is_active ? t("admin.disabling") : t("admin.enabling"), success: group.is_active ? t("admin.disabledSuccessfully") : t("admin.enabledSuccessfully"), error: t("admin.actionFailedSave") })}
+                </button>
+                <button className={`secondary-button compact-button action-feedback-${deleteState}`} type="button" disabled={loading || deleteState !== "idle"} onClick={() => void deleteGroup(group)}>
+                  {actionButtonText(deleteState, { idle: "Delete / حذف", loading: t("admin.deleting"), success: t("admin.deletedSuccessfully"), error: t("admin.actionFailedDelete") })}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+        {groups.length === 0 ? <p className="empty-state">{t("admin.noGroups")}</p> : null}
       </div> : null}
-      {status ? <p className={status === t("admin.groupSaved") || status === t("admin.studentSaved") ? "lookup-result" : "form-error"}>{status}</p> : null}
+      {kind === "students" && showStudents ? <div className="academic-list student-selection-list">
+        {students.map((student) => <article className="academic-row student-select-row" key={student.id}>
+          <label className="student-select-checkbox">
+            <input type="checkbox" checked={selectedStudentIds.includes(student.id)} onChange={() => toggleStudentSelection(student.id)} aria-label={`${t("admin.selectStudentCheckbox")} ${student.full_name}`} />
+            <span>{t("admin.selectStudentCheckbox")}</span>
+          </label>
+          <div><strong>{student.full_name}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.guardian_phone}</span>{student.deleted_at && purgeDaysLeft(student.purge_after) !== null ? <small className="purge-countdown">{t("admin.purgeDaysLeft", { days: String(purgeDaysLeft(student.purge_after)) })}</small> : null}</div>
+          <span className={student.deleted_at ? "status-deleted" : student.is_active ? "status-active" : "status-disabled"}>{recordStatusLabel(student, t)}</span>
+          <div className="row-actions">
+            {student.deleted_at ? <>{sessionHasPermission(session, "students.manage") ? <button className="secondary-button compact-button" type="button" disabled={loading || !student.purge_after} onClick={() => restoreStudent(student.id)}>{t("admin.restore")}</button> : null}{sessionHasPermission(session, "students.delete") ? <button className="danger-button compact-button" type="button" disabled={loading} onClick={() => permanentlyDeleteStudent(student.id)}>{t("admin.permanentDelete")}</button> : null}</> : <>{sessionHasPermission(session, "students.manage") ? <><button className="secondary-button compact-button" type="button" onClick={() => editStudent(student)}>{t("admin.editUser")}</button>{student.qr_token ? <button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => printStudentLabel(student)}>Print Label / طباعة الليبل</button> : null}<button className="secondary-button compact-button" type="button" disabled={loading} onClick={() => updateStatus(student.id, !student.is_active, "students")}>{student.is_active ? t("admin.disable") : t("admin.enable")}</button></> : null}{sessionHasPermission(session, "students.delete") ? <button className={`secondary-button compact-button action-feedback-${studentDeleteFeedback.state}`} type="button" disabled={loading || studentDeleteFeedback.state === "loading"} onClick={() => void deleteStudent(student.id)}>{actionButtonText(studentDeleteFeedback.state, { idle: "Delete / حذف", loading: "Deleting... / جاري الحذف...", success: "Deleted / تم الحذف", error: t("admin.actionFailedDelete") })}</button> : null}</>}
+          </div>
+        </article>)}
+        {!students.length ? <p className="empty-state">{t("admin.noStudents")}</p> : null}
+      </div> : null}
+      {kind !== "groups" && status ? <p className={status === t("admin.studentSaved") ? "lookup-result" : "form-error"}>{status}</p> : null}
+      {bulkDeleteConfirmOpen ? <div className="modal-backdrop" role="presentation"><section className="modal-card bulk-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-confirm-title">
+        <h3 id="bulk-delete-confirm-title">{t("admin.bulkDelete", { count: String(selectedStudentIds.length) })}</h3>
+        <p>{t("admin.bulkDeleteConfirm", { count: String(selectedStudentIds.length) })}</p>
+        <div className="form-actions">
+          <button className="danger-button compact-button" type="button" disabled={bulkDeleteFeedback.state === "loading"} onClick={() => void confirmBulkDeleteStudents()}>{t("admin.bulkDelete", { count: String(selectedStudentIds.length) })}</button>
+          <button className="secondary-button compact-button" type="button" disabled={bulkDeleteFeedback.state === "loading"} onClick={() => setBulkDeleteConfirmOpen(false)}>{t("admin.cancel")}</button>
+        </div>
+      </section></div> : null}
+      {groupDeletePinTarget ? <div className="modal-backdrop" role="presentation"><section className="modal-card group-delete-pin-modal" role="dialog" aria-modal="true" aria-labelledby="group-delete-pin-title">
+        <h3 id="group-delete-pin-title">{t("admin.groupDeletePinTitle")}</h3>
+        <p><strong>{groupDeletePinTarget.display_name || groupDeletePinTarget.name}</strong></p>
+        <p>{t("admin.groupDeletePinDescription", { count: String(groupDeletePinTarget.students_count || 0) })}</p>
+        <label>{t("admin.groupDeletePin")}<input autoFocus type="password" inputMode="numeric" maxLength={4} value={groupDeletePin} onChange={(event) => setGroupDeletePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} /></label>
+        {groupActionErrors[`delete:${groupDeletePinTarget.id}`] ? <p className="form-error" role="alert">{groupActionErrors[`delete:${groupDeletePinTarget.id}`]}</p> : null}
+        <div className="form-actions">
+          <button className={`danger-button compact-button action-feedback-${groupActionState(`delete:${groupDeletePinTarget.id}`)}`} type="button" disabled={groupActionState(`delete:${groupDeletePinTarget.id}`) !== "idle"} onClick={() => void confirmGroupDeleteWithPin()}>
+            {actionButtonText(groupActionState(`delete:${groupDeletePinTarget.id}`), { idle: t("admin.groupDeletePinAction"), loading: t("admin.groupDeletePinLoading"), success: t("admin.deletedSuccessfully"), error: t("admin.actionFailedDelete") })}
+          </button>
+          <button className="secondary-button compact-button" type="button" disabled={groupActionState(`delete:${groupDeletePinTarget.id}`) !== "idle"} onClick={() => { setGroupDeletePinTarget(null); setGroupDeletePin(""); }}>{t("admin.cancel")}</button>
+        </div>
+      </section></div> : null}
       {groupDetails ? <div className="modal-backdrop" role="presentation"><section className="modal group-details-modal" role="dialog" aria-modal="true"><button className="close-button" type="button" onClick={()=>setGroupDetails(null)}>×</button><p className="eyebrow">Group details / تفاصيل المجموعة</p><h2>{groupDetails.group.display_name || groupDetails.group.name}</h2><p>{groupDetails.group.grade_level || groupDetails.group.grade} · {groupDetails.group.subject} · {groupDetails.group.fees_amount} EGP</p><div className="detail-stats"><span>Total: {groupDetails.group.students_count ?? 0}</span><span>Active: {groupDetails.group.active_students_count ?? 0}</span><span>Disabled: {groupDetails.group.disabled_students_count ?? 0}</span><span>Deleted: {groupDetails.group.deleted_students_count ?? 0}</span></div><div className="status-filter-buttons group-details-filters" role="group" aria-label="Student status filters">{(["all","active","disabled","deleted"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={detailFilter===filter?"active":""} type="button" onClick={()=>setDetailFilter(filter)}>{recordStatusFilterLabel(filter,t)}</button>)}</div><div className="schedule-detail-list">{groupDetails.schedules.map((schedule:any)=><span key={schedule.id}>{t(`days.${schedule.day_of_week}` as TranslationKey)} · {schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</span>)}</div><div className="academic-list group-student-list">{groupDetails.students.filter((student:any)=>detailFilter==="all"||(detailFilter==="deleted"?student.deleted_at:!student.deleted_at&&(detailFilter==="active"?student.is_active:!student.is_active))).map((student:any)=><article className="academic-row group-student-row" key={student.id}><div className="group-student-info"><div className="group-student-heading"><strong>{student.full_name}</strong><span className={student.deleted_at?"status-deleted":student.is_active?"status-active":"status-disabled"}>{recordStatusLabel(student,t)}</span></div><span>Code / الكود: {student.student_serial || student.student_code || "—"}</span><span>Phone / الهاتف: {student.phone || "—"} · Guardian / ولي الأمر: {student.guardian_phone || "—"}</span></div></article>)}</div></section></div> : null}
     </section>
   );
@@ -3420,7 +4490,7 @@ function StudentProfileModal({ studentId, session, t, onClose }: { studentId: nu
   }
 
   async function regenerateProfileScanSerial() {
-    if (session.teacher.role !== "admin" || serialRegenerating || !window.confirm(t("admin.regenerateScanSerialConfirm"))) return;
+    if (!sessionHasPermission(session, "students.manage") || serialRegenerating || !window.confirm(t("admin.regenerateScanSerialConfirm"))) return;
     setSerialRegenerating(true);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/students/${studentId}/regenerate-scan-serial`, { method: "POST", headers: auth });
@@ -3475,7 +4545,7 @@ function AttendancePanel({ session, language, t }: { session: TeacherSession; la
   }
   const selectedSession = sessions.find((item) => String(item.id) === selected);
   const groupStudents = students.filter((item) => !selectedSession || item.group_id === selectedSession.group_id);
-  return <section className="admin-editor"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.attendance")}</p><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => setSelected(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {item.start_time?.slice(0, 5)} إلى {item.end_time?.slice(0, 5)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}<div className="academic-list">{groupStudents.map((student) => { const currentStatus = records.find((record) => record.student_id === student.id)?.status || "not_marked"; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "present")}>Present / حاضر</button><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "absent")}>Absent / غائب</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{rowFeedback[student.id] ? <small className="attendance-row-feedback">{rowFeedback[student.id]}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
+  return <section className="admin-editor"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.attendance")}</p><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => setSelected(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {item.start_time?.slice(0, 5)} إلى {item.end_time?.slice(0, 5)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}<div className="academic-list">{groupStudents.map((student) => { const currentStatus = records.find((record) => record.student_id === student.id)?.status || "not_marked"; const feedback = rowFeedback[student.id]; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "present")}>Present / حاضر</button><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "absent")}>Absent / غائب</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
 function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }) {
@@ -3723,23 +4793,36 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
   </section>;
 }
 
+function resolveAuditAction(action: string, details: Record<string, unknown> = {}) {
+  if (action !== "system_request") return action;
+  const request = details.request && typeof details.request === "object" ? details.request as Record<string, unknown> : {};
+  const path = String(details.path || request.path || "");
+  const method = details.method || request.method;
+  if (path.includes("/reset-password")) return "user_password_reset";
+  if (path.endsWith("/users") && method === "POST") return "user_created";
+  if (path.includes("/users/") && method === "PUT") return "user_updated";
+  if (path.includes("/users/") && method === "DELETE") return "user_archived";
+  if (path.includes("/audit-logs/unlock")) return "audit_logs_unlocked";
+  if (path.includes("/audit-logs/pin")) return "audit_pin_changed";
+  return "system_action";
+}
+
 function auditActionKey(action: string, details: Record<string, unknown> = {}): TranslationKey {
-  if (action === "system_request") {
-    const path = String(details.path || "");
-    if (path.includes("/reset-password")) return "audit.action.userPasswordReset";
-    if (path.endsWith("/users") && details.method === "POST") return "audit.action.userCreated";
-    if (path.includes("/users/") && details.method === "PUT") return "audit.action.userUpdated";
-    if (path.includes("/users/") && details.method === "DELETE") return "audit.action.userArchived";
-  }
+  const resolvedAction = resolveAuditAction(action, details);
+  if (resolvedAction !== action) return auditActionKey(resolvedAction, details);
   const keys: Record<string, TranslationKey> = {
     payment_created: "audit.action.paymentCreated",
     advance_payment_created: "audit.action.advancePaymentCreated",
     payment_reversed: "audit.action.paymentReversed",
     student_created: "audit.action.studentCreated",
     student_updated: "audit.action.studentUpdated",
+    student_changed: "audit.action.studentChanged",
     student_status_changed: "audit.action.studentStatusChanged",
     student_restored: "audit.action.studentRestored",
     student_archived: "audit.action.studentArchived",
+    students_bulk_archived: "audit.action.studentsBulkArchived",
+    student_label_printed: "audit.action.studentLabelPrinted",
+    student_personal_data_purged: "audit.action.studentPurged",
     attendance_recorded: "audit.action.attendanceRecorded",
     message_action: "audit.action.messageAction",
     note_action: "audit.action.noteAction",
@@ -3749,72 +4832,224 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     system_request: "audit.action.systemRequest",
     user_created: "audit.action.userCreated",
     user_updated: "audit.action.userUpdated",
+    user_changed: "audit.action.userUpdated",
+    permissions_changed: "audit.action.permissionsChanged",
+    role_changed: "audit.action.roleChanged",
+    ownership_transferred: "audit.action.ownershipTransferred",
     user_password_reset: "audit.action.userPasswordReset",
     user_status_changed: "audit.action.userStatusChanged",
-    user_archived: "audit.action.userArchived"
+    user_archived: "audit.action.userArchived",
+    user_restored: "audit.action.userRestored",
+    user_permanently_deleted: "audit.action.userPermanentlyDeleted",
+    login_succeeded: "audit.action.loginSucceeded",
+    login_failed: "audit.action.loginFailed",
+    logout: "audit.action.logout",
+    group_created: "audit.action.groupCreated",
+    group_updated: "audit.action.groupUpdated",
+    group_changed: "audit.action.groupUpdated",
+    group_status_changed: "audit.action.groupStatusChanged",
+    group_archived: "audit.action.groupArchived",
+    exam_result_created: "audit.action.examResultCreated",
+    exam_result_updated: "audit.action.examResultUpdated",
+    exam_result_changed: "audit.action.examResultUpdated",
+    exam_result_deleted: "audit.action.examResultDeleted",
+    homework_created: "audit.action.homeworkCreated",
+    homework_updated: "audit.action.homeworkUpdated",
+    homework_deleted: "audit.action.homeworkDeleted",
+    note_created: "audit.action.noteCreated",
+    note_updated: "audit.action.noteUpdated",
+    note_deleted: "audit.action.noteDeleted",
+    message_sent: "audit.action.messageSent",
+    message_deleted: "audit.action.messageDeleted",
+    inbox_message_deleted: "audit.action.messageDeleted",
+    message_read_status_changed: "audit.action.messageRead",
+    attendance_changed: "audit.action.attendanceChanged",
+    attendance_session_changed: "audit.action.attendanceSessionCreated",
+    attendance_scanned: "audit.action.attendanceScanned",
+    attendance_session_created: "audit.action.attendanceSessionCreated",
+    suspicious_scan: "audit.action.suspiciousScan",
+    student_scan_serial_regenerated: "audit.action.studentScanSerialRegenerated",
+    student_permanently_anonymized: "audit.action.studentPermanentlyAnonymized",
+    site_page_updated: "audit.action.sitePageUpdated",
+    public_inquiry_created: "audit.action.publicInquiryCreated",
+    system_action: "audit.action.systemAction"
   };
   return keys[action] || "audit.action.systemRequest";
 }
 
+const auditActionOptions: Array<{ value: string; label: TranslationKey }> = [
+  { value: "login_succeeded", label: "audit.action.loginSucceeded" },
+  { value: "login_failed", label: "audit.action.loginFailed" },
+  { value: "logout", label: "audit.action.logout" },
+  { value: "student_created", label: "audit.action.studentCreated" },
+  { value: "student_updated", label: "audit.action.studentUpdated" },
+  { value: "student_changed", label: "audit.action.studentChanged" },
+  { value: "student_status_changed", label: "audit.action.studentStatusChanged" },
+  { value: "student_restored", label: "audit.action.studentRestored" },
+  { value: "student_archived", label: "audit.action.studentArchived" },
+  { value: "students_bulk_archived", label: "audit.action.studentsBulkArchived" },
+  { value: "student_label_printed", label: "audit.action.studentLabelPrinted" },
+  { value: "student_scan_serial_regenerated", label: "audit.action.studentScanSerialRegenerated" },
+  { value: "student_personal_data_purged", label: "audit.action.studentPurged" },
+  { value: "student_permanently_anonymized", label: "audit.action.studentPermanentlyAnonymized" },
+  { value: "payment_created", label: "audit.action.paymentCreated" },
+  { value: "advance_payment_created", label: "audit.action.advancePaymentCreated" },
+  { value: "payment_reversed", label: "audit.action.paymentReversed" },
+  { value: "attendance_recorded", label: "audit.action.attendanceRecorded" },
+  { value: "attendance_changed", label: "audit.action.attendanceChanged" },
+  { value: "attendance_scanned", label: "audit.action.attendanceScanned" },
+  { value: "attendance_session_created", label: "audit.action.attendanceSessionCreated" },
+  { value: "suspicious_scan", label: "audit.action.suspiciousScan" },
+  { value: "group_created", label: "audit.action.groupCreated" },
+  { value: "group_updated", label: "audit.action.groupUpdated" },
+  { value: "group_changed", label: "audit.action.groupUpdated" },
+  { value: "group_status_changed", label: "audit.action.groupStatusChanged" },
+  { value: "group_archived", label: "audit.action.groupArchived" },
+  { value: "exam_result_created", label: "audit.action.examResultCreated" },
+  { value: "exam_result_updated", label: "audit.action.examResultUpdated" },
+  { value: "exam_result_changed", label: "audit.action.examResultUpdated" },
+  { value: "exam_result_deleted", label: "audit.action.examResultDeleted" },
+  { value: "homework_created", label: "audit.action.homeworkCreated" },
+  { value: "homework_updated", label: "audit.action.homeworkUpdated" },
+  { value: "homework_deleted", label: "audit.action.homeworkDeleted" },
+  { value: "note_created", label: "audit.action.noteCreated" },
+  { value: "note_updated", label: "audit.action.noteUpdated" },
+  { value: "note_deleted", label: "audit.action.noteDeleted" },
+  { value: "note_action", label: "audit.action.noteAction" },
+  { value: "message_sent", label: "audit.action.messageSent" },
+  { value: "message_deleted", label: "audit.action.messageDeleted" },
+  { value: "inbox_message_deleted", label: "audit.action.messageDeleted" },
+  { value: "message_read_status_changed", label: "audit.action.messageRead" },
+  { value: "message_action", label: "audit.action.messageAction" },
+  { value: "user_created", label: "audit.action.userCreated" },
+  { value: "user_updated", label: "audit.action.userUpdated" },
+  { value: "user_changed", label: "audit.action.userUpdated" },
+  { value: "permissions_changed", label: "audit.action.permissionsChanged" },
+  { value: "role_changed", label: "audit.action.roleChanged" },
+  { value: "ownership_transferred", label: "audit.action.ownershipTransferred" },
+  { value: "user_password_reset", label: "audit.action.userPasswordReset" },
+  { value: "user_status_changed", label: "audit.action.userStatusChanged" },
+  { value: "user_archived", label: "audit.action.userArchived" },
+  { value: "user_restored", label: "audit.action.userRestored" },
+  { value: "user_permanently_deleted", label: "audit.action.userPermanentlyDeleted" },
+  { value: "audit_pin_changed", label: "audit.action.pinChanged" },
+  { value: "audit_logs_unlocked", label: "audit.action.logsUnlocked" },
+  { value: "audit_pin_failed", label: "audit.action.pinFailed" },
+  { value: "site_page_updated", label: "audit.action.sitePageUpdated" },
+  { value: "public_inquiry_created", label: "audit.action.publicInquiryCreated" },
+  { value: "system_action", label: "audit.action.systemAction" },
+  { value: "system_request", label: "audit.action.systemRequest" }
+];
+
 function auditDetailLabelKey(key: string): TranslationKey | null {
   const keys: Record<string, TranslationKey> = {
-    body: "audit.detail.body", path: "audit.detail.path", query: "audit.detail.query", method: "audit.detail.method",
+    body: "audit.detail.content", path: "audit.detail.path", query: "audit.detail.query", method: "audit.detail.method",
     status_code: "audit.detail.statusCode", access_duration_minutes: "audit.detail.accessDuration", reason: "audit.detail.reason",
     original_amount: "audit.detail.originalAmount", payment_date: "audit.detail.paymentDate", payment_type: "audit.detail.paymentType",
     payment_method: "audit.detail.paymentMethod", payment_months: "audit.detail.paymentMonths", reversal_id: "audit.detail.reversalId",
-    locked: "audit.detail.locked", pin_digits: "audit.detail.pinDigits"
+    locked: "audit.detail.locked", pin_digits: "audit.detail.pinDigits", before: "audit.detail.before", after: "audit.detail.after", changes: "audit.detail.changes",
+    student_id: "audit.detail.studentId", student_name: "audit.detail.studentName", student_code: "audit.detail.studentCode", user_id: "audit.detail.userId", target_user: "audit.detail.targetUser",
+    group_id: "audit.detail.groupId", exam_id: "audit.detail.examId", result_id: "audit.detail.resultId", note_id: "audit.detail.noteId", thread_id: "audit.detail.threadId", message_id: "audit.detail.messageId", record_id: "audit.detail.recordId",
+    status_before: "audit.detail.statusBefore", status_after: "audit.detail.statusAfter", amount: "audit.detail.amount", scanned_value: "audit.detail.scannedValue",
+    outcome: "audit.detail.outcome", print_type: "audit.detail.printType", serial: "audit.detail.serial", student_serial: "audit.detail.serial",
+    scan_serial: "audit.detail.scanSerial", remaining_print_count: "audit.detail.remainingPrintCount", session_date: "audit.detail.sessionDate",
+    checkin_time: "audit.detail.checkinTime", guardian_phone: "audit.detail.guardianPhone", phone: "audit.detail.phone", grade_level: "audit.detail.grade",
+    group_name: "audit.detail.groupName", full_name: "audit.detail.studentName", username: "admin.username", email: "admin.email", role: "admin.role",
+    message_body: "audit.detail.content", page_slug: "admin.selectPage", marked_count: "audit.detail.recordId"
   };
   return keys[key] || null;
 }
 
-function auditDetailText(key: string, value: unknown, language: Language, t: Translator): string {
-  if (key === "body") return language === "ar" ? "تم تسجيل البيانات (المعلومات الحساسة مخفية)" : "Data recorded (sensitive values hidden)";
-  if (key === "query" && (!value || (typeof value === "object" && Object.keys(value as object).length === 0))) return language === "ar" ? "لا توجد بيانات بحث" : "No search parameters";
-  if (key === "path") {
-    const path = String(value);
-    if (path.includes("/reset-password")) return t("audit.action.userPasswordReset");
-    if (path.includes("/fees/payments") && path.includes("/reverse")) return t("audit.action.paymentReversed");
-    if (path.endsWith("/fees/payments")) return t("audit.action.paymentCreated");
-    if (path.endsWith("/fees/advance-payments")) return t("audit.action.advancePaymentCreated");
-  }
-  if (key === "method") return ({ GET: language === "ar" ? "عرض" : "View", POST: language === "ar" ? "إضافة" : "Create", PUT: language === "ar" ? "تعديل" : "Update", PATCH: language === "ar" ? "تحديث" : "Update", DELETE: language === "ar" ? "حذف" : "Delete" } as Record<string, string>)[String(value)] || String(value);
-  if (key === "status_code") return Number(value) >= 200 && Number(value) < 300 ? (language === "ar" ? "تمت بنجاح" : "Successful") : String(value);
-  if (key === "payment_type") return value === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment");
-  return formatAuditDetailValue(value, language);
+const auditTechnicalDetailKeys = new Set(["request", "query", "ip", "user_agent", "path", "method", "status_code", "headers", "audit_version", "pin_digits"]);
+const auditSensitiveDetailKeys = new Set(["password", "current_password", "new_password", "pin", "token", "authorization", "national_id", "national_id_hash"]);
+
+function isAuditHiddenKey(key: string) {
+  const normalized = String(key).toLowerCase();
+  return auditTechnicalDetailKeys.has(normalized) || auditSensitiveDetailKeys.has(normalized) || normalized.includes("password") || normalized.includes("token");
 }
 
-function auditNarrativeFromDetails(action: string, details: Record<string, any>, language: Language, t: Translator) {
+function humanizeAuditKey(key: string) {
+  return key.replace(/_/g, " ").replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+}
+
+function formatAuditDetailValue(value: unknown, language: Language, t: Translator, depth = 0): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (value === "set") return t("audit.value.set");
+  if (typeof value === "boolean") return value ? (language === "ar" ? "نعم" : "Yes") : (language === "ar" ? "لا" : "No");
+  if (typeof value !== "object") return String(value);
+  if (depth >= 2) return "…";
+  if (Array.isArray(value)) {
+    return value.map((entry) => formatAuditDetailValue(entry, language, t, depth + 1)).filter(Boolean).join("\n");
+  }
+  return Object.entries(value as Record<string, unknown>)
+    .filter(([key]) => !isAuditHiddenKey(key) && !key.startsWith("_"))
+    .map(([key, entryValue]) => `${auditDetailLabelKey(key) ? t(auditDetailLabelKey(key) as TranslationKey) : humanizeAuditKey(key)}: ${formatAuditDetailValue(entryValue, language, t, depth + 1)}`)
+    .join("\n");
+}
+
+function auditDetailText(key: string, value: unknown, language: Language, t: Translator): string {
+  if (key === "outcome") return value === "success" ? t("audit.value.success") : value === "failure" ? t("audit.value.failure") : formatAuditDetailValue(value, language, t);
+  if (key === "print_type") return value === "reprint" ? t("audit.value.reprint") : t("audit.value.initialPrint");
+  if (key === "payment_type") return value === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment");
+  if (key === "changes" && Array.isArray(value)) {
+    return value.map((change) => {
+      if (!change || typeof change !== "object") return formatAuditDetailValue(change, language, t);
+      const item = change as Record<string, unknown>;
+      const field = String(item.field || "field");
+      const label = auditDetailLabelKey(field) ? t(auditDetailLabelKey(field) as TranslationKey) : humanizeAuditKey(field);
+      return `${label}: ${formatAuditDetailValue(item.before, language, t)} → ${formatAuditDetailValue(item.after, language, t)}`;
+    }).join("\n");
+  }
+  return formatAuditDetailValue(value, language, t);
+}
+
+function auditNarrativeFromDetails(action: string, details: Record<string, any>, language: Language, t: Translator, actorName = "—") {
+  const resolvedAction = resolveAuditAction(action, details);
   const body = details.body && typeof details.body === "object" ? details.body : {};
-  const name = String(details.student_name_snapshot || details._student_name || details.full_name || body.full_name || details.student_name || "—");
-  const code = String(details.student_code_snapshot || details._student_code || details.student_code || body.student_code || "—");
-  const role = body.role ? roleLabel(String(body.role), t) : "—";
-  if (action === "user_created") return t("audit.narrative.userCreated", { name: String(body.name || name), username: String(body.username || "—"), role });
-  if (action === "user_updated") return t("audit.narrative.userUpdated", { name: String(body.name || name), username: String(body.username || "—") });
-  if (action === "user_password_reset") return t("audit.narrative.userPasswordReset", { name: String(body.name || name) });
-  if (action === "user_archived") return t("audit.narrative.userArchived", { name: String(body.name || name) });
-  if (action === "student_created" || action === "student_updated" || action === "student_status_changed" || action === "student_restored" || action === "student_archived") {
-    const word = action === "student_created" ? t("audit.word.created") : action === "student_updated" ? t("audit.word.updated") : action === "student_restored" ? t("audit.word.restored") : action === "student_status_changed" ? t("audit.word.statusChanged") : t("audit.word.deleted");
+  const targetUser = details.target_user && typeof details.target_user === "object" ? details.target_user as Record<string, any> : {};
+  const after = details.after && typeof details.after === "object" && !Array.isArray(details.after) ? details.after as Record<string, any> : {};
+  const name = String(details.student_name_snapshot || details._student_name || details.full_name || body.full_name || details.student_name || after.full_name || after.name || targetUser.name || details.name || "—");
+  const code = String(details.student_code_snapshot || details._student_code || details.student_code || body.student_code || after.student_code || "—");
+  const role = body.role ? roleLabel(String(body.role), t) : after.role ? roleLabel(String(after.role), t) : targetUser.role ? roleLabel(String(targetUser.role), t) : "—";
+  if (resolvedAction === "user_created") return t("audit.narrative.userCreated", { name: String(body.name || name), username: String(body.username || "—"), role });
+  if (resolvedAction === "user_updated") return t("audit.narrative.userUpdated", { name: String(body.name || name), username: String(body.username || "—") });
+  if (resolvedAction === "user_password_reset") return t("audit.narrative.userPasswordReset", { name: String(body.name || name) });
+  if (resolvedAction === "user_archived") return t("audit.narrative.userArchived", { name: String(body.name || name) });
+  if (["student_created", "student_updated", "student_status_changed", "student_restored", "student_archived"].includes(resolvedAction)) {
+    const word = resolvedAction === "student_created" ? t("audit.word.created") : resolvedAction === "student_updated" ? t("audit.word.updated") : resolvedAction === "student_restored" ? t("audit.word.restored") : resolvedAction === "student_status_changed" ? t("audit.word.statusChanged") : t("audit.word.deleted");
     return t("audit.narrative.student", { action: word, name, code });
   }
-  if (action === "payment_reversed") return t("audit.narrative.reversed", { payment: String(details._payment_id || details.payment_id || "—"), name, amount: String(details.original_amount || details._payment_amount || "—"), reason: String(details.reason || "—") });
-  if (action === "payment_created") return t("audit.narrative.payment", { name, code, amount: String(details.amount || details.original_amount || details._payment_amount || "—") });
-  if (action === "advance_payment_created") return t("audit.narrative.advancePayment", { name, code, amount: String(details.amount || details._payment_amount || "—") });
-  if (action === "attendance_recorded") return t("audit.narrative.attendance", { name, code });
-  return t("audit.narrative.generic", { action: t(auditActionKey(action)) });
+  if (resolvedAction === "student_label_printed") return t("audit.narrative.labelPrinted", { printType: details.print_type === "reprint" ? t("audit.value.reprint") : t("audit.value.initialPrint"), name, code });
+  if (resolvedAction === "student_scan_serial_regenerated") return t("audit.narrative.serialRegenerated", { name, code });
+  if (resolvedAction === "payment_reversed") return t("audit.narrative.reversed", { payment: String(details._payment_id || details.payment_id || "—"), name, amount: String(details.original_amount || details._payment_amount || "—"), reason: String(details.reason || "—") });
+  if (resolvedAction === "payment_created") return t("audit.narrative.payment", { name, code, amount: String(details.amount || details.original_amount || details._payment_amount || "—") });
+  if (resolvedAction === "advance_payment_created") return t("audit.narrative.advancePayment", { name, code, amount: String(details.amount || details._payment_amount || "—") });
+  if (["attendance_recorded", "attendance_scanned", "attendance_changed"].includes(resolvedAction)) return t("audit.narrative.attendance", { name, code });
+  if (resolvedAction === "audit_logs_unlocked") return t("audit.narrative.logsUnlocked", { actor: actorName });
+  if (resolvedAction === "audit_pin_failed") return t("audit.narrative.pinFailed", { actor: actorName });
+  if (resolvedAction === "login_succeeded") return language === "ar" ? `تم تسجيل الدخول بنجاح للمستخدم ${name !== "—" ? name : code}.` : `Login succeeded for ${name !== "—" ? name : code}.`;
+  if (resolvedAction === "login_failed") return language === "ar" ? `فشلت محاولة تسجيل الدخول (${String(details.reason || "سبب غير محدد")}).` : `Login attempt failed (${String(details.reason || "unknown reason")}).`;
+  if (resolvedAction === "logout") return language === "ar" ? `تم تسجيل خروج المستخدم ${name !== "—" ? name : String(details.username || "—")}.` : `User ${name !== "—" ? name : String(details.username || "—")} logged out.`;
+  return t("audit.narrative.generic", { action: t(auditActionKey(resolvedAction, details)) });
 }
 
-function formatAuditDetailValue(value: unknown, language: Language) {
-  if (value === null || value === undefined || value === "") return "—";
-  if (typeof value === "boolean") return value ? (language === "ar" ? "نعم" : "Yes") : (language === "ar" ? "لا" : "No");
-  if (typeof value === "object") return JSON.stringify(value, null, 2);
-  return String(value);
-}
-
-function formatAuditDetails(details: Record<string, unknown>, language: Language, t: Translator = createTranslator(language)) {
-  if (details?._audit_action) return [{ key: "", value: auditNarrativeFromDetails(String(details._audit_action), details as Record<string, any>, language, t) }];
-  return Object.entries(details || {}).filter(([key]) => key !== "pin_digits").map(([key, value]) => ({
-    key: auditDetailLabelKey(key) ? t(auditDetailLabelKey(key) as TranslationKey) : key.replaceAll("_", " "), value: auditDetailText(key, value, language, t)
-  }));
+function formatAuditDetails(details: Record<string, unknown>, language: Language, t: Translator = createTranslator(language), actorName = "") {
+  const action = String(details?._audit_action || details?.action || "system_action");
+  const summary = auditNarrativeFromDetails(action, details as Record<string, any>, language, t, actorName || "—");
+  const rows = [{ key: t("audit.detail.summary"), value: summary }];
+  if (actorName) rows.push({ key: t("audit.detail.actor"), value: actorName });
+  if (Array.isArray(details.changes) && details.changes.length) rows.push({ key: t("audit.detail.changes"), value: auditDetailText("changes", details.changes, language, t) });
+  Object.entries(details || {}).forEach(([key, value]) => {
+    if (key.startsWith("_") || isAuditHiddenKey(key) || ["action", "audit_version", "before", "after", "changes"].includes(key)) return;
+    if (key === "body" && value && typeof value === "object" && !Array.isArray(value)) {
+      Object.entries(value as Record<string, unknown>).forEach(([bodyKey, bodyValue]) => {
+        if (!isAuditHiddenKey(bodyKey)) rows.push({ key: auditDetailLabelKey(bodyKey) ? t(auditDetailLabelKey(bodyKey) as TranslationKey) : humanizeAuditKey(bodyKey), value: auditDetailText(bodyKey, bodyValue, language, t) });
+      });
+      return;
+    }
+    rows.push({ key: auditDetailLabelKey(key) ? t(auditDetailLabelKey(key) as TranslationKey) : humanizeAuditKey(key), value: auditDetailText(key, value, language, t) });
+  });
+  return rows;
 }
 
 function AuditLogsPanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
@@ -3828,7 +5063,6 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   const [search, setSearch] = useState("");
   const [action, setAction] = useState("");
   const [userId, setUserId] = useState("");
-  const [paymentId, setPaymentId] = useState("");
   const [studentId, setStudentId] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -3837,6 +5071,17 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [refreshState, setRefreshState] = useState<"idle" | "loading" | "success">("idle");
+  const [maintenanceOperation, setMaintenanceOperation] = useState<"idle" | "preview" | "delete">("idle");
+  const [maintenanceFrom, setMaintenanceFrom] = useState("");
+  const [maintenanceTo, setMaintenanceTo] = useState("");
+  const [maintenancePin, setMaintenancePin] = useState("");
+  const [maintenancePassword, setMaintenancePassword] = useState("");
+  const [maintenanceReason, setMaintenanceReason] = useState("");
+  const [maintenanceConfirmation, setMaintenanceConfirmation] = useState("");
+  const [maintenanceCount, setMaintenanceCount] = useState<number | null>(null);
+  const [maintenanceStatus, setMaintenanceStatus] = useState("");
+  const [maintenanceStatusTone, setMaintenanceStatusTone] = useState<"idle" | "success" | "error">("idle");
   const auth = { Authorization: `Bearer ${session.token}` };
 
   useEffect(() => {
@@ -3867,22 +5112,94 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   }
 
   async function loadLogs(nextPage = page, token = accessToken) {
-    if (!token) return;
+    if (!token) return false;
     setLoading(true); setStatus("");
     try {
       const params = new URLSearchParams({ page: String(nextPage), limit: "50" });
-      if (search.trim()) params.set("search", search.trim()); if (action) params.set("action", action); if (userId.trim()) params.set("user_id", userId.trim()); if (paymentId.trim()) params.set("payment_id", paymentId.trim()); if (studentId.trim()) params.set("student_id", studentId.trim()); if (dateFrom) params.set("date_from", dateFrom); if (dateTo) params.set("date_to", dateTo);
+      if (search.trim()) params.set("search", search.trim()); if (action) params.set("action", action); if (userId.trim()) params.set("user_id", userId.trim()); if (studentId.trim()) params.set("student_id", studentId.trim()); if (dateFrom) params.set("date_from", dateFrom); if (dateTo) params.set("date_to", dateTo);
       const response = await fetch(`${API_BASE_URL}/admin/audit-logs?${params}`, { headers: { ...auth, "X-Audit-Access-Token": token } });
       const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.status || "logs_failed");
       setLogs(Array.isArray(data.logs) ? data.logs : []); setTotal(Number(data.total || 0)); setPage(nextPage);
-    } catch (error) { if (error instanceof Error && error.message === "audit_access_required") { setUnlocked(false); setAccessToken(""); } setStatus(t("fees.reportLoadFailed")); }
+      return true;
+    } catch (error) { if (error instanceof Error && error.message === "audit_access_required") { setUnlocked(false); setAccessToken(""); } setStatus(t("fees.reportLoadFailed")); return false; }
     finally { setLoading(false); }
+  }
+
+  async function refreshLogs() {
+    setRefreshState("loading");
+    const refreshed = await loadLogs(1);
+    if (!refreshed) { setRefreshState("idle"); return; }
+    setRefreshState("success");
+    window.setTimeout(() => setRefreshState("idle"), 1500);
+  }
+
+  function maintenanceError(statusValue: string, fallback: TranslationKey) {
+    const keys: Record<string, TranslationKey> = {
+      invalid_date_range: "audit.maintenanceInvalidDates",
+      invalid_pin: "audit.invalidPin",
+      audit_pin_not_configured: "audit.maintenancePinNotConfigured",
+      audit_pin_locked: "audit.locked",
+      invalid_admin_password: "audit.maintenanceInvalidPassword",
+      invalid_confirmation: "audit.maintenanceInvalidConfirmation",
+      invalid_reason: "audit.maintenanceReasonRequired"
+    };
+    return t(keys[statusValue] || fallback);
+  }
+
+  function maintenanceDateRange() {
+    const isValidDate = (value: string) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+      const parsed = new Date(`${value}T00:00:00Z`);
+      return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+    };
+    if (!isValidDate(maintenanceFrom) || !isValidDate(maintenanceTo)) return null;
+    return maintenanceFrom <= maintenanceTo ? { date_from: maintenanceFrom, date_to: maintenanceTo } : { date_from: maintenanceTo, date_to: maintenanceFrom };
+  }
+
+  async function previewMaintenance() {
+    setMaintenanceStatus(""); setMaintenanceStatusTone("idle"); setMaintenanceCount(null);
+    const range = maintenanceDateRange();
+    if (!range) { setMaintenanceStatus(t("audit.maintenanceInvalidDates")); setMaintenanceStatusTone("error"); return; }
+    setMaintenanceOperation("preview");
+    try {
+      const params = new URLSearchParams(range);
+      const response = await fetch(`${API_BASE_URL}/admin/audit-logs/maintenance/preview?${params}`, { headers: { ...auth, "X-Audit-Access-Token": accessToken } });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.status || "preview_failed");
+      setMaintenanceCount(Number(data.count || 0));
+    } catch (error) {
+      setMaintenanceStatus(maintenanceError(error instanceof Error ? error.message : "preview_failed", "audit.maintenancePreviewFailed")); setMaintenanceStatusTone("error");
+    } finally { setMaintenanceOperation("idle"); }
+  }
+
+  async function deleteMaintenance(event: React.FormEvent) {
+    event.preventDefault(); setMaintenanceStatus(""); setMaintenanceStatusTone("idle");
+    const range = maintenanceDateRange();
+    if (!range) { setMaintenanceStatus(t("audit.maintenanceInvalidDates")); setMaintenanceStatusTone("error"); return; }
+    if (maintenanceCount === null) { setMaintenanceStatus(t("audit.maintenancePreviewFirst")); setMaintenanceStatusTone("error"); return; }
+    if (!/^\d{4}$/.test(maintenancePin)) { setMaintenanceStatus(t("audit.invalidPin")); setMaintenanceStatusTone("error"); return; }
+    if (!maintenancePassword.trim()) { setMaintenanceStatus(t("audit.maintenancePasswordRequired")); setMaintenanceStatusTone("error"); return; }
+    if (maintenanceConfirmation.trim() !== "DELETE AUDIT LOGS") { setMaintenanceStatus(t("audit.maintenanceInvalidConfirmation")); setMaintenanceStatusTone("error"); return; }
+    if (maintenanceReason.trim().length < 3) { setMaintenanceStatus(t("audit.maintenanceReasonRequired")); setMaintenanceStatusTone("error"); return; }
+    setMaintenanceOperation("delete");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/audit-logs/maintenance/delete`, { method: "POST", headers: { ...auth, "Content-Type": "application/json", "X-Audit-Access-Token": accessToken }, body: JSON.stringify({ ...range, pin: maintenancePin, current_password: maintenancePassword, reason: maintenanceReason, confirmation: maintenanceConfirmation }) });
+      const data = await response.json();
+      if (!response.ok || !data.ok) throw new Error(data.status || "delete_failed");
+      const deletedCount = Number(data.deleted_count || 0);
+      setMaintenanceCount(0); setMaintenanceStatus(t("audit.maintenanceDeleted", { count: String(deletedCount) })); setMaintenanceStatusTone("success"); setMaintenancePin(""); setMaintenancePassword(""); setMaintenanceReason(""); setMaintenanceConfirmation("");
+      await loadLogs(1);
+    } catch (error) {
+      setMaintenanceStatus(maintenanceError(error instanceof Error ? error.message : "delete_failed", "audit.maintenanceDeleteFailed")); setMaintenanceStatusTone("error");
+    } finally { setMaintenanceOperation("idle"); }
   }
 
   if (configured === null) return <section className="admin-editor audit-logs-panel"><p className="field-hint">{t("fees.reportLoadFailed")}</p></section>;
   if (!configured || showChangePin) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{configured ? t("audit.changePin") : t("audit.setup")}</h2></div><form onSubmit={savePin} className="audit-pin-form"><label>{t("audit.pin")}<input value={newPin} onChange={(event) => setNewPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="new-password" /></label><label>{t("audit.adminPassword")}<input value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} type="password" autoComplete="current-password" /></label><div className="report-actions"><button className="primary-button" type="submit">{t("audit.setup")}</button>{configured ? <button className="secondary-button" type="button" onClick={() => setShowChangePin(false)}>{t("admin.cancel")}</button> : null}</div>{status ? <p className="form-error">{status}</p> : null}</form></section>;
-  if (!unlocked) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><p className="field-hint">{t("audit.pin")}</p><form onSubmit={unlock} className="audit-pin-form"><label>{t("audit.pin")}<input value={pin} onChange={(event) => setPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><button className="primary-button" type="submit">{t("audit.unlock")}</button>{status ? <p className="form-error">{status}</p> : null}</form></section>;
-  return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><div className="report-filters payment-report-filters"><label>{t("audit.search")}<input value={search} onChange={(event) => setSearch(event.target.value)} /></label><label>{t("audit.action")}<input value={action} onChange={(event) => setAction(event.target.value)} placeholder="payment_reversed" /></label><label>{t("audit.user")}<input value={userId} onChange={(event) => setUserId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.payment")}<input value={paymentId} onChange={(event) => setPaymentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.student")}<input value={studentId} onChange={(event) => setStudentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.dateFrom")}<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={() => loadLogs(1)}>{t("audit.refresh")}</button><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div><p className="report-total">{total} · {t("audit.title")}</p>{logs.length ? <div className="table-wrap"><table><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.student")}</th><th>{t("audit.payment")}</th><th>{t("audit.details")}</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td>{new Date(log.created_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</td><td>{log.actor_name || log.actor_username || "—"}</td><td>{t(auditActionKey(log.action))}</td><td><strong>{log.student_name || "—"}</strong>{log.student_code ? <small className="audit-student-code">{log.student_code}</small> : log.student_id ? <small className="audit-student-code">ID: {log.student_id}</small> : null}</td><td>{log.payment_id ? `${log.payment_id}${log.payment_amount ? ` · ${log.payment_amount} EGP` : ""}` : "—"}</td><td><details><summary>{t("audit.details")}</summary><div className="audit-detail-list">{formatAuditDetails(log.details || {}, language).map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}{log.reversal_reason ? <div className="audit-detail-item"><b>{t("audit.reason")}</b><span>{log.reversal_reason}</span></div> : null}</div></details></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("audit.noLogs")}</p>}<div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => loadLogs(page - 1)}>{"‹"}</button><span>{page} / {Math.max(1, Math.ceil(total / 50))}</span><button className="secondary-button compact-button" type="button" disabled={page >= Math.max(1, Math.ceil(total / 50)) || loading} onClick={() => loadLogs(page + 1)}>{"›"}</button></div>{status ? <p className="form-error">{status}</p> : null}</section>;
+  if (!unlocked) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><form onSubmit={unlock} className="audit-pin-form"><label>{t("audit.pin")}<input value={pin} onChange={(event) => setPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><button className="primary-button" type="submit">{t("audit.unlock")}</button>{status ? <p className="form-error">{status}</p> : null}</form></section>;
+  const refreshLabel = refreshState === "loading" ? t("audit.refreshing") : refreshState === "success" ? t("audit.refreshed") : t("audit.refresh");
+  const maintenancePanel = <details className="audit-maintenance"><summary>{t("audit.maintenance")}</summary><form className="audit-maintenance-form" onSubmit={deleteMaintenance}><p className="audit-maintenance-warning">{t("audit.maintenanceWarning")}</p><div className="audit-maintenance-fields"><label>{t("audit.maintenanceFrom")}<input type="date" value={maintenanceFrom} onChange={(event) => { setMaintenanceFrom(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenanceTo")}<input type="date" value={maintenanceTo} onChange={(event) => { setMaintenanceTo(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenancePin")}<input value={maintenancePin} onChange={(event) => setMaintenancePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><label>{t("audit.maintenancePassword")}<input value={maintenancePassword} onChange={(event) => setMaintenancePassword(event.target.value)} type="password" autoComplete="current-password" /></label></div><label>{t("audit.maintenanceReason")}<textarea value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} placeholder={t("audit.maintenanceReasonPlaceholder")} rows={3} maxLength={500} /></label><label>{t("audit.maintenanceConfirmation")}<input value={maintenanceConfirmation} onChange={(event) => setMaintenanceConfirmation(event.target.value)} placeholder={t("audit.maintenanceConfirmationHint")} autoComplete="off" /></label><div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={maintenanceOperation !== "idle"} onClick={previewMaintenance}>{maintenanceOperation === "preview" ? t("audit.maintenancePreviewing") : t("audit.maintenancePreview")}</button><button className="danger-button compact-button" type="submit" disabled={maintenanceOperation !== "idle" || maintenanceCount === null}>{maintenanceOperation === "delete" ? t("audit.maintenanceDeleting") : t("audit.maintenanceDelete")}</button></div>{maintenanceCount !== null ? <p className="audit-maintenance-count">{t("audit.maintenanceCount", { count: String(maintenanceCount) })}</p> : null}{maintenanceStatus ? <p className={`audit-maintenance-status ${maintenanceStatusTone}`}>{maintenanceStatus}</p> : null}</form></details>;
+  return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><div className="report-filters payment-report-filters"><label>{t("audit.search")}<input value={search} onChange={(event) => setSearch(event.target.value)} /></label><label>{t("audit.action")}<select value={action} onChange={(event) => { setAction(event.target.value); setPage(1); }}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.user")}<input value={userId} onChange={(event) => setUserId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.student")}<input value={studentId} onChange={(event) => setStudentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.dateFrom")}<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={refreshLogs}>{refreshLabel}</button><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div><p className="report-total">{total} · {t("audit.title")}</p>{logs.length ? <div className="table-wrap"><table><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.student")}</th><th>{t("audit.payment")}</th><th>{t("audit.details")}</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td>{new Date(log.created_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</td><td>{log.actor_name || log.actor_username || "—"}</td><td>{t(auditActionKey(log.action))}</td><td><strong>{log.student_name || "—"}</strong>{log.student_code ? <small className="audit-student-code">{log.student_code}</small> : log.student_id ? <small className="audit-student-code">ID: {log.student_id}</small> : null}</td><td>{log.payment_id ? `${log.payment_id}${log.payment_amount ? ` · ${log.payment_amount} EGP` : ""}` : "—"}</td><td><details><summary>{t("audit.details")}</summary><div className="audit-detail-list">{formatAuditDetails(log.details || {}, language, t, log.actor_name || log.actor_username || "").map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}{log.reversal_reason ? <div className="audit-detail-item"><b>{t("audit.reason")}</b><span>{log.reversal_reason}</span></div> : null}</div></details></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("audit.noLogs")}</p>}<div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => loadLogs(page - 1)}>{"‹"}</button><span>{page} / {Math.max(1, Math.ceil(total / 50))}</span><button className="secondary-button compact-button" type="button" disabled={page >= Math.max(1, Math.ceil(total / 50)) || loading} onClick={() => loadLogs(page + 1)}>{"›"}</button></div>{maintenancePanel}{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
 function PaymentReportsPanel({ session, t }: { session: TeacherSession; t: Translator }) {
@@ -4122,7 +5439,7 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
       });
       await parseInboxResponse(response);
       setMessages((current) => current.map((message) => message.sender_type === "student" || message.sender_type === "public" ? { ...message, is_read: true } : message));
-      setSelected((current) => current ? { ...current, unread_count: 0, read_status: "read" } : current);
+      setSelected((current: any) => current ? { ...current, unread_count: 0, read_status: "read" } : current);
       await refresh();
       setStatus(t("inbox.markedRead"));
     } catch (_error) {
@@ -4186,7 +5503,7 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
         <div className="inbox-messages">{messages.length ? messages.map((message) => <article className={`inbox-message ${["admin", "teacher", "assistant"].includes(message.sender_type) ? "mine" : ""}`} key={message.id}>
           <p>{message.body}</p>
           <small className="message-meta"><span>{message.sender_name || message.sender_type}</span><span className="message-read-status">{inboxMessageStatus(message, "staff", t)}</span><time dateTime={typeof message.created_at === "string" ? message.created_at : undefined}>{formatInboxTimestamp(message.created_at, language)}</time></small>
-          {session.teacher.role === "admin" ? <button type="button" className="message-delete-button" onClick={() => deleteMessage(Number(message.id))}>{t("inbox.deleteMessage")}</button> : null}
+          {sessionHasPermission(session, "messages.manage") ? <button type="button" className="message-delete-button" onClick={() => deleteMessage(Number(message.id))}>{t("inbox.deleteMessage")}</button> : null}
         </article>) : <p className="empty-state">{t("inbox.noMessages")}</p>}</div>
         <form onSubmit={sendReply}><textarea value={reply} onChange={(e) => setReply(e.target.value)} placeholder={t("inbox.reply")} rows={3}/><button className={`primary-button ${replyState === "sent" ? "success-button" : ""}`} type="submit" disabled={replyState === "sending"}>{replyState === "sending" ? t("inbox.sending") : replyState === "sent" ? t("inbox.sentStatus") : t("inbox.reply")}</button></form>
       </> : <p className="empty-state">{t("inbox.selectThread")}</p>}</div>
@@ -5149,7 +6466,7 @@ function StudentInboxControls({ studentCode, language, t, onUnreadCountChange, r
       const response = await fetch(`${API_BASE_URL}/student/inbox/${selected.id}/read`, { method: "PUT", headers });
       await parseInboxResponse(response);
       setMessages((current) => current.map((message) => message.sender_type !== "student" ? { ...message, is_read: true } : message));
-      setSelected((current) => current ? { ...current, unread_count: 0 } : current);
+      setSelected((current: any) => current ? { ...current, unread_count: 0 } : current);
       await refresh();
       setStatus(t("inbox.markedRead"));
     } catch (_error) {

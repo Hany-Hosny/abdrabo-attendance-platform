@@ -2,6 +2,7 @@ import "../config/env.js";
 import crypto from "node:crypto";
 import { pool, query } from "./pool.js";
 import { hashPassword } from "../services/auth.js";
+import { DEFAULT_ADMIN_PERMISSIONS, DEFAULT_STAFF_PERMISSIONS, OWNER_USER_ID } from "../services/rbac.js";
 
 function hashValue(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -119,7 +120,9 @@ export async function migrate() {
       email TEXT NOT NULL UNIQUE,
       username TEXT UNIQUE,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'teacher' CHECK (role IN ('admin', 'teacher', 'assistant')),
+      role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('owner', 'admin', 'staff')),
+      permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+      permissions_initialized BOOLEAN NOT NULL DEFAULT FALSE,
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
       print_student_labels BOOLEAN NOT NULL DEFAULT FALSE,
       max_label_reprints INTEGER NOT NULL DEFAULT 2 CHECK (max_label_reprints >= 0),
@@ -172,19 +175,16 @@ export async function migrate() {
     SET search_path TO public;
 
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS permissions_initialized BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS print_student_labels BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS max_label_reprints INTEGER NOT NULL DEFAULT 2 CHECK (max_label_reprints >= 0);
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS can_use_inbox BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'teachers_role_check'
-      ) THEN
-        ALTER TABLE teachers ADD CONSTRAINT teachers_role_check CHECK (role IN ('admin', 'teacher', 'assistant'));
-      END IF;
-    END $$;
+    ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_role_check;
+    UPDATE teachers SET role = 'staff' WHERE role IN ('teacher', 'assistant');
+    ALTER TABLE teachers ADD CONSTRAINT teachers_role_check CHECK (role IN ('owner', 'admin', 'staff'));
 
     ALTER TABLE groups ADD COLUMN IF NOT EXISTS grade_level TEXT;
     ALTER TABLE groups ADD COLUMN IF NOT EXISTS display_name TEXT;
@@ -324,6 +324,18 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at DESC);
     CREATE INDEX IF NOT EXISTS audit_logs_actor_idx ON audit_logs(actor_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, created_at DESC);
+    CREATE TABLE IF NOT EXISTS audit_log_deletions (
+      id BIGSERIAL PRIMARY KEY,
+      actor_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      date_from DATE NOT NULL,
+      date_to DATE NOT NULL,
+      deleted_count INTEGER NOT NULL CHECK (deleted_count >= 0),
+      reason TEXT NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS audit_log_deletions_created_at_idx ON audit_log_deletions(created_at DESC);
     CREATE TABLE IF NOT EXISTS payments (
       id BIGSERIAL PRIMARY KEY,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
@@ -557,6 +569,15 @@ export async function migrate() {
       [adminName, adminEmail, adminUsername, adminPasswordHash]
     );
   }
+  const ownerCheck = await query("SELECT id FROM teachers WHERE id = $1", [OWNER_USER_ID]);
+  if (!ownerCheck.rowCount) throw new Error(`Primary owner user ID ${OWNER_USER_ID} does not exist`);
+  await query("UPDATE teachers SET role = 'admin' WHERE role = 'owner' AND id <> $1", [OWNER_USER_ID]);
+  await query("UPDATE teachers SET role = 'owner', is_active = TRUE, deleted_at = NULL, permissions_initialized = TRUE, updated_at = NOW() WHERE id = $1", [OWNER_USER_ID]);
+  await query(
+    "UPDATE teachers SET permissions = CASE WHEN role = 'admin' THEN $1::jsonb ELSE $2::jsonb END, permissions_initialized = TRUE WHERE permissions_initialized = FALSE",
+    [JSON.stringify(DEFAULT_ADMIN_PERMISSIONS), JSON.stringify(DEFAULT_STAFF_PERMISSIONS)]
+  );
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS teachers_single_owner_idx ON teachers ((role)) WHERE role = 'owner'");
   console.log("Admin user ensured");
 
   const sitePages = [

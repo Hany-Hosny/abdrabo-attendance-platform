@@ -1,9 +1,11 @@
 import crypto from "node:crypto";
 import express from "express";
 import { pool, query } from "../db/pool.js";
-import { requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
+import { requirePermission, requireTeacher } from "../middleware/requireTeacher.js";
+import { requireAnyPermission } from "../services/rbac.js";
 import { ensureMonthlyFees, getFeeSummary } from "../services/fees.js";
 import { isNationalId, isPhoneNumber, normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.js";
+import { auditLog, changedFields, verifyAuditPin } from "../services/audit.js";
 
 export const adminAcademicRouter = express.Router();
 adminAcademicRouter.use(requireTeacher);
@@ -81,18 +83,24 @@ function groupPayload(body) {
 }
 
 function validGroup(data) {
+  const hasValidLegacySchedule = weekdays.has(data.dayOfWeek) &&
+    /^\d{2}:\d{2}(:\d{2})?$/.test(data.startTime) &&
+    /^\d{2}:\d{2}(:\d{2})?$/.test(data.endTime);
+  const hasValidSchedules = data.schedules.length > 0 && data.schedules.length <= 3 && data.schedules.every((schedule) =>
+    weekdays.has(Number(schedule.day_of_week)) &&
+    /^\d{2}:\d{2}(:\d{2})?$/.test(String(schedule.start_time)) &&
+    /^\d{2}:\d{2}(:\d{2})?$/.test(String(schedule.end_time))
+  );
   return Boolean(
     data.name &&
       data.grade &&
       data.subject &&
-      weekdays.has(data.dayOfWeek) &&
-      /^\d{2}:\d{2}(:\d{2})?$/.test(data.startTime) &&
-      /^\d{2}:\d{2}(:\d{2})?$/.test(data.endTime) &&
       Number.isInteger(data.opensBefore) &&
       data.opensBefore >= 0 &&
       Number.isInteger(data.closesAfter) &&
       data.closesAfter >= 0 &&
-      Number.isFinite(data.feesAmount) && data.feesAmount >= 0 && supportedGradeLevels.has(data.gradeLevel) && data.schedules.length > 0 && data.schedules.length <= 3 && data.schedules.every((schedule) => weekdays.has(Number(schedule.day_of_week)) && /^\d{2}:\d{2}(:\d{2})?$/.test(String(schedule.start_time)) && /^\d{2}:\d{2}(:\d{2})?$/.test(String(schedule.end_time)))
+      Number.isFinite(data.feesAmount) && data.feesAmount >= 0 && supportedGradeLevels.has(data.gradeLevel) &&
+      (data.hasSchedules ? hasValidSchedules : hasValidLegacySchedule)
   );
 }
 
@@ -128,7 +136,7 @@ const groupSelect = `
   ) cs ON TRUE
 `;
 
-adminAcademicRouter.get("/groups", async (_req, res, next) => {
+adminAcademicRouter.get("/groups", requireAnyPermission("schedule.view", "students.view"), async (_req, res, next) => {
   try {
     const [groups, centers] = await Promise.all([
       query(`${groupSelect} WHERE g.deleted_at IS NULL ORDER BY g.created_at DESC`),
@@ -140,7 +148,7 @@ adminAcademicRouter.get("/groups", async (_req, res, next) => {
   }
 });
 
-adminAcademicRouter.post("/groups", async (req, res, next) => {
+adminAcademicRouter.post("/groups", requirePermission("schedule.manage"), async (req, res, next) => {
   try {
     const data = groupPayload(req.body);
     if (data.schedules.length > 3) return res.status(400).json({ ok: false, status: "too_many_schedules" });
@@ -155,19 +163,23 @@ adminAcademicRouter.post("/groups", async (req, res, next) => {
     const groupId = group.rows[0].id;
     for (const schedule of data.schedules) await query(`INSERT INTO class_schedules (group_id,day_of_week,start_time,end_time,opens_before_minutes,closes_after_minutes,is_active) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (group_id,day_of_week,start_time,end_time) DO UPDATE SET is_active=EXCLUDED.is_active,updated_at=NOW()`, [groupId, Number(schedule.day_of_week), schedule.start_time, schedule.end_time, Number(schedule.opens_before_minutes ?? 3), Number(schedule.closes_after_minutes ?? 20), parseBoolean(schedule.is_active)]);
     const result = await query(`${groupSelect} WHERE g.id = $1`, [groupId]);
+    await auditLog({ action: "group_created", actorId: req.teacher.id, details: { group_id: groupId, after: result.rows[0], schedules: data.schedules }, request: req });
     res.status(201).json({ ok: true, group: result.rows[0] });
   } catch (error) {
     next(error);
   }
 });
 
-adminAcademicRouter.put("/groups/:id", async (req, res, next) => {
+adminAcademicRouter.put("/groups/:id", requirePermission("schedule.manage"), async (req, res, next) => {
   try {
     const data = groupPayload(req.body);
     if (data.schedules.length > 3) return res.status(400).json({ ok: false, status: "too_many_schedules" });
+    const groupId = Number(req.params.id);
+    const beforeGroup = await query("SELECT id, center_id, name, display_name, grade, grade_level, subject, fees_amount, is_active FROM groups WHERE id=$1 AND deleted_at IS NULL", [groupId]);
+    const beforeSchedules = await query("SELECT id, day_of_week, start_time, end_time, opens_before_minutes, closes_after_minutes, is_active FROM class_schedules WHERE group_id=$1 AND deleted_at IS NULL ORDER BY id", [groupId]);
+    if (!beforeGroup.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     if (!data.centerId) data.centerId = (await query("SELECT center_id FROM groups WHERE id=$1", [Number(req.params.id)])).rows[0]?.center_id;
     if (!validGroup(data)) return res.status(400).json({ ok: false, status: "invalid_group_payload" });
-    const groupId = Number(req.params.id);
     const updated = await query(
       `UPDATE groups SET center_id = $1, name = $2, display_name = $3, grade = $4, grade_level = $5, subject = $6, fees_amount = $7, is_active = $8, updated_at=NOW()
        WHERE id = $9 AND deleted_at IS NULL RETURNING id`,
@@ -214,34 +226,50 @@ adminAcademicRouter.put("/groups/:id", async (req, res, next) => {
       );
     }
     const result = await query(`${groupSelect} WHERE g.id = $1`, [groupId]);
+    await auditLog({ action: "group_updated", actorId: req.teacher.id, details: { group_id: groupId, changes: changedFields(beforeGroup.rows[0], result.rows[0]), before: { group: beforeGroup.rows[0], schedules: beforeSchedules.rows }, after: { group: result.rows[0], schedules: result.rows[0]?.schedules || data.schedules } }, request: req });
     res.json({ ok: true, group: result.rows[0] });
   } catch (error) {
     next(error);
   }
 });
 
-adminAcademicRouter.patch("/groups/:id/status", async (req, res, next) => {
+adminAcademicRouter.patch("/groups/:id/status", requirePermission("schedule.manage"), async (req, res, next) => {
   try {
     const isActive = parseBoolean(req.body?.is_active, false);
-    const result = await query("UPDATE groups SET is_active = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING id", [isActive, Number(req.params.id)]);
+    const groupId = Number(req.params.id);
+    const before = await query("SELECT id, name, display_name, is_active FROM groups WHERE id=$1 AND deleted_at IS NULL", [groupId]);
+    if (!before.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    const result = await query("UPDATE groups SET is_active = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING id", [isActive, groupId]);
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
-    await query("UPDATE class_schedules SET is_active = $1 WHERE group_id = $2", [isActive, Number(req.params.id)]);
+    await query("UPDATE class_schedules SET is_active = $1 WHERE group_id = $2", [isActive, groupId]);
+    await auditLog({ action: "group_status_changed", actorId: req.teacher.id, details: { group_id: groupId, changes: [{ field: "is_active", before: before.rows[0].is_active, after: isActive }], before: { is_active: before.rows[0].is_active }, after: { is_active: isActive } }, request: req });
     res.json({ ok: true });
   } catch (error) {
     next(error);
   }
 });
 
-adminAcademicRouter.delete("/groups/:id", requireRoles("admin"), async (req, res, next) => {
+adminAcademicRouter.delete("/groups/:id", requirePermission("schedule.manage"), async (req, res, next) => {
   try {
     const groupId = Number(req.params.id);
+    const submittedPin = String(req.body?.audit_pin || "").trim();
+    const studentCount = await query("SELECT COUNT(*)::int AS count FROM students WHERE group_id=$1 AND deleted_at IS NULL", [groupId]);
+    const hasStudents = Number(studentCount.rows[0]?.count || 0) > 0;
+    if (hasStudents && !submittedPin) {
+      return res.status(428).json({ ok: false, status: "group_delete_pin_required", students_count: Number(studentCount.rows[0]?.count || 0) });
+    }
+    if (submittedPin) {
+      const pinCheck = await verifyAuditPin({ teacherId: req.teacher.id, pin: submittedPin, purpose: "group_delete", request: req });
+      if (!pinCheck.ok) return res.status(pinCheck.status === "audit_pin_locked" ? 429 : pinCheck.status === "audit_pin_not_configured" ? 409 : 401).json(pinCheck);
+    }
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const students = await client.query("SELECT 1 FROM students WHERE group_id=$1 AND deleted_at IS NULL LIMIT 1", [groupId]);
-      if (students.rowCount) {
+      if (students.rowCount && !submittedPin) {
         await client.query("ROLLBACK");
-        return res.status(409).json({ok:false,status:"group_has_students"});
+        return res.status(428).json({ok:false,status:"group_delete_pin_required"});
       }
       const result = await client.query("UPDATE groups SET deleted_at=NOW(), is_active=FALSE, updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL RETURNING id", [groupId]);
       if (!result.rowCount) {
@@ -256,11 +284,12 @@ adminAcademicRouter.delete("/groups/:id", requireRoles("admin"), async (req, res
     } finally {
       client.release();
     }
+    await auditLog({ action: "group_archived", actorId: req.teacher.id, details: { group_id: groupId, changes: [{ field: "deleted_at", before: null, after: "set" }, { field: "is_active", before: true, after: false }] }, request: req });
     res.json({ok:true});
   } catch (error) { next(error); }
 });
 
-adminAcademicRouter.get("/groups/:id/details", async (req, res, next) => {
+adminAcademicRouter.get("/groups/:id/details", requirePermission("schedule.view"), async (req, res, next) => {
   try {
     const groupId = Number(req.params.id);
     const group = await query(`${groupSelect} WHERE g.id=$1`, [groupId]);
@@ -277,7 +306,7 @@ const studentSelect = `
   FROM students s JOIN groups g ON g.id = s.group_id
 `;
 
-adminAcademicRouter.get("/students", async (req, res, next) => {
+adminAcademicRouter.get("/students", requirePermission("students.view"), async (req, res, next) => {
   try {
     const status = String(req.query.status || "active");
     const search = normalizeDigits(req.query.q || req.query.search || "").trim();
@@ -291,6 +320,12 @@ adminAcademicRouter.get("/students", async (req, res, next) => {
       values.push(hash);
       filters.push(`(s.full_name ILIKE $${n} OR s.student_code ILIKE $${n} OR s.student_serial ILIKE $${n} OR s.scan_serial ILIKE $${n} OR s.phone ILIKE $${n} OR s.guardian_phone ILIKE $${n} OR g.name ILIKE $${n} OR COALESCE(g.display_name,g.name) ILIKE $${n} OR COALESCE(g.grade_level,g.grade) ILIKE $${n} OR s.national_id_hash = $${n + 1})`);
     }
+    if (req.query.group_id !== undefined && String(req.query.group_id).trim() !== "") {
+      const groupId = Number(normalizeDigits(req.query.group_id));
+      if (!Number.isSafeInteger(groupId) || groupId <= 0) return res.status(400).json({ ok: false, status: "invalid_group" });
+      values.push(groupId);
+      filters.push(`s.group_id = $${values.length}`);
+    }
     const result = await query(`${studentSelect} WHERE ${filters.join(" AND ")} ORDER BY s.created_at DESC`, values);
     res.json({ ok: true, students: result.rows });
   } catch (error) {
@@ -298,7 +333,7 @@ adminAcademicRouter.get("/students", async (req, res, next) => {
   }
 });
 
-adminAcademicRouter.get("/students/:id/profile", async (req, res, next) => {
+adminAcademicRouter.get("/students/:id/profile", requirePermission("students.view"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
     const studentResult = await query(`${studentSelect} WHERE s.id = $1`, [studentId]);
@@ -355,7 +390,7 @@ adminAcademicRouter.get("/students/:id/profile", async (req, res, next) => {
   }
 });
 
-adminAcademicRouter.get("/exams/results", async (req, res, next) => {
+adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async (req, res, next) => {
   try {
     const values = [];
     const filters = ["s.deleted_at IS NULL", "s.is_active = TRUE"];
@@ -385,7 +420,7 @@ adminAcademicRouter.get("/exams/results", async (req, res, next) => {
   }
 });
 
-adminAcademicRouter.post("/exams/results", requireRoles("admin", "teacher"), async (req, res, next) => {
+adminAcademicRouter.post("/exams/results", requirePermission("exams.manage"), async (req, res, next) => {
   try {
     const studentId = Number(normalizeDigits(req.body?.student_id));
     const title = String(req.body?.title || "").trim();
@@ -412,6 +447,7 @@ adminAcademicRouter.post("/exams/results", requireRoles("admin", "teacher"), asy
       [student.rows[0].group_id, title, maxScore, examDate]
     )).rows[0].id;
 
+    const existingResult = await query("SELECT id, exam_id, student_id, score, note FROM exam_results WHERE exam_id = $1 AND student_id = $2", [examId, studentId]);
     const result = await query(
       `INSERT INTO exam_results (exam_id, student_id, score, note)
        VALUES ($1, $2, $3, $4)
@@ -420,56 +456,64 @@ adminAcademicRouter.post("/exams/results", requireRoles("admin", "teacher"), asy
        RETURNING id, exam_id, student_id, score, note AS assessment`,
       [examId, studentId, score, assessment || null]
     );
+    await auditLog({ action: existingResult.rowCount ? "exam_result_updated" : "exam_result_created", actorId: req.teacher.id, studentId, details: { exam_id: examId, result_id: result.rows[0].id, title, exam_date: examDate, max_score: maxScore, changes: changedFields(existingResult.rows[0] || {}, result.rows[0]), before: existingResult.rows[0] || null, after: result.rows[0] }, request: req });
     res.status(201).json({ ok: true, result: result.rows[0] });
   } catch (error) {
     next(error);
   }
 });
 
-adminAcademicRouter.delete("/exams/results/:id", requireRoles("admin", "teacher"), async (req, res, next) => {
+adminAcademicRouter.delete("/exams/results/:id", requirePermission("exams.manage"), async (req, res, next) => {
   try {
     const resultId = Number(normalizeDigits(req.params.id));
     if (!Number.isInteger(resultId) || resultId <= 0) return res.status(400).json({ ok: false, status: "invalid_exam_result" });
+    const existing = await query(`SELECT er.id, er.exam_id, er.student_id, er.score, er.note, e.title, e.exam_date, s.full_name, s.student_code FROM exam_results er JOIN exams e ON e.id=er.exam_id JOIN students s ON s.id=er.student_id WHERE er.id=$1`, [resultId]);
     const result = await query("DELETE FROM exam_results WHERE id = $1 RETURNING id", [resultId]);
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    await auditLog({ action: "exam_result_deleted", actorId: req.teacher.id, studentId: existing.rows[0]?.student_id || null, details: { result_id: resultId, exam_id: existing.rows[0]?.exam_id || null, student_name: existing.rows[0]?.full_name, student_code: existing.rows[0]?.student_code, title: existing.rows[0]?.title, exam_date: existing.rows[0]?.exam_date, before: existing.rows[0], after: null }, request: req });
     res.json({ ok: true, deleted_id: result.rows[0].id });
   } catch (error) {
     next(error);
   }
 });
 
-adminAcademicRouter.post("/students/:id/notes", requireRoles("admin", "teacher"), async (req, res, next) => {
+adminAcademicRouter.post("/students/:id/notes", requirePermission("notes.manage"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
     const body = String(req.body?.body || "").trim();
     if (!body) return res.status(400).json({ ok: false, status: "invalid_note" });
     const result = await query(`INSERT INTO student_notes(student_id, author_id, body, is_read) VALUES($1, $2, $3, FALSE)
       RETURNING id, student_id, author_id, body, created_at, updated_at, is_read`, [studentId, req.teacher.id, body]);
+    await auditLog({ action: "note_created", actorId: req.teacher.id, studentId, details: { note_id: result.rows[0].id, body: result.rows[0].body, after: result.rows[0] }, request: req });
     res.status(201).json({ ok: true, note: result.rows[0] });
   } catch (error) { next(error); }
 });
 
-adminAcademicRouter.put("/students/:id/notes/:noteId", requireRoles("admin", "teacher"), async (req, res, next) => {
+adminAcademicRouter.put("/students/:id/notes/:noteId", requirePermission("notes.manage"), async (req, res, next) => {
   try {
     const body = String(req.body?.body || "").trim();
     if (!body) return res.status(400).json({ ok: false, status: "invalid_note" });
+    const before = await query("SELECT id, student_id, author_id, body, is_read FROM student_notes WHERE id=$1 AND student_id=$2", [Number(req.params.noteId), Number(req.params.id)]);
     const result = await query(`UPDATE student_notes SET body=$1, updated_at=NOW(), is_read=FALSE
       WHERE id=$2 AND student_id=$3 AND ($4 = 'admin' OR author_id=$5)
       RETURNING id, student_id, author_id, body, created_at, updated_at, is_read`, [body, Number(req.params.noteId), Number(req.params.id), req.teacher.role, req.teacher.id]);
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    await auditLog({ action: "note_updated", actorId: req.teacher.id, studentId: Number(req.params.id), details: { note_id: result.rows[0].id, changes: changedFields(before.rows[0] || {}, result.rows[0]), before: before.rows[0] || null, after: result.rows[0] }, request: req });
     res.json({ ok: true, note: result.rows[0] });
   } catch (error) { next(error); }
 });
 
-adminAcademicRouter.delete("/students/:id/notes/:noteId", requireRoles("admin", "teacher"), async (req, res, next) => {
+adminAcademicRouter.delete("/students/:id/notes/:noteId", requirePermission("notes.manage"), async (req, res, next) => {
   try {
+    const before = await query("SELECT id, student_id, author_id, body, is_read FROM student_notes WHERE id=$1 AND student_id=$2", [Number(req.params.noteId), Number(req.params.id)]);
     const result = await query(`DELETE FROM student_notes WHERE id=$1 AND student_id=$2 AND ($3 = 'admin' OR author_id=$4) RETURNING id`, [Number(req.params.noteId), Number(req.params.id), req.teacher.role, req.teacher.id]);
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    await auditLog({ action: "note_deleted", actorId: req.teacher.id, studentId: Number(req.params.id), details: { note_id: result.rows[0].id, before: before.rows[0] || null, after: null }, request: req });
     res.json({ ok: true });
   } catch (error) { next(error); }
 });
 
-adminAcademicRouter.post("/students", async (req, res, next) => {
+adminAcademicRouter.post("/students", requirePermission("students.manage"), async (req, res, next) => {
   try {
     const fullName = String(req.body?.full_name || "").trim();
     const requestedCode = normalizeStudentCode(req.body?.student_code || "");
@@ -503,6 +547,7 @@ adminAcademicRouter.post("/students", async (req, res, next) => {
       [groupId, studentCode, studentSerial, scanSerial, crypto.randomBytes(24).toString("hex"), fullName, phone, guardianPhone, nationalId ? hashNationalId(nationalId) : null, gender, isActive]
     );
     const student = await query(`${studentSelect} WHERE s.id = $1`, [result.rows[0].id]);
+    await auditLog({ action: "student_created", actorId: req.teacher.id, studentId: result.rows[0].id, details: { student_id: result.rows[0].id, after: student.rows[0], changes: [{ field: "record", before: null, after: "created" }] }, request: req });
     res.status(201).json({ ok: true, student: student.rows[0] });
   } catch (error) {
     if (error.code === "23505") return res.status(409).json({ ok: false, status: "student_code_exists" });
@@ -510,23 +555,24 @@ adminAcademicRouter.post("/students", async (req, res, next) => {
   }
 });
 
-adminAcademicRouter.post("/students/:id/regenerate-scan-serial", requireRoles("admin"), async (req, res, next) => {
+adminAcademicRouter.post("/students/:id/regenerate-scan-serial", requirePermission("students.manage"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
-    const current = await query("SELECT id, student_code FROM students WHERE id = $1 AND deleted_at IS NULL", [studentId]);
+    const current = await query("SELECT id, student_code, scan_serial FROM students WHERE id = $1 AND deleted_at IS NULL", [studentId]);
     if (!current.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const scanSerial = await generateScanSerial(current.rows[0].student_code);
     const result = await query(
       "UPDATE students SET scan_serial = $1, updated_at = NOW() WHERE id = $2 RETURNING id, student_code, scan_serial",
       [scanSerial, studentId]
     );
+    await auditLog({ action: "student_scan_serial_regenerated", actorId: req.teacher.id, studentId, details: { student_code: current.rows[0].student_code, changes: [{ field: "scan_serial", before: current.rows[0].scan_serial || null, after: scanSerial }], before: current.rows[0], after: result.rows[0] }, request: req });
     res.json({ ok: true, student: result.rows[0] });
   } catch (error) {
     next(error);
   }
 });
 
-adminAcademicRouter.put("/students/:id", async (req, res, next) => {
+adminAcademicRouter.put("/students/:id", requirePermission("students.manage"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
     const fullName = String(req.body?.full_name || "").trim();
@@ -551,6 +597,8 @@ adminAcademicRouter.put("/students/:id", async (req, res, next) => {
     if (!studentCodePattern.test(studentCode)) {
       return res.status(400).json({ ok: false, status: "invalid_student_code" });
     }
+    const before = await query("SELECT id, group_id, student_code, student_serial, scan_serial, full_name, phone, guardian_phone, gender, is_active FROM students WHERE id=$1", [studentId]);
+    if (!before.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const result = await query(
       `UPDATE students SET group_id = $1, student_code = $2, student_serial = $3, full_name = $4, phone = $5,
         guardian_phone = $6, national_id_hash = COALESCE($7, national_id_hash), gender = $8, is_active = $9, updated_at=NOW() WHERE id = $10 RETURNING id`,
@@ -558,6 +606,7 @@ adminAcademicRouter.put("/students/:id", async (req, res, next) => {
     );
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const student = await query(`${studentSelect} WHERE s.id = $1`, [studentId]);
+    await auditLog({ action: "student_updated", actorId: req.teacher.id, studentId, details: { student_id: studentId, changes: changedFields(before.rows[0], student.rows[0]), before: before.rows[0], after: student.rows[0] }, request: req });
     res.json({ ok: true, student: student.rows[0] });
   } catch (error) {
     if (error.code === "23505") return res.status(409).json({ ok: false, status: "student_code_exists" });
@@ -565,17 +614,22 @@ adminAcademicRouter.put("/students/:id", async (req, res, next) => {
   }
 });
 
-adminAcademicRouter.patch("/students/:id/status", async (req, res, next) => {
+adminAcademicRouter.patch("/students/:id/status", requirePermission("students.manage"), async (req, res, next) => {
   try {
-    const result = await query("UPDATE students SET is_active = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING id", [parseBoolean(req.body?.is_active, false), Number(req.params.id)]);
+    const studentId = Number(req.params.id);
+    const isActive = parseBoolean(req.body?.is_active, false);
+    const before = await query("SELECT id, full_name, student_code, is_active FROM students WHERE id=$1 AND deleted_at IS NULL", [studentId]);
+    if (!before.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    const result = await query("UPDATE students SET is_active = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING id", [isActive, studentId]);
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    await auditLog({ action: "student_status_changed", actorId: req.teacher.id, studentId, details: { student_name: before.rows[0].full_name, student_code: before.rows[0].student_code, changes: [{ field: "is_active", before: before.rows[0].is_active, after: isActive }], before: { is_active: before.rows[0].is_active }, after: { is_active: isActive } }, request: req });
     res.json({ ok: true });
   } catch (error) {
     next(error);
   }
 });
 
-adminAcademicRouter.post("/students/:id/print-label", async (req, res, next) => {
+adminAcademicRouter.post("/students/:id/print-label", requirePermission("students.manage"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
     const student = await query(`${studentSelect} WHERE s.id=$1 AND s.deleted_at IS NULL`, [studentId]);
@@ -584,26 +638,97 @@ adminAcademicRouter.post("/students/:id/print-label", async (req, res, next) => 
     const user = actor.rows[0];
     const printed = await query("SELECT COUNT(*)::int AS count FROM audit_logs WHERE action='student_label_printed' AND student_id=$1 AND actor_id=$2", [studentId, req.teacher.id]);
     const count = printed.rows[0].count;
-    if (user.role !== "admin" && (!user.print_student_labels || count >= user.max_label_reprints)) return res.status(403).json({ok:false,status:"label_print_limit_reached"});
-    const remaining = user.role === "admin" ? null : Math.max(0, user.max_label_reprints - count - 1);
-    await query("INSERT INTO audit_logs(action,actor_id,student_id,details) VALUES ('student_label_printed',$1,$2,$3)", [req.teacher.id, studentId, JSON.stringify({serial:student.rows[0].student_serial, print_type: count ? "reprint" : "print", remaining_print_count: remaining})]);
+    if (!["owner", "admin"].includes(user.role) && (!user.print_student_labels || count >= user.max_label_reprints)) return res.status(403).json({ok:false,status:"label_print_limit_reached"});
+    const remaining = ["owner", "admin"].includes(user.role) ? null : Math.max(0, user.max_label_reprints - count - 1);
+    await auditLog({ action: "student_label_printed", actorId: req.teacher.id, studentId, details: { serial: student.rows[0].student_serial, scan_serial: student.rows[0].scan_serial, print_type: count ? "reprint" : "print", remaining_print_count: remaining, student_name: student.rows[0].full_name, student_code: student.rows[0].student_code }, request: req });
     res.json({ok:true,student:student.rows[0],remaining_print_count:remaining});
   } catch (error) { next(error); }
 });
 
-adminAcademicRouter.delete("/students/:id", requireRoles("admin"), async (req, res, next) => {
+adminAcademicRouter.post("/students/bulk-delete", requirePermission("students.delete"), async (req, res, next) => {
+  const rawIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds : req.body?.student_ids;
+  const rawIdStrings = Array.isArray(rawIds) ? rawIds.map((value) => String(value)) : [];
+  const studentIds = [...new Set(rawIdStrings.map((value) => Number(value)).filter((value) => Number.isSafeInteger(value) && value > 0))];
+  if (!studentIds.length || studentIds.length !== new Set(rawIdStrings).size) {
+    return res.status(400).json({ ok: false, status: "invalid_student_ids" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const beforeResult = await client.query(
+      `SELECT id, full_name, student_code, student_serial, group_id, is_active, deleted_at
+       FROM students
+       WHERE id = ANY($1::int[])
+       ORDER BY id
+       FOR UPDATE`,
+      [studentIds]
+    );
+    const foundIds = new Set(beforeResult.rows.map((row) => Number(row.id)));
+    const missingIds = studentIds.filter((id) => !foundIds.has(id));
+    if (missingIds.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "student_not_found", missing_student_ids: missingIds });
+    }
+    const alreadyDeleted = beforeResult.rows.filter((row) => row.deleted_at).map((row) => Number(row.id));
+    if (alreadyDeleted.length) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ ok: false, status: "student_already_deleted", student_ids: alreadyDeleted });
+    }
+
+    const result = await client.query(
+      `UPDATE students
+       SET deleted_at = NOW(), purge_after = NOW() + INTERVAL '30 days', is_active = FALSE, updated_at = NOW()
+       WHERE id = ANY($1::int[]) AND deleted_at IS NULL
+       RETURNING id, full_name, student_code, purge_after`,
+      [studentIds]
+    );
+    if (result.rowCount !== studentIds.length) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ ok: false, status: "bulk_delete_conflict" });
+    }
+
+    await auditLog({
+      db: client,
+      action: "students_bulk_archived",
+      actorId: req.teacher.id,
+      details: {
+        operation: "bulk_delete",
+        deleted_count: result.rowCount,
+        student_ids: result.rows.map((row) => row.id),
+        students: result.rows.map((row) => ({ id: row.id, name: row.full_name, code: row.student_code })),
+        changes: result.rows.map((row) => ({ student_id: row.id, field: "deleted_at", before: null, after: "set" })),
+        purge_after: result.rows[0]?.purge_after || null
+      },
+      request: req
+    });
+    await client.query("COMMIT");
+    return res.json({ ok: true, deleted_count: result.rowCount, students: result.rows });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return next(error);
+  } finally {
+    client.release();
+  }
+});
+
+adminAcademicRouter.delete("/students/:id", requirePermission("students.delete"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
+    const before = await query("SELECT id, full_name, student_code, student_serial, is_active, deleted_at FROM students WHERE id=$1 AND deleted_at IS NULL", [studentId]);
+    if (!before.rowCount) return res.status(404).json({ok:false,status:"not_found"});
     const result = await query("UPDATE students SET deleted_at=NOW(), purge_after=NOW() + INTERVAL '30 days', is_active=FALSE, updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL RETURNING id, purge_after", [studentId]);
     if (!result.rowCount) return res.status(404).json({ok:false,status:"not_found"});
-    await query("INSERT INTO audit_logs(action,actor_id,student_id,details) VALUES ('student_archived',$1,$2,$3)", [req.teacher.id, studentId, JSON.stringify({reason:"admin_delete", purge_after: result.rows[0].purge_after})]);
+    await auditLog({ action: "student_archived", actorId: req.teacher.id, studentId, details: { reason:"admin_delete", purge_after: result.rows[0].purge_after, student_name: before.rows[0].full_name, student_code: before.rows[0].student_code, changes: [{ field: "deleted_at", before: null, after: "set" }, { field: "is_active", before: before.rows[0].is_active, after: false }] }, request: req });
     res.json({ok:true, purge_after: result.rows[0].purge_after});
   } catch (error) { next(error); }
 });
 
-adminAcademicRouter.delete("/students/:id/permanent", requireRoles("admin"), async (req, res, next) => {
+adminAcademicRouter.delete("/students/:id/permanent", requirePermission("students.delete"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
+    const before = await query("SELECT id, full_name, student_code, student_serial, phone, guardian_phone, qr_token, is_active, deleted_at FROM students WHERE id=$1 AND deleted_at IS NOT NULL", [studentId]);
+    if (!before.rowCount) return res.status(404).json({ok:false,status:"not_found"});
     const result = await query(`
       UPDATE students
       SET full_name = 'Archived student #' || id, phone = NULL, guardian_phone = NULL,
@@ -613,15 +738,19 @@ adminAcademicRouter.delete("/students/:id/permanent", requireRoles("admin"), asy
       RETURNING id
     `, [studentId]);
     if (!result.rowCount) return res.status(404).json({ok:false,status:"not_found"});
-    await query("INSERT INTO audit_logs(action,actor_id,student_id,details) VALUES ('student_permanently_anonymized',$1,$2,$3)", [req.teacher.id, studentId, JSON.stringify({reason:"admin_permanent_delete"})]);
+    await auditLog({ action: "student_permanently_anonymized", actorId: req.teacher.id, studentId, details: { reason:"admin_permanent_delete", student_code: before.rows[0].student_code, changes: changedFields(before.rows[0], { full_name: `Archived student #${studentId}`, phone: null, guardian_phone: null, qr_token: null, is_active: false, deleted_at: before.rows[0].deleted_at }) }, request: req });
     res.json({ok:true, anonymized:true});
   } catch (error) { next(error); }
 });
 
-adminAcademicRouter.patch("/students/:id/restore", requireRoles("admin"), async (req, res, next) => {
+adminAcademicRouter.patch("/students/:id/restore", requirePermission("students.manage"), async (req, res, next) => {
   try {
-    const result = await query("UPDATE students SET deleted_at=NULL, purge_after=NULL, is_active=TRUE, updated_at=NOW() WHERE id=$1 AND deleted_at IS NOT NULL AND purge_after IS NOT NULL AND purge_after > NOW() RETURNING id", [Number(req.params.id)]);
+    const studentId = Number(req.params.id);
+    const before = await query("SELECT id, full_name, student_code, is_active, deleted_at, purge_after FROM students WHERE id=$1", [studentId]);
+    if (!before.rowCount) return res.status(404).json({ok:false,status:"not_found_or_purged"});
+    const result = await query("UPDATE students SET deleted_at=NULL, purge_after=NULL, is_active=TRUE, updated_at=NOW() WHERE id=$1 AND deleted_at IS NOT NULL AND purge_after IS NOT NULL AND purge_after > NOW() RETURNING id", [studentId]);
     if (!result.rowCount) return res.status(404).json({ok:false,status:"not_found_or_purged"});
+    await auditLog({ action: "student_restored", actorId: req.teacher.id, studentId, details: { student_name: before.rows[0].full_name, student_code: before.rows[0].student_code, changes: [{ field: "deleted_at", before: "set", after: null }, { field: "is_active", before: before.rows[0].is_active, after: true }], before: { deleted_at: before.rows[0].deleted_at, is_active: before.rows[0].is_active }, after: { deleted_at: null, is_active: true } }, request: req });
     res.json({ok:true});
   } catch (error) { next(error); }
 });
