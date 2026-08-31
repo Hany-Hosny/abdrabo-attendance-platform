@@ -1533,8 +1533,23 @@ function normalizeStudentCode(value: string) {
   return normalizeDigits(value).trim().toUpperCase().replace(/^A(\d{4})$/, "A-$1");
 }
 
+const arabicKeyboardToLatin: Record<string, string> = {
+  "\u0636": "q", "\u0635": "w", "\u062b": "e", "\u0642": "r", "\u0641": "t", "\u063a": "y", "\u0639": "u", "\u0647": "i", "\u062e": "o", "\u062d": "p", "\u062c": "[", "\u062f": "]",
+  "\u0634": "a", "\u0633": "s", "\u064a": "d", "\u0628": "f", "\u0644": "g", "\u0627": "h", "\u062a": "j", "\u0646": "k", "\u0645": "l", "\u0643": ";", "\u0637": "'",
+  "\u0626": "z", "\u0621": "x", "\u0624": "c", "\u0631": "v", "\u0649": "n", "\u0629": "m", "\u0648": ",", "\u0632": ".", "\u0638": "/"
+};
+
+function restoreScannerKeyboardLayout(value: unknown) {
+  return String(value ?? "")
+    .replace(/\uFEFB|\uFEFC/g, "b")
+    .replace(/\u0644\u0627/g, "b")
+    .split("")
+    .map((character) => arabicKeyboardToLatin[character] || character)
+    .join("");
+}
+
 function normalizeScanValue(value: unknown) {
-  return normalizeDigits(value)
+  return restoreScannerKeyboardLayout(normalizeDigits(value))
     .replace(/[\u0000-\u001F\u007F]/g, "")
     .trim()
     .replace(/^\](?:C[0-3]|Q[0-9]|d[0-9])/i, "")
@@ -3307,10 +3322,11 @@ function AcademicManager({
       {kind === "students" ? <label className="student-search-field">{t("admin.searchStudents")}<input value={studentSearch} onChange={(e) => setStudentSearch(normalizeDigits(e.target.value))} placeholder={t("admin.searchStudents")} /></label> : null}
       {kind === "students" ? <div className="student-profile-picker">
         <div className="student-profile-scan">
-          <input
+            <input
             ref={profileScanRef}
+            dir="ltr"
             value={profileScanValue}
-            onChange={(event) => setProfileScanValue(normalizeScanValue(event.target.value))}
+            onChange={(event) => setProfileScanValue(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void openStudentProfileFromScan(); } }}
             placeholder={t("scanner.scanProfilePlaceholder")}
             aria-label={t("scanner.scanProfilePlaceholder")}
@@ -3542,10 +3558,11 @@ function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }
           {t("scanner.inputLabel")}
           <input
             ref={inputRef}
+            dir="ltr"
             autoFocus
             type="text"
             value={code}
-            onChange={(event) => setCode(normalizeScanValue(event.target.value))}
+            onChange={(event) => setCode(event.target.value)}
             placeholder={t("scanner.inputPlaceholder")}
             autoComplete="off"
             disabled={scanning}
@@ -3588,7 +3605,7 @@ function LegacyFeesPanel({ session, t }: { session: TeacherSession; t: Translato
   async function loadReports(){ const requestId=++reportRequestId.current; const headers={Authorization:`Bearer ${session.token}`}; const params=new URLSearchParams(); const search=normalizeSearchText(filter); if(search)params.set("search",search); if(from)params.set("from",from); if(to)params.set("to",to); if(showDeleted)params.set("include_deleted","true"); const [p,o]=await Promise.all([fetch(`${API_BASE_URL}/admin/fees/payments?${params}`,{headers}),fetch(`${API_BASE_URL}/admin/fees/overdue?${params}`,{headers})]); const [paymentsData,overdueData]=await Promise.all([p.json(),o.json()]); if(requestId!==reportRequestId.current)return; const nextPayments=paymentsData.payments||[], nextOverdue=overdueData.students||[]; setPayments(nextPayments); setOverdue(nextOverdue); setStatus((mode==="paid"?nextPayments:nextOverdue).length||!search?"":t("fees.noMatchingResults")); }
   useEffect(()=>{if(mode!=="new")loadReports().catch(()=>setStatus("Could not load report / تعذر تحميل التقرير"));},[mode,filter,from,to,showDeleted]);
   const visiblePayments=payments; const visibleOverdue=overdue;
-  return <section className="admin-editor fees-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.fees")}</p><h2>{t("fees.title")}</h2></div><div className="internal-tabs"><button className={mode==="new"?"active":""} onClick={()=>setMode("new")}>{t("fees.newPayment")}</button><button className={mode==="paid"?"active":""} onClick={()=>setMode("paid")}>{t("fees.paidPayments")}</button><button className={mode==="late"?"active":""} onClick={()=>setMode("late")}>{t("fees.latePayments")}</button></div>{mode==="new"?<><form onSubmit={lookup}><label>{t("fees.scanStudent")}<input autoFocus value={code} onChange={(e)=>setCode(e.target.value)} placeholder="A-2303" /></label><button className="primary-button" type="submit">{t("fees.find")}</button></form>{summary?<div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span><span>{t("fees.required")}: {Number(summary.required_amount).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance).toFixed(2)} EGP</span><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay} disabled={Number(summary.remaining_balance)<=0}>{t("fees.payFull")}</button></div>:null}</>:<><div className="report-filters"><label>Search / بحث<input value={filter} onChange={(e)=>setFilter(e.target.value)} placeholder="Name, serial, group, phone" /></label><label>Date from / من<input type="date" value={from} onChange={(e)=>setFrom(e.target.value)} /></label><label>Date to / إلى<input type="date" value={to} onChange={(e)=>setTo(e.target.value)} /></label><button className="primary-button report-search-button" type="button" onClick={()=>loadReports().catch(()=>setStatus("Could not load report / تعذر تحميل التقرير"))}>{t("fees.find")}</button></div>{mode==="paid"?<><p className="report-total">Total paid / إجمالي المدفوع: {visiblePayments.reduce((sum,row)=>sum+Number(row.amount),0).toFixed(2)} EGP</p><div className="academic-list">{visiblePayments.map((row)=><article className="academic-row" key={row.id}><div><strong>{row.full_name}</strong><span>{row.student_serial} · {row.group_name} · {row.grade_level}</span></div><span>{row.amount} EGP</span><span>{new Date(row.paid_at || row.payment_date).toLocaleString()}</span></article>)}</div></>:<><p className="report-total">Expected unpaid / إجمالي المتأخر: {visibleOverdue.reduce((sum,row)=>sum+Number(row.remaining_balance),0).toFixed(2)} EGP</p><div className="academic-list">{visibleOverdue.map((row)=><article className="academic-row" key={row.id}><div><strong>{row.full_name}</strong><span>{row.student_serial} · {row.group_name} · {row.grade_level} · {row.guardian_phone}</span></div><span>{row.remaining_balance} EGP</span></article>)}</div></>}</>}{status?<p className="lookup-result">{status}</p>:null}</section>;
+  return <section className="admin-editor fees-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.fees")}</p><h2>{t("fees.title")}</h2></div><div className="internal-tabs"><button className={mode==="new"?"active":""} onClick={()=>setMode("new")}>{t("fees.newPayment")}</button><button className={mode==="paid"?"active":""} onClick={()=>setMode("paid")}>{t("fees.paidPayments")}</button><button className={mode==="late"?"active":""} onClick={()=>setMode("late")}>{t("fees.latePayments")}</button></div>{mode==="new"?<><form onSubmit={lookup}><label>{t("fees.scanStudent")}<input autoFocus dir="ltr" value={code} onChange={(e)=>setCode(e.target.value)} placeholder="A-2303" /></label><button className="primary-button" type="submit">{t("fees.find")}</button></form>{summary?<div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span><span>{t("fees.required")}: {Number(summary.required_amount).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance).toFixed(2)} EGP</span><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay} disabled={Number(summary.remaining_balance)<=0}>{t("fees.payFull")}</button></div>:null}</>:<><div className="report-filters"><label>Search / بحث<input value={filter} onChange={(e)=>setFilter(e.target.value)} placeholder="Name, serial, group, phone" /></label><label>Date from / من<input type="date" value={from} onChange={(e)=>setFrom(e.target.value)} /></label><label>Date to / إلى<input type="date" value={to} onChange={(e)=>setTo(e.target.value)} /></label><button className="primary-button report-search-button" type="button" onClick={()=>loadReports().catch(()=>setStatus("Could not load report / تعذر تحميل التقرير"))}>{t("fees.find")}</button></div>{mode==="paid"?<><p className="report-total">Total paid / إجمالي المدفوع: {visiblePayments.reduce((sum,row)=>sum+Number(row.amount),0).toFixed(2)} EGP</p><div className="academic-list">{visiblePayments.map((row)=><article className="academic-row" key={row.id}><div><strong>{row.full_name}</strong><span>{row.student_serial} · {row.group_name} · {row.grade_level}</span></div><span>{row.amount} EGP</span><span>{new Date(row.paid_at || row.payment_date).toLocaleString()}</span></article>)}</div></>:<><p className="report-total">Expected unpaid / إجمالي المتأخر: {visibleOverdue.reduce((sum,row)=>sum+Number(row.remaining_balance),0).toFixed(2)} EGP</p><div className="academic-list">{visibleOverdue.map((row)=><article className="academic-row" key={row.id}><div><strong>{row.full_name}</strong><span>{row.student_serial} · {row.group_name} · {row.grade_level} · {row.guardian_phone}</span></div><span>{row.remaining_balance} EGP</span></article>)}</div></>}</>}{status?<p className="lookup-result">{status}</p>:null}</section>;
 }
 
 function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
@@ -3612,18 +3629,18 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
       return;
     }
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/students`, { headers: auth });
+      const response = await fetch(`${API_BASE_URL}/admin/students?status=all&q=${encodeURIComponent(value)}`, { headers: auth });
       const data = await response.json();
       if (!response.ok || !data.ok) {
         setStatus(paymentErrorMessage(data.status, data.message, t));
         return;
       }
-      const student = (data.students || []).find((item: any) =>
+      const student = (data.students || []).find((item: any) => !item.deleted_at && (
         normalizeScanValue(item.scan_serial) === value ||
         normalizeScanValue(item.student_serial) === value ||
         normalizeScanValue(item.student_code) === value ||
         normalizeScanValue(item.qr_token) === value
-      );
+      ));
       if (!student) {
         setStatus(t("fees.studentNotFound"));
         return;
@@ -3698,7 +3715,7 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
       <button className={mode === "new" ? "active" : ""} type="button" onClick={() => { setMode("new"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setStatus(""); }}>{t("fees.newPayment")}</button>
       <button className={mode === "advance" ? "active" : ""} type="button" onClick={() => { setMode("advance"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setStatus(""); }}>{t("fees.advancePayment")}</button>
     </div>
-    <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input autoFocus type="text" value={code} onChange={(event) => setCode(normalizeScanValue(event.target.value))} placeholder="A-2303" autoComplete="off" /></label><button className="primary-button" type="submit">{t("fees.find")}</button></form>
+    <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input autoFocus dir="ltr" type="text" value={code} onChange={(event) => setCode(event.target.value)} placeholder="A-2303" autoComplete="off" /></label><button className="primary-button" type="submit">{t("fees.find")}</button></form>
     {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay}>{t("fees.payFull")}</button></div> : null}
     {mode === "advance" && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : <><h3>{t("fees.advanceMonths")}</h3><div className="advance-month-grid">{(advanceData.months || []).filter((month: any) => month.available).map((month: any) => <label className="advance-month-option" key={month.month}><input type="checkbox" checked={selectedMonths.includes(month.month.slice(0, 7))} onChange={(event) => setSelectedMonths((current) => event.target.checked ? [...current, month.month.slice(0, 7)] : current.filter((item) => item !== month.month.slice(0, 7)))} /><span>{monthLabel(month.month)}</span><b>{Number(month.remaining_amount).toFixed(2)} EGP</b></label>)}</div>{!(advanceData.months || []).some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length} onClick={saveAdvance}>{t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
