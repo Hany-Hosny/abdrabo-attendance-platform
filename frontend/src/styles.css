@@ -930,6 +930,16 @@ input:disabled {
   margin: 8px 0 0;
 }
 
+.editor-grid > .group-active-toggle {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(7, 19, 33, 0.42);
+}
+
 .checkbox-label input {
   width: 18px;
   min-height: 18px;

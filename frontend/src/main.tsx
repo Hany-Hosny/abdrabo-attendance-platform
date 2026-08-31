@@ -207,6 +207,16 @@ const translations = {
     "admin.tabs.groups": "المجموعات",
     "admin.tabs.attendance": "الحضور",
     "admin.tabs.scanner": "الماسح",
+    "scanner.inputLabel": "امسح باركود الليبل أو رمز QR",
+    "scanner.inputPlaceholder": "امسح الليبل هنا",
+    "scanner.submit": "تسجيل الحضور",
+    "scanner.recorded": "تم تسجيل الحضور بنجاح",
+    "scanner.invalidCode": "لم يتم العثور على طالب بهذا الليبل.",
+    "scanner.inactiveStudent": "هذا الطالب غير مفعل.",
+    "scanner.closedSession": "لا توجد حصة مفتوحة لهذه المجموعة الآن.",
+    "scanner.duplicate": "تم تسجيل حضور هذا الطالب بالفعل.",
+    "scanner.networkError": "تعذر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.",
+    "scanner.serverError": "حدث خطأ أثناء تسجيل الحضور. حاول مرة أخرى.",
     "admin.tabs.fees": "المصروفات",
     "admin.tabs.exams": "الامتحانات",
     "admin.tabs.inbox": "الرسائل",
@@ -396,6 +406,7 @@ const translations = {
     "admin.password": "كلمة المرور",
     "admin.role": "الدور",
     "admin.active": "نشط",
+    "admin.groupActive": "المجموعة نشطة",
     "admin.disabled": "معطل",
     "admin.deleted": "محذوف",
     "admin.restore": "استرجاع",
@@ -712,6 +723,16 @@ const translations = {
     "admin.tabs.groups": "Groups",
     "admin.tabs.attendance": "Attendance",
     "admin.tabs.scanner": "Scanner",
+    "scanner.inputLabel": "Scan the label barcode or QR code",
+    "scanner.inputPlaceholder": "Scan the label here",
+    "scanner.submit": "Record attendance",
+    "scanner.recorded": "Attendance recorded successfully",
+    "scanner.invalidCode": "No student was found for this label.",
+    "scanner.inactiveStudent": "This student is inactive.",
+    "scanner.closedSession": "There is no open class for this group right now.",
+    "scanner.duplicate": "This student’s attendance was already recorded.",
+    "scanner.networkError": "Could not connect to the server. Check the internet and try again.",
+    "scanner.serverError": "An error occurred while recording attendance. Try again.",
     "admin.tabs.fees": "Fees",
     "admin.tabs.exams": "Exams",
     "admin.tabs.inbox": "Inbox",
@@ -901,6 +922,7 @@ const translations = {
     "admin.password": "Password",
     "admin.role": "Role",
     "admin.active": "Active",
+    "admin.groupActive": "Group active",
     "admin.disabled": "Disabled",
     "admin.deleted": "Deleted",
     "admin.restore": "Restore",
@@ -1407,6 +1429,17 @@ function statusMessage(status: string, t: Translator) {
     invalid_student: "dashboard.invalidStudent"
   };
   return t(statusKey[status] || "dashboard.unknownStatus");
+}
+
+function scannerStatusMessage(status: string, t: Translator) {
+  const statusKey: Record<string, TranslationKey> = {
+    attendance_recorded: "scanner.recorded",
+    invalid_qr_token: "scanner.invalidCode",
+    inactive_student: "scanner.inactiveStudent",
+    closed_session: "scanner.closedSession",
+    duplicate_attendance: "scanner.duplicate"
+  };
+  return t(statusKey[status] || "scanner.serverError");
 }
 
 function attendanceStatusBadge(status: unknown, t: Translator) {
@@ -3152,8 +3185,8 @@ function AcademicManager({
             <label>{t("admin.grade")}<select required value={groupForm.grade} onChange={(e) => setGroupForm({ ...groupForm, grade: e.target.value })}><option value="">{t("admin.grade")}</option>{gradeLevels.map(([ar,en]) => <option key={ar} value={ar}>{language === "en" ? en : ar}</option>)}</select></label>
             <label>{t("admin.subject")}<input required value={groupForm.subject} onChange={(e) => setGroupForm({ ...groupForm, subject: e.target.value })} /></label>
             <label>Fees / المصروفات<input required type="text" inputMode="decimal" value={groupForm.fees_amount} onChange={(e) => setGroupForm({ ...groupForm, fees_amount: normalizeDigits(e.target.value) })} /></label>
+            <label className="checkbox-label group-active-toggle"><input type="checkbox" checked={groupForm.is_active} onChange={(e) => setGroupForm({ ...groupForm, is_active: e.target.checked })} />{t("admin.groupActive")}</label>
             <div className="schedule-editor"><div className="schedule-days-label">Class days / أيام الحصص (1–3)</div><div className="schedule-day-picker">{[0,1,2,3,4,5,6].map((day)=><label className="checkbox-label" key={day}><input type="checkbox" checked={scheduleRows.some((row)=>row.day_of_week===String(day))} onChange={()=>toggleScheduleDay(String(day))} />{t(`days.${day}` as TranslationKey)}</label>)}</div>{scheduleRows.map((row,index)=><div className="schedule-row" key={row.day_of_week}><strong>{t(`days.${row.day_of_week}` as TranslationKey)}</strong><label>Start / البداية<input required type="time" value={row.start_time} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,start_time:e.target.value}:item))} /></label><label>End / النهاية<input required type="time" value={row.end_time} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,end_time:e.target.value}:item))} /></label><label>Open before / فتح قبل<input type="number" min="0" value={row.opens_before_minutes} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,opens_before_minutes:e.target.value}:item))} /></label><label>Close after / إغلاق بعد<input type="number" min="0" value={row.closes_after_minutes} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,closes_after_minutes:e.target.value}:item))} /></label><label className="checkbox-label"><input type="checkbox" checked={row.is_active} onChange={(e)=>setScheduleRows(scheduleRows.map((item,i)=>i===index?{...item,is_active:e.target.checked}:item))} />Active / نشط</label></div>)}</div>
-            <label className="checkbox-label"><input type="checkbox" checked={groupForm.is_active} onChange={(e) => setGroupForm({ ...groupForm, is_active: e.target.checked })} />{t("admin.active")}</label>
           </div>
         ) : (
           <>
@@ -3283,14 +3316,89 @@ function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }
   const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
   const [student, setStudent] = useState<any>(null);
+  const [scanState, setScanState] = useState<"idle" | "success" | "error">("idle");
+  const [scanning, setScanning] = useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
-  useEffect(() => { inputRef.current?.focus(); }, [message]);
+  useEffect(() => { inputRef.current?.focus(); }, [message, scanning]);
+
   async function scan(event: React.FormEvent) {
-    event.preventDefault(); const token = normalizeDigits(code).trim(); setCode(""); if (!token) return;
-    const response = await fetch(`${API_BASE_URL}/scanner/attendance`, { method:"POST", headers:{"Content-Type":"application/json",Authorization:`Bearer ${session.token}`}, body:JSON.stringify({qr_token:token}) });
-    const data = await response.json(); setStudent(data.student || null); setMessage(data.ok ? "تم تسجيل الحضور / Attendance recorded" : `${data.status || "Error"} / تعذر التسجيل`); inputRef.current?.focus();
+    event.preventDefault();
+    if (scanning) return;
+
+    const token = normalizeDigits(code).trim();
+    setCode("");
+    setMessage("");
+    setStudent(null);
+    setScanState("idle");
+    if (!token) return;
+
+    setScanning(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/scanner/attendance`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.token}`
+        },
+        body: JSON.stringify({ qr_token: token })
+      });
+      const rawBody = await response.text();
+      let data: { ok?: boolean; status?: string; student?: any } = {};
+      try {
+        data = rawBody ? JSON.parse(rawBody) : {};
+      } catch (_error) {
+        data = {};
+      }
+
+      setStudent(data.student || null);
+      if (response.ok && data.ok) {
+        setScanState("success");
+        setMessage(t("scanner.recorded"));
+      } else {
+        setScanState("error");
+        setMessage(scannerStatusMessage(String(data.status || ""), t));
+      }
+    } catch (_error) {
+      setScanState("error");
+      setMessage(t("scanner.networkError"));
+    } finally {
+      setScanning(false);
+      window.setTimeout(() => inputRef.current?.focus(), 0);
+    }
   }
-  return <section className="admin-editor"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.scanner")}</p><h2>{t("admin.tabs.scanner")}</h2></div><form onSubmit={scan}><label>QR token / رمز QR<input ref={inputRef} autoFocus type="text" inputMode="numeric" value={code} onChange={(e)=>setCode(normalizeDigits(e.target.value))} placeholder="Scan QR code" /></label><button className="primary-button" type="submit">Scan / مسح</button></form>{student ? <div className="status-panel success"><strong>{student.full_name}</strong><span>{student.student_serial} · {student.group_name} · {student.grade_level}</span></div> : null}{message ? <p className={message.includes("recorded") ? "lookup-result" : "form-error"}>{message}</p> : null}</section>;
+  return (
+    <section className="admin-editor scanner-panel">
+      <div className="section-heading">
+        <p className="eyebrow">{t("admin.tabs.scanner")}</p>
+        <h2>{t("admin.tabs.scanner")}</h2>
+      </div>
+      <form onSubmit={scan}>
+        <label>
+          {t("scanner.inputLabel")}
+          <input
+            ref={inputRef}
+            autoFocus
+            type="text"
+            value={code}
+            onChange={(event) => setCode(normalizeDigits(event.target.value))}
+            placeholder={t("scanner.inputPlaceholder")}
+            autoComplete="off"
+            disabled={scanning}
+          />
+        </label>
+        <button className="primary-button" type="submit" disabled={scanning || !code.trim()}>
+          {scanning ? t("dashboard.refreshing") : t("scanner.submit")}
+        </button>
+      </form>
+      {student ? (
+        <div className={`status-panel ${scanState === "success" ? "success" : "warning"}`}>
+          <strong>{student.full_name}</strong>
+          <span>{student.student_serial || student.scan_serial || student.student_code} · {student.group_name} · {student.grade_level}</span>
+        </div>
+      ) : null}
+      {message ? <p className={scanState === "success" ? "lookup-result" : "form-error"} role="status">{message}</p> : null}
+    </section>
+  );
 }
 
 function normalizeSearchText(value: unknown) {
