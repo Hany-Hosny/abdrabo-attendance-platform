@@ -2,6 +2,10 @@
 
 Self-hosted attendance platform for Mr. Ahmed Abdrabo, Science teacher. V1 focuses on the student login flow, attendance check-in through the backend API, and the student dashboard.
 
+## Dashboard Preview
+
+![Abdrabo Attendance Dashboard](dashboard.png)
+
 ## Run With Docker
 
 1. Copy the environment file:
