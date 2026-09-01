@@ -1,50 +1,163 @@
 services:
+
+  # =========================================================
+  # PostgreSQL
+  # =========================================================
   postgres:
     image: postgres:16-alpine
+
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-abdrabo_attendance}
       POSTGRES_USER: ${POSTGRES_USER:-abdrabo}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+
     volumes:
       - postgres-data:/var/lib/postgresql/data
+
+    networks:
+      - database_net
+
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-abdrabo} -d ${POSTGRES_DB:-abdrabo_attendance}"]
-      interval: 5s
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-abdrabo} -d ${POSTGRES_DB:-abdrabo_attendance}"
+        ]
+      interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 10s
 
+    security_opt:
+      - no-new-privileges:true
+
+    privileged: false
+
+    restart: unless-stopped
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  # =========================================================
+  # Backend
+  # =========================================================
   backend:
-   build:
-    context: .
-    dockerfile: backend/Dockerfile
-   environment:
-    NODE_ENV: production
-    PORT: 4000
-    DATABASE_URL: ${DATABASE_URL}
-    CORS_ORIGIN: ${CORS_ORIGIN}
-    TOKEN_SECRET: ${TOKEN_SECRET}
-    ADMIN_NAME: ${ADMIN_NAME}
-    ADMIN_USERNAME: ${ADMIN_USERNAME}
-    ADMIN_EMAIL: ${ADMIN_EMAIL}
-    ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-    PRIMARY_OWNER_USER_ID: ${PRIMARY_OWNER_USER_ID:-1}
-    TRUST_PROXY: "1"
-   ports:
-     - "127.0.0.1:${BACKEND_PORT:-4000}:4000"
-    #depends_on:
-      #postgres:
-        #condition: service_healthy
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
 
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
+
+      TOKEN_SECRET: ${TOKEN_SECRET:?TOKEN_SECRET is required}
+
+      ADMIN_NAME: ${ADMIN_NAME}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+
+      PRIMARY_OWNER_USER_ID: ${PRIMARY_OWNER_USER_ID:-1}
+
+      TRUST_PROXY: "1"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    networks:
+      - database_net
+      - application_net
+
+    expose:
+      - "4000"
+
+    user: "appuser"
+
+    security_opt:
+      - no-new-privileges:true
+
+    cap_drop:
+      - ALL
+
+    privileged: false
+
+    read_only: true
+
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+
+    pids_limit: 200
+
+    init: true
+
+    restart: unless-stopped
+
+    stop_grace_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+  # =========================================================
+  # Frontend
+  # =========================================================
   frontend:
     build:
       context: ./frontend
       args:
         VITE_API_BASE_URL: /api
-    ports:
-      - "127.0.0.1:${FRONTEND_PORT:-3000}:80"
+
     depends_on:
-      # - postgres
       - backend
 
+    networks:
+      - application_net
+
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:80"
+
+    privileged: false
+
+    security_opt:
+      - no-new-privileges:true
+
+    restart: unless-stopped
+
+    stop_grace_period: 10s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+
+# =========================================================
+# Networks
+# =========================================================
+networks:
+
+  database_net:
+    driver: bridge
+    internal: true
+
+  application_net:
+    driver: bridge
+
+
+# =========================================================
+# Persistent volumes
+# =========================================================
 volumes:
   postgres-data:
