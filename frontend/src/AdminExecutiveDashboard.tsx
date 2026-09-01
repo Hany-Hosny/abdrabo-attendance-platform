@@ -60,7 +60,7 @@ type Props = {
   onNavigate: (tab: string, studentId?: number, section?: string) => void;
 };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 
 function safeNumber(value: unknown) {
   const number = Number(value);

@@ -28,6 +28,24 @@ The API health endpoint is:
 http://localhost:4000/api/health
 ```
 
+Docker keeps the backend service on the internal port `4000` and the frontend on `3000`.
+Railway deploys the services separately with Railpack, so the backend public domain must target
+the Railway-assigned backend port, and the frontend must run the production preview command.
+
+## Railway Deployment Settings
+
+Keep these settings aligned with the repository:
+
+- Backend start command: `npm run start --workspace=@abdrabo/backend`.
+- Backend public target port: the port printed by the backend (`PORT`), currently `8080`.
+- Backend `CORS_ORIGIN`: `https://abdrabo.up.railway.app`.
+- Frontend build command: `npm run build --workspace=@abdrabo/frontend`.
+- Frontend start command: `npm run start --workspace=@abdrabo/frontend`.
+- Frontend `VITE_API_BASE_URL`: `https://abdrabobackend-production.up.railway.app/api`.
+
+Local `.env` changes do not update Railway Variables. Docker Compose and Railway are separate
+deployment paths, even though they use the same source repository.
+
 ## Demo Data
 
 - Student code: `STU1001`

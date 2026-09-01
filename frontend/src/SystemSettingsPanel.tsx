@@ -11,7 +11,7 @@ type Settings = {
 
 type Props = { token: string; language: Language; t: Translator };
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const defaultSettings: Settings = {
   attendance_open_before_minutes: 3,
   attendance_close_after_minutes: 20,

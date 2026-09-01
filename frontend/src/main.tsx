@@ -7,7 +7,7 @@ import { createIdempotencyKey, normalizeScanValue, playScannerFeedback, type Sca
 import { AdminExecutiveDashboard } from "./AdminExecutiveDashboard";
 import { SystemSettingsPanel } from "./SystemSettingsPanel";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const LANGUAGE_STORAGE_KEY = "abdrabo_language";
 const STUDENT_SESSION_STORAGE_KEY = "student_session";
 const ADMIN_SESSION_STORAGE_KEY = "admin_session";
