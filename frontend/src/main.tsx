@@ -3350,7 +3350,12 @@ function GlobalSearch({ session, language, t, onSelect }: { session: TeacherSess
   }
 
   return <div className="admin-header-tool global-search" ref={containerRef}>
-    <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={open ? t("dashboard.searchClose") : t("dashboard.searchOpen")} title={t("dashboard.searchOpen")} aria-expanded={open} onClick={() => { setOpen(true); window.setTimeout(() => inputRef.current?.focus(), 0); }}>⌕</button>
+    <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={open ? t("dashboard.searchClose") : t("dashboard.searchOpen")} title={t("dashboard.searchOpen")} aria-expanded={open} onClick={() => { setOpen(true); window.setTimeout(() => inputRef.current?.focus(), 0); }}>
+      <svg className="admin-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="10.8" cy="10.8" r="6.6" />
+        <path d="m16 16 5 5" />
+      </svg>
+    </button>
     {open ? <div className="header-popover search-popover" role="dialog" aria-label={t("dashboard.searchStudents")}>
       <label className="visually-hidden" htmlFor="global-student-search">{t("dashboard.searchStudents")}</label>
       <input id="global-student-search" ref={inputRef} value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => {
