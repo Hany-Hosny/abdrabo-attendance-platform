@@ -5,25 +5,25 @@ import { loginAndRecordAttendance } from "../services/attendance.js";
 import { getFeeSummary } from "../services/fees.js";
 import { getDashboardData } from "../services/dashboard.js";
 import { normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.js";
+import { normalizeScanValue } from "../utils/scan.js";
 import { auditLog } from "../services/audit.js";
+import { createRateLimiter } from "../middleware/rateLimit.js";
+import { createStudentToken } from "../services/auth.js";
+import { authenticatedStudent } from "../services/studentAuth.js";
 
 export const studentRouter = express.Router();
 const studentCodePattern = /^A-\d{4}$/;
+const studentLoginRateLimit = createRateLimiter({ windowMs: 60_000, max: 12, key: (req) => `student-login:${req.ip}` });
+const studentLookupRateLimit = createRateLimiter({ windowMs: 60_000, max: 12, key: (req) => `student-lookup:${req.ip}` });
 
 function hashValue(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
 
-async function authenticatedStudent(req) {
-  const code = normalizeStudentCode(req.headers["x-student-code"] || "");
-  const result = await query("SELECT id, group_id FROM students WHERE (student_code=$1 OR student_serial=$1 OR student_serial=$2) AND is_active=TRUE AND deleted_at IS NULL LIMIT 1", [code, code.replace(/^A(\d{4})$/, "A-$1")]);
-  return result.rows[0] || null;
-}
-
-studentRouter.post("/login", async (req, res, next) => {
+studentRouter.post("/login", studentLoginRateLimit, async (req, res, next) => {
   try {
     const { student_code, device_id, latitude, longitude } = req.body || {};
-    const normalizedCode = normalizeStudentCode(student_code || "");
+    const normalizedCode = normalizeStudentCode(normalizeScanValue(student_code || ""));
 
     if (!normalizedCode) {
       await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: "", reason: "student_code_required" }, request: req });
@@ -58,6 +58,7 @@ studentRouter.post("/login", async (req, res, next) => {
     }
 
     if (result.student?.id) {
+      result.student_token = createStudentToken(result.student);
       await auditLog({
         action: "login_succeeded",
         studentId: result.student.id,
@@ -91,7 +92,7 @@ studentRouter.post("/logout", async (req, res, next) => {
   }
 });
 
-studentRouter.post("/find-code", async (req, res, next) => {
+studentRouter.post("/find-code", studentLookupRateLimit, async (req, res, next) => {
   try {
     const identifier = normalizeDigits(req.body?.identifier || "").trim();
 
@@ -141,25 +142,17 @@ studentRouter.get("/me/dashboard", async (req, res, next) => {
 
 studentRouter.get("/me/fees", async (req, res, next) => {
   try {
-    const studentCode = normalizeStudentCode(req.headers["x-student-code"] || "");
-    if (!studentCode || !studentCodePattern.test(studentCode)) {
+    const student = await authenticatedStudent(req);
+    if (!student) {
       return res.status(401).json({ ok: false, status: "unauthorized", message: "بيانات الطالب غير صالحة. / Invalid student session." });
     }
-    const studentResult = await query(
-      `SELECT id FROM students WHERE (student_code=$1 OR student_serial=$1 OR student_serial=$2) AND is_active=TRUE AND deleted_at IS NULL LIMIT 1`,
-      [studentCode, studentCode.replace(/^A(\d{4})$/, "A-$1")]
-    );
-    if (!studentResult.rowCount) {
-      return res.status(401).json({ ok: false, status: "unauthorized", message: "بيانات الطالب غير صالحة. / Invalid student session." });
-    }
-    const studentId = studentResult.rows[0].id;
-    const summary = await getFeeSummary(studentId);
+    const summary = await getFeeSummary(student.id);
     const payments = await query(
       `SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes, p.payment_months,
         COALESCE(t.name, t.username, t.email, 'Staff') AS paid_by
        FROM payments p LEFT JOIN teachers t ON t.id = COALESCE(p.paid_by, p.recorded_by)
        WHERE p.student_id=$1 ORDER BY COALESCE(p.paid_at, p.payment_date) DESC`,
-      [studentId]
+      [student.id]
     );
     const paymentStatus = summary?.payment_status || "unpaid";
     return res.json({ ok: true, summary, payments: payments.rows, payment_status: paymentStatus });
@@ -218,6 +211,8 @@ studentRouter.get("/me/exams", async (req, res, next) => {
 
 studentRouter.get("/:id/attendance", async (req, res, next) => {
   try {
+    const student = await authenticatedStudent(req);
+    if (!student || Number(student.id) !== Number(req.params.id)) return res.status(401).json({ ok: false, status: "unauthorized" });
     const result = await query(
       `
         SELECT ar.*, s.session_date, s.starts_at, g.name AS group_name, g.subject
@@ -237,6 +232,8 @@ studentRouter.get("/:id/attendance", async (req, res, next) => {
 
 studentRouter.get("/:id/exams", async (req, res, next) => {
   try {
+    const student = await authenticatedStudent(req);
+    if (!student || Number(student.id) !== Number(req.params.id)) return res.status(401).json({ ok: false, status: "unauthorized" });
     const result = await query(
       `
         SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment

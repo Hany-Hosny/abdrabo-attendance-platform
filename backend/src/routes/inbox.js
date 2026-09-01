@@ -3,21 +3,21 @@ import { query } from "../db/pool.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { requirePermission, requireTeacher } from "../middleware/requireTeacher.js";
 import { auditLog } from "../services/audit.js";
+import { authenticatedStudent } from "../services/studentAuth.js";
 
 export const inboxRouter = express.Router();
 export const staffInboxRouter = express.Router();
 
 inboxRouter.param("studentId", async (req, res, next, value) => {
   try {
-    const code = clean(req.headers["x-student-code"]);
-    const result = await query("SELECT 1 FROM students WHERE id=$1 AND is_active=TRUE AND deleted_at IS NULL AND (student_code=$2 OR student_serial=$2)", [Number(value), code]);
-    req.studentAccess = result.rowCount > 0;
+    const student = await authenticatedStudent(req);
+    req.studentAccess = Boolean(student && Number(student.id) === Number(value));
     next();
   } catch (error) { next(error); }
 });
 
 function clean(value) { return normalizeDigits(value).trim(); }
-async function studentIdFromRequest(req) { const code=clean(req.headers["x-student-code"]); const result=await query("SELECT id FROM students WHERE is_active=TRUE AND deleted_at IS NULL AND (student_code=$1 OR student_serial=$1) LIMIT 1",[code]); return result.rows[0]?.id||null; }
+async function studentIdFromRequest(req) { const student = await authenticatedStudent(req); return student?.id || null; }
 function staffCanUseInbox(req) { return req.teacher?.role !== "staff" || req.teacher?.can_use_inbox === true; }
 function senderType(role) { return role === "owner" || role === "admin" ? "admin" : "teacher"; }
 

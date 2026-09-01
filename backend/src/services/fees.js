@@ -3,7 +3,7 @@ import { auditLog } from "./audit.js";
 
 // Creates any missing monthly dues up to the current month. The unique key on
 // fee_dues makes this safe to run at startup, on the first day, or on demand.
-export async function ensureMonthlyFees() {
+export async function ensureMonthlyFees(studentId = null) {
   await query(`
     INSERT INTO fee_dues (student_id, group_id, due_month, amount)
     SELECT s.id, s.group_id, months.due_month::date, g.fees_amount
@@ -16,12 +16,13 @@ export async function ensureMonthlyFees() {
     ) AS months(due_month)
     WHERE s.is_active = TRUE AND s.deleted_at IS NULL
       AND g.is_active = TRUE AND g.deleted_at IS NULL
+      AND ($1::integer IS NULL OR s.id = $1)
     ON CONFLICT (student_id, due_month) DO NOTHING
-  `);
+  `, [studentId]);
 }
 
-export async function getFeeSummary(studentId) {
-  await ensureMonthlyFees();
+export async function getFeeSummary(studentId, { ensure = true } = {}) {
+  if (ensure) await ensureMonthlyFees(Number(studentId));
   const result = await query(`
     WITH current_due AS (
       SELECT fd.amount, fd.paid_amount
@@ -63,11 +64,23 @@ export async function getFeeSummary(studentId) {
   return result.rows[0] || null;
 }
 
-export async function recordFullPayment({ studentId, actorId, paymentMethod = "cash", notes = null, request = null }) {
-  await ensureMonthlyFees();
+export async function recordFullPayment({ studentId, actorId, paymentMethod = "cash", notes = null, idempotencyKey = null, request = null }) {
+  await ensureMonthlyFees(Number(studentId));
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    if (idempotencyKey) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [idempotencyKey]);
+      const existing = await client.query("SELECT * FROM payments WHERE idempotency_key = $1 FOR UPDATE", [idempotencyKey]);
+      if (existing.rowCount) {
+        if (Number(existing.rows[0].student_id) !== Number(studentId) || existing.rows[0].payment_type !== "normal" || existing.rows[0].payment_method !== paymentMethod) {
+          await client.query("ROLLBACK");
+          return { idempotency_conflict: true };
+        }
+        await client.query("COMMIT");
+        return existing.rows[0];
+      }
+    }
     const dues = await client.query(`
       SELECT fd.id, fd.due_month, fd.amount, fd.paid_amount, fd.group_id,
         s.full_name, s.student_code, s.student_serial, s.scan_serial,
@@ -98,16 +111,25 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
     const payment = await client.query(`
       INSERT INTO payments (
         student_id, group_id, amount, payment_date, paid_at, payment_method,
-        notes, recorded_by, paid_by, payment_months,
+        notes, recorded_by, paid_by, payment_months, idempotency_key,
         student_name_snapshot, student_code_snapshot, student_serial_snapshot,
         scan_serial_snapshot, group_name_snapshot, grade_level_snapshot
-      ) VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, $8, $9, $10, $11, $12, $13)
+      ) VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT DO NOTHING
       RETURNING *
     `, [
-      studentId, groupId, remaining, paymentMethod, notes, actorId, JSON.stringify(coveredMonths),
+      studentId, groupId, remaining, paymentMethod, notes, actorId, JSON.stringify(coveredMonths), idempotencyKey,
       dues.rows[0].full_name, dues.rows[0].student_code, dues.rows[0].student_serial,
       dues.rows[0].scan_serial, dues.rows[0].group_name, dues.rows[0].grade_level
     ]);
+    if (!payment.rowCount && idempotencyKey) {
+      const existing = await client.query("SELECT * FROM payments WHERE idempotency_key = $1 FOR UPDATE", [idempotencyKey]);
+      await client.query("COMMIT");
+      return existing.rows[0] || null;
+    }
+    const paymentReference = `P-${String(payment.rows[0].id).padStart(8, "0")}`;
+    await client.query("UPDATE payments SET payment_reference = $1 WHERE id = $2", [paymentReference, payment.rows[0].id]);
+    payment.rows[0].payment_reference = paymentReference;
     await auditLog({
       db: client,
       action: "payment_created",
@@ -124,7 +146,8 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
         student_code_snapshot: dues.rows[0].student_code,
         status_after: "paid",
         affected_dues: coveredMonths
-      }
+      },
+      throwOnError: true
     });
     await client.query("COMMIT");
     return payment.rows[0];
@@ -149,7 +172,7 @@ function advanceMonthKeys(currentMonth, count = 6) {
 }
 
 export async function getAdvanceOptions(studentId) {
-  await ensureMonthlyFees();
+  await ensureMonthlyFees(Number(studentId));
   const result = await query(`
     SELECT s.id, s.full_name, s.student_code, s.student_serial,
       g.id AS group_id, g.name AS group_name, g.fees_amount,
@@ -197,11 +220,23 @@ export async function getAdvanceOptions(studentId) {
   };
 }
 
-export async function recordAdvancePayment({ studentId, actorId, months, paymentMethod = "cash", notes = null, request = null }) {
-  await ensureMonthlyFees();
+export async function recordAdvancePayment({ studentId, actorId, months, paymentMethod = "cash", notes = null, idempotencyKey = null, request = null }) {
+  await ensureMonthlyFees(Number(studentId));
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    if (idempotencyKey) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [idempotencyKey]);
+      const existing = await client.query("SELECT * FROM payments WHERE idempotency_key = $1 FOR UPDATE", [idempotencyKey]);
+      if (existing.rowCount) {
+        if (Number(existing.rows[0].student_id) !== Number(studentId) || existing.rows[0].payment_type !== "advance" || existing.rows[0].payment_method !== paymentMethod) {
+          await client.query("ROLLBACK");
+          return { error: "idempotency_conflict" };
+        }
+        await client.query("COMMIT");
+        return { payment: existing.rows[0], months: existing.rows[0].payment_months || [], replayed: true };
+      }
+    }
     const studentResult = await client.query(`
       SELECT s.id, s.group_id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
         g.fees_amount, COALESCE(g.display_name, g.name) AS group_name,
@@ -261,16 +296,25 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
     const amount = coveredMonths.reduce((sum, item) => sum + Number(item.amount), 0);
     const payment = await client.query(`
       INSERT INTO payments (student_id, group_id, amount, payment_date, paid_at, payment_method,
-        notes, recorded_by, paid_by, payment_months, payment_type,
+        notes, recorded_by, paid_by, payment_months, payment_type, idempotency_key,
         student_name_snapshot, student_code_snapshot, student_serial_snapshot,
         scan_serial_snapshot, group_name_snapshot, grade_level_snapshot)
-      VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, 'advance', $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, 'advance', $8, $9, $10, $11, $12, $13, $14)
+      ON CONFLICT DO NOTHING
       RETURNING *
     `, [
-      student.id, student.group_id, amount, paymentMethod, notes, actorId, JSON.stringify(coveredMonths),
+      student.id, student.group_id, amount, paymentMethod, notes, actorId, JSON.stringify(coveredMonths), idempotencyKey,
       student.full_name, student.student_code, student.student_serial,
       student.scan_serial, student.group_name, student.grade_level
     ]);
+    if (!payment.rowCount && idempotencyKey) {
+      const existing = await client.query("SELECT * FROM payments WHERE idempotency_key = $1 FOR UPDATE", [idempotencyKey]);
+      await client.query("COMMIT");
+      return { payment: existing.rows[0] || null, months: existing.rows[0]?.payment_months || [], replayed: true };
+    }
+    const paymentReference = `P-${String(payment.rows[0].id).padStart(8, "0")}`;
+    await client.query("UPDATE payments SET payment_reference = $1 WHERE id = $2", [paymentReference, payment.rows[0].id]);
+    payment.rows[0].payment_reference = paymentReference;
     await auditLog({
       db: client,
       action: "advance_payment_created",
@@ -287,7 +331,8 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
         student_code_snapshot: student.student_code,
         status_after: "paid",
         affected_dues: coveredMonths
-      }
+      },
+      throwOnError: true
     });
     await client.query("COMMIT");
     return { payment: payment.rows[0], months: coveredMonths };

@@ -1,7 +1,9 @@
 import { pool } from "../db/pool.js";
-import { auditLog } from "./audit.js";
+import { DEFAULT_STUDENT_RETENTION, permanentlyDeleteStudents } from "./studentDeletion.js";
 
-// Preserve the student row so historical foreign keys remain valid.
+// Expired archived students follow the same atomic historical-retention path
+// as an explicit permanent delete. The safe default preserves all supported
+// history while removing the live identity completely.
 export async function purgeDeletedStudents() {
   const client = await pool.connect();
   try {
@@ -11,16 +13,13 @@ export async function purgeDeletedStudents() {
       WHERE deleted_at IS NOT NULL AND purge_after IS NOT NULL AND purge_after <= NOW()
       FOR UPDATE
     `);
-    for (const row of result.rows) {
-      await client.query(`
-        UPDATE students
-        SET full_name = 'Archived student #' || id, phone = NULL, guardian_phone = NULL,
-            national_id_hash = NULL, qr_token = NULL, is_active = FALSE,
-            purge_after = NULL, updated_at = NOW()
-        WHERE id = $1
-      `, [row.id]);
-      await auditLog({ db: client, action: "student_personal_data_purged", studentId: row.id, details: { reason: "retention_window_expired", purged_fields: ["full_name", "phone", "guardian_phone", "national_id_hash", "qr_token"], status_after: "anonymized" } });
-    }
+    for (const row of result.rows) await permanentlyDeleteStudents({
+      client,
+      studentIds: [Number(row.id)],
+      retain: { ...DEFAULT_STUDENT_RETENTION },
+      actorId: null,
+      request: null
+    });
     await client.query("COMMIT");
     return result.rowCount;
   } catch (error) {

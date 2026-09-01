@@ -40,26 +40,48 @@ export function createTeacherToken(teacher) {
   return `${unsignedToken}.${signToken(unsignedToken)}`;
 }
 
-export function verifyTeacherToken(token) {
-  const parts = String(token || "").split(".");
-  if (parts.length !== 3) return null;
-
-  const [header, payload, signature] = parts;
+export function createStudentToken(student) {
+  const header = base64UrlEncode({ alg: "HS256", typ: "JWT" });
+  const payload = base64UrlEncode({ sub: Number(student.id), type: "student", exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60 });
   const unsignedToken = `${header}.${payload}`;
-  const expected = signToken(unsignedToken);
-  const expectedBuffer = Buffer.from(expected);
-  const signatureBuffer = Buffer.from(signature);
+  return `${unsignedToken}.${signToken(unsignedToken)}`;
+}
 
-  if (
-    expectedBuffer.length !== signatureBuffer.length ||
-    !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)
-  ) {
+export function verifyStudentToken(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3) return null;
+    const unsignedToken = `${parts[0]}.${parts[1]}`;
+    const expected = signToken(unsignedToken);
+    const signature = Buffer.from(parts[2]);
+    const expectedBuffer = Buffer.from(expected);
+    if (signature.length !== expectedBuffer.length || !crypto.timingSafeEqual(signature, expectedBuffer)) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    return payload.type === "student" && Number(payload.sub) > 0 && Number(payload.exp) > Math.floor(Date.now() / 1000) ? payload : null;
+  } catch (_error) {
     return null;
   }
+}
 
-  const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-  if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
-  return data;
+export function verifyTeacherToken(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3) return null;
+
+    const [header, payload, signature] = parts;
+    const unsignedToken = `${header}.${payload}`;
+    const expected = signToken(unsignedToken);
+    const expectedBuffer = Buffer.from(expected);
+    const signatureBuffer = Buffer.from(signature);
+
+    if (expectedBuffer.length !== signatureBuffer.length || !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)) return null;
+
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
+    return data;
+  } catch (_error) {
+    return null;
+  }
 }
 
 export function createAuditAccessToken(adminId) {

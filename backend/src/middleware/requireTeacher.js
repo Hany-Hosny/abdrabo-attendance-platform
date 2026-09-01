@@ -44,3 +44,12 @@ export function requirePermission(permission) {
     return next();
   };
 }
+
+export function requireAnyPermission(...permissions) {
+  return (req, res, next) => {
+    if (!permissions.some((permission) => hasPermission(req.teacher, permission))) {
+      return res.status(403).json({ ok: false, status: "permission_required", permissions });
+    }
+    return next();
+  };
+}

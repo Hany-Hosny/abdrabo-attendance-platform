@@ -80,7 +80,9 @@ export async function migrate() {
     CREATE TABLE IF NOT EXISTS attendance_records (
       id SERIAL PRIMARY KEY,
       session_id INTEGER NOT NULL REFERENCES attendance_sessions(id) ON DELETE CASCADE,
-      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
+      student_name_snapshot TEXT,
+      student_code_snapshot TEXT,
       status TEXT NOT NULL DEFAULT 'present' CHECK (status IN ('present', 'absent', 'late', 'pending_review', 'rejected')),
       method TEXT NOT NULL DEFAULT 'gps',
       checkin_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -107,7 +109,9 @@ export async function migrate() {
     CREATE TABLE IF NOT EXISTS exam_results (
       id SERIAL PRIMARY KEY,
       exam_id INTEGER NOT NULL REFERENCES exams(id) ON DELETE CASCADE,
-      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
+      student_name_snapshot TEXT,
+      student_code_snapshot TEXT,
       score NUMERIC(6,2) NOT NULL,
       note TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -163,11 +167,45 @@ export async function migrate() {
     CREATE TABLE IF NOT EXISTS homework_submissions (
       id BIGSERIAL PRIMARY KEY,
       homework_id BIGINT NOT NULL REFERENCES homeworks(id) ON DELETE CASCADE,
-      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
+      student_name_snapshot TEXT,
+      student_code_snapshot TEXT,
       status TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted','late')),
       submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (homework_id, student_id)
     );
+
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY CHECK (key IN (
+        'attendance_open_before_minutes',
+        'attendance_close_after_minutes',
+        'attendance_alert_threshold',
+        'evaluation_alert_threshold'
+      )),
+      value_json JSONB NOT NULL,
+      updated_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id BIGSERIAL PRIMARY KEY,
+      recipient_user_id INTEGER NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id BIGINT,
+      target_section TEXT,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      dedupe_key TEXT NOT NULL,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      read_at TIMESTAMPTZ,
+      resolved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (recipient_user_id, dedupe_key)
+    );
+    CREATE INDEX IF NOT EXISTS notifications_recipient_state_idx
+      ON notifications(recipient_user_id, resolved_at, is_read, created_at DESC);
   `);
 
   // 2. تحديث وتعديل الأعمدة (ALTERs & Constraints) لضمان التوافق
@@ -207,7 +245,13 @@ export async function migrate() {
 
     ALTER TABLE attendance_records DROP CONSTRAINT IF EXISTS attendance_records_status_check;
     ALTER TABLE attendance_records ADD CONSTRAINT attendance_records_status_check CHECK (status IN ('present','absent','late','pending_review','rejected'));
-
+    ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+    ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
+    ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
+    ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
+    ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
+    ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
+    ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
     UPDATE groups SET grade_level = COALESCE(grade_level, grade), display_name = COALESCE(display_name, name);
   `);
 
@@ -338,7 +382,7 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS audit_log_deletions_created_at_idx ON audit_log_deletions(created_at DESC);
     CREATE TABLE IF NOT EXISTS payments (
       id BIGSERIAL PRIMARY KEY,
-      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
+      student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
       group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
       amount NUMERIC(10,2) NOT NULL CHECK (amount > 0), 
       payment_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -364,6 +408,8 @@ export async function migrate() {
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS scan_serial_snapshot TEXT;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS group_name_snapshot TEXT;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS grade_level_snapshot TEXT;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_reference TEXT;
 
     CREATE TABLE IF NOT EXISTS payment_reversals (
       id BIGSERIAL PRIMARY KEY,
@@ -417,7 +463,9 @@ export async function migrate() {
     );
     CREATE TABLE IF NOT EXISTS student_notes (
       id BIGSERIAL PRIMARY KEY,
-      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
+      student_name_snapshot TEXT,
+      student_code_snapshot TEXT,
       author_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       body TEXT NOT NULL,
       is_read BOOLEAN NOT NULL DEFAULT FALSE,
@@ -432,15 +480,74 @@ export async function migrate() {
 
     CREATE TABLE IF NOT EXISTS fee_dues (
       id BIGSERIAL PRIMARY KEY,
-      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE RESTRICT,
+      student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
       group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
       due_month DATE NOT NULL,
       amount NUMERIC(10,2) NOT NULL CHECK (amount >= 0),
       paid_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (paid_amount >= 0 AND paid_amount <= amount),
+      student_name_snapshot TEXT,
+      student_code_snapshot TEXT,
+      student_serial_snapshot TEXT,
+      group_name_snapshot TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (student_id, due_month)
     );
     CREATE INDEX IF NOT EXISTS fee_dues_student_month_idx ON fee_dues(student_id, due_month);
+    CREATE INDEX IF NOT EXISTS fee_dues_month_student_idx ON fee_dues(due_month, student_id);
+    CREATE INDEX IF NOT EXISTS payments_paid_at_active_idx ON payments(paid_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS payments_student_paid_at_idx ON payments(student_id, paid_at DESC);
+    UPDATE payments SET payment_reference = 'P-' || LPAD(id::text, 8, '0') WHERE payment_reference IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_idx ON payments(idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS payments_reference_idx ON payments(payment_reference) WHERE payment_reference IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS attendance_records_student_idx ON attendance_records(student_id, checkin_time DESC);
+    CREATE INDEX IF NOT EXISTS attendance_records_session_idx ON attendance_records(session_id, student_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS attendance_records_idempotency_key_idx ON attendance_records(idempotency_key) WHERE idempotency_key IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS attendance_sessions_group_date_idx ON attendance_sessions(group_id, session_date DESC);
+    CREATE INDEX IF NOT EXISTS exam_results_exam_student_idx ON exam_results(exam_id, student_id);
+  `);
+
+  // Retained history must outlive the live student row. Keep foreign keys
+  // enabled, but make only the student reference nullable and snapshot the
+  // identity needed by historical views.
+  await query(`
+    SET search_path TO public;
+    ALTER TABLE attendance_records ALTER COLUMN student_id DROP NOT NULL;
+    ALTER TABLE exam_results ALTER COLUMN student_id DROP NOT NULL;
+    ALTER TABLE homework_submissions ALTER COLUMN student_id DROP NOT NULL;
+    ALTER TABLE payments ALTER COLUMN student_id DROP NOT NULL;
+    ALTER TABLE student_notes ALTER COLUMN student_id DROP NOT NULL;
+    ALTER TABLE fee_dues ALTER COLUMN student_id DROP NOT NULL;
+    ALTER TABLE student_notes ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
+    ALTER TABLE student_notes ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
+    ALTER TABLE fee_dues ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
+    ALTER TABLE fee_dues ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
+    ALTER TABLE fee_dues ADD COLUMN IF NOT EXISTS student_serial_snapshot TEXT;
+    ALTER TABLE fee_dues ADD COLUMN IF NOT EXISTS group_name_snapshot TEXT;
+
+    DO $$
+    DECLARE fk RECORD;
+    BEGIN
+      FOR fk IN
+        SELECT c.conname, c.conrelid::regclass::text AS table_name
+        FROM pg_constraint c
+        JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+        WHERE c.contype = 'f'
+          AND c.confrelid = 'public.students'::regclass
+          AND c.conrelid IN ('public.attendance_records'::regclass, 'public.exam_results'::regclass,
+                             'public.homework_submissions'::regclass, 'public.payments'::regclass,
+                             'public.student_notes'::regclass, 'public.fee_dues'::regclass)
+          AND a.attname = 'student_id'
+      LOOP
+        EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', fk.table_name, fk.conname);
+      END LOOP;
+    END $$;
+
+    ALTER TABLE attendance_records ADD CONSTRAINT attendance_records_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
+    ALTER TABLE exam_results ADD CONSTRAINT exam_results_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
+    ALTER TABLE homework_submissions ADD CONSTRAINT homework_submissions_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
+    ALTER TABLE payments ADD CONSTRAINT payments_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
+    ALTER TABLE student_notes ADD CONSTRAINT student_notes_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
+    ALTER TABLE fee_dues ADD CONSTRAINT fee_dues_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
   `);
 
   // 5. إدخال البيانات الافتراضية (Initial Seeding)
@@ -574,7 +681,14 @@ export async function migrate() {
   await query("UPDATE teachers SET role = 'admin' WHERE role = 'owner' AND id <> $1", [OWNER_USER_ID]);
   await query("UPDATE teachers SET role = 'owner', is_active = TRUE, deleted_at = NULL, permissions_initialized = TRUE, updated_at = NOW() WHERE id = $1", [OWNER_USER_ID]);
   await query(
-    "UPDATE teachers SET permissions = CASE WHEN role = 'admin' THEN $1::jsonb ELSE $2::jsonb END, permissions_initialized = TRUE WHERE permissions_initialized = FALSE",
+    `UPDATE teachers
+     SET permissions = CASE
+       WHEN jsonb_typeof(permissions) = 'array' AND jsonb_array_length(permissions) > 0 THEN permissions
+       WHEN role = 'admin' THEN $1::jsonb
+       ELSE $2::jsonb
+     END,
+     permissions_initialized = TRUE
+     WHERE permissions_initialized = FALSE`,
     [JSON.stringify(DEFAULT_ADMIN_PERMISSIONS), JSON.stringify(DEFAULT_STAFF_PERMISSIONS)]
   );
   await query("CREATE UNIQUE INDEX IF NOT EXISTS teachers_single_owner_idx ON teachers ((role)) WHERE role = 'owner'");

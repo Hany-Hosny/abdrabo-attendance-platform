@@ -1,14 +1,24 @@
 import crypto from "node:crypto";
 import express from "express";
 import { pool, query } from "../db/pool.js";
-import { requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
+import { requireAnyPermission, requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
 import { createAuditAccessToken, hashPassword, verifyAuditAccessToken, verifyPassword } from "../services/auth.js";
 import { ensureMonthlyFees, getAdvanceOptions, getFeeSummary, recordAdvancePayment, recordFullPayment } from "../services/fees.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { auditLog } from "../services/audit.js";
+import { getAttendanceTimingDefaults } from "../services/systemSettings.js";
+import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue } from "../utils/scan.js";
+import { createRateLimiter } from "../middleware/rateLimit.js";
+import { hasPermission } from "../services/rbac.js";
 
 export const operationsRouter = express.Router();
 operationsRouter.use(requireTeacher);
+// Every fee/payment workflow is gated by the base view capability. Action and
+// report middleware below then apply the narrower capability for that route.
+operationsRouter.use("/fees/payments", requirePermission("payments.view"));
+operationsRouter.use("/fees/overdue", requirePermission("payments.view"));
+const scannerRateLimit = createRateLimiter({ windowMs: 60_000, max: 180, key: (req) => `scanner:${req.teacher?.id || req.ip}` });
+const paymentRateLimit = createRateLimiter({ windowMs: 60_000, max: 30, key: (req) => `payment:${req.teacher?.id || req.ip}` });
 
 const studentDetails = `SELECT s.id, s.full_name, s.student_serial, s.scan_serial, s.student_code, s.qr_token, s.group_id,
   s.phone, s.guardian_phone, s.is_active, g.name AS group_name, COALESCE(g.grade_level,g.grade) AS grade_level,
@@ -20,20 +30,22 @@ function normalizedSearch(value) {
     .replace(/[إأآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/ـ/g, "");
 }
 
-function normalizeScanValue(value) {
-  return normalizeDigits(String(value ?? ""))
-    .replace(/[\u0000-\u001F\u007F]/g, "")
-    .trim()
-    .replace(/^\](?:C[0-3]|Q[0-9]|d[0-9])/i, "")
-    .trim()
-    .toUpperCase();
-}
-
 function searchableSql(field) {
   return `LOWER(${field}) ILIKE '%' || $SEARCH || '%' OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${field},'إ','ا'),'أ','ا'),'آ','ا'),'ٱ','ا'),'ى','ي'),'ة','ه')) ILIKE '%' || $SEARCH || '%'`;
 }
 
 const activePaymentFilter = "NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)";
+const paymentMethods = new Set(["cash", "bank_transfer", "card", "other"]);
+
+function collectionSummary(summary) {
+  if (!summary) return null;
+  const allowedFields = [
+    "id", "full_name", "student_serial", "student_code", "group_name", "grade_level",
+    "required_amount", "paid_amount", "remaining_balance", "current_cycle_fee",
+    "current_cycle_paid", "current_cycle_outstanding", "payment_status", "monthly_dues"
+  ];
+  return Object.fromEntries(allowedFields.filter((field) => Object.prototype.hasOwnProperty.call(summary, field)).map((field) => [field, summary[field]]));
+}
 
 function requireAuditAccess(req, res, next) {
   if (!verifyAuditAccessToken(req.headers["x-audit-access-token"], req.teacher.id)) {
@@ -54,7 +66,7 @@ function auditDateRange(fromValue, toValue) {
   return dateFrom <= dateTo ? { dateFrom, dateTo } : { dateFrom: dateTo, dateTo: dateFrom };
 }
 
-operationsRouter.get("/payments/report", requirePermission("payments.view"), async (req, res, next) => {
+operationsRouter.get("/payments/report", requirePermission("payments.view"), requirePermission("payments.reports.view"), async (req, res, next) => {
   try {
     const values = [];
     const filters = ["TRUE"];
@@ -85,14 +97,14 @@ operationsRouter.get("/payments/report", requirePermission("payments.view"), asy
         COALESCE(p.group_name_snapshot,COALESCE(g.display_name,g.name)) AS group_name,
         COALESCE(p.grade_level_snapshot,COALESCE(g.grade_level,g.grade)) AS grade_level,
         COALESCE(u.name,u.username,u.email,'Staff') AS paid_by
-      FROM payments p JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id
+      FROM payments p LEFT JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id
       LEFT JOIN teachers u ON u.id=COALESCE(p.paid_by,p.recorded_by)
       WHERE ${filters.join(" AND ")} AND ${activePaymentFilter} ORDER BY ${paymentTimestamp} DESC`, values);
     res.json({ ok: true, payments: result.rows, total_paid: result.rows.reduce((sum, row) => sum + Number(row.amount), 0), payment_count: result.rowCount });
   } catch (error) { next(error); }
 });
 
-operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("payments.reverse"), async (req, res, next) => {
+operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("payments.view"), requirePermission("payments.reverse"), async (req, res, next) => {
   const paymentId = Number(req.params.paymentId);
   const reason = String(req.body?.reason || "").trim();
   if (!Number.isSafeInteger(paymentId) || paymentId <= 0) return res.status(400).json({ ok: false, status: "invalid_payment" });
@@ -106,7 +118,7 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("pa
         COALESCE(g.display_name, g.name) AS group_name,
         COALESCE(g.grade_level, g.grade) AS grade_level
       FROM payments p
-      JOIN students s ON s.id = p.student_id
+      LEFT JOIN students s ON s.id = p.student_id
       JOIN groups g ON g.id = p.group_id
       WHERE p.id = $1
       FOR UPDATE
@@ -178,7 +190,7 @@ operationsRouter.post("/audit-logs/pin", requirePermission("activity_log.view"),
     const pin = normalizeDigits(req.body?.pin || "").trim();
     const currentPassword = String(req.body?.current_password || "");
     if (!/^\d{4}$/.test(pin)) return res.status(400).json({ ok: false, status: "invalid_pin", message: "PIN must contain exactly 4 digits. / يجب أن يتكون الرقم السري من 4 أرقام." });
-    const admin = await query("SELECT password_hash FROM teachers WHERE id = $1 AND role = 'admin' AND is_active = TRUE AND deleted_at IS NULL", [req.teacher.id]);
+    const admin = await query("SELECT password_hash FROM teachers WHERE id = $1 AND role IN ('owner','admin') AND is_active = TRUE AND deleted_at IS NULL", [req.teacher.id]);
     if (!admin.rowCount || !verifyPassword(currentPassword, admin.rows[0].password_hash)) return res.status(403).json({ ok: false, status: "invalid_admin_password" });
     await query("UPDATE teachers SET audit_pin_hash = $1, audit_pin_failed_attempts = 0, audit_pin_locked_until = NULL, updated_at = NOW() WHERE id = $2", [hashPassword(pin), req.teacher.id]);
     await auditLog({ action: "audit_pin_changed", actorId: req.teacher.id, details: { pin_digits: 4, change: "Audit PIN was replaced." }, request: req });
@@ -190,7 +202,7 @@ operationsRouter.post("/audit-logs/unlock", requirePermission("activity_log.view
   const pin = normalizeDigits(req.body?.pin || "").trim();
   if (!/^\d{4}$/.test(pin)) return res.status(400).json({ ok: false, status: "invalid_pin" });
   try {
-    const admin = await query("SELECT audit_pin_hash, audit_pin_failed_attempts, audit_pin_locked_until FROM teachers WHERE id = $1 AND role = 'admin' AND is_active = TRUE AND deleted_at IS NULL", [req.teacher.id]);
+    const admin = await query("SELECT audit_pin_hash, audit_pin_failed_attempts, audit_pin_locked_until FROM teachers WHERE id = $1 AND role IN ('owner','admin') AND is_active = TRUE AND deleted_at IS NULL", [req.teacher.id]);
     if (!admin.rowCount || !admin.rows[0].audit_pin_hash) return res.status(409).json({ ok: false, status: "audit_pin_not_configured" });
     const record = admin.rows[0];
     if (record.audit_pin_locked_until && new Date(record.audit_pin_locked_until).getTime() > Date.now()) return res.status(429).json({ ok: false, status: "audit_pin_locked", retry_after_seconds: Math.ceil((new Date(record.audit_pin_locked_until).getTime() - Date.now()) / 1000) });
@@ -207,7 +219,7 @@ operationsRouter.post("/audit-logs/unlock", requirePermission("activity_log.view
   } catch (error) { next(error); }
 });
 
-operationsRouter.get("/audit-logs/maintenance/preview", requirePermission("activity_log.view"), requireRoles("admin"), requireAuditAccess, async (req, res, next) => {
+operationsRouter.get("/audit-logs/maintenance/preview", requirePermission("activity_log.view"), requireRoles("owner", "admin"), requireAuditAccess, async (req, res, next) => {
   try {
     const range = auditDateRange(req.query.date_from, req.query.date_to);
     if (!range) return res.status(400).json({ ok: false, status: "invalid_date_range" });
@@ -221,7 +233,7 @@ operationsRouter.get("/audit-logs/maintenance/preview", requirePermission("activ
   } catch (error) { next(error); }
 });
 
-operationsRouter.post("/audit-logs/maintenance/delete", requirePermission("activity_log.view"), requireRoles("admin"), requireAuditAccess, async (req, res, next) => {
+operationsRouter.post("/audit-logs/maintenance/delete", requirePermission("activity_log.view"), requireRoles("owner", "admin"), requireAuditAccess, async (req, res, next) => {
   const range = auditDateRange(req.body?.date_from, req.body?.date_to);
   const pin = normalizeDigits(req.body?.pin || "").trim();
   const currentPassword = String(req.body?.current_password || "");
@@ -233,7 +245,7 @@ operationsRouter.post("/audit-logs/maintenance/delete", requirePermission("activ
   if (reason.length < 3 || reason.length > 500) return res.status(400).json({ ok: false, status: "invalid_reason" });
 
   try {
-    const admin = await query("SELECT password_hash, audit_pin_hash, audit_pin_failed_attempts, audit_pin_locked_until FROM teachers WHERE id = $1 AND role = 'admin' AND is_active = TRUE AND deleted_at IS NULL", [req.teacher.id]);
+    const admin = await query("SELECT password_hash, audit_pin_hash, audit_pin_failed_attempts, audit_pin_locked_until FROM teachers WHERE id = $1 AND role IN ('owner','admin') AND is_active = TRUE AND deleted_at IS NULL", [req.teacher.id]);
     if (!admin.rowCount || !admin.rows[0].audit_pin_hash) return res.status(409).json({ ok: false, status: "audit_pin_not_configured" });
     const record = admin.rows[0];
     if (record.audit_pin_locked_until && new Date(record.audit_pin_locked_until).getTime() > Date.now()) return res.status(429).json({ ok: false, status: "audit_pin_locked", retry_after_seconds: Math.ceil((new Date(record.audit_pin_locked_until).getTime() - Date.now()) / 1000) });
@@ -331,7 +343,7 @@ operationsRouter.get("/audit-logs", requirePermission("activity_log.view"), requ
   } catch (error) { next(error); }
 });
 
-operationsRouter.get("/payments/late", requirePermission("payments.view"), async (req, res, next) => {
+operationsRouter.get("/payments/late", requirePermission("payments.view"), requirePermission("payments.reports.view"), async (req, res, next) => {
   try {
     await ensureMonthlyFees();
     const values = [];
@@ -385,29 +397,31 @@ operationsRouter.get("/payments/late", requirePermission("payments.view"), async
 operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"), async (req, res, next) => {
   try {
     const date = normalizeDigits(req.query.date || new Date().toISOString().slice(0, 10)).trim();
-    const params = [date];
+    const timing = await getAttendanceTimingDefaults();
+    const groupId = req.query.group_id ? Number(normalizeDigits(req.query.group_id)) : null;
     let groupFilter = "";
-    if (req.query.group_id) { params.push(Number(normalizeDigits(req.query.group_id))); groupFilter = ` AND s.group_id=$${params.length}`; }
+    if (groupId) groupFilter = " AND s.group_id=$2";
     await query(`
       INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, status)
       SELECT cs.group_id, cs.id, $1::date,
         (($1::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
-        (($1::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-        (($1::date + cs.end_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+        (($1::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+        (($1::date + cs.end_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
         'open'
       FROM class_schedules cs
       JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM $1::date)::INTEGER
-        ${req.query.group_id ? `AND cs.group_id=$2` : ""}
+        ${groupId ? "AND cs.group_id=$4" : ""}
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING
-    `, req.query.group_id ? [date, Number(normalizeDigits(req.query.group_id))] : [date]);
+    `, groupId ? [date, timing.openBeforeMinutes, timing.closeAfterMinutes, groupId] : [date, timing.openBeforeMinutes, timing.closeAfterMinutes]);
+    const resultParams = groupId ? [date, groupId] : [date];
     const result = await query(`SELECT s.*, g.name AS group_name, COALESCE(g.grade_level,g.grade) AS grade_level,
       cs.day_of_week, cs.start_time, cs.end_time
       FROM attendance_sessions s
       JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
         AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER
-      WHERE s.session_date=$1${groupFilter} ORDER BY cs.start_time`, params);
+      WHERE s.session_date=$1${groupFilter} ORDER BY cs.start_time`, resultParams);
     res.json({ ok: true, sessions: result.rows });
   } catch (error) { next(error); }
 });
@@ -417,13 +431,14 @@ operationsRouter.post("/attendance/sessions", requirePermission("attendance.mana
     const groupId = Number(normalizeDigits(req.body?.group_id)), scheduleId = Number(normalizeDigits(req.body?.schedule_id));
     const date = String(req.body?.session_date || new Date().toISOString().slice(0, 10));
     if (!groupId || !scheduleId) return res.status(400).json({ ok:false, status:"invalid_session_payload" });
+    const timing = await getAttendanceTimingDefaults();
     const result = await query(`INSERT INTO attendance_sessions (group_id,schedule_id,session_date,starts_at,opens_at,closes_at,status)
-      SELECT $1, cs.id, $3::date, (($3::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'), (($3::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-      (($3::date + cs.end_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'), 'open'
+      SELECT $1, cs.id, $3::date, (($3::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'), (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+      (($3::date + cs.end_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $5 ELSE cs.closes_after_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'), 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.id=$2 AND cs.group_id=$1 AND cs.is_active=TRUE
         AND cs.day_of_week=EXTRACT(DOW FROM $3::date)::INTEGER
-      RETURNING *`, [groupId, scheduleId, date]);
+      RETURNING *`, [groupId, scheduleId, date, timing.openBeforeMinutes, timing.closeAfterMinutes]);
     if (!result.rowCount) return res.status(400).json({ok:false,status:"invalid_schedule"});
     await auditLog({ action: "attendance_session_created", actorId: req.teacher.id, sessionId: result.rows[0].id, details: { group_id: groupId, schedule_id: scheduleId, session_date: date, status_after: result.rows[0].status }, request: req });
     res.status(201).json({ok:true,session:result.rows[0]});
@@ -436,10 +451,82 @@ operationsRouter.get("/attendance/sessions/:id/records", requirePermission("atte
   catch (error) { next(error); }
 });
 
-async function recordAttendance({ sessionId, studentId, actorId, method = "scanner", status = "present", ip, deviceId, request }) {
-  const result = await query(`INSERT INTO attendance_records (session_id,student_id,status,method,ip_address,device_id)
-    VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (session_id,student_id) DO NOTHING RETURNING *`, [sessionId, studentId, status, method, ip, deviceId]);
-  if (!result.rowCount) return { duplicate: true };
+operationsRouter.post("/scanner/student-lookup", requireAnyPermission("students.view", "attendance.view", "payments.view"), async (req, res, next) => {
+  try {
+    const value = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
+    if (!isValidScanValue(value)) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
+    const result = await query(`
+      SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
+        s.group_id, s.is_active, s.deleted_at,
+        g.name AS group_name, COALESCE(g.grade_level, g.grade) AS grade_level,
+        g.is_active AS group_active
+      FROM students s
+      LEFT JOIN groups g ON g.id = s.group_id
+      WHERE LOWER(COALESCE(s.qr_token, '')) = LOWER($1)
+         OR LOWER(COALESCE(s.scan_serial, '')) = LOWER($1)
+         OR LOWER(COALESCE(s.student_serial, '')) = LOWER($1)
+         OR LOWER(COALESCE(s.student_code, '')) = LOWER($1)
+      ORDER BY s.deleted_at NULLS FIRST, s.is_active DESC
+      LIMIT 1
+    `, [value]);
+    if (!result.rowCount) return res.status(404).json({ ok: false, status: "student_not_found" });
+    const student = result.rows[0];
+    const status = student.deleted_at ? "deleted_student" : !student.is_active || student.group_active === false ? "inactive_student" : "student_found";
+    return res.status(status === "student_found" ? 200 : 409).json({
+      ok: status === "student_found",
+      status,
+      student: {
+        id: student.id,
+        full_name: student.full_name,
+        student_code: student.student_code,
+        student_serial: student.student_serial,
+        scan_serial: student.scan_serial,
+        group_id: student.group_id,
+        group_name: student.group_name,
+        grade_level: student.grade_level,
+        is_active: student.is_active,
+        deleted_at: student.deleted_at
+      }
+    });
+  } catch (error) { next(error); }
+});
+
+operationsRouter.post("/fees/scan-lookup", requirePermission("payments.view"), async (req, res, next) => {
+  try {
+    const value = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
+    if (!isValidScanValue(value)) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
+    const studentResult = await query(`
+      SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
+        s.is_active, s.deleted_at, g.name AS group_name,
+        COALESCE(g.grade_level, g.grade) AS grade_level, g.is_active AS group_active
+      FROM students s JOIN groups g ON g.id=s.group_id
+      WHERE s.deleted_at IS NULL AND s.is_active=TRUE AND g.deleted_at IS NULL AND g.is_active=TRUE
+        AND (LOWER(COALESCE(s.qr_token,''))=LOWER($1) OR LOWER(COALESCE(s.scan_serial,''))=LOWER($1)
+          OR LOWER(COALESCE(s.student_serial,''))=LOWER($1) OR LOWER(COALESCE(s.student_code,''))=LOWER($1))
+      LIMIT 1
+    `, [value]);
+    if (!studentResult.rowCount) return res.status(404).json({ ok: false, status: "student_not_found" });
+    const studentId = studentResult.rows[0].id;
+    const mode = req.body?.mode === "advance" ? "advance" : "new";
+    if (mode === "advance" && !hasPermission(req.teacher, "payments.advance")) {
+      return res.status(403).json({ ok: false, status: "permission_required", permission: "payments.advance" });
+    }
+    const data = mode === "advance" ? await getAdvanceOptions(studentId) : await getFeeSummary(studentId);
+    if (!data) return res.status(404).json({ ok: false, status: "student_not_found" });
+    return res.json({ ok: true, status: "student_found", mode, ...(mode === "advance" ? data : { summary: collectionSummary(data) }) });
+  } catch (error) { next(error); }
+});
+
+async function recordAttendance({ sessionId, studentId, actorId, method = "scanner", status = "present", ip, deviceId, idempotencyKey = null, request }) {
+  const result = await query(`INSERT INTO attendance_records (session_id,student_id,status,method,ip_address,device_id,idempotency_key)
+    VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING *`, [sessionId, studentId, status, method, ip, deviceId, idempotencyKey]);
+  if (!result.rowCount) {
+    const existing = await query("SELECT * FROM attendance_records WHERE (session_id=$1 AND student_id=$2) OR ($3 IS NOT NULL AND idempotency_key=$3) ORDER BY id LIMIT 1", [sessionId, studentId, idempotencyKey]);
+    if (idempotencyKey && existing.rows[0] && (Number(existing.rows[0].session_id) !== Number(sessionId) || Number(existing.rows[0].student_id) !== Number(studentId))) {
+      return { duplicate: true, idempotencyConflict: true, record: null };
+    }
+    return { duplicate: true, record: existing.rows[0] || null };
+  }
   await auditLog({ action: "attendance_recorded", actorId, studentId, sessionId, details: { method, status_after: status, record_id: result.rows[0].id, checkin_time: result.rows[0].checkin_time }, request });
   return { record: result.rows[0] };
 }
@@ -456,37 +543,62 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
   } catch (error) { next(error); }
 });
 
-operationsRouter.post("/scanner/attendance", requirePermission("attendance.manage"), async (req, res, next) => {
+operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission("attendance.manage"), async (req, res, next) => {
   try {
-    const token = normalizeScanValue(req.body?.qr_token);
-    if (!token) return res.status(400).json({ ok: false, status: "scan_value_required" });
+    const token = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
+    if (!isValidScanValue(token)) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
+    const deviceId = String(req.body?.device_id || "").trim();
+    if (deviceId && deviceId.length > 128) return res.status(400).json({ ok: false, status: "invalid_device_id" });
+    const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
+    const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
+    if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
     const studentResult = await query(
-      `${studentDetails} WHERE LOWER(COALESCE(s.qr_token, '')) = LOWER($1)
+      `SELECT s.id, s.full_name, s.student_serial, s.scan_serial, s.student_code, s.qr_token, s.group_id,
+        s.phone, s.guardian_phone, s.is_active, s.deleted_at, g.name AS group_name,
+        COALESCE(g.grade_level,g.grade) AS grade_level, g.fees_amount, g.is_active AS group_active,
+        g.deleted_at AS group_deleted_at
+       FROM students s LEFT JOIN groups g ON g.id=s.group_id
+       WHERE LOWER(COALESCE(s.qr_token, '')) = LOWER($1)
         OR LOWER(COALESCE(s.scan_serial, '')) = LOWER($1)
         OR LOWER(COALESCE(s.student_serial, '')) = LOWER($1)
-        OR LOWER(COALESCE(s.student_code, '')) = LOWER($1) LIMIT 1`,
+        OR LOWER(COALESCE(s.student_code, '')) = LOWER($1)
+       ORDER BY s.deleted_at NULLS FIRST, s.is_active DESC LIMIT 1`,
       [token]
     );
-    if (!studentResult.rowCount) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, details: { reason: "invalid_qr_token", scanned_value: token, ip: req.ip }, request: req }); return res.status(404).json({ok:false,status:"invalid_qr_token"}); }
+    if (!studentResult.rowCount) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, details: { reason: "student_not_found", scanned_value: token, ip: req.ip }, request: req }); return res.status(404).json({ok:false,status:"student_not_found"}); }
     const student=studentResult.rows[0];
-    if (!student.is_active || !student.group_active) return res.status(409).json({ok:false,status:"inactive_student",student});
+    const publicStudent = {
+      id: student.id,
+      full_name: student.full_name,
+      student_serial: student.student_serial,
+      scan_serial: student.scan_serial,
+      student_code: student.student_code,
+      group_id: student.group_id,
+      group_name: student.group_name,
+      grade_level: student.grade_level,
+      is_active: student.is_active,
+      deleted_at: student.deleted_at
+    };
+    if (student.deleted_at) return res.status(409).json({ok:false,status:"deleted_student",student: publicStudent});
+    if (!student.is_active || !student.group_active || student.group_deleted_at) return res.status(409).json({ok:false,status:"inactive_student",student: publicStudent});
+    const timing = await getAttendanceTimingDefaults();
     await query(`INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, status)
       SELECT cs.group_id, cs.id, (NOW() AT TIME ZONE 'Africa/Cairo')::date,
         (((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
-        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.end_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'), 'open'
+        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.end_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'), 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Africa/Cairo'))::INTEGER
-      ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id]);
+      ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
     const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(NOW() AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND NOW() BETWEEN s.opens_at AND s.closes_at ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
-    if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"closed_session",student});
-    const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId:req.body?.device_id,request:req});
-    if (saved.duplicate) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, studentId: student.id, sessionId: sessionResult.rows[0].id, details: { reason: "duplicate_student_scan", student_name: student.full_name, student_code: student.student_code }, request: req }); return res.status(409).json({ok:false,status:"duplicate_attendance",student}); }
-    res.json({ok:true,status:"attendance_recorded",student,record:saved.record});
+    if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"closed_session",student: publicStudent});
+    const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,request:req});
+    if (saved.duplicate) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, studentId: student.id, sessionId: sessionResult.rows[0].id, details: { reason: saved.idempotencyConflict ? "idempotency_key_conflict" : "duplicate_student_scan", student_name: student.full_name, student_code: student.student_code }, request: req }); return res.status(409).json({ok:false,status:saved.idempotencyConflict ? "idempotency_conflict" : "duplicate_attendance",student: publicStudent,record:saved.record}); }
+    res.json({ok:true,status:"attendance_recorded",student: publicStudent,record:saved.record});
   } catch (error) { next(error); }
 });
 
-operationsRouter.get("/fees/payments", requirePermission("payments.view"), async (req, res, next) => {
+operationsRouter.get("/fees/payments", requirePermission("payments.view"), requirePermission("payments.reports.view"), async (req, res, next) => {
   try {
     const term = normalizedSearch(req.query.search ?? req.query.student);
     const values = [];
@@ -505,20 +617,21 @@ operationsRouter.get("/fees/payments", requirePermission("payments.view"), async
       COALESCE(p.grade_level_snapshot,COALESCE(g.grade_level,g.grade)) AS grade_level,
       COALESCE(p.group_name_snapshot,COALESCE(g.display_name,g.name)) AS group_name,
       u.name AS recorded_by_name
-      FROM payments p JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id
+      FROM payments p LEFT JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id
       LEFT JOIN teachers u ON u.id=COALESCE(p.paid_by,p.recorded_by)
       WHERE ${filters.join(" AND ")} AND ${activePaymentFilter} ORDER BY COALESCE(p.paid_at,p.payment_date) DESC`, values);
     res.json({ ok: true, payments: result.rows, total_collected: result.rows.reduce((sum, row) => sum + Number(row.amount), 0) });
   } catch (error) { next(error); }
 });
 
-operationsRouter.get("/fees/overdue", requirePermission("payments.view"), async (req, res, next) => {
+operationsRouter.get("/fees/overdue", requirePermission("payments.view"), requirePermission("payments.reports.view"), async (req, res, next) => {
   try {
     await ensureMonthlyFees();
     const term = normalizedSearch(req.query.search ?? req.query.student);
-    const values = [term, term ? crypto.createHash("sha256").update(String(req.query.search ?? req.query.student).trim()).digest("hex") : ""];
+    const values = [];
     const filters = [req.query.include_deleted === "true" ? "TRUE" : "s.deleted_at IS NULL", "s.is_active=TRUE"];
     if (term) {
+      values.push(term, crypto.createHash("sha256").update(String(req.query.search ?? req.query.student).trim()).digest("hex"));
       const fields = ["s.full_name", "s.student_serial", "s.student_code", "s.phone", "s.guardian_phone", "COALESCE(g.display_name,g.name)", "COALESCE(g.grade_level,g.grade)"];
       filters.push(`(${fields.map(searchableSql).join(" OR ")} OR s.national_id_hash = $2)`.replaceAll("$SEARCH", "$1"));
     }
@@ -533,25 +646,33 @@ operationsRouter.get("/fees/overdue", requirePermission("payments.view"), async 
   } catch (error) { next(error); }
 });
 
-operationsRouter.get("/fees/summary/:studentId", requirePermission("payments.view"), async (req,res,next)=>{ try { const summary = await getFeeSummary(req.params.studentId); if(!summary)return res.status(404).json({ok:false,status:"not_found"}); res.json({ok:true,summary}); }catch(e){next(e);} });
-operationsRouter.get("/fees/advance-options/:studentId", requirePermission("payments.view"), async (req, res, next) => {
+operationsRouter.get("/fees/summary/:studentId", requirePermission("payments.view"), async (req,res,next)=>{ try { const summary = await getFeeSummary(req.params.studentId); if(!summary)return res.status(404).json({ok:false,status:"not_found"}); res.json({ok:true,summary: collectionSummary(summary)}); }catch(e){next(e);} });
+operationsRouter.get("/fees/advance-options/:studentId", requirePermission("payments.view"), requirePermission("payments.advance"), async (req, res, next) => {
   try {
     const options = await getAdvanceOptions(Number(normalizeDigits(req.params.studentId)));
     if (!options) return res.status(404).json({ ok: false, status: "student_not_found" });
     res.json({ ok: true, ...options });
   } catch (error) { next(error); }
 });
-operationsRouter.post("/fees/advance-payments", requirePermission("payments.manage"), async (req, res, next) => {
+operationsRouter.post("/fees/advance-payments", paymentRateLimit, requirePermission("payments.view"), requirePermission("payments.advance"), async (req, res, next) => {
   try {
     const studentId = Number(normalizeDigits(req.body?.student_id));
+    const paymentMethod = String(req.body?.payment_method || "cash").trim().toLowerCase();
+    if (!Number.isSafeInteger(studentId) || studentId <= 0) return res.status(400).json({ ok: false, status: "invalid_student" });
+    if (!paymentMethods.has(paymentMethod)) return res.status(400).json({ ok: false, status: "invalid_payment_method" });
+    const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
+    const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
+    if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
     const result = await recordAdvancePayment({
       studentId,
       actorId: req.teacher.id,
       months: req.body?.months,
-      paymentMethod: String(req.body?.payment_method || "cash"),
+      paymentMethod,
       notes: req.body?.notes || null,
+      idempotencyKey,
       request: req
     });
+    if (result.error === "idempotency_conflict") return res.status(409).json({ ok: false, status: result.error });
     if (result.error === "student_not_found") return res.status(404).json({ ok: false, status: result.error });
     if (result.error === "current_month_unpaid") return res.status(409).json({ ok: false, status: result.error, message: "The current month must be paid before making an advance payment. / يجب سداد الشهر الحالي أولاً قبل الدفع مقدماً." });
     if (result.error === "invalid_months") return res.status(400).json({ ok: false, status: result.error, message: "Invalid advance months. / أشهر الدفع المقدم غير صحيحة." });
@@ -559,6 +680,32 @@ operationsRouter.post("/fees/advance-payments", requirePermission("payments.mana
     res.status(201).json({ ok: true, payment: result.payment, months: result.months });
   } catch (error) { next(error); }
 });
-operationsRouter.post("/fees/payments", requirePermission("payments.manage"), async (req,res,next)=>{ try { const studentId=Number(req.body?.student_id); if(!studentId)return res.status(400).json({ok:false,status:"invalid_student",message:"الطالب غير موجود. / Student was not found."}); const summary=await getFeeSummary(studentId); if(!summary)return res.status(404).json({ok:false,status:"not_found",message:"الطالب غير موجود. / Student was not found."}); if(Number(summary.remaining_balance)<=0){const status=Number(summary.required_amount)>0?"already_paid":"no_outstanding_fees"; const message=status==="already_paid"?"تم سداد المصروفات بالفعل. / Fees already paid.":"لا توجد مصروفات مستحقة لهذا الطالب. / No outstanding fees for this student."; return res.status(409).json({ok:false,status,message});} const p=await recordFullPayment({studentId,actorId:req.teacher.id,paymentMethod:String(req.body?.payment_method||"cash"),notes:req.body?.notes||null,request:req}); if(!p)return res.status(409).json({ok:false,status:"already_paid",message:"تم سداد المصروفات بالفعل. / Fees already paid."}); res.status(201).json({ok:true,payment:p,paid_amount:p.amount}); }catch(e){next(e);} });
-operationsRouter.get("/fees/payments", requirePermission("payments.view"), async (req,res,next)=>{try{const values=[];const filters=["s.deleted_at IS NULL"];const add=(sql,value)=>{values.push(value);filters.push(sql.replace("?",`$${values.length}`));};if(req.query.from){add("p.payment_date >= ?::date",String(req.query.from));}if(req.query.to){add("p.payment_date < (?::date + INTERVAL '1 day')",String(req.query.to));}if(req.query.student){add("(s.full_name ILIKE '%' || ? || '%' OR s.student_serial ILIKE '%' || ? || '%')",String(req.query.student));values.push(values[values.length-1]);filters[filters.length-1]=filters[filters.length-1].replace("?",`$${values.length-1}`).replace("?",`$${values.length}`);}if(req.query.group_id){add("g.id = ?",Number(req.query.group_id));}const r=await query(`SELECT p.*,s.full_name,s.student_serial,s.guardian_phone,COALESCE(g.grade_level,g.grade) AS grade_level,g.name AS group_name,u.name AS recorded_by_name FROM payments p JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id LEFT JOIN teachers u ON u.id=p.recorded_by WHERE ${filters.join(" AND ")} ORDER BY p.payment_date DESC`,values);res.json({ok:true,payments:r.rows,total_collected:r.rows.reduce((sum,row)=>sum+Number(row.amount),0)});}catch(e){next(e);}});
-operationsRouter.get("/fees/overdue", requirePermission("payments.view"), async (req,res,next)=>{try{await ensureMonthlyFees();const r=await query(`SELECT s.id,s.full_name,s.student_serial,s.guardian_phone,COALESCE(g.grade_level,g.grade) AS grade_level,g.name AS group_name,g.fees_amount,COALESCE(SUM(fd.amount),0) AS required_amount,COALESCE(SUM(fd.paid_amount),0) AS paid_amount,COALESCE(SUM(fd.amount-fd.paid_amount),0) AS remaining_balance FROM students s JOIN groups g ON g.id=s.group_id LEFT JOIN fee_dues fd ON fd.student_id=s.id WHERE s.is_active=TRUE AND s.deleted_at IS NULL GROUP BY s.id,g.id HAVING COALESCE(SUM(fd.amount-fd.paid_amount),0)>0 ORDER BY s.full_name`,[]);res.json({ok:true,students:r.rows,total_expected_unpaid:r.rows.reduce((sum,row)=>sum+Number(row.remaining_balance),0)});}catch(e){next(e);}});
+operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("payments.view"), requirePermission("payments.collect"), async (req, res, next) => {
+  try {
+    const studentId = Number(normalizeDigits(req.body?.student_id));
+    if (!Number.isSafeInteger(studentId) || studentId <= 0) return res.status(400).json({ ok: false, status: "invalid_student", message: "الطالب غير موجود. / Student was not found." });
+    const paymentMethod = String(req.body?.payment_method || "cash").trim().toLowerCase();
+    if (!paymentMethods.has(paymentMethod)) return res.status(400).json({ ok: false, status: "invalid_payment_method" });
+    const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
+    const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
+    if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
+    if (idempotencyKey) {
+      const replay = await query("SELECT * FROM payments WHERE idempotency_key = $1 LIMIT 1", [idempotencyKey]);
+      if (replay.rowCount) {
+        if (Number(replay.rows[0].student_id) !== studentId || replay.rows[0].payment_type !== "normal" || replay.rows[0].payment_method !== paymentMethod) return res.status(409).json({ ok: false, status: "idempotency_conflict" });
+        return res.status(200).json({ ok: true, payment: replay.rows[0], paid_amount: replay.rows[0].amount, replayed: true });
+      }
+    }
+    const summary = await getFeeSummary(studentId);
+    if (!summary) return res.status(404).json({ ok: false, status: "not_found", message: "الطالب غير موجود. / Student was not found." });
+    if (Number(summary.remaining_balance) <= 0) {
+      const status = Number(summary.required_amount) > 0 ? "already_paid" : "no_outstanding_fees";
+      const message = status === "already_paid" ? "تم سداد المصروفات بالفعل. / Fees already paid." : "لا توجد مصروفات مستحقة لهذا الطالب. / No outstanding fees for this student.";
+      return res.status(409).json({ ok: false, status, message });
+    }
+    const payment = await recordFullPayment({ studentId, actorId: req.teacher.id, paymentMethod, notes: req.body?.notes || null, idempotencyKey, request: req });
+    if (payment?.idempotency_conflict) return res.status(409).json({ ok: false, status: "idempotency_conflict" });
+    if (!payment) return res.status(409).json({ ok: false, status: "already_paid", message: "تم سداد المصروفات بالفعل. / Fees already paid." });
+    return res.status(201).json({ ok: true, payment, paid_amount: payment.amount });
+  } catch (error) { next(error); }
+});

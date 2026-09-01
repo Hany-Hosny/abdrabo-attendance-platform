@@ -16,6 +16,9 @@ export const PERMISSIONS = Object.freeze([
   "schedule.manage",
   "payments.view",
   "payments.manage",
+  "payments.collect",
+  "payments.advance",
+  "payments.reports.view",
   "payments.reverse",
   "messages.view",
   "messages.manage",
@@ -27,10 +30,43 @@ export const PERMISSIONS = Object.freeze([
   "users.disable",
   "users.delete",
   "activity_log.view",
-  "settings.manage"
+  "settings.manage",
+  "dashboard.view",
+  "dashboard.financial.view",
+  "dashboard.group_performance.view",
+  "dashboard.alerts.view",
+  "dashboard.activity.view"
 ]);
 
-export const DEFAULT_ADMIN_PERMISSIONS = Object.freeze([...PERMISSIONS]);
+export const DASHBOARD_PERMISSIONS = Object.freeze([
+  "dashboard.view",
+  "dashboard.financial.view",
+  "dashboard.group_performance.view",
+  "dashboard.alerts.view",
+  "dashboard.activity.view"
+]);
+
+// payments.manage predates the fine-grained payment capabilities. It remains a
+// compatibility alias for collecting and advancing payments only. It never
+// grants access to financial reports.
+const LEGACY_PERMISSION_ALIASES = Object.freeze({
+  "payments.collect": ["payments.collect", "payments.manage"],
+  "payments.advance": ["payments.advance", "payments.manage"]
+});
+
+const DEFAULT_ADMIN_EXCLUDED_PERMISSIONS = new Set([
+  ...DASHBOARD_PERMISSIONS,
+  "payments.collect",
+  "payments.advance",
+  "payments.reports.view"
+]);
+
+// Dashboard permissions are intentionally excluded from the normal admin default.
+// Owners receive them through hasPermission(), while normal admins must be assigned
+// dashboard permissions explicitly through the existing permissions editor.
+export const DEFAULT_ADMIN_PERMISSIONS = Object.freeze(
+  PERMISSIONS.filter((permission) => !DEFAULT_ADMIN_EXCLUDED_PERMISSIONS.has(permission))
+);
 export const DEFAULT_STAFF_PERMISSIONS = Object.freeze([
   "students.view",
   "students.manage",
@@ -58,13 +94,14 @@ export function isOwner(user) {
 }
 
 export function hasPermission(user, permission) {
-  return isOwner(user) || normalizePermissions(user?.permissions).includes(permission);
+  if (isOwner(user)) return true;
+  const assigned = new Set(normalizePermissions(user?.permissions));
+  return (LEGACY_PERMISSION_ALIASES[permission] || [permission]).some((candidate) => assigned.has(candidate));
 }
 
 export function canGrantPermissions(actor, permissions) {
   if (isOwner(actor)) return true;
-  const actorPermissions = new Set(normalizePermissions(actor?.permissions));
-  return normalizePermissions(permissions).every((permission) => actorPermissions.has(permission));
+  return normalizePermissions(permissions).every((permission) => hasPermission(actor, permission));
 }
 
 export function requirePermission(permission) {

@@ -118,6 +118,7 @@ function actionForRequest(req) {
   if (/\/students\/.+\/print-label$/.test(path)) return "student_label_printed";
   if (/\/students\/.+\/regenerate-scan-serial$/.test(path)) return "student_scan_serial_regenerated";
   if (/\/students\/bulk-delete$/.test(path)) return "students_bulk_archived";
+  if (/\/students\/bulk-permanent$/.test(path)) return "students_bulk_permanently_deleted";
   if (/\/students\/.+\/status$/.test(path)) return "student_status_changed";
   if (/\/students\/.+\/restore$/.test(path)) return "student_restored";
   if (/\/students\/\d+$/.test(path)) return req.method === "DELETE" ? "student_archived" : "student_changed";
@@ -143,7 +144,8 @@ export async function auditLog({
   sessionId = null,
   details = {},
   request = null,
-  db = query
+  db = query,
+  throwOnError = false
 }) {
   const execute = typeof db === "function" ? db : db.query.bind(db);
   const structuredDetails = sanitizeAuditValue({
@@ -162,6 +164,7 @@ export async function auditLog({
     return result.rows?.[0] || null;
   } catch (error) {
     console.error("Failed to write audit log", { action, error: error.message });
+    if (throwOnError) throw error;
     return null;
   }
 }

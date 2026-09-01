@@ -2,10 +2,13 @@ import crypto from "node:crypto";
 import express from "express";
 import { pool, query } from "../db/pool.js";
 import { requirePermission, requireTeacher } from "../middleware/requireTeacher.js";
-import { requireAnyPermission } from "../services/rbac.js";
-import { ensureMonthlyFees, getFeeSummary } from "../services/fees.js";
+import { hasPermission, requireAnyPermission } from "../services/rbac.js";
+import { getFeeSummary } from "../services/fees.js";
+import { buildStudentAttention } from "../services/studentAttention.js";
+import { getDashboardAlertThresholds } from "../services/systemSettings.js";
 import { isNationalId, isPhoneNumber, normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.js";
 import { auditLog, changedFields, verifyAuditPin } from "../services/audit.js";
+import { parseStudentRetention, permanentlyDeleteStudents } from "../services/studentDeletion.js";
 
 export const adminAcademicRouter = express.Router();
 adminAcademicRouter.use(requireTeacher);
@@ -18,6 +21,25 @@ const supportedGradeLevels = new Set([
   "Primary 5", "Primary 6", "Prep 1", "Prep 2", "Prep 3",
   "Secondary 1", "Secondary 2", "Secondary 3", "Support Groups"
 ]);
+export const MAX_PERMANENT_DELETE_BATCH = 100;
+
+export function parseStudentIdsPayload(body) {
+  const rawIds = Array.isArray(body?.studentIds) ? body.studentIds : body?.student_ids;
+  if (!Array.isArray(rawIds) || !rawIds.length) return { ok: false, status: "invalid_student_ids" };
+  if (rawIds.length > MAX_PERMANENT_DELETE_BATCH) return { ok: false, status: "too_many_student_ids" };
+
+  const parsedIds = [];
+  for (const value of rawIds) {
+    if ((typeof value !== "number" && typeof value !== "string") || String(value).trim() === "") {
+      return { ok: false, status: "invalid_student_ids" };
+    }
+    const id = Number(value);
+    if (!Number.isSafeInteger(id) || id <= 0) return { ok: false, status: "invalid_student_ids" };
+    parsedIds.push(id);
+  }
+
+  return { ok: true, studentIds: [...new Set(parsedIds)] };
+}
 
 function hashNationalId(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -306,6 +328,15 @@ const studentSelect = `
   FROM students s JOIN groups g ON g.id = s.group_id
 `;
 
+function collectionProfileSummary(summary) {
+  if (!summary) return null;
+  const fields = [
+    "fees_amount", "required_amount", "paid_amount", "remaining_balance", "current_cycle_fee",
+    "current_cycle_paid", "current_cycle_outstanding", "payment_status", "monthly_dues"
+  ];
+  return Object.fromEntries(fields.filter((field) => Object.prototype.hasOwnProperty.call(summary, field)).map((field) => [field, summary[field]]));
+}
+
 adminAcademicRouter.get("/students", requirePermission("students.view"), async (req, res, next) => {
   try {
     const status = String(req.query.status || "active");
@@ -333,58 +364,93 @@ adminAcademicRouter.get("/students", requirePermission("students.view"), async (
   }
 });
 
-adminAcademicRouter.get("/students/:id/profile", requirePermission("students.view"), async (req, res, next) => {
+adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.view", "payments.view"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
     const studentResult = await query(`${studentSelect} WHERE s.id = $1`, [studentId]);
     if (!studentResult.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const student = studentResult.rows[0];
-    await ensureMonthlyFees();
+    const canViewAttendance = hasPermission(req.teacher, "attendance.view");
+    const canViewEvaluations = hasPermission(req.teacher, "exams.view");
+    const canViewNotes = hasPermission(req.teacher, "notes.view");
+    const canViewMessages = hasPermission(req.teacher, "messages.view");
+    const canViewPayments = hasPermission(req.teacher, "payments.view");
+    const canViewPaymentReports = hasPermission(req.teacher, "payments.reports.view");
+    const canViewAttention = hasPermission(req.teacher, "dashboard.alerts.view");
     const [attendance, exams, notes, payments, threads, feeSummary] = await Promise.all([
-      query(`SELECT s.id AS session_id, s.session_date, s.starts_at, s.closes_at, cs.start_time, cs.end_time,
+      canViewAttendance ? query(`SELECT s.id AS session_id, s.session_date, s.starts_at, s.closes_at, cs.start_time, cs.end_time,
           g.name AS group_name, ar.status, ar.checkin_time
         FROM attendance_sessions s
         JOIN groups g ON g.id = s.group_id
         JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
         LEFT JOIN attendance_records ar ON ar.session_id = s.id AND ar.student_id = $1
         WHERE s.group_id = $2 AND s.schedule_id IS NOT NULL
-        ORDER BY s.session_date DESC, cs.start_time DESC`, [studentId, student.group_id]),
-      query(`SELECT e.id, e.title, e.exam_date, e.max_score, er.score, er.note
+        ORDER BY s.session_date DESC, cs.start_time DESC`, [studentId, student.group_id]) : Promise.resolve({ rows: [] }),
+      canViewEvaluations ? query(`SELECT e.id, e.title, e.exam_date, e.max_score, er.score, er.note
         FROM exams e JOIN exam_results er ON er.exam_id = e.id AND er.student_id = $1
-        WHERE e.group_id = $2 ORDER BY e.exam_date DESC, e.id DESC`, [studentId, student.group_id]),
-      query(`SELECT n.id, n.student_id, n.body, n.created_at, n.updated_at, n.is_read, n.author_id,
+        WHERE e.group_id = $2 ORDER BY e.exam_date DESC, e.id DESC`, [studentId, student.group_id]) : Promise.resolve({ rows: [] }),
+      canViewNotes ? query(`SELECT n.id, n.student_id, n.body, n.created_at, n.updated_at, n.is_read, n.author_id,
           COALESCE(t.name, t.username, t.email, 'Staff') AS author_name
         FROM student_notes n LEFT JOIN teachers t ON t.id = n.author_id
-        WHERE n.student_id = $1 ORDER BY n.created_at DESC`, [studentId]),
-      query(`SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes,
+        WHERE n.student_id = $1 ORDER BY n.created_at DESC`, [studentId]) : Promise.resolve({ rows: [] }),
+      canViewPaymentReports ? query(`SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes,
           p.payment_months, COALESCE(t.name, t.username, t.email, 'Staff') AS paid_by
         FROM payments p LEFT JOIN teachers t ON t.id = COALESCE(p.paid_by, p.recorded_by)
-        WHERE p.student_id = $1 ORDER BY COALESCE(p.paid_at, p.payment_date) DESC`, [studentId]),
-      query(`SELECT it.id, it.subject, it.status, it.created_at, it.updated_at,
+        WHERE p.student_id = $1 AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
+        ORDER BY COALESCE(p.paid_at, p.payment_date) DESC`, [studentId]) : Promise.resolve({ rows: [] }),
+      canViewMessages ? query(`SELECT it.id, it.subject, it.status, it.created_at, it.updated_at,
           COUNT(im.id)::int AS message_count,
           (SELECT body FROM inbox_messages WHERE thread_id = it.id AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1) AS last_message
         FROM inbox_threads it LEFT JOIN inbox_messages im ON im.thread_id = it.id AND im.deleted_at IS NULL
-        WHERE it.student_id = $1 GROUP BY it.id ORDER BY it.updated_at DESC`, [studentId]),
-      getFeeSummary(studentId)
+        WHERE it.student_id = $1 GROUP BY it.id ORDER BY it.updated_at DESC`, [studentId]) : Promise.resolve({ rows: [] }),
+      canViewPayments ? getFeeSummary(studentId, { ensure: false }) : Promise.resolve(null)
     ]);
     const totalSessions = attendance.rows.length;
-    const presentCount = attendance.rows.filter((row) => row.status === "present").length;
+    const presentCount = attendance.rows.filter((row) => row.status === "present" || row.status === "late").length;
     const absentCount = attendance.rows.filter((row) => row.status === "absent").length;
-    res.json({
+    const attendanceRate = totalSessions ? (presentCount / totalSessions) * 100 : null;
+    const evaluationRows = exams.rows.filter((row) => Number(row.max_score) > 0 && Number.isFinite(Number(row.score)));
+    const evaluationAverage = evaluationRows.length
+      ? evaluationRows.reduce((sum, row) => sum + (Number(row.score) / Number(row.max_score)) * 100, 0) / evaluationRows.length
+      : null;
+    const thresholds = canViewAttention ? await getDashboardAlertThresholds() : null;
+    const attention = canViewAttention ? buildStudentAttention({
+      attendanceSessions: totalSessions,
+      attendanceAttended: presentCount,
+      evaluationAverage,
+      paymentOverdue: feeSummary?.payment_status === "overdue",
+      paymentRemaining: feeSummary?.remaining_balance,
+      thresholds,
+      includePayment: canViewPayments
+    }).reasons : null;
+    const response = {
       ok: true,
       student,
-      attendance: {
+      summary: {
+        attendance: canViewAttendance ? { percentage: attendanceRate, presentCount, totalSessions } : null,
+        evaluations: canViewEvaluations ? { average: evaluationAverage, count: evaluationRows.length } : null,
+        payments: canViewPayments ? {
+          percentage: feeSummary?.required_amount > 0 ? (Number(feeSummary.paid_amount) / Number(feeSummary.required_amount)) * 100 : null,
+          paid: Number(feeSummary?.paid_amount || 0),
+          required: Number(feeSummary?.required_amount || 0),
+          remaining: Number(feeSummary?.remaining_balance || 0),
+          status: feeSummary?.payment_status || "unpaid"
+        } : null,
+        attention
+      },
+      ...(canViewAttendance ? { attendance: {
         total_sessions: totalSessions,
         present_count: presentCount,
         absent_count: absentCount,
         attendance_percentage: totalSessions ? (presentCount / totalSessions) * 100 : 0,
         records: attendance.rows
-      },
-      exams: exams.rows,
-      notes: notes.rows,
-      fees: { ...(feeSummary || {}), payments: payments.rows },
-      inbox: threads.rows
-    });
+      } } : {}),
+      ...(canViewEvaluations ? { exams: exams.rows } : {}),
+      ...(canViewNotes ? { notes: notes.rows } : {}),
+      ...(canViewMessages ? { inbox: threads.rows } : {})
+    };
+    if (canViewPayments) response.fees = { ...collectionProfileSummary(feeSummary), ...(canViewPaymentReports ? { payments: payments.rows } : {}) };
+    res.json(response);
   } catch (error) {
     next(error);
   }
@@ -712,6 +778,29 @@ adminAcademicRouter.post("/students/bulk-delete", requirePermission("students.de
   }
 });
 
+adminAcademicRouter.delete("/students/bulk-permanent", requirePermission("students.delete"), async (req, res, next) => {
+  const parsed = parseStudentIdsPayload(req.body);
+  if (!parsed.ok) return res.status(400).json({ ok: false, status: parsed.status, max_batch_size: MAX_PERMANENT_DELETE_BATCH });
+  const retention = parseStudentRetention(req.body?.retain);
+  if (!retention.ok) return res.status(400).json({ ok: false, status: retention.status });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await permanentlyDeleteStudents({ client, studentIds: parsed.studentIds, retain: retention.retain, actorId: req.teacher.id, request: req });
+    await client.query("COMMIT");
+    return res.json({ ok: true, deleted_count: result.deletedCount, students: result.students, retain: retention.retain });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    if (error?.status === "student_not_found") return res.status(404).json({ ok: false, status: error.status, missing_student_ids: error.missingStudentIds });
+    if (error?.status === "permanent_delete_conflict") return res.status(409).json({ ok: false, status: error.status });
+    if (error?.code === "23503") return res.status(409).json({ ok: false, status: "student_has_protected_records" });
+    return next(error);
+  } finally {
+    client.release();
+  }
+});
+
 adminAcademicRouter.delete("/students/:id", requirePermission("students.delete"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
@@ -725,22 +814,30 @@ adminAcademicRouter.delete("/students/:id", requirePermission("students.delete")
 });
 
 adminAcademicRouter.delete("/students/:id/permanent", requirePermission("students.delete"), async (req, res, next) => {
+  const retention = parseStudentRetention(req.body?.retain);
+  if (!retention.ok) return res.status(400).json({ ok: false, status: retention.status });
+  const client = await pool.connect();
   try {
     const studentId = Number(req.params.id);
-    const before = await query("SELECT id, full_name, student_code, student_serial, phone, guardian_phone, qr_token, is_active, deleted_at FROM students WHERE id=$1 AND deleted_at IS NOT NULL", [studentId]);
-    if (!before.rowCount) return res.status(404).json({ok:false,status:"not_found"});
-    const result = await query(`
-      UPDATE students
-      SET full_name = 'Archived student #' || id, phone = NULL, guardian_phone = NULL,
-          national_id_hash = NULL, qr_token = NULL, is_active = FALSE,
-          purge_after = NULL, updated_at = NOW()
-      WHERE id = $1 AND deleted_at IS NOT NULL
-      RETURNING id
-    `, [studentId]);
-    if (!result.rowCount) return res.status(404).json({ok:false,status:"not_found"});
-    await auditLog({ action: "student_permanently_anonymized", actorId: req.teacher.id, studentId, details: { reason:"admin_permanent_delete", student_code: before.rows[0].student_code, changes: changedFields(before.rows[0], { full_name: `Archived student #${studentId}`, phone: null, guardian_phone: null, qr_token: null, is_active: false, deleted_at: before.rows[0].deleted_at }) }, request: req });
-    res.json({ok:true, anonymized:true});
-  } catch (error) { next(error); }
+    if (!Number.isSafeInteger(studentId) || studentId <= 0) return res.status(400).json({ ok: false, status: "invalid_student_ids" });
+    await client.query("BEGIN");
+    const exists = await client.query("SELECT 1 FROM students WHERE id = $1 AND deleted_at IS NOT NULL", [studentId]);
+    if (!exists.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "not_found" });
+    }
+    const result = await permanentlyDeleteStudents({ client, studentIds: [studentId], retain: retention.retain, actorId: req.teacher.id, request: req });
+    await client.query("COMMIT");
+    return res.json({ ok: true, deleted: true, deleted_count: result.deletedCount, student: result.students[0], retain: retention.retain });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    if (error?.status === "student_not_found") return res.status(404).json({ ok: false, status: error.status });
+    if (error?.status === "permanent_delete_conflict") return res.status(409).json({ ok: false, status: error.status });
+    if (error?.code === "23503") return res.status(409).json({ ok: false, status: "student_has_protected_records" });
+    return next(error);
+  } finally {
+    client.release();
+  }
 });
 
 adminAcademicRouter.patch("/students/:id/restore", requirePermission("students.manage"), async (req, res, next) => {

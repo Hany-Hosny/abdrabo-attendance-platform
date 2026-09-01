@@ -3,14 +3,16 @@ import { query } from "../db/pool.js";
 import { createTeacherToken, verifyPassword, verifyTeacherToken } from "../services/auth.js";
 import { requireTeacher } from "../middleware/requireTeacher.js";
 import { auditLog } from "../services/audit.js";
+import { createRateLimiter } from "../middleware/rateLimit.js";
 
 export const teacherRouter = express.Router();
+const loginRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, key: (req) => `teacher-login:${req.ip}` });
 
 function localizedError(language) {
   return language === "ar" ? "بيانات الدخول غير صحيحة." : "Invalid login credentials.";
 }
 
-teacherRouter.post("/login", async (req, res, next) => {
+teacherRouter.post("/login", loginRateLimit, async (req, res, next) => {
   try {
     const identifier = String(req.body?.identifier || req.body?.email || req.body?.username || "")
       .trim()

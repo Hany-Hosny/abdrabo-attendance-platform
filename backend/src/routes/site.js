@@ -5,6 +5,7 @@ import { createPublicInquiry } from "./inbox.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { isPhoneNumber } from "../utils/normalizeDigits.js";
 import { auditLog } from "../services/audit.js";
+import { authenticatedStudent } from "../services/studentAuth.js";
 
 export const siteRouter = express.Router();
 export const adminSiteRouter = express.Router();
@@ -15,11 +16,8 @@ siteRouter.post("/contact", async (req, res, next) => {
     const phone = normalizeDigits(req.body?.phone || "").trim();
     const body = String(req.body?.message || "").trim();
     const requestedStudentId = req.body?.student_id ? Number(req.body.student_id) : null;
-    const studentCode = normalizeDigits(req.headers["x-student-code"] || "").trim().toUpperCase();
-    const studentCheck = requestedStudentId && studentCode
-      ? await query("SELECT 1 FROM students WHERE id=$1 AND is_active=TRUE AND deleted_at IS NULL AND (student_code=$2 OR student_serial=$2)", [requestedStudentId, studentCode])
-      : { rowCount: 0 };
-    const studentId = studentCheck.rowCount ? requestedStudentId : null;
+    const student = requestedStudentId ? await authenticatedStudent(req) : null;
+    const studentId = student && Number(student.id) === requestedStudentId ? requestedStudentId : null;
     if (!name || !phone || !body) return res.status(400).json({ ok: false, status: "invalid_contact" });
     if (!isPhoneNumber(phone)) return res.status(400).json({ ok: false, status: "invalid_phone", message: "يجب إدخال ١١ رقمًا لرقم الهاتف. / Phone number must contain exactly 11 digits." });
     const result = await createPublicInquiry({ studentId: Number.isFinite(studentId) ? studentId : null, name, phone, subject: "Public inquiry", body, request: req });
