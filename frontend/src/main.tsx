@@ -347,6 +347,15 @@ const translations = {
     "inbox.senderAssistant": "مساعد",
     "inbox.deleteMessage": "حذف الرسالة",
     "inbox.confirmDeleteMessage": "هل أنت متأكد من حذف هذه الرسالة؟",
+    "inbox.selectAll": "تحديد الكل",
+    "inbox.deselectAll": "إلغاء تحديد الكل",
+    "inbox.selectConversation": "تحديد المحادثة",
+    "inbox.selectedCount": "تم تحديد {{count}} محادثة",
+    "inbox.deleteSelected": "حذف المحدد ({{count}})",
+    "inbox.deletingSelected": "جاري الحذف النهائي...",
+    "inbox.deletedSelected": "تم حذف {{count}} محادثة نهائياً",
+    "inbox.confirmDeleteSelected": "هل أنت متأكد من حذف {{count}} محادثة نهائياً؟ لا يمكن التراجع عن هذا الإجراء.",
+    "inbox.deleteFailed": "تعذر حذف المحادثات. حاول مرة أخرى.",
     "inbox.permission": "السماح للمساعد باستخدام الرسائل",
     "attendance.noRealSessions": "لا توجد حصص حقيقية لهذا اليوم.",
     "fees.title": "المصروفات",
@@ -509,6 +518,7 @@ const translations = {
     "audit.action.noteDeleted": "تم حذف ملاحظة",
     "audit.action.messageSent": "تم إرسال رسالة",
     "audit.action.messageDeleted": "تم حذف رسالة",
+    "audit.action.inboxThreadsDeleted": "تم حذف محادثات الرسائل نهائياً",
     "audit.action.messageRead": "تم تحديث حالة قراءة الرسالة",
     "audit.action.attendanceChanged": "تم تغيير الحضور",
     "audit.action.attendanceScanned": "تم تنفيذ مسح الحضور",
@@ -1250,6 +1260,15 @@ const translations = {
     "inbox.senderAssistant": "Assistant",
     "inbox.deleteMessage": "Delete message",
     "inbox.confirmDeleteMessage": "Are you sure you want to delete this message?",
+    "inbox.selectAll": "Select all",
+    "inbox.deselectAll": "Clear selection",
+    "inbox.selectConversation": "Select conversation",
+    "inbox.selectedCount": "{{count}} conversations selected",
+    "inbox.deleteSelected": "Delete selected ({{count}})",
+    "inbox.deletingSelected": "Permanently deleting...",
+    "inbox.deletedSelected": "{{count}} conversations permanently deleted",
+    "inbox.confirmDeleteSelected": "Are you sure you want to permanently delete {{count}} conversations? This cannot be undone.",
+    "inbox.deleteFailed": "Could not delete the conversations. Please try again.",
     "inbox.permission": "Allow assistant to use Inbox",
     "attendance.noRealSessions": "No real class sessions for this date.",
     "fees.title": "Fees",
@@ -1412,6 +1431,7 @@ const translations = {
     "audit.action.noteDeleted": "Note deleted",
     "audit.action.messageSent": "Message sent",
     "audit.action.messageDeleted": "Message deleted",
+    "audit.action.inboxThreadsDeleted": "Inbox conversations permanently deleted",
     "audit.action.messageRead": "Message read status updated",
     "audit.action.attendanceChanged": "Attendance changed",
     "audit.action.attendanceScanned": "Attendance scan processed",
@@ -6093,6 +6113,8 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     message_sent: "audit.action.messageSent",
     message_deleted: "audit.action.messageDeleted",
     inbox_message_deleted: "audit.action.messageDeleted",
+    inbox_message_permanently_deleted: "audit.action.messageDeleted",
+    inbox_threads_permanently_deleted: "audit.action.inboxThreadsDeleted",
     message_read_status_changed: "audit.action.messageRead",
     attendance_changed: "audit.action.attendanceChanged",
     attendance_session_changed: "audit.action.attendanceSessionCreated",
@@ -6152,6 +6174,8 @@ const auditActionOptions: Array<{ value: string; label: TranslationKey }> = [
   { value: "message_sent", label: "audit.action.messageSent" },
   { value: "message_deleted", label: "audit.action.messageDeleted" },
   { value: "inbox_message_deleted", label: "audit.action.messageDeleted" },
+  { value: "inbox_message_permanently_deleted", label: "audit.action.messageDeleted" },
+  { value: "inbox_threads_permanently_deleted", label: "audit.action.inboxThreadsDeleted" },
   { value: "message_read_status_changed", label: "audit.action.messageRead" },
   { value: "message_action", label: "audit.action.messageAction" },
   { value: "user_created", label: "audit.action.userCreated" },
@@ -6633,6 +6657,8 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
   const [status, setStatus] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [markingRead, setMarkingRead] = useState(false);
+  const [selectedThreadIds, setSelectedThreadIds] = useState<number[]>([]);
+  const deleteThreadsFeedback = useActionFeedback();
   const [replyState, setReplyState] = useState<"idle" | "sending" | "sent">("idle");
   const auth = { Authorization: `Bearer ${session.token}` };
   const jsonAuth = { ...auth, "Content-Type": "application/json" };
@@ -6655,7 +6681,9 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
         parseInboxResponse(threadsResponse),
         parseInboxResponse(countResponse)
       ]);
-      setThreads(Array.isArray(threadsData.threads) ? threadsData.threads : []);
+      const nextThreads = Array.isArray(threadsData.threads) ? threadsData.threads : [];
+      setThreads(nextThreads);
+      setSelectedThreadIds((current) => current.filter((id) => nextThreads.some((thread) => Number(thread.id) === id)));
       onUnreadCountChange(Number(countData.count || 0));
     } catch (_error) {
       setStatus(t("inbox.loadFailed"));
@@ -6703,12 +6731,55 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
     }
   }
 
+  function toggleThreadSelection(threadId: number) {
+    setSelectedThreadIds((current) => current.includes(threadId) ? current.filter((id) => id !== threadId) : [...current, threadId]);
+  }
+
+  function toggleAllThreads() {
+    const visibleIds = threads.map((thread) => Number(thread.id)).filter((id) => Number.isSafeInteger(id) && id > 0);
+    setSelectedThreadIds((current) => visibleIds.length && visibleIds.every((id) => current.includes(id))
+      ? current.filter((id) => !visibleIds.includes(id))
+      : [...new Set([...current, ...visibleIds])]);
+  }
+
+  async function deleteSelectedThreads() {
+    const threadIds = [...selectedThreadIds];
+    if (!threadIds.length || deleteThreadsFeedback.state === "loading") return;
+    if (!window.confirm(t("inbox.confirmDeleteSelected", { count: String(threadIds.length) }))) return;
+    setStatus("");
+    try {
+      await deleteThreadsFeedback.run(async () => {
+        const response = await fetch(`${API_BASE_URL}/admin/inbox/threads`, {
+          method: "DELETE",
+          headers: jsonAuth,
+          body: JSON.stringify({ thread_ids: threadIds })
+        });
+        await parseInboxResponse(response);
+        setSelectedThreadIds((current) => current.filter((id) => !threadIds.includes(id)));
+        if (selected && threadIds.includes(Number(selected.id))) {
+          setSelected(null);
+          setMessages([]);
+        }
+        await refresh();
+      });
+      setStatus(t("inbox.deletedSelected", { count: String(threadIds.length) }));
+    } catch (_error) {
+      setStatus(t("inbox.deleteFailed"));
+    }
+  }
+
   async function deleteMessage(messageId: number) {
     if (!selected || !window.confirm(t("inbox.confirmDeleteMessage"))) return;
     try {
       const response = await fetch(`${API_BASE_URL}/admin/inbox/${selected.id}/messages/${messageId}`, { method: "DELETE", headers: auth });
-      await parseInboxResponse(response);
-      await openThread(selected);
+      const data = await parseInboxResponse(response);
+      if (data.thread_deleted) {
+        setSelected(null);
+        setMessages([]);
+      } else {
+        await openThread(selected);
+      }
+      await refresh();
     } catch (_error) {
       setStatus(t("inbox.loadFailed"));
     }

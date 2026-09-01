@@ -1,5 +1,5 @@
 import express from "express";
-import { query } from "../db/pool.js";
+import { pool, query } from "../db/pool.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { requirePermission, requireTeacher } from "../middleware/requireTeacher.js";
 import { auditLog } from "../services/audit.js";
@@ -17,6 +17,10 @@ inboxRouter.param("studentId", async (req, res, next, value) => {
 });
 
 function clean(value) { return normalizeDigits(value).trim(); }
+function positiveIds(value, max = 100) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))].slice(0, max);
+}
 async function studentIdFromRequest(req) { const student = await authenticatedStudent(req); return student?.id || null; }
 function staffCanUseInbox(req) { return req.teacher?.role !== "staff" || req.teacher?.can_use_inbox === true; }
 function senderType(role) { return role === "owner" || role === "admin" ? "admin" : "teacher"; }
@@ -84,7 +88,93 @@ staffInboxRouter.get("/inbox/threads/:id/messages", staffThreadMessages);
 async function markStaffRead(req,res,next){try{const result=await query("UPDATE inbox_messages SET is_read=TRUE WHERE thread_id=$1 AND deleted_at IS NULL AND is_read=FALSE AND sender_type IN ('student','public') RETURNING id",[req.params.id]);if(result.rowCount)await auditLog({action:"message_read_status_changed",actorId:req.teacher.id,details:{thread_id:Number(req.params.id),marked_count:result.rowCount,status_after:"read"},request:req});res.json({ok:true,marked_count:result.rowCount});}catch(error){next(error);}}
 staffInboxRouter.put("/inbox/:id/read", markStaffRead);
 staffInboxRouter.post("/inbox/:id/read", markStaffRead);
-staffInboxRouter.delete("/inbox/:threadId/messages/:messageId", requirePermission("messages.manage"), async(req,res,next)=>{try{const result=await query("UPDATE inbox_messages SET deleted_at=NOW(), is_read=TRUE WHERE id=$1 AND thread_id=$2 AND deleted_at IS NULL RETURNING id, body, sender_type, sender_id, sender_student_id",[Number(req.params.messageId),Number(req.params.threadId)]);if(!result.rowCount)return res.status(404).json({ok:false,status:"not_found"});await query("UPDATE inbox_threads SET updated_at=NOW() WHERE id=$1",[Number(req.params.threadId)]);await auditLog({action:"inbox_message_deleted",actorId:req.teacher.id,studentId:result.rows[0].sender_student_id||null,details:{thread_id:Number(req.params.threadId),message_id:Number(req.params.messageId),before:result.rows[0],after:{deleted_at:"set"}},request:req});res.json({ok:true});}catch(error){next(error);}});
+staffInboxRouter.delete("/inbox/threads", requirePermission("messages.manage"), async (req, res, next) => {
+  const threadIds = positiveIds(req.body?.thread_ids);
+  if (!threadIds.length) return res.status(400).json({ ok: false, status: "invalid_thread_ids" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const existing = await client.query(
+      "SELECT id, student_id FROM inbox_threads WHERE id = ANY($1::bigint[]) FOR UPDATE",
+      [threadIds]
+    );
+    const existingIds = existing.rows.map((row) => Number(row.id));
+    if (!existingIds.length) {
+      await client.query("COMMIT");
+      return res.json({ ok: true, deleted_thread_count: 0, deleted_message_count: 0 });
+    }
+
+    const messages = await client.query(
+      "DELETE FROM inbox_messages WHERE thread_id = ANY($1::bigint[]) RETURNING id",
+      [existingIds]
+    );
+    const threads = await client.query(
+      "DELETE FROM inbox_threads WHERE id = ANY($1::bigint[]) RETURNING id",
+      [existingIds]
+    );
+    await auditLog({
+      db: client,
+      action: "inbox_threads_permanently_deleted",
+      actorId: req.teacher.id,
+      details: {
+        thread_ids: existingIds,
+        deleted_thread_count: threads.rowCount,
+        deleted_message_count: messages.rowCount
+      },
+      request: req
+    });
+    await client.query("COMMIT");
+    return res.json({
+      ok: true,
+      deleted_thread_count: threads.rowCount,
+      deleted_message_count: messages.rowCount
+    });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return next(error);
+  } finally {
+    client.release();
+  }
+});
+
+staffInboxRouter.delete("/inbox/:threadId/messages/:messageId", requirePermission("messages.manage"), async (req, res, next) => {
+  const threadId = Number(req.params.threadId);
+  const messageId = Number(req.params.messageId);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      "DELETE FROM inbox_messages WHERE id = $1 AND thread_id = $2 RETURNING id, thread_id, sender_student_id",
+      [messageId, threadId]
+    );
+    if (!result.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "not_found" });
+    }
+
+    await client.query("DELETE FROM inbox_messages WHERE thread_id = $1 AND deleted_at IS NOT NULL", [threadId]);
+    const remaining = await client.query("SELECT COUNT(*)::int AS count FROM inbox_messages WHERE thread_id = $1", [threadId]);
+    const threadDeleted = Number(remaining.rows[0]?.count || 0) === 0;
+    if (threadDeleted) await client.query("DELETE FROM inbox_threads WHERE id = $1", [threadId]);
+
+    await auditLog({
+      db: client,
+      action: "inbox_message_permanently_deleted",
+      actorId: req.teacher.id,
+      studentId: result.rows[0].sender_student_id || null,
+      details: { thread_id: threadId, message_id: messageId, thread_deleted: threadDeleted },
+      request: req
+    });
+    await client.query("COMMIT");
+    return res.json({ ok: true, thread_deleted: threadDeleted });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return next(error);
+  } finally {
+    client.release();
+  }
+});
 staffInboxRouter.post("/inbox/read-visible", requirePermission("messages.manage"), async(req,res,next)=>{try{const ids=Array.isArray(req.body?.thread_ids)?req.body.thread_ids.map(Number).filter(Number.isInteger):[];if(!ids.length)return res.json({ok:true,marked_count:0});const result=await query("UPDATE inbox_messages SET is_read=TRUE WHERE thread_id=ANY($1::bigint[]) AND is_read=FALSE AND sender_type IN ('student','public') RETURNING id",[ids]);res.json({ok:true,marked_count:result.rowCount});}catch(error){next(error);}});
 staffInboxRouter.post("/inbox/threads/:id/messages", requirePermission("messages.manage"), async(req,res,next)=>{try{const body=clean(req.body?.body),thread=await getThread(req.params.id);if(!thread)return res.status(404).json({ok:false,status:"not_found"});if(!body)return res.status(400).json({ok:false,status:"invalid_message"});const message=await addMessage(thread.id,senderType(req.teacher.role),req.teacher.id,body,req);res.status(201).json({ok:true,message});}catch(error){next(error);}});
 staffInboxRouter.post("/inbox/:id/messages", requirePermission("messages.manage"), async(req,res,next)=>{try{const body=clean(req.body?.body),thread=await getThread(req.params.id);if(!thread)return res.status(404).json({ok:false,status:"not_found"});if(!body)return res.status(400).json({ok:false,status:"invalid_message"});const message=await addMessage(thread.id,senderType(req.teacher.role),req.teacher.id,body,req);res.status(201).json({ok:true,message});}catch(error){next(error);}});

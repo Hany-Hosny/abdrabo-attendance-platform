@@ -4713,11 +4713,73 @@ th {
   font-size: 17px;
 }
 
+.admin-dashboard-inbox .inbox-selection-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-dashboard-inbox .inbox-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.admin-dashboard-inbox .inbox-select-all input,
+.admin-dashboard-inbox .inbox-thread-checkbox input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.admin-dashboard-inbox .inbox-delete-selected {
+  min-height: 36px;
+  margin: 0;
+  padding: 7px 11px;
+  font-size: 11px;
+}
+
 .admin-dashboard-inbox .inbox-list {
   min-height: 0;
   overflow-y: auto;
   padding-inline-end: 2px;
   scrollbar-width: thin;
+}
+
+.admin-dashboard-inbox .inbox-thread-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: stretch;
+  margin-bottom: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(128, 170, 211, 0.14);
+  border-radius: 10px;
+  background: rgba(13, 27, 46, 0.72);
+}
+
+.admin-dashboard-inbox .inbox-thread-row.selected {
+  border-color: rgba(242, 140, 40, 0.65);
+  box-shadow: 0 0 0 3px rgba(242, 140, 40, 0.08);
+}
+
+.admin-dashboard-inbox .inbox-thread-checkbox {
+  display: grid;
+  min-width: 0;
+  min-height: 116px;
+  margin: 0;
+  place-items: center;
+  border-inline-end: 1px solid rgba(128, 170, 211, 0.12);
+  background: rgba(7, 19, 33, 0.38);
+  cursor: pointer;
 }
 
 .admin-dashboard-inbox .inbox-thread {
@@ -4727,6 +4789,24 @@ th {
   border-color: rgba(128, 170, 211, 0.14);
   background: rgba(13, 27, 46, 0.72);
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.admin-dashboard-inbox .inbox-thread-row .inbox-thread {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.admin-dashboard-inbox .inbox-thread-row .inbox-thread:hover,
+.admin-dashboard-inbox .inbox-thread-row .inbox-thread:focus-visible,
+.admin-dashboard-inbox .inbox-thread-row .inbox-thread.active {
+  transform: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.admin-dashboard-inbox .inbox-thread-row.selected .inbox-thread {
+  background: rgba(58, 42, 30, 0.78);
 }
 
 .admin-dashboard-inbox .inbox-thread:hover,
