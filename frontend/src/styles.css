@@ -518,6 +518,16 @@ input:disabled {
   flex-wrap: wrap !important;
   gap: 16px !important;
   max-width: 1680px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  padding-block: 10px;
+  border-bottom: 1px solid rgba(128, 170, 211, 0.16);
+  background: rgba(7, 19, 33, 0.94);
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  isolation: isolate;
 }
 
 .admin-header .brand {
