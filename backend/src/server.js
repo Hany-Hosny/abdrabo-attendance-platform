@@ -98,7 +98,7 @@ migrate()
     purgeDeletedStudents().catch((error) => console.error("Failed to purge deleted students", error));
     setInterval(() => ensureMonthlyFees().catch((error) => console.error("Failed to renew monthly fees", error)), 60 * 60 * 1000);
     setInterval(() => purgeDeletedStudents().catch((error) => console.error("Failed to purge deleted students", error)), 24 * 60 * 60 * 1000);
-    app.listen(port, () => {
+    app.listen(port, "0.0.0.0", () => {
       console.log(`Abdrabo API listening on port ${port}`);
     });
   })
