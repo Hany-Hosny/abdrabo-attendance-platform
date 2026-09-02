@@ -7,7 +7,7 @@ import { ensureMonthlyFees, getAdvanceOptions, getFeeSummary, recordAdvancePayme
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { auditLog } from "../services/audit.js";
 import { getAttendanceTimingDefaults } from "../services/systemSettings.js";
-import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue } from "../utils/scan.js";
+import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue, scanLookupValues } from "../utils/scan.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { hasPermission } from "../services/rbac.js";
 
@@ -454,7 +454,8 @@ operationsRouter.get("/attendance/sessions/:id/records", requirePermission("atte
 operationsRouter.post("/scanner/student-lookup", requireAnyPermission("students.view", "attendance.view", "payments.view"), async (req, res, next) => {
   try {
     const value = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
-    if (!isValidScanValue(value)) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
+    const lookupValues = scanLookupValues(value).map((candidate) => candidate.toLowerCase());
+    if (!isValidScanValue(value) || !lookupValues.length) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
     const result = await query(`
       SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
         s.group_id, s.is_active, s.deleted_at,
@@ -462,13 +463,13 @@ operationsRouter.post("/scanner/student-lookup", requireAnyPermission("students.
         g.is_active AS group_active
       FROM students s
       LEFT JOIN groups g ON g.id = s.group_id
-      WHERE LOWER(COALESCE(s.qr_token, '')) = LOWER($1)
-         OR LOWER(COALESCE(s.scan_serial, '')) = LOWER($1)
-         OR LOWER(COALESCE(s.student_serial, '')) = LOWER($1)
-         OR LOWER(COALESCE(s.student_code, '')) = LOWER($1)
+      WHERE LOWER(COALESCE(s.qr_token, '')) = ANY($1::text[])
+         OR LOWER(COALESCE(s.scan_serial, '')) = ANY($1::text[])
+         OR LOWER(COALESCE(s.student_serial, '')) = ANY($1::text[])
+         OR LOWER(COALESCE(s.student_code, '')) = ANY($1::text[])
       ORDER BY s.deleted_at NULLS FIRST, s.is_active DESC
       LIMIT 1
-    `, [value]);
+    `, [lookupValues]);
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "student_not_found" });
     const student = result.rows[0];
     const status = student.deleted_at ? "deleted_student" : !student.is_active || student.group_active === false ? "inactive_student" : "student_found";
@@ -494,17 +495,18 @@ operationsRouter.post("/scanner/student-lookup", requireAnyPermission("students.
 operationsRouter.post("/fees/scan-lookup", requirePermission("payments.view"), async (req, res, next) => {
   try {
     const value = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
-    if (!isValidScanValue(value)) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
+    const lookupValues = scanLookupValues(value).map((candidate) => candidate.toLowerCase());
+    if (!isValidScanValue(value) || !lookupValues.length) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
     const studentResult = await query(`
       SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
         s.is_active, s.deleted_at, g.name AS group_name,
         COALESCE(g.grade_level, g.grade) AS grade_level, g.is_active AS group_active
       FROM students s JOIN groups g ON g.id=s.group_id
       WHERE s.deleted_at IS NULL AND s.is_active=TRUE AND g.deleted_at IS NULL AND g.is_active=TRUE
-        AND (LOWER(COALESCE(s.qr_token,''))=LOWER($1) OR LOWER(COALESCE(s.scan_serial,''))=LOWER($1)
-          OR LOWER(COALESCE(s.student_serial,''))=LOWER($1) OR LOWER(COALESCE(s.student_code,''))=LOWER($1))
+        AND (LOWER(COALESCE(s.qr_token,''))=ANY($1::text[]) OR LOWER(COALESCE(s.scan_serial,''))=ANY($1::text[])
+          OR LOWER(COALESCE(s.student_serial,''))=ANY($1::text[]) OR LOWER(COALESCE(s.student_code,''))=ANY($1::text[]))
       LIMIT 1
-    `, [value]);
+    `, [lookupValues]);
     if (!studentResult.rowCount) return res.status(404).json({ ok: false, status: "student_not_found" });
     const studentId = studentResult.rows[0].id;
     const mode = req.body?.mode === "advance" ? "advance" : "new";
@@ -546,7 +548,8 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
 operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission("attendance.manage"), async (req, res, next) => {
   try {
     const token = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
-    if (!isValidScanValue(token)) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
+    const lookupValues = scanLookupValues(token).map((candidate) => candidate.toLowerCase());
+    if (!isValidScanValue(token) || !lookupValues.length) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
     const deviceId = String(req.body?.device_id || "").trim();
     if (deviceId && deviceId.length > 128) return res.status(400).json({ ok: false, status: "invalid_device_id" });
     const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
@@ -558,12 +561,12 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
         COALESCE(g.grade_level,g.grade) AS grade_level, g.fees_amount, g.is_active AS group_active,
         g.deleted_at AS group_deleted_at
        FROM students s LEFT JOIN groups g ON g.id=s.group_id
-       WHERE LOWER(COALESCE(s.qr_token, '')) = LOWER($1)
-        OR LOWER(COALESCE(s.scan_serial, '')) = LOWER($1)
-        OR LOWER(COALESCE(s.student_serial, '')) = LOWER($1)
-        OR LOWER(COALESCE(s.student_code, '')) = LOWER($1)
+       WHERE LOWER(COALESCE(s.qr_token, '')) = ANY($1::text[])
+        OR LOWER(COALESCE(s.scan_serial, '')) = ANY($1::text[])
+        OR LOWER(COALESCE(s.student_serial, '')) = ANY($1::text[])
+        OR LOWER(COALESCE(s.student_code, '')) = ANY($1::text[])
        ORDER BY s.deleted_at NULLS FIRST, s.is_active DESC LIMIT 1`,
-      [token]
+      [lookupValues]
     );
     if (!studentResult.rowCount) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, details: { reason: "student_not_found", scanned_value: token, ip: req.ip }, request: req }); return res.status(404).json({ok:false,status:"student_not_found"}); }
     const student=studentResult.rows[0];

@@ -2926,27 +2926,16 @@ function App() {
   }
 
   return (
-    <Shell language={language} setLanguage={setLanguage} t={t}>
-      <main className="hero">
-        <section className="hero-copy" aria-labelledby="hero-title">
-          <p className="eyebrow">{t("home.eyebrow")}</p>
-          <h1 id="hero-title">{t("home.title")}</h1>
-          <p className="subtitle">{t("home.subtitle")}</p>
-          <div className="teacher-strip">
-            <img className="teacher-mark teacher-avatar" src="/assets/teacher-profile.png" alt="" aria-hidden="true" />
-            <div>
-              <strong>{t("site.name")}</strong>
-              <span>{t("site.description")}</span>
-            </div>
-          </div>
-        </section>
-
-        <section className="login-card" id="student-login" aria-labelledby="login-title">
-          <h2 id="login-title">{t("student.loginTitle")}</h2>
+    <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth">
+      <main className="teacher-auth">
+        <section className="login-card teacher-login-card student-login-card" id="student-login" aria-labelledby="student-login-title">
+          <p className="eyebrow">{t("nav.studentLogin")}</p>
+          <h1 id="student-login-title">{t("student.loginTitle")}</h1>
           <form onSubmit={handleLogin}>
             <label htmlFor="student-code">{t("student.codeLabel")}</label>
             <input
               id="student-code"
+              dir="ltr"
               value={studentCode}
               onChange={(event) => setStudentCode(normalizeScanValue(event.target.value))}
               placeholder={t("student.codePlaceholder")}
@@ -2957,7 +2946,7 @@ function App() {
             <button className="primary-button" disabled={loading} type="submit">
               {loading ? t("student.enteringButton") : t("student.enterButton")}
             </button>
-            <button className="secondary-button" type="button" onClick={openLookupModal}>
+            <button className="secondary-button student-login-lookup-button" type="button" onClick={openLookupModal}>
               {t("student.findCodeButton")}
             </button>
           </form>
