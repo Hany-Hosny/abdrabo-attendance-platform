@@ -6589,6 +6589,108 @@ th {
   background: rgba(128, 170, 211, 0.18);
 }
 
+/* Refined administration menu: compact, tactile, and visually anchored to the gear. */
+.admin-gear-button {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px !important;
+  border: 1px solid rgba(105, 145, 194, 0.26) !important;
+  border-radius: 11px;
+  background: rgba(6, 18, 37, 0.42) !important;
+  color: #d3dfef;
+  transition: border-color .18s ease, background .18s ease, color .18s ease, transform .18s ease;
+}
+
+.admin-gear-button:hover,
+.admin-gear-button.active {
+  border-color: rgba(242, 140, 40, 0.58) !important;
+  background: rgba(242, 140, 40, 0.1) !important;
+  color: var(--accent-strong);
+}
+
+.admin-gear-button:hover { transform: translateY(-1px); }
+.admin-gear-button .header-control-icon { transform-origin: 50% 50%; }
+.admin-gear-button.active .header-control-icon { animation: admin-gear-spin .62s cubic-bezier(.22, .61, .36, 1); }
+
+.gear-dropdown {
+  top: calc(100% + 10px);
+  min-width: 224px;
+  max-width: min(280px, calc(100vw - 24px));
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid rgba(105, 145, 194, 0.34);
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(15, 35, 59, .99), rgba(7, 20, 36, .99));
+  box-shadow: 0 20px 44px rgba(0, 0, 0, .44), inset 0 1px 0 rgba(255, 255, 255, .045);
+  transform-origin: top right;
+  animation: gear-dropdown-in .16s ease-out both;
+}
+
+.gear-dropdown button {
+  min-height: 40px !important;
+  gap: 10px;
+  padding: 0 10px !important;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: #d9e6f5;
+  font-size: 12.5px;
+  font-weight: 700;
+  transition: border-color .16s ease, background .16s ease, color .16s ease, transform .16s ease;
+}
+
+.gear-dropdown button span {
+  display: inline-grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 27px;
+  place-items: center;
+  border: 1px solid rgba(242, 140, 40, .24);
+  border-radius: 8px;
+  background: rgba(242, 140, 40, .08);
+  color: #ffb34a;
+  font-size: 13px;
+  line-height: 1;
+  text-align: center;
+}
+
+.gear-dropdown button:hover,
+.gear-dropdown button:focus-visible {
+  border-color: rgba(242, 140, 40, .34);
+  background: rgba(242, 140, 40, .1);
+  color: #fff2df;
+  outline: 2px solid rgba(77, 208, 225, .72);
+  outline-offset: -2px;
+  transform: translateX(-2px);
+}
+
+.gear-dropdown button:hover span,
+.gear-dropdown button:focus-visible span {
+  border-color: rgba(242, 140, 40, .54);
+  background: rgba(242, 140, 40, .18);
+}
+
+.gear-menu-settings { margin-top: 1px; }
+.gear-dropdown .gear-divider { height: 1px; margin: 8px 4px 6px; background: linear-gradient(90deg, transparent, rgba(128, 170, 211, .3), transparent); }
+
+@keyframes admin-gear-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes gear-dropdown-in {
+  from { opacity: 0; transform: translateY(-5px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-gear-button,
+  .gear-dropdown button { transition: none; }
+  .admin-gear-button.active .header-control-icon,
+  .gear-dropdown { animation: none; }
+}
+
 @media (min-width: 1024px) {
   .admin-dashboard > .admin-tab-panel {
     margin-top: 0;
