@@ -131,15 +131,16 @@ type AdminStudent = {
 };
 
 type SiteSlug = "about-teacher" | "about-center" | "contact" | "tips";
-type AdminTab = "overview" | "add-user" | "users" | "site-content" | "students" | "groups" | "attendance" | "scanner" | "fees" | "exams" | "inbox" | "audit-logs" | "settings";
+type AdminTab = "overview" | "add-user" | "users" | "site-content" | "students" | "groups" | "attendance" | "scanner" | "fees" | "reports" | "exams" | "inbox" | "audit-logs" | "settings";
 
-const adminTabIds: AdminTab[] = ["overview", "add-user", "users", "site-content", "students", "groups", "attendance", "scanner", "fees", "exams", "inbox", "audit-logs", "settings"];
+const adminTabIds: AdminTab[] = ["overview", "add-user", "users", "site-content", "students", "groups", "attendance", "scanner", "fees", "reports", "exams", "inbox", "audit-logs", "settings"];
 const mobilePrimaryAdminTabIds: AdminTab[] = ["overview", "students", "attendance", "fees"];
 const adminTabIcons: Partial<Record<AdminTab, string>> = {
   overview: "⌂",
   students: "♙",
   attendance: "✓",
   fees: "₤",
+  reports: "▤",
   groups: "▦",
   scanner: "▥",
   exams: "▤",
@@ -276,6 +277,7 @@ const translations = {
     "admin.tabs.groups": "المجموعات",
     "admin.tabs.attendance": "الحضور",
     "admin.tabs.scanner": "الماسح",
+    "admin.tabs.reports": "التقارير",
     "scanner.inputLabel": "امسح باركود الليبل أو رمز QR",
     "scanner.inputPlaceholder": "امسح الليبل هنا",
     "scanner.submit": "تسجيل الحضور",
@@ -451,6 +453,9 @@ const translations = {
     "fees.monthsCovered": "الأشهر المغطاة",
     "fees.noMatchingResults": "لا توجد نتائج مطابقة للبحث.",
     "fees.reports": "التقارير",
+    "fees.reportsDescription": "تابع التحصيل والمدفوعات المتأخرة من مكان واحد.",
+    "fees.paymentReportTab": "تقرير المدفوعات",
+    "fees.overdueReportTab": "المصروفات المتأخرة",
     "fees.dateFrom": "من تاريخ",
     "fees.dateTo": "إلى تاريخ",
     "fees.today": "اليوم",
@@ -1244,6 +1249,7 @@ const translations = {
     "admin.tabs.groups": "Groups",
     "admin.tabs.attendance": "Attendance",
     "admin.tabs.scanner": "Scanner",
+    "admin.tabs.reports": "Reports",
     "scanner.inputLabel": "Scan the label barcode or QR code",
     "scanner.inputPlaceholder": "Scan the label here",
     "scanner.submit": "Record attendance",
@@ -1419,6 +1425,9 @@ const translations = {
     "fees.monthsCovered": "Months covered",
     "fees.noMatchingResults": "No matching results found.",
     "fees.reports": "Reports",
+    "fees.reportsDescription": "Review collections and overdue payments in one place.",
+    "fees.paymentReportTab": "Payment Report",
+    "fees.overdueReportTab": "Overdue Payments",
     "fees.dateFrom": "Date from",
     "fees.dateTo": "Date to",
     "fees.today": "Today",
@@ -3651,11 +3660,12 @@ function TeacherDashboard({
     { id: "attendance", label: t("admin.tabs.attendance"), permission: "attendance.view" },
     { id: "scanner", label: t("admin.tabs.scanner"), permission: "attendance.manage" },
     { id: "fees", label: t("admin.tabs.fees"), permission: "payments.view" },
+    { id: "reports", label: t("admin.tabs.reports"), permission: "payments.reports.view" },
     { id: "exams", label: t("admin.tabs.exams"), permission: "exams.view" },
     { id: "inbox", label: t("admin.tabs.inbox"), permission: "messages.view" },
     { id: "settings", label: t("admin.tabs.settings"), permission: "settings.manage" }
-  ] satisfies Array<{ id: AdminTab; label: string; permission?: PermissionKey }>).filter((tab) => (!tab.permission || can(tab.permission)) && (tab.id !== "overview" || can("dashboard.view")));
-  const primaryAdminTabs = adminTabs.filter((tab) => ["overview", "students", "groups", "attendance", "scanner", "fees", "exams", "inbox"].includes(tab.id));
+  ] satisfies Array<{ id: AdminTab; label: string; permission?: PermissionKey }>).filter((tab) => (!tab.permission || can(tab.permission)) && (tab.id !== "overview" || can("dashboard.view")) && (tab.id !== "reports" || can("payments.view")));
+  const primaryAdminTabs = adminTabs.filter((tab) => ["overview", "students", "groups", "attendance", "scanner", "fees", "reports", "exams", "inbox"].includes(tab.id));
   const gearOrder: AdminTab[] = ["users", "add-user", "site-content", "audit-logs", "settings"];
   const gearAdminTabs = gearOrder.map((id) => adminTabs.find((tab) => tab.id === id)).filter((tab): tab is (typeof adminTabs)[number] => Boolean(tab));
   const [gearOpen, setGearOpen] = useState(false);
@@ -3936,7 +3946,8 @@ function TeacherDashboard({
             {activeTab === "groups" && can("schedule.view") ? <AcademicManager kind="groups" session={session} t={t} /> : null}
             {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
             {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} t={t} /> : null}
-          {activeTab === "fees" && can("payments.view") ? <><FeesPanel session={session} t={t} />{can("payments.reports.view") ? <><PaymentReportsPanel session={session} t={t} canReverse={can("payments.reverse")} /><LatePaymentsReportPanel session={session} t={t} /></> : null}</> : null}
+            {activeTab === "fees" && can("payments.view") ? <FeesPanel session={session} t={t} /> : null}
+            {activeTab === "reports" && can("payments.view") && can("payments.reports.view") ? <FinanceReportsPanel session={session} t={t} canReverse={can("payments.reverse")} /> : null}
             {activeTab === "attendance" && can("attendance.view") ? <AttendancePanel session={session} language={language} t={t} /> : null}
             {activeTab === "exams" && can("exams.view") ? <ExamResultsManager session={session} t={t} /> : null}
             {activeTab === "inbox" && can("messages.view") ? <StaffInboxControls session={session} language={language} t={t} onUnreadCountChange={setInboxUnread} /> : null}
@@ -6606,7 +6617,26 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><div className="report-filters payment-report-filters"><label>{t("audit.search")}<input value={search} onChange={(event) => setSearch(event.target.value)} /></label><label>{t("audit.action")}<select value={action} onChange={(event) => { setAction(event.target.value); setPage(1); }}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.user")}<input value={userId} onChange={(event) => setUserId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.student")}<input value={studentId} onChange={(event) => setStudentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.dateFrom")}<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={refreshLogs}>{refreshLabel}</button><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div><p className="report-total">{total} · {t("audit.title")}</p>{logs.length ? <div className="table-wrap"><table><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.student")}</th><th>{t("audit.payment")}</th><th>{t("audit.details")}</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td>{new Date(log.created_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</td><td>{log.actor_name || log.actor_username || "—"}</td><td>{t(auditActionKey(log.action))}</td><td><strong>{log.student_name || "—"}</strong>{log.student_code ? <small className="audit-student-code">{log.student_code}</small> : log.student_id ? <small className="audit-student-code">ID: {log.student_id}</small> : null}</td><td>{log.payment_id ? `${log.payment_id}${log.payment_amount ? ` · ${log.payment_amount} EGP` : ""}` : "—"}</td><td><details><summary>{t("audit.details")}</summary><div className="audit-detail-list">{formatAuditDetails(log.details || {}, language, t, log.actor_name || log.actor_username || "").map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}{log.reversal_reason ? <div className="audit-detail-item"><b>{t("audit.reason")}</b><span>{log.reversal_reason}</span></div> : null}</div></details></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("audit.noLogs")}</p>}<div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => loadLogs(page - 1)}>{"‹"}</button><span>{page} / {Math.max(1, Math.ceil(total / 50))}</span><button className="secondary-button compact-button" type="button" disabled={page >= Math.max(1, Math.ceil(total / 50)) || loading} onClick={() => loadLogs(page + 1)}>{"›"}</button></div>{maintenancePanel}{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
-function PaymentReportsPanel({ session, t, canReverse }: { session: TeacherSession; t: Translator; canReverse: boolean }) {
+function FinanceReportsPanel({ session, t, canReverse }: { session: TeacherSession; t: Translator; canReverse: boolean }) {
+  const [view, setView] = useState<"payments" | "overdue">("payments");
+
+  return <div className="finance-reports-workspace">
+    <div className="finance-reports-toolbar">
+      <div className="section-heading">
+        <p className="eyebrow">{t("admin.tabs.reports")}</p>
+        <h2>{t("admin.tabs.reports")}</h2>
+        <p>{t("fees.reportsDescription")}</p>
+      </div>
+      <div className="internal-tabs finance-report-tabs" role="tablist" aria-label={t("admin.tabs.reports")}>
+        <button className={view === "payments" ? "active" : ""} type="button" role="tab" aria-selected={view === "payments"} onClick={() => setView("payments")}>{t("fees.paymentReportTab")}</button>
+        <button className={view === "overdue" ? "active" : ""} type="button" role="tab" aria-selected={view === "overdue"} onClick={() => setView("overdue")}>{t("fees.overdueReportTab")}</button>
+      </div>
+    </div>
+    {view === "payments" ? <PaymentReportsPanel session={session} t={t} canReverse={canReverse} embedded /> : <LatePaymentsReportPanel session={session} t={t} embedded />}
+  </div>;
+}
+
+function PaymentReportsPanel({ session, t, canReverse, embedded = false }: { session: TeacherSession; t: Translator; canReverse: boolean; embedded?: boolean }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [query, setQuery] = useState("");
@@ -6675,8 +6705,8 @@ function PaymentReportsPanel({ session, t, canReverse }: { session: TeacherSessi
     finally { setReversing(false); }
   }
 
-  return <section className="admin-editor payment-reports">
-    <div className="section-heading reports-header"><p className="eyebrow">{t("fees.reports")}</p><h2>{t("fees.reports")}</h2></div>
+  return <section className={`admin-editor payment-reports ${embedded ? "embedded-report-panel" : ""}`}>
+    {!embedded ? <div className="section-heading reports-header"><p className="eyebrow">{t("fees.reports")}</p><h2>{t("fees.reports")}</h2></div> : null}
     <div className="report-filters payment-report-filters">
       <label>{t("fees.dateFrom")}<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
       <label>{t("fees.dateTo")}<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
@@ -6691,7 +6721,7 @@ function PaymentReportsPanel({ session, t, canReverse }: { session: TeacherSessi
   </section>;
 }
 
-function LatePaymentsReportPanel({ session, t }: { session: TeacherSession; t: Translator }) {
+function LatePaymentsReportPanel({ session, t, embedded = false }: { session: TeacherSession; t: Translator; embedded?: boolean }) {
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
   const [from, setFrom] = useState(monthStart);
@@ -6734,7 +6764,7 @@ function LatePaymentsReportPanel({ session, t }: { session: TeacherSession; t: T
     const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = `late-payments-${localDateInputValue()}.csv`; link.click(); URL.revokeObjectURL(url);
   }
 
-  return <section className="admin-editor late-payments-report"><div className="section-heading"><p className="eyebrow">{t("fees.lateReport")}</p><h2>{t("fees.lateReport")}</h2></div><div className="report-filters payment-report-filters"><label>{t("fees.dateFrom")}<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label><label>{t("fees.dateTo")}<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label><label className="payment-report-search">{t("fees.reportSearch")}<input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("fees.reportSearch")} /></label><label>{t("fees.groupFilter")}<input value={group} onChange={(e) => setGroup(e.target.value)} /></label><label>{t("fees.gradeFilter")}<input value={grade} onChange={(e) => setGrade(e.target.value)} /></label><label className="checkbox-label"><input type="checkbox" checked={includeDisabled} onChange={(e) => setIncludeDisabled(e.target.checked)} />{t("fees.includeDisabled")}</label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={() => runReport().catch(() => undefined)}>{t("fees.find")}</button><button className="secondary-button compact-button" type="button" disabled={!rows.length} onClick={exportCsv}>{t("fees.exportExcel")}</button></div><div className="report-summary"><span><b>{t("fees.lateStudentCount")}</b>{count}</span><span><b>{t("fees.totalExpectedUnpaid")}</b>{total.toFixed(2)} EGP</span></div>{rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.scanSerial")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("admin.guardianPhone")}</th><th>{t("fees.required")}</th><th>{t("fees.paid")}</th><th>{t("fees.remaining")}</th><th>{t("fees.coveredMonth")}</th><th>{t("fees.lastPaymentDate")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.scan_serial || "—"}</td><td>{row.group_name}</td><td>{row.grade_level}</td><td>{row.guardian_phone}</td><td>{Number(row.required_amount).toFixed(2)}</td><td>{Number(row.paid_amount).toFixed(2)}</td><td>{Number(row.remaining_balance).toFixed(2)}</td><td>{(row.unpaid_months || []).map((month: any) => String(month.month).slice(0, 7)).join(" · ") || "—"}</td><td>{row.last_payment_date ? new Date(row.last_payment_date).toLocaleDateString() : "—"}</td></tr>)}</tbody></table></div> : <p className="empty-state">{status || t("fees.noMatchingResults")}</p>}{status ? <p className="form-error">{status}</p> : null}</section>;
+  return <section className={`admin-editor late-payments-report ${embedded ? "embedded-report-panel" : ""}`}>{!embedded ? <div className="section-heading"><p className="eyebrow">{t("fees.lateReport")}</p><h2>{t("fees.lateReport")}</h2></div> : null}<div className="report-filters payment-report-filters"><label>{t("fees.dateFrom")}<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label><label>{t("fees.dateTo")}<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label><label className="payment-report-search">{t("fees.reportSearch")}<input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("fees.reportSearch")} /></label><label>{t("fees.groupFilter")}<input value={group} onChange={(e) => setGroup(e.target.value)} /></label><label>{t("fees.gradeFilter")}<input value={grade} onChange={(e) => setGrade(e.target.value)} /></label><label className="checkbox-label"><input type="checkbox" checked={includeDisabled} onChange={(e) => setIncludeDisabled(e.target.checked)} />{t("fees.includeDisabled")}</label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={() => runReport().catch(() => undefined)}>{t("fees.find")}</button><button className="secondary-button compact-button" type="button" disabled={!rows.length} onClick={exportCsv}>{t("fees.exportExcel")}</button></div><div className="report-summary"><span><b>{t("fees.lateStudentCount")}</b>{count}</span><span><b>{t("fees.totalExpectedUnpaid")}</b>{total.toFixed(2)} EGP</span></div>{rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.scanSerial")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("admin.guardianPhone")}</th><th>{t("fees.required")}</th><th>{t("fees.paid")}</th><th>{t("fees.remaining")}</th><th>{t("fees.coveredMonth")}</th><th>{t("fees.lastPaymentDate")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.scan_serial || "—"}</td><td>{row.group_name}</td><td>{row.grade_level}</td><td>{row.guardian_phone}</td><td>{Number(row.required_amount).toFixed(2)}</td><td>{Number(row.paid_amount).toFixed(2)}</td><td>{Number(row.remaining_balance).toFixed(2)}</td><td>{(row.unpaid_months || []).map((month: any) => String(month.month).slice(0, 7)).join(" · ") || "—"}</td><td>{row.last_payment_date ? new Date(row.last_payment_date).toLocaleDateString() : "—"}</td></tr>)}</tbody></table></div> : <p className="empty-state">{status || t("fees.noMatchingResults")}</p>}{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
 function StaffInbox({ session, t }: { session: TeacherSession; t: Translator }) {

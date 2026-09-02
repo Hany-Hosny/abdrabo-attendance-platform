@@ -959,6 +959,47 @@ input:disabled {
   margin-top: 24px;
 }
 
+.finance-reports-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.finance-reports-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(13, 27, 46, 0.86);
+}
+
+.finance-reports-toolbar .section-heading {
+  min-width: 0;
+  margin: 0;
+}
+
+.finance-reports-toolbar .section-heading h2 {
+  margin-bottom: 8px;
+}
+
+.finance-reports-toolbar .section-heading > p:last-child {
+  margin: 0;
+  color: var(--muted);
+}
+
+.finance-report-tabs {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.finance-reports-workspace > .embedded-report-panel {
+  margin-top: 0;
+}
+
 .reports-header {
   display: flex;
   flex-direction: column;
@@ -3617,6 +3658,21 @@ th {
 
   .report-filters {
     grid-template-columns: 1fr;
+  }
+
+  .finance-reports-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+    padding: 18px;
+  }
+
+  .finance-report-tabs {
+    width: 100%;
+  }
+
+  .finance-report-tabs button {
+    flex: 1 1 180px;
   }
 
   .payment-report-filters {
