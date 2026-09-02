@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import JsBarcode from "jsbarcode";
 import "./styles.css";
@@ -317,8 +318,8 @@ const translations = {
     "settings.attendanceDescription": "تتحكم القيم التالية في الجلسات الجديدة مع احترام إعدادات الجدول المخصصة.",
     "settings.openBeforeLabel": "فتح الحضور قبل البداية",
     "settings.openBeforeDescription": "المدة الافتراضية قبل بداية الحصة.",
-    "settings.closeAfterLabel": "إغلاق الحضور بعد النهاية",
-    "settings.closeAfterDescription": "المدة الافتراضية بعد نهاية الحصة.",
+    "settings.closeAfterLabel": "إغلاق الحضور بعد البداية",
+    "settings.closeAfterDescription": "المدة الافتراضية المتاحة لتسجيل الحضور من بداية الحصة.",
     "settings.attendanceAlertLabel": "حد تنبيه الحضور",
     "settings.attendanceAlertDescription": "يظهر التنبيه عند انخفاض حضور الطالب عن هذه النسبة.",
     "settings.minutes": "دقيقة",
@@ -427,6 +428,10 @@ const translations = {
     "fees.advanceSaved": "تم تسجيل الدفع المقدم بنجاح.",
     "fees.advanceNoMonths": "لا توجد أشهر متاحة للدفع مقدماً.",
     "fees.advanceFeeNotConfigured": "اضبط المصروف الشهري للمجموعة أولاً قبل تسجيل الدفع مقدماً.",
+    "fees.advancePaidMonth": "مدفوع",
+    "fees.advanceNextMonth": "التالي",
+    "fees.advanceLockedMonth": "سدد الأشهر السابقة أولاً",
+    "fees.advanceSequenceHint": "اختر الأشهر بالترتيب، ويمكنك اختيار أكثر من شهر متتالٍ.",
     "fees.advanceFailed": "تعذر تسجيل الدفع المقدم.",
     "fees.advanceAlreadyPaid": "هذا الشهر مدفوع بالفعل.",
     "fees.advanceCurrentMonthUnpaid": "يجب سداد الشهر الحالي أولاً قبل الدفع مقدماً.",
@@ -550,6 +555,7 @@ const translations = {
     "audit.action.studentLabelPrinted": "تمت طباعة ليبل الطالب",
     "audit.action.studentPurged": "تم حذف البيانات الشخصية للطالب",
     "audit.action.attendanceRecorded": "تم تسجيل الحضور",
+    "audit.action.attendanceSessionAutoFinalized": "تم إغلاق الحصة وإضافة الغياب تلقائياً",
     "audit.action.messageAction": "تم تنفيذ إجراء على رسالة",
     "audit.action.noteAction": "تم تنفيذ إجراء على ملاحظة",
     "audit.action.pinChanged": "تم تغيير رقم سجل النشاط",
@@ -1294,8 +1300,8 @@ const translations = {
     "settings.attendanceDescription": "These values control new sessions while respecting custom schedule settings.",
     "settings.openBeforeLabel": "Open attendance before start",
     "settings.openBeforeDescription": "Default window before a class starts.",
-    "settings.closeAfterLabel": "Close attendance after end",
-    "settings.closeAfterDescription": "Default window after a class ends.",
+    "settings.closeAfterLabel": "Close attendance after start",
+    "settings.closeAfterDescription": "Default attendance window from the start of a class.",
     "settings.attendanceAlertLabel": "Attendance alert threshold",
     "settings.attendanceAlertDescription": "Alerts appear when a student falls below this rate.",
     "settings.minutes": "minutes",
@@ -1404,6 +1410,10 @@ const translations = {
     "fees.advanceSaved": "Advance payment recorded successfully.",
     "fees.advanceNoMonths": "No future months are available for advance payment.",
     "fees.advanceFeeNotConfigured": "Set a monthly fee for this group before recording an advance payment.",
+    "fees.advancePaidMonth": "Paid",
+    "fees.advanceNextMonth": "Next",
+    "fees.advanceLockedMonth": "Pay previous months first",
+    "fees.advanceSequenceHint": "Choose months in order. Multiple months must be consecutive.",
     "fees.advanceFailed": "Advance payment could not be recorded.",
     "fees.advanceAlreadyPaid": "This month is already paid.",
     "fees.advanceCurrentMonthUnpaid": "The current month must be paid before making an advance payment.",
@@ -1527,6 +1537,7 @@ const translations = {
     "audit.action.studentLabelPrinted": "Student label printed",
     "audit.action.studentPurged": "Student personal data purged",
     "audit.action.attendanceRecorded": "Attendance recorded",
+    "audit.action.attendanceSessionAutoFinalized": "Session closed and absences added automatically",
     "audit.action.messageAction": "Message action",
     "audit.action.noteAction": "Note action",
     "audit.action.pinChanged": "Audit PIN changed",
@@ -2497,7 +2508,7 @@ function formatLocalTime(value: string | undefined, language: Language) {
 
 function formatSessionWindow(session: Record<string, any>, language: Language) {
   const start = formatLocalTime(session.starts_at || session.opens_at, language);
-  const end = formatLocalTime(session.closes_at, language);
+  const end = formatLocalTime(session.ends_at || session.closes_at, language);
   return language === "ar" ? `من ${start} إلى ${end}` : `${start} - ${end}`;
 }
 
@@ -5612,7 +5623,7 @@ function AcademicManager({
                 <label className={fieldErrors[`schedule-${index}-time`] ? "field-with-error" : ""}>Start / البداية<select required aria-invalid={Boolean(fieldErrors[`schedule-${index}-time`])} value={row.start_time} onChange={(e) => updateScheduleField(index, "start_time", e.target.value)}><option value="">Select time / اختر الوقت</option>{scheduleTimeOptions.map((option) => <option key={`start-${option.value}`} value={option.value}>{scheduleTimeLabel(option.value, language)}</option>)}</select>{fieldErrors[`schedule-${index}-time`] ? <small className="field-error">{fieldErrors[`schedule-${index}-time`]}</small> : null}</label>
                 <label className={fieldErrors[`schedule-${index}-time`] ? "field-with-error" : ""}>End / النهاية<select required aria-invalid={Boolean(fieldErrors[`schedule-${index}-time`])} value={row.end_time} onChange={(e) => updateScheduleField(index, "end_time", e.target.value)}><option value="">Select time / اختر الوقت</option>{scheduleTimeOptions.map((option) => <option key={`end-${option.value}`} value={option.value}>{scheduleTimeLabel(option.value, language)}</option>)}</select></label>
                 <label className={fieldErrors[`schedule-${index}-opens_before_minutes`] ? "field-with-error" : ""}>Open before / فتح قبل<input type="number" min="0" aria-invalid={Boolean(fieldErrors[`schedule-${index}-opens_before_minutes`])} value={row.opens_before_minutes} onChange={(e) => updateScheduleField(index, "opens_before_minutes", e.target.value)} />{fieldErrors[`schedule-${index}-opens_before_minutes`] ? <small className="field-error">{fieldErrors[`schedule-${index}-opens_before_minutes`]}</small> : null}</label>
-                <label className={fieldErrors[`schedule-${index}-closes_after_minutes`] ? "field-with-error" : ""}>Close after / إغلاق بعد<input type="number" min="0" aria-invalid={Boolean(fieldErrors[`schedule-${index}-closes_after_minutes`])} value={row.closes_after_minutes} onChange={(e) => updateScheduleField(index, "closes_after_minutes", e.target.value)} />{fieldErrors[`schedule-${index}-closes_after_minutes`] ? <small className="field-error">{fieldErrors[`schedule-${index}-closes_after_minutes`]}</small> : null}</label>
+                <label className={fieldErrors[`schedule-${index}-closes_after_minutes`] ? "field-with-error" : ""}>{t("settings.closeAfterLabel")}<input type="number" min="0" aria-invalid={Boolean(fieldErrors[`schedule-${index}-closes_after_minutes`])} value={row.closes_after_minutes} onChange={(e) => updateScheduleField(index, "closes_after_minutes", e.target.value)} />{fieldErrors[`schedule-${index}-closes_after_minutes`] ? <small className="field-error">{fieldErrors[`schedule-${index}-closes_after_minutes`]}</small> : null}</label>
                 <label className="checkbox-label schedule-active-toggle"><input type="checkbox" checked={row.is_active} onChange={(e) => updateScheduleField(index, "is_active", e.target.checked)} />Active / نشط</label>
               </div>)}
             </div>
@@ -5810,8 +5821,41 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
   const [serialRegenerating, setSerialRegenerating] = useState(false);
   const [noteBody, setNoteBody] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const profileModalRef = useRef<HTMLElement | null>(null);
   const auth = { Authorization: `Bearer ${session.token}` };
   const language: Language = document.documentElement.lang === "en" ? "en" : "ar";
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const scrollbarWidth = window.innerWidth - html.clientWidth;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+    const previousBodyPaddingRight = body.style.paddingRight;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
+
+    return () => {
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+      body.style.paddingRight = previousBodyPaddingRight;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
 
   async function loadProfile() {
     setLoading(true);
@@ -5829,7 +5873,10 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
   useEffect(() => { loadProfile().catch(() => undefined); }, [studentId]);
   useEffect(() => {
     if (!profile || !initialSection) return undefined;
-    const timer = window.setTimeout(() => document.getElementById(`student360-${initialSection}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(`student360-${initialSection}`);
+      if (target && profileModalRef.current?.contains(target)) target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [profile, initialSection]);
 
@@ -5885,7 +5932,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
   const money = (value: unknown) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)} EGP` : "—";
   const profilePercent = (value: unknown) => value == null || !Number.isFinite(Number(value)) ? "—" : `${Number(value).toFixed(1)}%`;
   const attentionReasonLabel = (reason: any) => reason.type === "attendance" ? t("dashboard.attentionAttendance", { value: profilePercent(reason.value) }) : reason.type === "evaluation" ? t("dashboard.attentionEvaluation", { value: profilePercent(reason.value) }) : t("dashboard.attentionPayment", { amount: money(reason.amount) });
-  return <div className="modal-backdrop" role="presentation"><section className="modal student-profile-modal" role="dialog" aria-modal="true" aria-label={t("admin.studentProfile")}>
+  return createPortal(<div className="modal-backdrop student-profile-backdrop" role="presentation" onWheel={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }} onTouchMove={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }}><section ref={profileModalRef} className="modal student-profile-modal" role="dialog" aria-modal="true" aria-label={t("admin.studentProfile")}>
     <button className="close-button" type="button" onClick={onClose}>×</button>
     {loading ? <p className="empty-state">{t("admin.profileLoading")}</p> : profile ? <>
       <div className="section-heading"><p className="eyebrow">{t("dashboard.student360")}</p><h2>{profile.student.full_name}</h2><p>{profile.student.student_code || profile.student.student_serial || "—"} · {profile.student.group_name || "—"} · {recordStatusLabel(profile.student, t)}</p></div>
@@ -5906,7 +5953,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
       {profile.inbox ? <section className="profile-section" id="student360-messages"><h3>{t("admin.profileMessages")}</h3>{profile.inbox?.length ? <div className="profile-record-list">{profile.inbox.map((row: any) => <div key={row.id}><span>{row.subject}<small>{row.last_message || "—"}</small></span><strong>{row.message_count}</strong></div>)}</div> : <p className="empty-state">{t("admin.noProfileMessages")}</p>}</section> : null}
     </> : <p className="form-error">{status || t("admin.profileLoadFailed")}</p>}
     {status && profile ? <p className="form-error">{status}</p> : null}
-  </section></div>;
+  </section></div>, document.body);
 }
 
 function AttendancePanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
@@ -6171,9 +6218,12 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
     if (advanceLoading) return;
     setAdvanceLoading(true);
     try {
+      const orderedMonths = (advanceData.months || [])
+        .map((month: any) => month.month.slice(0, 7))
+        .filter((month: string) => selectedMonths.includes(month));
       const response = await fetch(`${API_BASE_URL}/admin/fees/advance-payments`, {
         method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey(), ...auth },
-        body: JSON.stringify({ student_id: advanceData.student.id, months: selectedMonths })
+        body: JSON.stringify({ student_id: advanceData.student.id, months: orderedMonths })
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -6191,6 +6241,29 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
 
   const monthlyFee = Number(advanceData?.student?.fees_amount || 0);
   const totalAdvance = selectedMonths.length * monthlyFee;
+  const advanceMonths = Array.isArray(advanceData?.months)
+    ? [...advanceData.months].sort((a: any, b: any) => String(a.month).localeCompare(String(b.month)))
+    : [];
+  const selectedMonthSet = new Set(selectedMonths);
+  const monthKey = (month: any) => String(month.month).slice(0, 7);
+  const isMonthPaid = (month: any) => Number(month.remaining_amount || 0) <= 0;
+  const previousUnpaidMonths = (index: number) => advanceMonths.slice(0, index).filter((month: any) => !isMonthPaid(month));
+  const isMonthUnlocked = (index: number) => {
+    const month = advanceMonths[index];
+    return Boolean(month && month.available && previousUnpaidMonths(index).every((previous: any) => selectedMonthSet.has(monthKey(previous))));
+  };
+  function toggleAdvanceMonth(month: any, index: number, checked: boolean) {
+    const key = monthKey(month);
+    if (checked) {
+      if (!isMonthUnlocked(index)) return;
+      setSelectedMonths((current) => current.includes(key) ? current : [...current, key]);
+      return;
+    }
+    setSelectedMonths((current) => current.filter((selected) => {
+      const selectedIndex = advanceMonths.findIndex((item: any) => monthKey(item) === selected);
+      return selectedIndex < index;
+    }));
+  }
   const monthLabel = (value: string) => new Date(`${value.slice(0, 7)}-01T00:00:00Z`).toLocaleDateString(document.documentElement.lang === "en" ? "en-US" : "ar-EG", { month: "long", year: "numeric", timeZone: "UTC" });
   const dueMonths = summary && Array.isArray(summary.monthly_dues)
     ? summary.monthly_dues.filter((due: any) => Number(due?.remaining_amount || 0) > 0).map((due: any) => monthLabel(String(due.month))).join(document.documentElement.lang === "en" ? ", " : "، ")
@@ -6205,7 +6278,7 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
     </div>
     <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input ref={inputRef} autoFocus dir="ltr" type="text" value={code} onChange={(event) => setCode(event.target.value)} placeholder="A-2303" autoComplete="off" disabled={lookupLoading} /></label><button className="primary-button" type="submit" disabled={lookupLoading || !code.trim()}>{lookupLoading ? t("dashboard.refreshing") : t("fees.find")}</button></form>
     {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>{canCollect ? <><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay} disabled={paymentLoading}>{paymentLoading ? t("dashboard.refreshing") : t("fees.payFull")}</button></> : null}</div> : null}
-      {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : monthlyFee <= 0 ? <p className="empty-state">{t("fees.advanceFeeNotConfigured")}</p> : <><h3>{t("fees.advanceMonths")}</h3><div className="advance-month-grid">{(advanceData.months || []).filter((month: any) => month.available).map((month: any) => <label className="advance-month-option" key={month.month}><input type="checkbox" checked={selectedMonths.includes(month.month.slice(0, 7))} onChange={(event) => setSelectedMonths((current) => event.target.checked ? [...current, month.month.slice(0, 7)] : current.filter((item) => item !== month.month.slice(0, 7)))} /><span>{monthLabel(month.month)}</span><b>{Number(month.remaining_amount).toFixed(2)} EGP</b></label>)}</div>{!(advanceData.months || []).some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
+      {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : monthlyFee <= 0 ? <p className="empty-state">{t("fees.advanceFeeNotConfigured")}</p> : <><div className="advance-sequence-heading"><div><h3>{t("fees.advanceMonths")}</h3><p>{t("fees.advanceSequenceHint")}</p></div><span className="advance-sequence-count">{selectedMonths.length} / {advanceMonths.filter((month: any) => month.available).length}</span></div><div className="advance-month-grid">{advanceMonths.map((month: any, index: number) => { const key = monthKey(month); const paid = isMonthPaid(month); const selected = selectedMonthSet.has(key); const unlocked = isMonthUnlocked(index); const locked = !paid && !unlocked; const stateLabel = paid ? t("fees.advancePaidMonth") : locked ? t("fees.advanceLockedMonth") : t("fees.advanceNextMonth"); return <label className={`advance-month-option ${paid ? "is-paid" : unlocked ? "is-next" : "is-locked"} ${selected ? "is-selected" : ""}`} key={month.month} title={stateLabel}><span className={`advance-month-state-icon ${paid ? "is-paid" : locked ? "is-locked" : "is-next"}`} aria-hidden="true">{paid ? "✓" : String(index + 1).padStart(2, "0")}</span><span className="advance-month-content"><strong>{monthLabel(month.month)}</strong><small>{stateLabel}</small></span><b>{Number(month.remaining_amount || month.amount || 0).toFixed(2)} EGP</b>{paid ? <span className="advance-month-status">{t("fees.advancePaidMonth")}</span> : <input type="checkbox" checked={selected} disabled={!unlocked && !selected} aria-label={`${monthLabel(month.month)} — ${stateLabel}`} onChange={(event) => toggleAdvanceMonth(month, index, event.target.checked)} />}</label>; })}</div>{!advanceMonths.some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
   </section>;
 }
@@ -6242,6 +6315,7 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     student_label_printed: "audit.action.studentLabelPrinted",
     student_personal_data_purged: "audit.action.studentPurged",
     attendance_recorded: "audit.action.attendanceRecorded",
+    attendance_session_auto_finalized: "audit.action.attendanceSessionAutoFinalized",
     message_action: "audit.action.messageAction",
     note_action: "audit.action.noteAction",
     audit_pin_changed: "audit.action.pinChanged",

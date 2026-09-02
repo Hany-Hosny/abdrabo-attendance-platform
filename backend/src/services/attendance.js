@@ -1,5 +1,6 @@
 import { query } from "../db/pool.js";
 import { getDashboardData } from "./dashboard.js";
+import { finalizeExpiredAttendanceSessions } from "./attendanceFinalizer.js";
 import { normalizeStudentCode } from "../utils/normalizeDigits.js";
 
 function toRad(value) {
@@ -18,6 +19,7 @@ export function distanceMeters(lat1, lon1, lat2, lon2) {
 
 export async function loginAndRecordAttendance({ student_code, device_id, latitude, longitude, ip }) {
   student_code = normalizeStudentCode(student_code);
+  await finalizeExpiredAttendanceSessions();
   const studentResult = await query(
     `
       SELECT

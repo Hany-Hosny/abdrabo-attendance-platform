@@ -4,6 +4,7 @@ import { pool, query } from "../db/pool.js";
 import { requireAnyPermission, requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
 import { createAuditAccessToken, hashPassword, verifyAuditAccessToken, verifyPassword } from "../services/auth.js";
 import { ensureMonthlyFees, getAdvanceOptions, getFeeSummary, recordAdvancePayment, recordFullPayment } from "../services/fees.js";
+import { finalizeExpiredAttendanceSessions } from "../services/attendanceFinalizer.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { auditLog } from "../services/audit.js";
 import { getAttendanceTimingDefaults } from "../services/systemSettings.js";
@@ -396,17 +397,19 @@ operationsRouter.get("/payments/late", requirePermission("payments.view"), requi
 
 operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"), async (req, res, next) => {
   try {
+    await finalizeExpiredAttendanceSessions();
     const date = normalizeDigits(req.query.date || new Date().toISOString().slice(0, 10)).trim();
     const timing = await getAttendanceTimingDefaults();
     const groupId = req.query.group_id ? Number(normalizeDigits(req.query.group_id)) : null;
     let groupFilter = "";
     if (groupId) groupFilter = " AND s.group_id=$2";
     await query(`
-      INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, status)
+      INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, ends_at, status)
       SELECT cs.group_id, cs.id, $1::date,
         (($1::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
         (($1::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-        (($1::date + cs.end_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+        (($1::date + cs.start_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+        (($1::date + cs.end_time) AT TIME ZONE 'Africa/Cairo'),
         'open'
       FROM class_schedules cs
       JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
@@ -414,6 +417,7 @@ operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"
         ${groupId ? "AND cs.group_id=$4" : ""}
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING
     `, groupId ? [date, timing.openBeforeMinutes, timing.closeAfterMinutes, groupId] : [date, timing.openBeforeMinutes, timing.closeAfterMinutes]);
+    await finalizeExpiredAttendanceSessions();
     const resultParams = groupId ? [date, groupId] : [date];
     const result = await query(`SELECT s.*, g.name AS group_name, COALESCE(g.grade_level,g.grade) AS grade_level,
       cs.day_of_week, cs.start_time, cs.end_time
@@ -432,9 +436,10 @@ operationsRouter.post("/attendance/sessions", requirePermission("attendance.mana
     const date = String(req.body?.session_date || new Date().toISOString().slice(0, 10));
     if (!groupId || !scheduleId) return res.status(400).json({ ok:false, status:"invalid_session_payload" });
     const timing = await getAttendanceTimingDefaults();
-    const result = await query(`INSERT INTO attendance_sessions (group_id,schedule_id,session_date,starts_at,opens_at,closes_at,status)
+    const result = await query(`INSERT INTO attendance_sessions (group_id,schedule_id,session_date,starts_at,opens_at,closes_at,ends_at,status)
       SELECT $1, cs.id, $3::date, (($3::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'), (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-      (($3::date + cs.end_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $5 ELSE cs.closes_after_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'), 'open'
+      (($3::date + cs.start_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $5 ELSE cs.closes_after_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+      (($3::date + cs.end_time) AT TIME ZONE 'Africa/Cairo'), 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.id=$2 AND cs.group_id=$1 AND cs.is_active=TRUE
         AND cs.day_of_week=EXTRACT(DOW FROM $3::date)::INTEGER
@@ -446,7 +451,7 @@ operationsRouter.post("/attendance/sessions", requirePermission("attendance.mana
 });
 
 operationsRouter.get("/attendance/sessions/:id/records", requirePermission("attendance.view"), async (req, res, next) => {
-  try { const result = await query(`SELECT ar.*, s.full_name, s.student_serial, COALESCE(g.grade_level,g.grade) AS grade_level, g.name AS group_name
+  try { await finalizeExpiredAttendanceSessions(); const result = await query(`SELECT ar.*, s.full_name, s.student_serial, COALESCE(g.grade_level,g.grade) AS grade_level, g.name AS group_name
     FROM attendance_records ar JOIN students s ON s.id=ar.student_id JOIN groups g ON g.id=s.group_id WHERE ar.session_id=$1 ORDER BY s.full_name`, [req.params.id]); res.json({ok:true,records:result.rows}); }
   catch (error) { next(error); }
 });
@@ -539,6 +544,15 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
     if (!sessionId || !studentId || !["present","absent","late","pending_review"].includes(status)) return res.status(400).json({ok:false,status:"invalid_attendance_payload"});
     const check = await query("SELECT 1 FROM attendance_sessions s JOIN students st ON st.group_id=s.group_id WHERE s.id=$1 AND st.id=$2", [sessionId,studentId]);
     if (!check.rowCount) return res.status(400).json({ok:false,status:"wrong_group"});
+    const existing = await query("SELECT id, status, method FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1", [sessionId, studentId]);
+    if (existing.rowCount && existing.rows[0].method === "system" && existing.rows[0].status === "absent") {
+      const updated = await query(`UPDATE attendance_records
+        SET status=$1, method='manual', checkin_time=NOW()
+        WHERE id=$2
+        RETURNING *`, [status, existing.rows[0].id]);
+      await auditLog({ action: "attendance_recorded", actorId: req.teacher.id, studentId, sessionId, details: { method: "manual", status_before: "absent", status_after: status, record_id: updated.rows[0].id }, request: req });
+      return res.status(200).json({ok:true,record:updated.rows[0],corrected:true});
+    }
     const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,request:req});
     if (saved.duplicate) return res.status(409).json({ok:false,status:"duplicate_attendance"});
     res.status(201).json({ok:true,record:saved.record});
@@ -547,6 +561,7 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
 
 operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission("attendance.manage"), async (req, res, next) => {
   try {
+    await finalizeExpiredAttendanceSessions();
     const token = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
     const lookupValues = scanLookupValues(token).map((candidate) => candidate.toLowerCase());
     if (!isValidScanValue(token) || !lookupValues.length) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
@@ -585,14 +600,16 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     if (student.deleted_at) return res.status(409).json({ok:false,status:"deleted_student",student: publicStudent});
     if (!student.is_active || !student.group_active || student.group_deleted_at) return res.status(409).json({ok:false,status:"inactive_student",student: publicStudent});
     const timing = await getAttendanceTimingDefaults();
-    await query(`INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, status)
+    await query(`INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, ends_at, status)
       SELECT cs.group_id, cs.id, (NOW() AT TIME ZONE 'Africa/Cairo')::date,
         (((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
         ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.end_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'), 'open'
+        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.end_time)) AT TIME ZONE 'Africa/Cairo'), 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Africa/Cairo'))::INTEGER
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
+    await finalizeExpiredAttendanceSessions();
     const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(NOW() AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND NOW() BETWEEN s.opens_at AND s.closes_at ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
     if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"closed_session",student: publicStudent});
     const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,request:req});

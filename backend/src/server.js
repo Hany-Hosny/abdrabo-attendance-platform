@@ -16,6 +16,7 @@ import { adminNotificationsRouter } from "./routes/adminNotifications.js";
 import { operationsRouter } from "./routes/operations.js";
 import { inboxRouter, staffInboxRouter } from "./routes/inbox.js";
 import { ensureMonthlyFees } from "./services/fees.js";
+import { finalizeExpiredAttendanceSessions } from "./services/attendanceFinalizer.js";
 import { purgeDeletedStudents } from "./services/studentCleanup.js";
 import { installAuditFallback } from "./services/audit.js";
 
@@ -95,8 +96,10 @@ app.use((error, _req, res, _next) => {
 migrate()
   .then(() => {
     ensureMonthlyFees().catch((error) => console.error("Failed to create monthly fees", error));
+    finalizeExpiredAttendanceSessions().catch((error) => console.error("Failed to finalize expired attendance sessions", error));
     purgeDeletedStudents().catch((error) => console.error("Failed to purge deleted students", error));
     setInterval(() => ensureMonthlyFees().catch((error) => console.error("Failed to renew monthly fees", error)), 60 * 60 * 1000);
+    setInterval(() => finalizeExpiredAttendanceSessions().catch((error) => console.error("Failed to finalize expired attendance sessions", error)), 60 * 1000);
     setInterval(() => purgeDeletedStudents().catch((error) => console.error("Failed to purge deleted students", error)), 24 * 60 * 60 * 1000);
     app.listen(port, "0.0.0.0", () => {
       console.log(`Abdrabo API listening on port ${port}`);

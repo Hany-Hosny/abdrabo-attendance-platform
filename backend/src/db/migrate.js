@@ -73,6 +73,7 @@ export async function migrate() {
       starts_at TIMESTAMPTZ NOT NULL,
       opens_at TIMESTAMPTZ NOT NULL,
       closes_at TIMESTAMPTZ NOT NULL,
+      ends_at TIMESTAMPTZ NOT NULL,
       status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed', 'cancelled')),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -293,6 +294,7 @@ export async function migrate() {
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
+    ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
     ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
@@ -340,9 +342,12 @@ export async function migrate() {
     UPDATE attendance_sessions s
     SET starts_at = ((s.session_date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
         opens_at = ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-        closes_at = ((s.session_date + cs.end_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+        closes_at = ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+        ends_at = ((s.session_date + cs.end_time) AT TIME ZONE 'Africa/Cairo')
     FROM class_schedules cs
     WHERE cs.id = s.schedule_id AND cs.group_id = s.group_id;
+
+    ALTER TABLE attendance_sessions ALTER COLUMN ends_at SET NOT NULL;
 
     DELETE FROM attendance_sessions duplicate
     USING attendance_sessions keeper
