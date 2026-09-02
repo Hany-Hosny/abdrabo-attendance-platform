@@ -426,6 +426,7 @@ const translations = {
     "fees.advanceConfirm": "هل تريد تأكيد دفع الأشهر المحددة مقدماً؟",
     "fees.advanceSaved": "تم تسجيل الدفع المقدم بنجاح.",
     "fees.advanceNoMonths": "لا توجد أشهر متاحة للدفع مقدماً.",
+    "fees.advanceFeeNotConfigured": "اضبط المصروف الشهري للمجموعة أولاً قبل تسجيل الدفع مقدماً.",
     "fees.advanceFailed": "تعذر تسجيل الدفع المقدم.",
     "fees.advanceAlreadyPaid": "هذا الشهر مدفوع بالفعل.",
     "fees.advanceCurrentMonthUnpaid": "يجب سداد الشهر الحالي أولاً قبل الدفع مقدماً.",
@@ -464,6 +465,10 @@ const translations = {
     "fees.groupFilter": "المجموعة",
     "fees.gradeFilter": "الصف الدراسي",
     "fees.exportExcel": "تصدير Excel",
+    "fees.searching": "جاري البحث...",
+    "fees.searchComplete": "تم تحديث التقرير",
+    "fees.exporting": "جاري التصدير...",
+    "fees.exported": "تم تصدير التقرير",
     "fees.totalPaid": "إجمالي المدفوع",
     "fees.paymentCount": "عدد المدفوعات",
     "fees.paymentDate": "تاريخ الدفع",
@@ -1398,6 +1403,7 @@ const translations = {
     "fees.advanceConfirm": "Confirm advance payment for the selected months?",
     "fees.advanceSaved": "Advance payment recorded successfully.",
     "fees.advanceNoMonths": "No future months are available for advance payment.",
+    "fees.advanceFeeNotConfigured": "Set a monthly fee for this group before recording an advance payment.",
     "fees.advanceFailed": "Advance payment could not be recorded.",
     "fees.advanceAlreadyPaid": "This month is already paid.",
     "fees.advanceCurrentMonthUnpaid": "The current month must be paid before making an advance payment.",
@@ -1436,6 +1442,10 @@ const translations = {
     "fees.groupFilter": "Group",
     "fees.gradeFilter": "Grade level",
     "fees.exportExcel": "Export Excel",
+    "fees.searching": "Searching...",
+    "fees.searchComplete": "Report updated",
+    "fees.exporting": "Exporting...",
+    "fees.exported": "Report exported",
     "fees.totalPaid": "Total paid",
     "fees.paymentCount": "Number of payments",
     "fees.paymentDate": "Payment date",
@@ -6195,7 +6205,7 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
     </div>
     <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input ref={inputRef} autoFocus dir="ltr" type="text" value={code} onChange={(event) => setCode(event.target.value)} placeholder="A-2303" autoComplete="off" disabled={lookupLoading} /></label><button className="primary-button" type="submit" disabled={lookupLoading || !code.trim()}>{lookupLoading ? t("dashboard.refreshing") : t("fees.find")}</button></form>
     {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>{canCollect ? <><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay} disabled={paymentLoading}>{paymentLoading ? t("dashboard.refreshing") : t("fees.payFull")}</button></> : null}</div> : null}
-      {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : <><h3>{t("fees.advanceMonths")}</h3><div className="advance-month-grid">{(advanceData.months || []).filter((month: any) => month.available).map((month: any) => <label className="advance-month-option" key={month.month}><input type="checkbox" checked={selectedMonths.includes(month.month.slice(0, 7))} onChange={(event) => setSelectedMonths((current) => event.target.checked ? [...current, month.month.slice(0, 7)] : current.filter((item) => item !== month.month.slice(0, 7)))} /><span>{monthLabel(month.month)}</span><b>{Number(month.remaining_amount).toFixed(2)} EGP</b></label>)}</div>{!(advanceData.months || []).some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
+      {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : monthlyFee <= 0 ? <p className="empty-state">{t("fees.advanceFeeNotConfigured")}</p> : <><h3>{t("fees.advanceMonths")}</h3><div className="advance-month-grid">{(advanceData.months || []).filter((month: any) => month.available).map((month: any) => <label className="advance-month-option" key={month.month}><input type="checkbox" checked={selectedMonths.includes(month.month.slice(0, 7))} onChange={(event) => setSelectedMonths((current) => event.target.checked ? [...current, month.month.slice(0, 7)] : current.filter((item) => item !== month.month.slice(0, 7)))} /><span>{monthLabel(month.month)}</span><b>{Number(month.remaining_amount).toFixed(2)} EGP</b></label>)}</div>{!(advanceData.months || []).some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
   </section>;
 }
@@ -6647,29 +6657,37 @@ function PaymentReportsPanel({ session, t, canReverse, embedded = false }: { ses
   const [paymentCount, setPaymentCount] = useState(0);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [noResults, setNoResults] = useState(false);
   const [reverseTarget, setReverseTarget] = useState<any>(null);
   const [reverseReason, setReverseReason] = useState("");
   const [reversing, setReversing] = useState(false);
+  const searchFeedback = useActionFeedback();
+  const exportFeedback = useActionFeedback();
   const auth = { Authorization: `Bearer ${session.token}` };
 
   async function searchReport(nextFrom = from, nextTo = to) {
-    setLoading(true); setStatus("");
-    try {
-      const params = new URLSearchParams();
-      if (nextFrom.trim()) params.set("date_from", nextFrom.trim());
-      if (nextTo.trim()) params.set("date_to", nextTo.trim());
-      if (query.trim()) params.set("q", normalizeSearchText(query));
-      if (group.trim()) params.set("group_id", group.trim());
-      if (grade.trim()) params.set("grade_level", grade.trim());
-      const response = await fetch(`${API_BASE_URL}/admin/payments/report?${params.toString()}`, { headers: auth });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error("report_failed");
-      setRows(Array.isArray(data.payments) ? data.payments : []);
-      setTotalPaid(Number(data.total_paid || 0));
-      setPaymentCount(Number(data.payment_count || 0));
-      if (!data.payments?.length && (query.trim() || nextFrom || nextTo || group.trim() || grade.trim())) setStatus(t("fees.noMatchingResults"));
-    } catch { setStatus(t("fees.reportLoadFailed")); }
-    finally { setLoading(false); }
+    return searchFeedback.run(async () => {
+      setLoading(true); setStatus(""); setNoResults(false);
+      try {
+        const params = new URLSearchParams();
+        if (nextFrom.trim()) params.set("date_from", nextFrom.trim());
+        if (nextTo.trim()) params.set("date_to", nextTo.trim());
+        if (query.trim()) params.set("q", normalizeSearchText(query));
+        if (group.trim()) params.set("group_id", group.trim());
+        if (grade.trim()) params.set("grade_level", grade.trim());
+        const response = await fetch(`${API_BASE_URL}/admin/payments/report?${params.toString()}`, { headers: auth });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error("report_failed");
+        const nextRows = Array.isArray(data.payments) ? data.payments : [];
+        setRows(nextRows);
+        setTotalPaid(Number(data.total_paid || 0));
+        setPaymentCount(Number(data.payment_count || 0));
+        setNoResults(nextRows.length === 0);
+      } catch {
+        setStatus(t("fees.reportLoadFailed"));
+        throw new Error("report_failed");
+      } finally { setLoading(false); }
+    });
   }
 
   useEffect(() => {
@@ -6687,11 +6705,14 @@ function PaymentReportsPanel({ session, t, canReverse, embedded = false }: { ses
   }
 
   function exportCsv() {
-    const headers = [t("fees.paymentDate"), t("fees.paymentTime"), t("admin.studentName"), t("admin.studentCode"), t("admin.scanSerial"), t("admin.selectGroup"), t("admin.grade"), t("fees.amount"), t("fees.paidBy"), t("fees.coveredMonth"), t("fees.paymentType")];
-    const csvRows = rows.map((row) => { const date = new Date(row.paid_at); const months = Array.isArray(row.payment_months) ? row.payment_months.map((item: any) => String(item.month || "").slice(0, 7)).join("; ") : ""; return [date.toLocaleDateString(), date.toLocaleTimeString(), row.full_name, row.student_code, row.scan_serial, row.group_name, row.grade_level, row.amount, row.paid_by, months, row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")]; });
-    const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-    const csv = [headers, ...csvRows].map((row) => row.map(escape).join(",")).join("\r\n");
-    const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `payments-report-${localDateInputValue()}.csv`; link.click(); URL.revokeObjectURL(url);
+    if (!rows.length || exportFeedback.state === "loading") return;
+    void exportFeedback.run(async () => {
+      const headers = [t("fees.paymentDate"), t("fees.paymentTime"), t("admin.studentName"), t("admin.studentCode"), t("admin.scanSerial"), t("admin.selectGroup"), t("admin.grade"), t("fees.amount"), t("fees.paidBy"), t("fees.coveredMonth"), t("fees.paymentType")];
+      const csvRows = rows.map((row) => { const date = new Date(row.paid_at); const months = Array.isArray(row.payment_months) ? row.payment_months.map((item: any) => String(item.month || "").slice(0, 7)).join("; ") : ""; return [date.toLocaleDateString(), date.toLocaleTimeString(), row.full_name, row.student_code, row.scan_serial, row.group_name, row.grade_level, row.amount, row.paid_by, months, row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")]; });
+      const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+      const csv = [headers, ...csvRows].map((row) => row.map(escape).join(",")).join("\r\n");
+      const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `payments-report-${localDateInputValue()}.csv`; link.click(); URL.revokeObjectURL(url);
+    }).catch(() => undefined);
   }
 
   async function reversePayment() {
@@ -6705,7 +6726,12 @@ function PaymentReportsPanel({ session, t, canReverse, embedded = false }: { ses
     finally { setReversing(false); }
   }
 
-  return <section className={`admin-editor payment-reports ${embedded ? "embedded-report-panel" : ""}`}>
+  const searchButtonLabel = actionButtonText(searchFeedback.state, { idle: t("fees.find"), loading: t("fees.searching"), success: t("fees.searchComplete"), error: t("fees.reportLoadFailed") });
+  const exportButtonLabel = actionButtonText(exportFeedback.state, { idle: t("fees.exportExcel"), loading: t("fees.exporting"), success: t("fees.exported"), error: t("fees.reportLoadFailed") });
+
+  return <div className="report-panel-stack">
+    {noResults ? <p className="report-empty-message">{t("fees.noMatchingResults")}</p> : null}
+    <section className={`admin-editor payment-reports ${embedded ? "embedded-report-panel" : ""}`}>
     {!embedded ? <div className="section-heading reports-header"><p className="eyebrow">{t("fees.reports")}</p><h2>{t("fees.reports")}</h2></div> : null}
     <div className="report-filters payment-report-filters">
       <label>{t("fees.dateFrom")}<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
@@ -6714,11 +6740,13 @@ function PaymentReportsPanel({ session, t, canReverse, embedded = false }: { ses
       <label>{t("fees.groupFilter")}<input value={group} onChange={(event) => setGroup(event.target.value)} /></label>
       <label>{t("fees.gradeFilter")}<input value={grade} onChange={(event) => setGrade(event.target.value)} /></label>
     </div>
-    <div className="report-actions"><button className="secondary-button compact-button" type="button" onClick={setToday}>{t("fees.today")}</button><button className="secondary-button compact-button" type="button" onClick={setThisMonth}>{t("fees.thisMonth")}</button><button className="primary-button compact-button" type="button" disabled={loading} onClick={() => searchReport().catch(() => undefined)}>{t("fees.find")}</button><button className="secondary-button compact-button" type="button" disabled={!rows.length} onClick={exportCsv}>{t("fees.exportExcel")}</button></div>
+    <div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setToday}>{t("fees.today")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setThisMonth}>{t("fees.thisMonth")}</button><button className={`primary-button compact-button action-feedback-${searchFeedback.state} ${searchFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={loading || searchFeedback.state === "loading"} onClick={() => searchReport().catch(() => undefined)}>{searchButtonLabel}</button><button className={`secondary-button compact-button action-feedback-${exportFeedback.state} ${exportFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={!rows.length || exportFeedback.state === "loading"} onClick={exportCsv}>{exportButtonLabel}</button></div>
     <p className="report-total">{t("fees.totalPaid")}: {totalPaid.toFixed(2)} EGP · {t("fees.paymentCount")}: {paymentCount}</p>
-    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, document.documentElement.lang === "en" ? "en" : "ar")}</td><td>{row.amount} EGP</td><td>{row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")}</td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td>{canReverse ? <td><button className="secondary-button compact-button" type="button" onClick={() => { setReverseTarget(row); setReverseReason(""); }}>{t("fees.reversePayment")}</button></td> : null}</tr>)}</tbody></table></div> : <p className="empty-state">{status || t("fees.noMatchingResults")}</p>}
+    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, document.documentElement.lang === "en" ? "en" : "ar")}</td><td>{row.amount} EGP</td><td>{row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")}</td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td>{canReverse ? <td><button className="secondary-button compact-button" type="button" onClick={() => { setReverseTarget(row); setReverseReason(""); }}>{t("fees.reversePayment")}</button></td> : null}</tr>)}</tbody></table></div> : null}
+    {status ? <p className="form-error">{status}</p> : null}
     {reverseTarget ? <div className="modal-backdrop"><div className="modal-card" role="dialog" aria-modal="true"><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => setReverseReason(event.target.value)} rows={4} autoFocus /></label><div className="report-actions"><button className="primary-button" type="button" disabled={reversing || reverseReason.trim().length < 3} onClick={reversePayment}>{t("fees.confirmReversal")}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></div></div> : null}
-  </section>;
+    </section>
+  </div>;
 }
 
 function LatePaymentsReportPanel({ session, t, embedded = false }: { session: TeacherSession; t: Translator; embedded?: boolean }) {
@@ -6735,36 +6763,50 @@ function LatePaymentsReportPanel({ session, t, embedded = false }: { session: Te
   const [count, setCount] = useState(0);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+  const [noResults, setNoResults] = useState(false);
+  const searchFeedback = useActionFeedback();
+  const exportFeedback = useActionFeedback();
   const auth = { Authorization: `Bearer ${session.token}` };
 
   async function runReport() {
-    setLoading(true); setStatus("");
-    try {
-      const params = new URLSearchParams({ date_from: from, date_to: to });
-      if (query.trim()) params.set("q", normalizeSearchText(query));
-      if (group.trim()) params.set("group_id", group.trim());
-      if (grade.trim()) params.set("grade_level", grade.trim());
-      if (includeDisabled) params.set("include_disabled", "true");
-      const response = await fetch(`${API_BASE_URL}/admin/payments/late?${params}`, { headers: auth });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error("late_report_failed");
-      setRows(Array.isArray(data.students) ? data.students : []); setTotal(Number(data.total_expected_unpaid || 0)); setCount(Number(data.late_student_count || 0));
-      if (!data.students?.length) setStatus(t("fees.noMatchingResults"));
-    } catch { setStatus(t("fees.reportLoadFailed")); }
-    finally { setLoading(false); }
+    return searchFeedback.run(async () => {
+      setLoading(true); setStatus(""); setNoResults(false);
+      try {
+        const params = new URLSearchParams({ date_from: from, date_to: to });
+        if (query.trim()) params.set("q", normalizeSearchText(query));
+        if (group.trim()) params.set("group_id", group.trim());
+        if (grade.trim()) params.set("grade_level", grade.trim());
+        if (includeDisabled) params.set("include_disabled", "true");
+        const response = await fetch(`${API_BASE_URL}/admin/payments/late?${params}`, { headers: auth });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error("late_report_failed");
+        const nextRows = Array.isArray(data.students) ? data.students : [];
+        setRows(nextRows); setTotal(Number(data.total_expected_unpaid || 0)); setCount(Number(data.late_student_count || 0));
+        setNoResults(nextRows.length === 0);
+      } catch {
+        setStatus(t("fees.reportLoadFailed"));
+        throw new Error("late_report_failed");
+      } finally { setLoading(false); }
+    });
   }
 
   useEffect(() => { runReport().catch(() => undefined); }, []);
 
   function exportCsv() {
-    const headers = [t("admin.studentName"), t("admin.studentCode"), t("admin.scanSerial"), t("admin.selectGroup"), t("admin.grade"), t("admin.guardianPhone"), t("fees.required"), t("fees.paid"), t("fees.remaining"), t("fees.coveredMonth"), t("fees.lastPaymentDate")];
-    const csvRows = rows.map((row) => [row.full_name, row.student_code, row.scan_serial, row.group_name, row.grade_level, row.guardian_phone, row.required_amount, row.paid_amount, row.remaining_balance, (row.unpaid_months || []).map((month: any) => String(month.month).slice(0, 7)).join("; "), row.last_payment_date ? new Date(row.last_payment_date).toLocaleString() : ""]);
-    const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
-    const csv = [headers, ...csvRows].map((row) => row.map(escape).join(",")).join("\r\n");
-    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = `late-payments-${localDateInputValue()}.csv`; link.click(); URL.revokeObjectURL(url);
+    if (!rows.length || exportFeedback.state === "loading") return;
+    void exportFeedback.run(async () => {
+      const headers = [t("admin.studentName"), t("admin.studentCode"), t("admin.scanSerial"), t("admin.selectGroup"), t("admin.grade"), t("admin.guardianPhone"), t("fees.required"), t("fees.paid"), t("fees.remaining"), t("fees.coveredMonth"), t("fees.lastPaymentDate")];
+      const csvRows = rows.map((row) => [row.full_name, row.student_code, row.scan_serial, row.group_name, row.grade_level, row.guardian_phone, row.required_amount, row.paid_amount, row.remaining_balance, (row.unpaid_months || []).map((month: any) => String(month.month).slice(0, 7)).join("; "), row.last_payment_date ? new Date(row.last_payment_date).toLocaleString() : ""]);
+      const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+      const csv = [headers, ...csvRows].map((row) => row.map(escape).join(",")).join("\r\n");
+      const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = `late-payments-${localDateInputValue()}.csv`; link.click(); URL.revokeObjectURL(url);
+    }).catch(() => undefined);
   }
 
-  return <section className={`admin-editor late-payments-report ${embedded ? "embedded-report-panel" : ""}`}>{!embedded ? <div className="section-heading"><p className="eyebrow">{t("fees.lateReport")}</p><h2>{t("fees.lateReport")}</h2></div> : null}<div className="report-filters payment-report-filters"><label>{t("fees.dateFrom")}<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label><label>{t("fees.dateTo")}<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label><label className="payment-report-search">{t("fees.reportSearch")}<input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("fees.reportSearch")} /></label><label>{t("fees.groupFilter")}<input value={group} onChange={(e) => setGroup(e.target.value)} /></label><label>{t("fees.gradeFilter")}<input value={grade} onChange={(e) => setGrade(e.target.value)} /></label><label className="checkbox-label"><input type="checkbox" checked={includeDisabled} onChange={(e) => setIncludeDisabled(e.target.checked)} />{t("fees.includeDisabled")}</label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={() => runReport().catch(() => undefined)}>{t("fees.find")}</button><button className="secondary-button compact-button" type="button" disabled={!rows.length} onClick={exportCsv}>{t("fees.exportExcel")}</button></div><div className="report-summary"><span><b>{t("fees.lateStudentCount")}</b>{count}</span><span><b>{t("fees.totalExpectedUnpaid")}</b>{total.toFixed(2)} EGP</span></div>{rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.scanSerial")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("admin.guardianPhone")}</th><th>{t("fees.required")}</th><th>{t("fees.paid")}</th><th>{t("fees.remaining")}</th><th>{t("fees.coveredMonth")}</th><th>{t("fees.lastPaymentDate")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.scan_serial || "—"}</td><td>{row.group_name}</td><td>{row.grade_level}</td><td>{row.guardian_phone}</td><td>{Number(row.required_amount).toFixed(2)}</td><td>{Number(row.paid_amount).toFixed(2)}</td><td>{Number(row.remaining_balance).toFixed(2)}</td><td>{(row.unpaid_months || []).map((month: any) => String(month.month).slice(0, 7)).join(" · ") || "—"}</td><td>{row.last_payment_date ? new Date(row.last_payment_date).toLocaleDateString() : "—"}</td></tr>)}</tbody></table></div> : <p className="empty-state">{status || t("fees.noMatchingResults")}</p>}{status ? <p className="form-error">{status}</p> : null}</section>;
+  const searchButtonLabel = actionButtonText(searchFeedback.state, { idle: t("fees.find"), loading: t("fees.searching"), success: t("fees.searchComplete"), error: t("fees.reportLoadFailed") });
+  const exportButtonLabel = actionButtonText(exportFeedback.state, { idle: t("fees.exportExcel"), loading: t("fees.exporting"), success: t("fees.exported"), error: t("fees.reportLoadFailed") });
+
+  return <div className="report-panel-stack">{noResults ? <p className="report-empty-message">{t("fees.noMatchingResults")}</p> : null}<section className={`admin-editor late-payments-report ${embedded ? "embedded-report-panel" : ""}`}>{!embedded ? <div className="section-heading"><p className="eyebrow">{t("fees.lateReport")}</p><h2>{t("fees.lateReport")}</h2></div> : null}<div className="report-filters payment-report-filters"><label>{t("fees.dateFrom")}<input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label><label>{t("fees.dateTo")}<input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label><label className="payment-report-search">{t("fees.reportSearch")}<input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("fees.reportSearch")} /></label><label>{t("fees.groupFilter")}<input value={group} onChange={(e) => setGroup(e.target.value)} /></label><label>{t("fees.gradeFilter")}<input value={grade} onChange={(e) => setGrade(e.target.value)} /></label><label className="checkbox-label"><input type="checkbox" checked={includeDisabled} onChange={(e) => setIncludeDisabled(e.target.checked)} />{t("fees.includeDisabled")}</label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading || searchFeedback.state === "loading"} onClick={() => runReport().catch(() => undefined)}>{searchButtonLabel}</button><button className="secondary-button compact-button" type="button" disabled={!rows.length || exportFeedback.state === "loading"} onClick={exportCsv}>{exportButtonLabel}</button></div><div className="report-summary"><span><b>{t("fees.lateStudentCount")}</b>{count}</span><span><b>{t("fees.totalExpectedUnpaid")}</b>{total.toFixed(2)} EGP</span></div>{rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.scanSerial")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("admin.guardianPhone")}</th><th>{t("fees.required")}</th><th>{t("fees.paid")}</th><th>{t("fees.remaining")}</th><th>{t("fees.coveredMonth")}</th><th>{t("fees.lastPaymentDate")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.scan_serial || "—"}</td><td>{row.group_name}</td><td>{row.grade_level}</td><td>{row.guardian_phone}</td><td>{Number(row.required_amount).toFixed(2)}</td><td>{Number(row.paid_amount).toFixed(2)}</td><td>{Number(row.remaining_balance).toFixed(2)}</td><td>{(row.unpaid_months || []).map((month: any) => String(month.month).slice(0, 7)).join(" · ") || "—"}</td><td>{row.last_payment_date ? new Date(row.last_payment_date).toLocaleDateString() : "—"}</td></tr>)}</tbody></table></div> : null}{status ? <p className="form-error">{status}</p> : null}</section></div>;
 }
 
 function StaffInbox({ session, t }: { session: TeacherSession; t: Translator }) {

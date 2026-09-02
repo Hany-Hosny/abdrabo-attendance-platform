@@ -303,7 +303,7 @@ export function AdminExecutiveDashboard({ token, language, t, can, onNavigate }:
   }, [token, period, groupId, from, to, reloadKey, canAlerts]);
 
   return <div className="executive-dashboard" dir={language === "ar" ? "rtl" : "ltr"}>
-    <div className="executive-title-row"><div><span className="panel-kicker">{t("dashboard.adminTitle")}</span><h1>{t("dashboard.adminTitle")}</h1><p>{t("dashboard.adminSubtitle")}</p></div><div className="executive-title-mark">▥</div></div>
+    <div className="executive-title-row"><div><h1>{t("dashboard.adminTitle")}</h1><p>{t("dashboard.adminSubtitle")}</p></div><div className="executive-title-mark">▥</div></div>
     <DashboardFilters period={period} groupId={groupId} from={from} to={to} groups={data?.filters.groups || []} language={language} t={t} onPeriodChange={setPeriod} onGroupChange={setGroupId} onFromChange={setFrom} onToChange={setTo} />
     {loading && !data ? <DashboardSkeleton /> : null}
     {error ? <div className="dashboard-error"><strong>{error}</strong><button type="button" onClick={() => setReloadKey((value) => value + 1)}>{t("dashboard.retry")}</button></div> : null}
