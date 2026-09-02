@@ -6,6 +6,7 @@ import { normalizeDigits } from "./utils/normalizeDigits";
 import { createIdempotencyKey, normalizeScanValue, playScannerFeedback, type ScannerState } from "./utils/scanner";
 import { AdminExecutiveDashboard } from "./AdminExecutiveDashboard";
 import { SystemSettingsPanel } from "./SystemSettingsPanel";
+import { PasswordRecoveryDialog } from "./PasswordRecoveryDialog";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const LANGUAGE_STORAGE_KEY = "abdrabo_language";
@@ -230,6 +231,35 @@ const translations = {
     "teacher.passwordPlaceholder": "أدخل كلمة المرور",
     "teacher.loginButton": "دخول",
     "teacher.loggingInButton": "جاري الدخول...",
+    "teacher.forgotPassword": "نسيت كلمة المرور؟",
+    "recovery.eyebrow": "استعادة الحساب",
+    "recovery.title": "استعادة كلمة المرور",
+    "recovery.identifierLabel": "اسم المستخدم أو البريد الإلكتروني",
+    "recovery.identifierRequired": "أدخل اسم المستخدم أو البريد الإلكتروني.",
+    "recovery.sendCode": "إرسال رمز التحقق",
+    "recovery.sendingCode": "جاري إرسال الرمز...",
+    "recovery.genericMessage": "إذا كان الحساب مسجلاً، سيتم إرسال رمز التحقق إلى البريد الإلكتروني المرتبط به.",
+    "recovery.requestFailed": "تعذر بدء الاستعادة حالياً. حاول مرة أخرى لاحقاً.",
+    "recovery.enterCode": "أدخل رمز التحقق",
+    "recovery.codeDigit": "رقم الرمز",
+    "recovery.verifying": "جاري التحقق...",
+    "recovery.invalidCode": "رمز التحقق غير صحيح أو انتهت صلاحيته.",
+    "recovery.resendQuestion": "لم يصلك الرمز؟",
+    "recovery.resend": "إعادة الإرسال",
+    "recovery.resendIn": "إعادة الإرسال بعد {{seconds}} ثانية",
+    "recovery.newPassword": "كلمة المرور الجديدة",
+    "recovery.confirmPassword": "تأكيد كلمة المرور",
+    "recovery.changePassword": "تغيير كلمة المرور",
+    "recovery.changingPassword": "جاري تغيير كلمة المرور...",
+    "recovery.passwordLength": "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",
+    "recovery.passwordMismatch": "كلمتا المرور غير متطابقتين.",
+    "recovery.resetFailed": "تعذر تغيير كلمة المرور. اطلب رمزاً جديداً وحاول مرة أخرى.",
+    "recovery.successTitle": "تم تغيير كلمة المرور بنجاح",
+    "recovery.successDescription": "يمكنك الآن تسجيل الدخول باستخدام كلمة المرور الجديدة.",
+    "recovery.backToLogin": "العودة لتسجيل الدخول",
+    "recovery.close": "إغلاق",
+    "recovery.showPassword": "إظهار كلمة المرور",
+    "recovery.hidePassword": "إخفاء كلمة المرور",
     "teacher.logout": "خروج المستر",
     "teacher.dashboardTitle": "لوحة المستر",
     "teacher.dashboardSubtitle": "إدارة الحضور والطلاب والدرجات ستتوسع في الإصدارات القادمة.",
@@ -308,6 +338,32 @@ const translations = {
     "settings.loadFailed": "تعذر تحميل الإعدادات.",
     "settings.invalidValues": "تحقق من القيم المدخلة وحدودها.",
     "settings.accessDenied": "ليس لديك صلاحية للوصول إلى إعدادات النظام.",
+    "settings.advancedTitle": "إعدادات متقدمة",
+    "settings.passwordRecoveryTitle": "تهيئة استعادة كلمة المرور",
+    "settings.passwordRecoveryEnabled": "تفعيل استعادة كلمة المرور",
+    "settings.emailProvider": "مزود خدمة البريد",
+    "settings.gmailSmtp": "Gmail SMTP",
+    "settings.smtpCredentials": "بيانات SMTP",
+    "settings.smtpCredentialsHint": "يتم تحميل كلمة مرور التطبيق من إعدادات الخادم الآمنة فقط.",
+    "settings.configured": "مُهيأ",
+    "settings.notConfigured": "غير مُهيأ",
+    "settings.senderName": "اسم المرسل",
+    "settings.resendApiKey": "مفتاح Resend API",
+    "settings.apiKeyConfigured": "تم إعداد المفتاح",
+    "settings.apiKeyReplace": "استبدال المفتاح",
+    "settings.senderEmail": "البريد المرسل",
+    "settings.securitySecret": "مفتاح أمان استعادة كلمة المرور",
+    "settings.secretConfigured": "تم إنشاء مفتاح الأمان",
+    "settings.secretMissing": "لم يتم إنشاء مفتاح الأمان",
+    "settings.generateSecret": "إنشاء مفتاح أمان",
+    "settings.rotateSecret": "تدوير مفتاح الأمان",
+    "settings.rotateWarning": "سيؤدي تغيير مفتاح الأمان إلى إبطال جميع عمليات استعادة كلمة المرور الحالية.",
+    "settings.testEmail": "اختبار الاتصال",
+    "settings.testingEmail": "جاري اختبار الاتصال...",
+    "settings.emailTestSuccess": "تم الاتصال بخدمة البريد بنجاح.",
+    "settings.emailTestFailed": "تعذر الاتصال بخدمة البريد. تحقق من الإعدادات وحاول مرة أخرى.",
+    "settings.incompleteRecovery": "استعادة كلمة المرور غير مهيأة بالكامل",
+    "settings.secretStorageUnavailable": "تخزين الأسرار غير متاح. يجب إعداد مفتاح SETTINGS_ENCRYPTION_KEY في بيئة الخادم.",
     "inbox.title": "الرسائل",
     "inbox.newMessage": "رسالة جديدة",
     "inbox.subject": "الموضوع",
@@ -1143,6 +1199,35 @@ const translations = {
     "teacher.passwordPlaceholder": "Enter password",
     "teacher.loginButton": "Login",
     "teacher.loggingInButton": "Logging in...",
+    "teacher.forgotPassword": "Forgot password?",
+    "recovery.eyebrow": "Account recovery",
+    "recovery.title": "Reset password",
+    "recovery.identifierLabel": "Username or email",
+    "recovery.identifierRequired": "Enter your username or email.",
+    "recovery.sendCode": "Send verification code",
+    "recovery.sendingCode": "Sending code...",
+    "recovery.genericMessage": "If the account exists, a verification code will be sent to the associated email address.",
+    "recovery.requestFailed": "Unable to start recovery right now. Try again later.",
+    "recovery.enterCode": "Enter verification code",
+    "recovery.codeDigit": "Code digit",
+    "recovery.verifying": "Verifying...",
+    "recovery.invalidCode": "The verification code is invalid or has expired.",
+    "recovery.resendQuestion": "Didn't receive the code?",
+    "recovery.resend": "Resend code",
+    "recovery.resendIn": "Resend in {{seconds}} seconds",
+    "recovery.newPassword": "New password",
+    "recovery.confirmPassword": "Confirm password",
+    "recovery.changePassword": "Change password",
+    "recovery.changingPassword": "Changing password...",
+    "recovery.passwordLength": "Password must be at least 8 characters.",
+    "recovery.passwordMismatch": "Passwords do not match.",
+    "recovery.resetFailed": "Unable to change the password. Request a new code and try again.",
+    "recovery.successTitle": "Password changed successfully",
+    "recovery.successDescription": "You can now sign in using your new password.",
+    "recovery.backToLogin": "Back to login",
+    "recovery.close": "Close",
+    "recovery.showPassword": "Show password",
+    "recovery.hidePassword": "Hide password",
     "teacher.logout": "Teacher Logout",
     "teacher.dashboardTitle": "Teacher Dashboard",
     "teacher.dashboardSubtitle": "Attendance, students, and exams management will expand in the next versions.",
@@ -1221,6 +1306,32 @@ const translations = {
     "settings.loadFailed": "Could not load settings.",
     "settings.invalidValues": "Check the values and their allowed ranges.",
     "settings.accessDenied": "You do not have permission to access System Settings.",
+    "settings.advancedTitle": "Advanced Settings",
+    "settings.passwordRecoveryTitle": "Password Recovery Configuration",
+    "settings.passwordRecoveryEnabled": "Enable Password Recovery",
+    "settings.emailProvider": "Email Provider",
+    "settings.gmailSmtp": "Gmail SMTP",
+    "settings.smtpCredentials": "SMTP credentials",
+    "settings.smtpCredentialsHint": "The app password is loaded only from secure server configuration.",
+    "settings.configured": "Configured",
+    "settings.notConfigured": "Not configured",
+    "settings.senderName": "Sender Name",
+    "settings.resendApiKey": "Resend API Key",
+    "settings.apiKeyConfigured": "API key configured",
+    "settings.apiKeyReplace": "Replace API key",
+    "settings.senderEmail": "Sender Email",
+    "settings.securitySecret": "Password Reset Security Secret",
+    "settings.secretConfigured": "Security secret configured",
+    "settings.secretMissing": "Security secret has not been generated",
+    "settings.generateSecret": "Generate Security Secret",
+    "settings.rotateSecret": "Rotate Security Secret",
+    "settings.rotateWarning": "Rotating the security secret will invalidate all active password recovery requests.",
+    "settings.testEmail": "Test Email Configuration",
+    "settings.testingEmail": "Testing connection...",
+    "settings.emailTestSuccess": "Email service connection successful.",
+    "settings.emailTestFailed": "Unable to connect to the email service. Check the configuration and try again.",
+    "settings.incompleteRecovery": "Password recovery is not fully configured",
+    "settings.secretStorageUnavailable": "Secure secret storage is unavailable. Configure SETTINGS_ENCRYPTION_KEY in the server environment.",
     "inbox.title": "Inbox",
     "inbox.newMessage": "New message",
     "inbox.subject": "Subject",
@@ -2543,32 +2654,58 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
 
 function DateTimeWidget({
   language,
-  compact = false
+  compact = false,
+  header = false
 }: {
   language: Language;
   compact?: boolean;
+  header?: boolean;
 }) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60 * 1000);
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
 
+  const locale = language === "ar" ? "ar-EG" : "en-US";
+  const dateText = new Intl.DateTimeFormat(locale, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "Africa/Cairo"
+  }).format(now);
+  const timeParts = new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+    timeZone: "Africa/Cairo"
+  }).formatToParts(now);
+
   return (
-    <div className={`date-time-widget ${compact ? "compact-date-time" : ""}`}>
-      <strong>
-        {new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", {
-          weekday: "long",
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-          hour: "numeric",
-          minute: "2-digit"
-        }).format(now)}
-      </strong>
+    <div className={`date-time-widget ${compact ? "compact-date-time" : ""} ${header ? "header-date-time" : ""}`}>
+      <span className="date-time-date">{dateText}</span>
+      <time className="date-time-clock" dateTime={now.toISOString()} aria-live="polite">
+        {timeParts.map((part, index) => (
+          <span key={`${part.type}-${index}`} className={`clock-part clock-${part.type}`}>{part.value}</span>
+        ))}
+      </time>
     </div>
   );
+}
+
+function BellIcon() {
+  return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9.8a6 6 0 0 0-12 0c0 6.2-2.4 6.2-2.4 7.4h16.8C20.4 16 18 16 18 9.8Z" /><path d="M10 20h4" /></svg>;
+}
+
+function SettingsIcon() {
+  return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9.7 3.6.5-1h3.6l.5 1a8.5 8.5 0 0 1 1.7.8l1.1-.2 2.5 2.5-.2 1.1c.3.5.6 1.1.8 1.7l1 .5v3.6l-1 .5a8.5 8.5 0 0 1-.8 1.7l.2 1.1-2.5 2.5-1.1-.2a8.5 8.5 0 0 1-1.7.8l-.5 1h-3.6l-.5-1a8.5 8.5 0 0 1-1.7-.8l-1.1.2-2.5-2.5.2-1.1a8.5 8.5 0 0 1-.8-1.7l-1-.5v-3.6l1-.5c.2-.6.5-1.2.8-1.7l-.2-1.1 2.5-2.5 1.1.2c.5-.3 1.1-.6 1.7-.8Z" /><circle cx="12" cy="11.8" r="3.1" /></svg>;
+}
+
+function LogoutIcon() {
+  return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5H6.8A1.8 1.8 0 0 0 5 6.8v10.4A1.8 1.8 0 0 0 6.8 19H13" /><path d="M12 12h8M17 8l4 4-4 4" /></svg>;
 }
 
 function App() {
@@ -3219,6 +3356,7 @@ function TeacherLogin({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
 
   async function handleTeacherLogin(event: React.FormEvent) {
     event.preventDefault();
@@ -3250,7 +3388,7 @@ function TeacherLogin({
   }
 
   return (
-    <Shell language={language} setLanguage={setLanguage} t={t}>
+    <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth">
       <main className="teacher-auth">
         <section className="login-card teacher-login-card" aria-labelledby="teacher-login-title">
           <p className="eyebrow">{t("nav.teacherLogin")}</p>
@@ -3277,9 +3415,13 @@ function TeacherLogin({
             <button className="primary-button" type="submit" disabled={loading}>
               {loading ? t("teacher.loggingInButton") : t("teacher.loginButton")}
             </button>
+            <button className="forgot-password-link" type="button" onClick={() => { setError(""); setRecoveryOpen(true); }}>
+              {t("teacher.forgotPassword")}
+            </button>
           </form>
         </section>
       </main>
+      <PasswordRecoveryDialog open={recoveryOpen} identifier={identifier} language={language} t={(key, values) => t(key as TranslationKey, values)} onClose={() => setRecoveryOpen(false)} />
     </Shell>
   );
 }
@@ -3460,7 +3602,7 @@ function NotificationCenter({ session, language, t, onSelect }: { session: Teach
   }
   const badge = unreadCount > 99 ? "99+" : String(unreadCount);
   return <div className="admin-header-tool notification-center" ref={containerRef}>
-    <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={t("dashboard.notificationCenter")} title={t("dashboard.notificationCenter")} aria-expanded={open} onClick={() => setOpen((value) => !value)}>🔔{unreadCount > 0 ? <span className="header-unread-badge" aria-label={badge}>{badge}</span> : null}</button>
+    <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={t("dashboard.notificationCenter")} title={t("dashboard.notificationCenter")} aria-expanded={open} onClick={() => setOpen((value) => !value)}><BellIcon />{unreadCount > 0 ? <span className="header-unread-badge" aria-label={badge}>{badge}</span> : null}</button>
     {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button type="button" onClick={markAllRead} disabled={!unreadCount}>{t("dashboard.markAllRead")}</button></div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : notifications.length ? <div className="notification-list">{notifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.type}`}>{notification.type === "new_message" ? "✉" : notification.type === "payment_overdue" ? "₤" : "!"}</span><span><strong>{notificationTitle(notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setExpanded(true); void load(20); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
   </div>;
 }
@@ -3520,6 +3662,9 @@ function TeacherDashboard({
   const gearRef = useRef<HTMLDivElement | null>(null);
   const gearButtonRef = useRef<HTMLButtonElement | null>(null);
   const gearMenuRef = useRef<HTMLDivElement | null>(null);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement | null>(null);
+  const accountButtonRef = useRef<HTMLButtonElement | null>(null);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<AdminTab>(() => {
     const requestedTab = adminTabFromLocation();
@@ -3567,6 +3712,25 @@ function TeacherDashboard({
   }, [gearOpen]);
 
   useEffect(() => {
+    if (!accountOpen) return undefined;
+    function closeOnOutside(event: MouseEvent) {
+      if (!accountRef.current?.contains(event.target as Node)) setAccountOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setAccountOpen(false);
+        accountButtonRef.current?.focus();
+      }
+    }
+    document.addEventListener("mousedown", closeOnOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [accountOpen]);
+
+  useEffect(() => {
     if (!mobileMoreOpen) return undefined;
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") setMobileMoreOpen(false);
@@ -3600,21 +3764,30 @@ function TeacherDashboard({
           width: "100%"
         }}
       >
-        <a
-          className="brand"
-          href="/teacher/dashboard"
-          style={{ flexShrink: 0, minWidth: "fit-content", display: "inline-flex", alignItems: "center", gap: "10px" }}
-        >
-          <img className="brand-icon teacher-avatar" src="/assets/teacher-profile.png" alt="" aria-hidden="true" />
-          <span className="admin-brand-copy-desktop">
-            <strong>{t("teacher.dashboardTitle")}</strong>
-            <small>{t("site.name")}</small>
-          </span>
-          <span className="admin-brand-copy-mobile">
-            <strong>{session.teacher.name}</strong>
-            <small>{t("teacher.dashboardTitle")}</small>
-          </span>
-        </a>
+        <div className="admin-account-menu" ref={accountRef}>
+          <button
+            ref={accountButtonRef}
+            className="admin-account-button"
+            type="button"
+            aria-label={session.teacher.name}
+            aria-haspopup="menu"
+            aria-expanded={accountOpen}
+            onClick={() => setAccountOpen((open) => !open)}
+          >
+            <img className="brand-icon teacher-avatar" src="/assets/teacher-profile.png" alt={session.teacher.name} />
+            <span className="admin-identity-copy">
+              <strong>{session.teacher.name}</strong>
+              <small>{roleLabel(session.teacher.role, t)}</small>
+            </span>
+          </button>
+          {accountOpen ? <div className="account-dropdown" role="menu">
+            {can("settings.manage") ? <button type="button" role="menuitem" onClick={() => { navigateAdmin("settings"); setAccountOpen(false); }}>{t("admin.tabs.settings")}</button> : null}
+            {can("settings.manage") ? <span className="account-menu-divider" role="separator" /> : null}
+            <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); onLogout(); }}><LogoutIcon />{t("teacher.logout")}</button>
+          </div> : null}
+        </div>
+        <span className="admin-header-divider" aria-hidden="true" />
+        <DateTimeWidget language={language} header />
         <div
           className="header-actions"
           style={{
@@ -3675,7 +3848,7 @@ function TeacherDashboard({
                   window.setTimeout(() => gearMenuRef.current?.querySelector<HTMLButtonElement>("button")?.focus(), 0);
                 }
               }}
-            >⚙<span className="visually-hidden">{language === "ar" ? "الإدارة والإعدادات" : "Administration and settings"}</span></button>
+            ><SettingsIcon /><span className="visually-hidden">{language === "ar" ? "الإدارة والإعدادات" : "Administration and settings"}</span></button>
             {gearOpen ? <div className="gear-dropdown" role="menu" ref={gearMenuRef}>
               {gearAdminTabs.map((tab, index) => <span key={tab.id} className={tab.id === "settings" ? "gear-menu-settings" : ""}>
                 {tab.id === "settings" ? <span className="gear-divider" role="separator" /> : null}
@@ -3690,7 +3863,7 @@ function TeacherDashboard({
                 }}><span aria-hidden="true">{tab.id === "users" ? "♙" : tab.id === "add-user" ? "+" : tab.id === "site-content" ? "▤" : tab.id === "audit-logs" ? "◷" : "⚙"}</span>{tab.label}</button>
               </span>)}
             </div> : null}
-            <button className="admin-logout-tab" type="button" onClick={onLogout} style={{ flexShrink: 0 }}>{t("teacher.logout")}</button>
+            <button className="admin-logout-tab" type="button" onClick={onLogout} style={{ flexShrink: 0 }}><LogoutIcon /><span>{t("teacher.logout")}</span></button>
           </div> : null}
           <nav
             className="admin-nav admin-mobile-nav"
@@ -3717,6 +3890,7 @@ function TeacherDashboard({
               );
             })}
             <button className="admin-logout-tab" type="button" onClick={onLogout} style={{ flexShrink: 0 }}>
+              <LogoutIcon />
               {t("teacher.logout")}
             </button>
           </nav>
@@ -3745,23 +3919,6 @@ function TeacherDashboard({
         </div>
       </header>
       <main className={`dashboard admin-dashboard ${activeTab === "inbox" ? "admin-dashboard-inbox" : ""}`}>
-        <section className="dashboard-hero">
-          <div>
-            <p className="eyebrow">{t("teacher.protectedMessage")}</p>
-            <h1>{t("teacher.dashboardTitle")}</h1>
-            <p>{t("teacher.dashboardSubtitle")}</p>
-            <DateTimeWidget language={language} />
-          </div>
-          <div className="status-panel success">
-            <span>{t("teacher.account")}</span>
-            <strong>{session.teacher.name}</strong>
-            <small>{session.teacher.email}</small>
-            <span className={`role-badge role-${session.teacher.role}`}>
-              {roleLabel(session.teacher.role, t)}
-            </span>
-          </div>
-        </section>
-
         <section className="admin-tab-panel">
           <AnimatedTabPanel key={activeTab}>
             {!adminTabs.length ? (
@@ -3775,7 +3932,7 @@ function TeacherDashboard({
             {activeTab === "users" && can("users.view") ? <UsersTeamManager mode="list" session={session} t={t} /> : null}
             {activeTab === "site-content" && can("settings.manage") ? <SiteContentEditor session={session} language={language} t={t} /> : null}
             {activeTab === "audit-logs" && can("activity_log.view") ? <AuditLogsPanel session={session} language={language} t={t} /> : null}
-            {activeTab === "settings" && can("settings.manage") ? <SystemSettingsPanel token={session.token} language={language} t={(key, values) => t(key as TranslationKey, values)} /> : null}
+            {activeTab === "settings" && can("settings.manage") ? <SystemSettingsPanel token={session.token} language={language} isOwner={session.teacher.role === "owner"} t={(key, values) => t(key as TranslationKey, values)} /> : null}
             {activeTab === "groups" && can("schedule.view") ? <AcademicManager kind="groups" session={session} t={t} /> : null}
             {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
             {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} t={t} /> : null}
@@ -3837,7 +3994,7 @@ function TeacherDashboard({
             </div>
             <div className="mobile-more-account">
               <img className="mobile-more-avatar" src="/assets/teacher-profile.png" alt="" aria-hidden="true" />
-              <span><strong>{session.teacher.name}</strong><small>{session.teacher.email}</small></span>
+              <span><strong>{session.teacher.name}</strong></span>
               <span className={`role-badge role-${session.teacher.role}`}>{roleLabel(session.teacher.role, t)}</span>
             </div>
             <div className="mobile-more-links">
@@ -6672,7 +6829,7 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
       ]);
       const nextThreads = Array.isArray(threadsData.threads) ? threadsData.threads : [];
       setThreads(nextThreads);
-      setSelectedThreadIds((current) => current.filter((id) => nextThreads.some((thread) => Number(thread.id) === id)));
+      setSelectedThreadIds((current) => current.filter((id) => nextThreads.some((thread: any) => Number(thread.id) === id)));
       onUnreadCountChange(Number(countData.count || 0));
     } catch (_error) {
       setStatus(t("inbox.loadFailed"));
@@ -6828,18 +6985,56 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
     </div>
     <div className="inbox-layout">
       <div className="inbox-list-panel">
-        <div className="inbox-list-heading"><h3>{t("inbox.conversations")}</h3></div>
+        <div className="inbox-list-heading">
+          <h3>{t("inbox.conversations")}</h3>
+          {threads.length ? <div className="inbox-selection-actions">
+            <label className="inbox-select-all">
+              <input
+                type="checkbox"
+                checked={threads.every((thread) => selectedThreadIds.includes(Number(thread.id)))}
+                onChange={toggleAllThreads}
+                aria-label={selectedThreadIds.length === threads.length ? t("inbox.deselectAll") : t("inbox.selectAll")}
+              />
+              <span>{selectedThreadIds.length === threads.length ? t("inbox.deselectAll") : t("inbox.selectAll")}</span>
+            </label>
+            {selectedThreadIds.length && sessionHasPermission(session, "messages.manage") ? <button
+              className={`danger-button compact-button inbox-delete-selected action-feedback-${deleteThreadsFeedback.state}`}
+              type="button"
+              onClick={() => void deleteSelectedThreads()}
+              disabled={deleteThreadsFeedback.state === "loading"}
+            >
+              {actionButtonText(deleteThreadsFeedback.state, {
+                idle: t("inbox.deleteSelected", { count: String(selectedThreadIds.length) }),
+                loading: t("inbox.deletingSelected"),
+                success: t("inbox.deletedSelected", { count: String(selectedThreadIds.length) }),
+                error: t("inbox.deleteFailed")
+              })}
+            </button> : null}
+          </div> : null}
+        </div>
         <div className="inbox-list">
           {threads.length ? threads.map((thread) => {
             const isUnread = Number(thread.unread_count) > 0;
             const threadTimestamp = thread.last_message_at || thread.updated_at || thread.created_at;
-            return <button className={`inbox-thread ${selected?.id === thread.id ? "active" : ""} ${isUnread ? "unread" : "read"}`} key={thread.id} type="button" onClick={() => openThread(thread)}>
-              <div className="inbox-thread-identity"><strong>{inboxContactLabel(thread, t)}</strong>{isUnread ? <b aria-label={t("inbox.unread")}>{thread.unread_count}</b> : null}</div>
-              <span className="inbox-thread-subject">{inboxSubjectLabel(thread.subject, t)}</span>
-              {thread.public_phone ? <small className="inbox-phone">{t("contact.phone")}: {thread.public_phone}</small> : null}
-              <span className="inbox-thread-preview">{thread.group_name ? `${thread.group_name} · ` : ""}{thread.last_message || "—"}</span>
-              <div className="inbox-thread-footer"><em className={isUnread ? "unread" : "read"}>{thread.read_status === "unread" ? t("inbox.unread") : t("inbox.read")}</em>{threadTimestamp ? <time dateTime={typeof threadTimestamp === "string" ? threadTimestamp : undefined}>{formatInboxTimestamp(threadTimestamp, language)}</time> : null}</div>
-            </button>;
+            const threadId = Number(thread.id);
+            const isSelected = selectedThreadIds.includes(threadId);
+            return <div className={`inbox-thread-row ${isSelected ? "selected" : ""}`} key={thread.id}>
+              <label className="inbox-thread-checkbox">
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => toggleThreadSelection(threadId)}
+                  aria-label={`${t("inbox.selectConversation")}: ${inboxContactLabel(thread, t)}`}
+                />
+              </label>
+              <button className={`inbox-thread ${selected?.id === thread.id ? "active" : ""} ${isUnread ? "unread" : "read"}`} type="button" onClick={() => openThread(thread)}>
+                <div className="inbox-thread-identity"><strong>{inboxContactLabel(thread, t)}</strong>{isUnread ? <b aria-label={t("inbox.unread")}>{thread.unread_count}</b> : null}</div>
+                <span className="inbox-thread-subject">{inboxSubjectLabel(thread.subject, t)}</span>
+                {thread.public_phone ? <small className="inbox-phone">{t("contact.phone")}: {thread.public_phone}</small> : null}
+                <span className="inbox-thread-preview">{thread.group_name ? `${thread.group_name} · ` : ""}{thread.last_message || "—"}</span>
+                <div className="inbox-thread-footer"><em className={isUnread ? "unread" : "read"}>{thread.read_status === "unread" ? t("inbox.unread") : t("inbox.read")}</em>{threadTimestamp ? <time dateTime={typeof threadTimestamp === "string" ? threadTimestamp : undefined}>{formatInboxTimestamp(threadTimestamp, language)}</time> : null}</div>
+              </button>
+            </div>;
           }) : <div className="inbox-empty-list"><p className="empty-state">{t("inbox.noMessages")}</p></div>}
         </div>
       </div>
@@ -7207,7 +7402,8 @@ function Shell({
   setLanguage,
   t,
   onLogout,
-  logoutLabel
+  logoutLabel,
+  headerVariant
 }: {
   children: React.ReactNode;
   language: Language;
@@ -7215,6 +7411,7 @@ function Shell({
   t: Translator;
   onLogout?: () => void;
   logoutLabel?: string;
+  headerVariant?: "teacher-auth";
 }) {
   const [activeNav, setActiveNav] = useState(() => getActiveNavKey());
 
@@ -7233,9 +7430,9 @@ function Shell({
   }
 
   return (
-    <div className={`app-shell ${onLogout ? "student-shell" : ""}`}>
+    <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell` : ""}`}>
       <header
-        className="site-header"
+        className={`site-header ${headerVariant ? `${headerVariant}-header` : ""}`}
         style={{
           display: "flex",
           alignItems: "center",
@@ -7262,7 +7459,8 @@ function Shell({
               <small>{t("site.description")}</small>
             </span>
           </a>
-          <DateTimeWidget language={language} compact />
+          {headerVariant === "teacher-auth" ? <span className="site-header-divider" aria-hidden="true" /> : null}
+          <DateTimeWidget language={language} compact header={headerVariant === "teacher-auth"} />
         </div>
         <div
           className="header-actions"
@@ -7536,7 +7734,6 @@ function StudentDashboard({
                 group: displayValue(data.today_session?.group_name || student.group_name, language)
               })}
             </p>
-            <DateTimeWidget language={language} />
           </div>
           <div className={`status-panel ${statusTone}`}>
             <span>{t("dashboard.attendanceLabel")}</span>

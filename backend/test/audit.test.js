@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { auditSafeBody, changedFields } from "../src/services/audit.js";
 
 test("auditSafeBody redacts sensitive values recursively", () => {
-  const value = auditSafeBody({ password: "secret", profile: { token: "jwt", name: "Developer" }, amount: 1500 });
+  const value = auditSafeBody({ password: "secret", confirmation: "secret", apiKey: "re_private", profile: { token: "jwt", name: "Developer" }, amount: 1500 });
   assert.equal(value.password, "[REDACTED]");
+  assert.equal(value.confirmation, "[REDACTED]");
+  assert.equal(value.apiKey, "[REDACTED]");
   assert.equal(value.profile.token, "[REDACTED]");
   assert.equal(value.amount, 1500);
 });

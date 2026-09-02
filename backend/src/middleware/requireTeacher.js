@@ -11,11 +11,12 @@ export async function requireTeacher(req, res, next) {
   }
 
   try {
-    const result = await query("SELECT id, name, email, username, role, permissions, is_active, deleted_at, can_use_inbox FROM teachers WHERE id = $1", [payload.sub]);
+    const result = await query("SELECT id, name, email, username, role, permissions, auth_version, is_active, deleted_at, can_use_inbox FROM teachers WHERE id = $1", [payload.sub]);
     const user = result.rows[0];
     // The database is the source of truth for current role and permissions.
     // This also lets an existing token continue safely after an owner transfer.
     if (!user || !user.is_active || user.deleted_at) return res.status(401).json({ ok: false, status: "unauthorized" });
+    if (Number(payload.auth_version || 0) !== Number(user.auth_version || 0)) return res.status(401).json({ ok: false, status: "unauthorized" });
     req.teacher = { ...payload, ...user, sub: user.id };
     return next();
   } catch (error) { return next(error); }

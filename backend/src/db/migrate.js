@@ -124,6 +124,7 @@ export async function migrate() {
       email TEXT NOT NULL UNIQUE,
       username TEXT UNIQUE,
       password_hash TEXT NOT NULL,
+      auth_version INTEGER NOT NULL DEFAULT 0,
       role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('owner', 'admin', 'staff')),
       permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
       permissions_initialized BOOLEAN NOT NULL DEFAULT FALSE,
@@ -180,7 +181,10 @@ export async function migrate() {
         'attendance_open_before_minutes',
         'attendance_close_after_minutes',
         'attendance_alert_threshold',
-        'evaluation_alert_threshold'
+        'evaluation_alert_threshold',
+        'password_recovery_enabled',
+        'password_recovery_provider',
+        'password_recovery_from_email'
       )),
       value_json JSONB NOT NULL,
       updated_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
@@ -206,6 +210,35 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS notifications_recipient_state_idx
       ON notifications(recipient_user_id, resolved_at, is_read, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS system_secrets (
+      key TEXT PRIMARY KEY,
+      encrypted_value TEXT NOT NULL,
+      iv TEXT NOT NULL,
+      auth_tag TEXT NOT NULL,
+      updated_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS password_reset_requests (
+      id UUID PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+      code_hash TEXT NOT NULL,
+      reset_token_hash TEXT,
+      expires_at TIMESTAMPTZ NOT NULL,
+      reset_token_expires_at TIMESTAMPTZ,
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      last_sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      verified_at TIMESTAMPTZ,
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS password_reset_requests_user_idx
+      ON password_reset_requests(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS password_reset_requests_expiry_idx
+      ON password_reset_requests(expires_at);
   `);
 
   // 2. تحديث وتعديل الأعمدة (ALTERs & Constraints) لضمان التوافق
@@ -213,12 +246,24 @@ export async function migrate() {
     SET search_path TO public;
 
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE teachers ADD COLUMN IF NOT EXISTS auth_version INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS permissions_initialized BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS print_student_labels BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS max_label_reprints INTEGER NOT NULL DEFAULT 2 CHECK (max_label_reprints >= 0);
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS can_use_inbox BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+    ALTER TABLE system_settings DROP CONSTRAINT IF EXISTS system_settings_key_check;
+    ALTER TABLE system_settings ADD CONSTRAINT system_settings_key_check CHECK (key IN (
+      'attendance_open_before_minutes',
+      'attendance_close_after_minutes',
+      'attendance_alert_threshold',
+      'evaluation_alert_threshold',
+      'password_recovery_enabled',
+      'password_recovery_provider',
+      'password_recovery_from_email'
+    ));
 
     ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_role_check;
     UPDATE teachers SET role = 'staff' WHERE role IN ('teacher', 'assistant');

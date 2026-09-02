@@ -6,12 +6,28 @@ const SETTING_DEFINITIONS = Object.freeze({
   attendance_open_before_minutes: Object.freeze({ type: "integer", defaultValue: 3, min: 0, max: 180 }),
   attendance_close_after_minutes: Object.freeze({ type: "integer", defaultValue: 20, min: 0, max: 240 }),
   attendance_alert_threshold: Object.freeze({ type: "integer", defaultValue: 70, min: 0, max: 100 }),
-  evaluation_alert_threshold: Object.freeze({ type: "integer", defaultValue: 60, min: 0, max: 100 })
+  evaluation_alert_threshold: Object.freeze({ type: "integer", defaultValue: 60, min: 0, max: 100 }),
+  password_recovery_enabled: Object.freeze({ type: "boolean", defaultValue: false }),
+  password_recovery_provider: Object.freeze({ type: "provider", defaultValue: "gmail-smtp" }),
+  password_recovery_from_email: Object.freeze({ type: "email", defaultValue: "" })
 });
 
-export const SYSTEM_SETTING_KEYS = Object.freeze(Object.keys(SETTING_DEFINITIONS));
+export const SYSTEM_SETTING_KEYS = Object.freeze([
+  "attendance_open_before_minutes",
+  "attendance_close_after_minutes",
+  "attendance_alert_threshold",
+  "evaluation_alert_threshold"
+]);
+export const PASSWORD_RECOVERY_SETTING_KEYS = Object.freeze([
+  "password_recovery_enabled",
+  "password_recovery_provider",
+  "password_recovery_from_email"
+]);
 export const DEFAULT_SYSTEM_SETTINGS = Object.freeze(
   Object.fromEntries(SYSTEM_SETTING_KEYS.map((key) => [key, SETTING_DEFINITIONS[key].defaultValue]))
+);
+export const DEFAULT_PASSWORD_RECOVERY_SETTINGS = Object.freeze(
+  Object.fromEntries(PASSWORD_RECOVERY_SETTING_KEYS.map((key) => [key, SETTING_DEFINITIONS[key].defaultValue]))
 );
 
 export class SettingsValidationError extends Error {
@@ -29,7 +45,15 @@ function executeWith(db) {
 function normalizeSettingValue(key, value) {
   const definition = SETTING_DEFINITIONS[key];
   if (!definition) return { error: "unsupported_setting" };
-  if (value === "" || value === null || value === undefined || (typeof value === "boolean")) return { error: "invalid_value" };
+  if (value === null || value === undefined) return { error: "invalid_value" };
+  if (definition.type === "boolean") return typeof value === "boolean" ? { value } : { error: "invalid_value" };
+  if (definition.type === "provider") return ["gmail-smtp", "resend"].includes(value) ? { value } : { error: "invalid_value" };
+  if (definition.type === "email") {
+    const candidate = String(value).trim().toLowerCase();
+    if (!candidate) return { value: "" };
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate) ? { value: candidate } : { error: "invalid_value" };
+  }
+  if (value === "" || typeof value === "boolean") return { error: "invalid_value" };
   const candidate = typeof value === "number"
     ? value
     : typeof value === "string" && /^[-+]?\d+$/.test(normalizeDigits(value).trim())
@@ -51,6 +75,10 @@ export function validateSettingsPatch(input) {
   const values = {};
   const errors = {};
   for (const [key, value] of entries) {
+    if (!SYSTEM_SETTING_KEYS.includes(key)) {
+      errors[key] = { error: "unsupported_setting" };
+      continue;
+    }
     const normalized = normalizeSettingValue(key, value);
     if (normalized.error) errors[key] = normalized;
     else values[key] = normalized.value;
@@ -69,6 +97,25 @@ export async function readSystemSettings(db = query) {
   const updatedAt = {};
   for (const row of result.rows) {
     if (!Object.prototype.hasOwnProperty.call(SETTING_DEFINITIONS, row.key)) continue;
+    const normalized = normalizeSettingValue(row.key, row.value_json);
+    if (!normalized.error) {
+      settings[row.key] = normalized.value;
+      updatedAt[row.key] = row.updated_at;
+    }
+  }
+  return { settings, updatedAt };
+}
+
+export async function readPasswordRecoverySettings(db = query) {
+  const execute = executeWith(db);
+  const result = await execute(
+    "SELECT key, value_json, updated_at FROM system_settings WHERE key = ANY($1::text[])",
+    [PASSWORD_RECOVERY_SETTING_KEYS]
+  );
+  const settings = { ...DEFAULT_PASSWORD_RECOVERY_SETTINGS };
+  const updatedAt = {};
+  for (const row of result.rows) {
+    if (!PASSWORD_RECOVERY_SETTING_KEYS.includes(row.key)) continue;
     const normalized = normalizeSettingValue(row.key, row.value_json);
     if (!normalized.error) {
       settings[row.key] = normalized.value;

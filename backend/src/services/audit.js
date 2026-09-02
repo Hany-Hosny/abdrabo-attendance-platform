@@ -11,12 +11,17 @@ const SENSITIVE_KEYS = new Set([
   "token",
   "authorization",
   "national_id",
-  "national_id_hash"
+  "national_id_hash",
+  "api_key",
+  "resend_api_key",
+  "password_reset_secret",
+  "settings_encryption_key",
+  "confirmation"
 ]);
 
 function isSensitiveKey(key) {
   const normalized = String(key).toLowerCase();
-  return SENSITIVE_KEYS.has(normalized) || normalized.includes("password") || normalized.includes("token");
+  return SENSITIVE_KEYS.has(normalized) || normalized.includes("password") || normalized.includes("token") || normalized.includes("secret") || normalized.includes("apikey") || normalized.includes("api_key") || normalized.includes("encrypted_value") || normalized.includes("auth_tag");
 }
 
 export function sanitizeAuditValue(value, key = "") {
