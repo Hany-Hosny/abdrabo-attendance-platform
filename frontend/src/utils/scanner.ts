@@ -39,14 +39,15 @@ export function playScannerFeedback(kind: "success" | "error") {
     const context = new AudioContextClass();
     const oscillator = context.createOscillator();
     const gain = context.createGain();
+    const duration = kind === "success" ? 0.15 : 0.08;
     oscillator.type = "sine";
-    oscillator.frequency.value = kind === "success" ? 880 : 220;
+    oscillator.frequency.value = kind === "success" ? 800 : 220;
     gain.gain.setValueAtTime(0.045, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + duration);
     oscillator.connect(gain);
     gain.connect(context.destination);
     oscillator.start();
-    oscillator.stop(context.currentTime + 0.08);
+    oscillator.stop(context.currentTime + duration);
     oscillator.addEventListener("ended", () => void context.close());
   } catch (_error) {
     // Audio feedback is optional and must never affect the scan operation.

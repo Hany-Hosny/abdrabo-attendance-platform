@@ -6223,7 +6223,7 @@ function MobileScannerModal({
   const [toast, setToast] = useState<CameraScannerToast | null>(null);
   const [retryKey, setRetryKey] = useState(0);
 
-  async function submitCameraScan(value: string) {
+  async function submitCameraScan(value: string, fromCamera = false) {
     if (cameraBusyRef.current) return;
     const token = normalizeScanValue(value);
     if (!token) {
@@ -6234,6 +6234,10 @@ function MobileScannerModal({
     const now = Date.now();
     if (lastScanRef.current.value === token && now - lastScanRef.current.at < 2000) return;
     lastScanRef.current = { value: token, at: now };
+    if (fromCamera) {
+      playScannerFeedback("success");
+      if (typeof navigator.vibrate === "function") navigator.vibrate(100);
+    }
     cameraBusyRef.current = true;
     setProcessing(true);
     setManualCode("");
@@ -6258,8 +6262,6 @@ function MobileScannerModal({
       if (response.ok && data.ok) {
         const studentName = data.student?.full_name || token;
         setToast({ tone: "success", message: `${studentName} — ${t("scanner.recorded")}` });
-        playScannerFeedback("success");
-        if (typeof navigator.vibrate === "function") navigator.vibrate(90);
         if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
         toastTimerRef.current = window.setTimeout(() => {
           setToast(null);
@@ -6329,7 +6331,7 @@ function MobileScannerModal({
           },
           video,
           (result) => {
-            if (!cancelled && result) void submitCameraScan(result.getText());
+            if (!cancelled && result) void submitCameraScan(result.getText(), true);
           }
         );
         if (cancelled) {
@@ -6383,6 +6385,7 @@ function MobileScannerModal({
           {cameraStatus === "starting" ? t("scanner.cameraStarting") : cameraStatus === "ready" ? t("scanner.cameraReady") : cameraError}
         </div>
         {cameraStatus === "error" ? <button className="secondary-button camera-scanner-retry" type="button" onClick={() => setRetryKey((value) => value + 1)}>{t("scanner.cameraRetry")}</button> : null}
+        {toast ? <p className={`camera-scanner-toast camera-scanner-toast-${toast.tone}`} role="status">{toast.message}</p> : null}
         <form className="camera-scanner-manual" onSubmit={(event) => { event.preventDefault(); void submitCameraScan(manualCode); }}>
           <label htmlFor="camera-scanner-manual-code">{t("scanner.manualCodeLabel")}</label>
           <div className="camera-scanner-manual-row">
@@ -6390,7 +6393,6 @@ function MobileScannerModal({
             <button className="primary-button" type="submit" disabled={processing || !manualCode.trim()}>{processing ? t("scanner.cameraProcessing") : t("scanner.submit")}</button>
           </div>
         </form>
-        {toast ? <p className={`camera-scanner-toast camera-scanner-toast-${toast.tone}`} role="status">{toast.message}</p> : null}
       </section>
     </div>,
     document.body
