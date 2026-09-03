@@ -933,6 +933,8 @@ input:disabled {
   .camera-scanner-backdrop {
     padding: 0;
     place-items: stretch;
+    height: 100dvh;
+    overflow: hidden;
   }
 
   .camera-scanner-modal {
@@ -941,7 +943,10 @@ input:disabled {
     min-height: 100dvh;
     max-height: 100dvh;
     overflow: hidden;
+    overscroll-behavior: none;
     gap: 8px;
+    align-content: start;
+    grid-auto-rows: min-content;
     padding: calc(10px + env(safe-area-inset-top)) 12px
       calc(10px + env(safe-area-inset-bottom));
     border: 0;
@@ -949,16 +954,40 @@ input:disabled {
   }
 
   .camera-scanner-header {
+    align-items: center;
     gap: 10px;
   }
 
+  .camera-scanner-header > div {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: 7px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
   .camera-scanner-header h2 {
-    font-size: 23px;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .camera-scanner-header p {
-    margin-top: 3px;
-    font-size: 12px;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .camera-scanner-kicker {
+    flex: 0 0 auto;
+    font-size: 10px;
   }
 
   .camera-scanner-close {
@@ -969,9 +998,10 @@ input:disabled {
   }
 
   .camera-scanner-stage {
+    width: 100%;
     min-height: 0;
-    height: min(40dvh, 240px);
-    aspect-ratio: 16 / 9;
+    height: min(52dvh, calc((100vw - 24px) * 0.75));
+    aspect-ratio: 4 / 3;
   }
 
   .camera-scanner-stage video {
@@ -1029,6 +1059,9 @@ input:disabled {
     padding: 9px 10px;
     font-size: 12px;
     line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
