@@ -84,7 +84,7 @@ For non-Docker local development, provide `DATABASE_URL` through `backend/.env` 
 ## V1 Notes
 
 - Attendance is never recorded directly from the frontend; all check-ins go through `/api/student/login`.
-- Backend validation checks the student code, active state, session time window, GPS location, and duplicate attendance records.
+- Backend validation checks the student code, active state, session time window, and duplicate attendance records. Student login attendance does not require geolocation; GPS fields remain empty for those records.
 - `device_id` is stored in `localStorage` and sent with attendance requests.
 - IP address is only used as supporting suspicious/rate-limiting context, not as the primary protection mechanism.
 - UI text is bilingual through a local translations object. Arabic uses RTL and English uses LTR.

@@ -3,21 +3,7 @@ import { getDashboardData } from "./dashboard.js";
 import { finalizeExpiredAttendanceSessions } from "./attendanceFinalizer.js";
 import { normalizeStudentCode } from "../utils/normalizeDigits.js";
 
-function toRad(value) {
-  return (value * Math.PI) / 180;
-}
-
-export function distanceMeters(lat1, lon1, lat2, lon2) {
-  const earthRadius = 6371000;
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-export async function loginAndRecordAttendance({ student_code, device_id, latitude, longitude, ip }) {
+export async function loginAndRecordAttendance({ student_code, device_id, ip }) {
   student_code = normalizeStudentCode(student_code);
   await finalizeExpiredAttendanceSessions();
   const studentResult = await query(
@@ -32,14 +18,9 @@ export async function loginAndRecordAttendance({ student_code, device_id, latitu
         g.name AS group_name,
         COALESCE(g.grade_level, g.grade) AS grade_level,
         g.subject,
-        g.is_active AS group_active,
-        c.name AS center_name,
-        c.latitude AS center_latitude,
-        c.longitude AS center_longitude,
-        c.allowed_radius_meters
+        g.is_active AS group_active
       FROM students st
       JOIN groups g ON g.id = st.group_id
-      JOIN centers c ON c.id = g.center_id
       WHERE (st.student_code = $1 OR st.student_serial = $1 OR st.student_serial = $2) AND st.is_active = TRUE AND st.deleted_at IS NULL
       LIMIT 1
     `,
@@ -90,37 +71,6 @@ export async function loginAndRecordAttendance({ student_code, device_id, latitu
   }
 
   const session = sessionResult.rows[0];
-  const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude);
-  if (!hasLocation) {
-    return {
-      ok: true,
-      status: "location_required",
-      message: "Location access is required to record attendance.",
-      student: publicStudent,
-      today_session: session,
-      dashboard
-    };
-  }
-
-  const distance = distanceMeters(
-    Number(latitude),
-    Number(longitude),
-    Number(student.center_latitude),
-    Number(student.center_longitude)
-  );
-
-  if (distance > Number(student.allowed_radius_meters)) {
-    return {
-      ok: true,
-      status: "outside_center_radius",
-      message: "Student is outside the center range.",
-      student: publicStudent,
-      today_session: session,
-      distance_meters: Math.round(distance),
-      dashboard
-    };
-  }
-
   const suspiciousResult = await query(
     `
       SELECT id, student_id
@@ -153,7 +103,7 @@ export async function loginAndRecordAttendance({ student_code, device_id, latitu
         is_suspicious,
         suspicious_reason
       )
-      VALUES ($1, $2, $3, 'gps', NOW(), $4, $5, $6, $7, $8, $9, $10)
+      VALUES ($1, $2, $3, 'student_login', NOW(), NULL, NULL, NULL, $4, $5, $6, $7)
       ON CONFLICT (session_id, student_id) DO UPDATE SET
         checkin_time = attendance_records.checkin_time
       RETURNING *
@@ -162,9 +112,6 @@ export async function loginAndRecordAttendance({ student_code, device_id, latitu
       session.id,
       student.id,
       recordStatus,
-      latitude,
-      longitude,
-      distance,
       device_id,
       ip,
       isSuspicious,

@@ -22,7 +22,7 @@ function hashValue(value) {
 
 studentRouter.post("/login", studentLoginRateLimit, async (req, res, next) => {
   try {
-    const { student_code, device_id, latitude, longitude } = req.body || {};
+    const { student_code, device_id } = req.body || {};
     const normalizedCode = normalizeStudentCode(normalizeScanValue(student_code || ""));
 
     if (!normalizedCode) {
@@ -47,8 +47,6 @@ studentRouter.post("/login", studentLoginRateLimit, async (req, res, next) => {
     const result = await loginAndRecordAttendance({
       student_code: normalizedCode,
       device_id: device_id.trim(),
-      latitude: latitude === null || latitude === undefined ? null : Number(latitude),
-      longitude: longitude === null || longitude === undefined ? null : Number(longitude),
       ip: req.ip
     });
 
@@ -70,7 +68,7 @@ studentRouter.post("/login", studentLoginRateLimit, async (req, res, next) => {
           action: "attendance_recorded",
           studentId: result.student.id,
           sessionId: result.today_session?.id || result.attendance_record?.session_id || null,
-          details: { method: "student_login_gps", status_after: result.attendance_record?.status || result.status, student_name: result.student.full_name, student_code: result.student.student_code },
+          details: { method: "student_login", status_after: result.attendance_record?.status || result.status, student_name: result.student.full_name, student_code: result.student.student_code },
           request: req
         });
       }

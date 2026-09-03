@@ -1063,7 +1063,6 @@ const translations = {
     "errors.nationalIdLength": "يجب إدخال ١٤ رقمًا للرقم القومي.",
     "errors.codeRequired": "أدخل كود الطالب أولا.",
     "errors.loginFailed": "تعذر تسجيل الدخول.",
-    "errors.locationUnsupported": "المتصفح لا يدعم تحديد الموقع.",
     "dashboard.eyebrow": "بوابة الطالب",
     "dashboard.welcome": "أهلاً يا {{name}}",
     "dashboard.todayClass": "حصة اليوم: {{subject}} - {{group}}",
@@ -1093,7 +1092,6 @@ const translations = {
     "dashboard.attendancePending": "تم تسجيل حضورك وهو قيد المراجعة.",
     "dashboard.noOpenSession": "لا توجد حصة مفتوحة الآن.",
     "dashboard.outsideRadius": "أنت خارج نطاق السنتر.",
-    "dashboard.locationRequired": "يجب السماح بتحديد الموقع لتسجيل الحضور.",
     "dashboard.invalidStudent": "كود الطالب غير صحيح أو غير مفعل.",
     "dashboard.unknownStatus": "لم يتم تسجيل الحضور.",
     "dashboard.tabs.overview": "نظرة عامة ومراقبة",
@@ -2100,7 +2098,6 @@ const translations = {
     "errors.nationalIdLength": "National ID must contain exactly 14 digits.",
     "errors.codeRequired": "Enter the student code first.",
     "errors.loginFailed": "Unable to sign in.",
-    "errors.locationUnsupported": "This browser does not support location access.",
     "dashboard.eyebrow": "Student Portal",
     "dashboard.welcome": "Welcome, {{name}}",
     "dashboard.todayClass": "Today's class: {{subject}} - {{group}}",
@@ -2130,7 +2127,6 @@ const translations = {
     "dashboard.attendancePending": "Your attendance has been recorded and is pending review.",
     "dashboard.noOpenSession": "There is no open class right now.",
     "dashboard.outsideRadius": "You are outside the center range.",
-    "dashboard.locationRequired": "Location access is required to record attendance.",
     "dashboard.invalidStudent": "The student code is invalid or inactive.",
     "dashboard.unknownStatus": "Attendance was not recorded.",
     "dashboard.tabs.overview": "Overview & Monitoring",
@@ -2652,7 +2648,6 @@ function statusMessage(status: string, t: Translator) {
     pending_review: "dashboard.attendancePending",
     no_open_session: "dashboard.noOpenSession",
     outside_center_radius: "dashboard.outsideRadius",
-    location_required: "dashboard.locationRequired",
     invalid_student: "dashboard.invalidStudent"
   };
   return t(statusKey[status] || "dashboard.unknownStatus");
@@ -3063,16 +3058,14 @@ function App() {
     }
   }
 
-  async function postLogin(latitude: number | null, longitude: number | null) {
+  async function postLogin() {
     const normalizedCode = normalizeStudentCode(studentCode);
     const response = await fetch(`${API_BASE_URL}/student/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         student_code: normalizedCode,
-        device_id: ensureDeviceId(),
-        latitude,
-        longitude
+        device_id: ensureDeviceId()
       })
     });
 
@@ -3102,31 +3095,12 @@ function App() {
     setError("");
 
     try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        if (!navigator.geolocation) {
-          reject(new Error(t("errors.locationUnsupported")));
-          return;
-        }
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
-        });
-      });
-
-      const data = await postLogin(position.coords.latitude, position.coords.longitude);
+      const data = await postLogin();
       saveStudentSession(data);
       setLoginData(data);
       navigate("/student/dashboard");
-    } catch (_locationError) {
-      try {
-        const data = await postLogin(null, null);
-        saveStudentSession(data);
-        setLoginData(data);
-        navigate("/student/dashboard");
-      } catch (apiError) {
-        setError(apiError instanceof Error ? apiError.message : t("errors.loginFailed"));
-      }
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : t("errors.loginFailed"));
     } finally {
       setLoading(false);
     }
@@ -7994,6 +7968,11 @@ function studentAttendanceRate(rows: Array<Record<string, any>>) {
   return (rows.filter((row) => row.status === "present" || row.status === "late").length / rows.length) * 100;
 }
 
+function studentTodayAttendance(rows: Array<Record<string, any>>) {
+  const today = localDateInputValue();
+  return rows.find((row) => String(row.session_date || "").slice(0, 10) === today);
+}
+
 function studentAverageScore(rows: Array<Record<string, any>>) {
   const scoredRows = rows
     .map((row) => ({ score: Number(row.score), maxScore: Number(row.max_score) }))
@@ -8110,6 +8089,9 @@ function StudentDashboard({
   };
   const vitalsAttendanceRate = studentAttendanceRate(attendanceRows);
   const vitalsAverageScore = studentAverageScore(examLoaded ? examRows : dashboard.exams);
+  const todayAttendance = studentTodayAttendance(dashboard.attendance);
+  const todayAttendanceStatus = String(todayAttendance?.status || data.attendance_record?.status || "");
+  const todayAttendanceIsPresent = todayAttendanceStatus === "present" || todayAttendanceStatus === "late";
   const studentNavItems = [
     { id: "overview", icon: "overview", label: t("dashboard.tabs.overview") },
     { id: "analytics", icon: "analytics", label: t("dashboard.tabs.analytics") },
@@ -8243,9 +8225,9 @@ function StudentDashboard({
             <span className="student-vital-icon"><StudentNavIcon name="fees" /></span>
             <div><span>{t("dashboard.vitals.financial")}</span><strong>{feesLoading ? t("dashboard.vitals.loading") : studentFees?.payment_status === "paid" ? t("dashboard.vitals.paid") : studentFees?.payment_status === "overdue" ? t("dashboard.vitals.overdue") : studentFees ? t("dashboard.vitals.unpaid") : t("dashboard.vitals.noData")}</strong><small>{dashboardMonthLabel(studentFees?.summary?.current_month, language) || t("dashboard.vitals.noData")}</small></div>
           </article>
-          <article className={`student-vital-card ${data.status === "attendance_recorded" ? "is-success" : data.status === "pending_review" ? "is-warning" : "is-muted"}`}>
+          <article className={`student-vital-card ${todayAttendanceIsPresent ? "is-success" : todayAttendanceStatus === "pending_review" ? "is-warning" : todayAttendanceStatus === "absent" ? "is-warning" : "is-muted"}`}>
             <span className="student-vital-icon"><StudentNavIcon name="schedule" /></span>
-            <div><span>{t("dashboard.vitals.todayClass")}</span><strong>{data.status === "attendance_recorded" ? t("dashboard.vitals.presentToday") : data.status === "pending_review" ? t("dashboard.vitals.pendingToday") : data.today_session ? t("dashboard.vitals.noOpenClass") : t("dashboard.vitals.noMovement")}</strong><small>{data.attendance_record?.checkin_time ? formatDateTime(data.attendance_record.checkin_time, language, t("dashboard.notCheckedIn")) : t("dashboard.todayClass", { subject: displayValue(data.today_session?.subject || student.subject, language), group: displayValue(data.today_session?.group_name || student.group_name, language) })}</small></div>
+            <div><span>{t("dashboard.vitals.todayClass")}</span><strong>{todayAttendanceIsPresent ? t("dashboard.vitals.presentToday") : todayAttendanceStatus === "pending_review" ? t("dashboard.vitals.pendingToday") : todayAttendanceStatus === "absent" ? t("attendance.absent") : data.today_session ? t("dashboard.notCheckedIn") : t("dashboard.vitals.noMovement")}</strong><small>{todayAttendance?.checkin_time || data.attendance_record?.checkin_time ? formatDateTime(todayAttendance?.checkin_time || data.attendance_record?.checkin_time, language, t("dashboard.notCheckedIn")) : t("dashboard.todayClass", { subject: displayValue(data.today_session?.subject || student.subject, language), group: displayValue(data.today_session?.group_name || student.group_name, language) })}</small></div>
           </article>
         </section>
 
