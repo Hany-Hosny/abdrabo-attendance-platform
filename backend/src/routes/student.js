@@ -140,6 +140,25 @@ studentRouter.get("/me/dashboard", async (req, res, next) => {
   }
 });
 
+studentRouter.get("/me/profile", async (req, res, next) => {
+  try {
+    const authenticated = await authenticatedStudent(req);
+    if (!authenticated) return res.status(401).json({ ok: false, status: "unauthorized" });
+    const result = await query(
+      `SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
+        g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
+       FROM students s JOIN groups g ON g.id = s.group_id
+       WHERE s.id = $1 AND s.is_active = TRUE AND s.deleted_at IS NULL
+       LIMIT 1`,
+      [authenticated.id]
+    );
+    if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    return res.json({ ok: true, student: result.rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
 studentRouter.get("/me/fees", async (req, res, next) => {
   try {
     const student = await authenticatedStudent(req);

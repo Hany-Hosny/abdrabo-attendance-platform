@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import JsBarcode from "jsbarcode";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import "./styles.css";
 import { normalizeDigits } from "./utils/normalizeDigits";
 import { createIdempotencyKey, normalizeScanValue, playScannerFeedback, type ScannerState } from "./utils/scanner";
@@ -26,6 +27,8 @@ type DashboardData = {
   notes: Array<Record<string, any>>;
 };
 
+type StudentDashboardTab = "overview" | "attendance" | "exams" | "analytics" | "fees" | "assignments" | "schedule" | "notes" | "inbox";
+
 type LoginResponse = {
   ok: boolean;
   status: string;
@@ -35,7 +38,11 @@ type LoginResponse = {
     id?: number;
     full_name: string;
     student_code: string;
+    student_serial?: string;
+    scan_serial?: string;
     group_name: string;
+    grade?: string;
+    grade_level?: string;
     subject: string;
   };
   today_session?: {
@@ -430,6 +437,9 @@ const translations = {
     "fees.advanceFeeNotConfigured": "اضبط المصروف الشهري للمجموعة أولاً قبل تسجيل الدفع مقدماً.",
     "fees.advancePaidMonth": "مدفوع",
     "fees.advanceNextMonth": "التالي",
+    "fees.advanceAvailableMonth": "متاح للاختيار",
+    "fees.advanceSelectedStatus": "مختار",
+    "fees.advanceLockedStatus": "مغلق",
     "fees.advanceLockedMonth": "سدد الأشهر السابقة أولاً",
     "fees.advanceSequenceHint": "اختر الأشهر بالترتيب، ويمكنك اختيار أكثر من شهر متتالٍ.",
     "fees.advanceFailed": "تعذر تسجيل الدفع المقدم.",
@@ -958,6 +968,10 @@ const translations = {
     "admin.bulkDelete": "حذف المحدد ({{count}})",
     "admin.bulkDeleteLoading": "جاري حذف {{count}} طلاب...",
     "admin.bulkDeleteSuccess": "تم حذف {{count}} طلاب",
+    "admin.bulkRestore": "استرجاع المحدد ({{count}})",
+    "admin.bulkRestoreLoading": "جاري استرجاع {{count}} طلاب...",
+    "admin.bulkRestoreSuccess": "تم استرجاع {{count}} طلاب",
+    "admin.bulkRestoreFailed": "تعذر استرجاع بعض الطلاب.",
     "admin.bulkDeleteConfirm": "هل أنت متأكد من حذف {{count}} طلاب؟ سيؤثر هذا الإجراء على عدة سجلات.",
     "admin.permanentBulkDelete": "حذف نهائي ({{count}})",
     "admin.permanentBulkDeleteLoading": "جاري الحذف النهائي لـ {{count}} طلاب...",
@@ -1053,6 +1067,9 @@ const translations = {
     "dashboard.eyebrow": "بوابة الطالب",
     "dashboard.welcome": "أهلاً يا {{name}}",
     "dashboard.todayClass": "حصة اليوم: {{subject}} - {{group}}",
+    "renewal.title": "تذكير بموعد تجديد الاشتراك",
+    "renewal.message": "يرجى سداد رسوم شهر {{month}} بقيمة {{amount}} قبل أول حصة في الشهر.",
+    "renewal.dismiss": "إغلاق تنبيه تجديد الاشتراك",
     "dashboard.attendanceLabel": "حالة الحضور",
     "dashboard.attendanceTime": "وقت التسجيل: {{time}}",
     "dashboard.notCheckedIn": "لم يسجل بعد",
@@ -1065,6 +1082,13 @@ const translations = {
     "dashboard.refreshing": "جاري التحديث...",
     "dashboard.refreshed": "تم تحديث البيانات",
     "dashboard.refreshFailed": "تعذر تحديث البيانات.",
+    "dashboard.digitalCard": "كارت الدخول الذكي",
+    "dashboard.digitalCardTitle": "كارت الطالب الرقمي",
+    "dashboard.digitalCardStudentCode": "كود الطالب",
+    "dashboard.digitalCardGroup": "المجموعة",
+    "dashboard.digitalCardGrade": "الصف الدراسي",
+    "dashboard.digitalCardHint": "يرجى رفع سطوع الشاشة عند المسح",
+    "dashboard.digitalCardClose": "إغلاق كارت الطالب الرقمي",
     "dashboard.attendanceSuccess": "تم تسجيل حضورك بنجاح.",
     "dashboard.attendancePending": "تم تسجيل حضورك وهو قيد المراجعة.",
     "dashboard.noOpenSession": "لا توجد حصة مفتوحة الآن.",
@@ -1072,9 +1096,23 @@ const translations = {
     "dashboard.locationRequired": "يجب السماح بتحديد الموقع لتسجيل الحضور.",
     "dashboard.invalidStudent": "كود الطالب غير صحيح أو غير مفعل.",
     "dashboard.unknownStatus": "لم يتم تسجيل الحضور.",
+    "dashboard.tabs.overview": "نظرة عامة ومراقبة",
     "dashboard.tabs.attendance": "الحضور والغياب",
     "dashboard.tabs.exams": "درجات الامتحانات",
     "dashboard.tabs.examResults": "نتائج الامتحانات والتقييمات",
+    "dashboard.tabs.analytics": "مستوى الأداء والتحليلات",
+    "analytics.title": "الرسم البياني لتطور المستوى",
+    "analytics.subtitle": "تابع تطور درجاتك من أقدم امتحان إلى أحدث امتحان.",
+    "analytics.averageScore": "متوسط الدرجات",
+    "analytics.highestScore": "أعلى درجة",
+    "analytics.attendanceRate": "نسبة الحضور والالتزام",
+    "analytics.scoreAchieved": "الدرجة المحققة",
+    "analytics.totalScore": "الدرجة النهائية",
+    "analytics.date": "التاريخ",
+    "analytics.percentage": "النسبة المئوية",
+    "analytics.loading": "جاري تحميل التحليلات...",
+    "analytics.noResults": "لا توجد نتائج امتحانات مسجلة حتى الآن",
+    "analytics.noAttendance": "لا توجد بيانات حضور بعد",
     "dashboard.tabs.schedule": "جدول الحصص",
     "dashboard.tabs.homework": "الواجبات",
     "homework.noAvailable": "لا توجد واجبات حالياً.",
@@ -1087,7 +1125,7 @@ const translations = {
     "homework.status.submitted": "تم التسليم",
     "homework.status.late": "متأخر",
     "homework.attachment": "المرفق أو الرابط",
-    "dashboard.tabs.notes": "الملاحظات",
+    "dashboard.tabs.notes": "المذكرات والملازم",
     "notes.title": "الملاحظات",
     "notes.add": "إضافة ملاحظة",
     "notes.edit": "تعديل الملاحظة",
@@ -1098,6 +1136,30 @@ const translations = {
     "notes.refresh": "تحديث",
     "notes.loadError": "تعذر تحميل الملاحظات.",
     "dashboard.tabs.fees": "المصروفات",
+    "dashboard.vitals.attendance": "نسبة الحضور",
+    "dashboard.vitals.regular": "منتظم",
+    "dashboard.vitals.followUp": "يحتاج متابعة",
+    "dashboard.vitals.averageScore": "متوسط الدرجات",
+    "dashboard.vitals.excellent": "ممتاز",
+    "dashboard.vitals.keepGoing": "استمر في التقدم",
+    "dashboard.vitals.financial": "الموقف المالي",
+    "dashboard.vitals.paid": "مدفوع",
+    "dashboard.vitals.overdue": "متأخر",
+    "dashboard.vitals.unpaid": "يحتاج سداد",
+    "dashboard.vitals.todayClass": "حالة الحصة اليوم",
+    "dashboard.vitals.presentToday": "حاضر اليوم",
+    "dashboard.vitals.pendingToday": "قيد المراجعة",
+    "dashboard.vitals.noMovement": "لا توجد حركة اليوم",
+    "dashboard.vitals.noOpenClass": "لا توجد حصة مفتوحة الآن",
+    "dashboard.vitals.noData": "لا توجد بيانات بعد",
+    "dashboard.vitals.loading": "جاري التحميل...",
+    "dashboard.overviewTitle": "مركز المتابعة",
+    "dashboard.overviewSubtitle": "ملخص واضح يساعد الأسرة على متابعة التقدم والحضور والمصروفات.",
+    "dashboard.overviewRecentAttendance": "آخر حركة حضور",
+    "dashboard.overviewLatestScore": "آخر نتيجة",
+    "dashboard.overviewNextClass": "الحصة القادمة",
+    "dashboard.overviewNoAttendance": "لا توجد حركات حضور مسجلة بعد.",
+    "dashboard.overviewNoSchedule": "لا يوجد جدول حصص متاح حالياً.",
     "studentFees.title": "المصروفات",
     "studentFees.monthlyFee": "المصروف الشهري",
     "studentFees.currentCycleFee": "مصروف الشهر الحالي",
@@ -1412,6 +1474,9 @@ const translations = {
     "fees.advanceFeeNotConfigured": "Set a monthly fee for this group before recording an advance payment.",
     "fees.advancePaidMonth": "Paid",
     "fees.advanceNextMonth": "Next",
+    "fees.advanceAvailableMonth": "Available",
+    "fees.advanceSelectedStatus": "Selected",
+    "fees.advanceLockedStatus": "Locked",
     "fees.advanceLockedMonth": "Pay previous months first",
     "fees.advanceSequenceHint": "Choose months in order. Multiple months must be consecutive.",
     "fees.advanceFailed": "Advance payment could not be recorded.",
@@ -1940,6 +2005,10 @@ const translations = {
     "admin.bulkDelete": "Delete selected ({{count}})",
     "admin.bulkDeleteLoading": "Deleting {{count}} students...",
     "admin.bulkDeleteSuccess": "Deleted {{count}} students",
+    "admin.bulkRestore": "Restore selected ({{count}})",
+    "admin.bulkRestoreLoading": "Restoring {{count}} students...",
+    "admin.bulkRestoreSuccess": "Restored {{count}} students",
+    "admin.bulkRestoreFailed": "Some students could not be restored.",
     "admin.bulkDeleteConfirm": "Are you sure you want to delete {{count}} students? This action affects multiple records.",
     "admin.permanentBulkDelete": "Permanent Delete ({{count}})",
     "admin.permanentBulkDeleteLoading": "Permanently deleting {{count}} students...",
@@ -2035,6 +2104,9 @@ const translations = {
     "dashboard.eyebrow": "Student Portal",
     "dashboard.welcome": "Welcome, {{name}}",
     "dashboard.todayClass": "Today's class: {{subject}} - {{group}}",
+    "renewal.title": "Subscription renewal reminder",
+    "renewal.message": "Please settle the {{month}} fee of {{amount}} before the first class of the month.",
+    "renewal.dismiss": "Dismiss subscription renewal reminder",
     "dashboard.attendanceLabel": "Attendance Status",
     "dashboard.attendanceTime": "Check-in time: {{time}}",
     "dashboard.notCheckedIn": "Not checked in yet",
@@ -2047,6 +2119,13 @@ const translations = {
     "dashboard.refreshing": "Refreshing...",
     "dashboard.refreshed": "Data updated",
     "dashboard.refreshFailed": "Could not refresh the data.",
+    "dashboard.digitalCard": "Smart entry card",
+    "dashboard.digitalCardTitle": "Digital student card",
+    "dashboard.digitalCardStudentCode": "Student code",
+    "dashboard.digitalCardGroup": "Group",
+    "dashboard.digitalCardGrade": "Grade",
+    "dashboard.digitalCardHint": "Please increase your screen brightness when scanning",
+    "dashboard.digitalCardClose": "Close digital student card",
     "dashboard.attendanceSuccess": "Your attendance has been recorded successfully.",
     "dashboard.attendancePending": "Your attendance has been recorded and is pending review.",
     "dashboard.noOpenSession": "There is no open class right now.",
@@ -2054,9 +2133,23 @@ const translations = {
     "dashboard.locationRequired": "Location access is required to record attendance.",
     "dashboard.invalidStudent": "The student code is invalid or inactive.",
     "dashboard.unknownStatus": "Attendance was not recorded.",
+    "dashboard.tabs.overview": "Overview & Monitoring",
     "dashboard.tabs.attendance": "Attendance",
     "dashboard.tabs.exams": "Exam Scores",
     "dashboard.tabs.examResults": "Exam Results & Assessments",
+    "dashboard.tabs.analytics": "Performance & Analytics",
+    "analytics.title": "Performance progress",
+    "analytics.subtitle": "Track your scores from the oldest exam to the newest one.",
+    "analytics.averageScore": "Average Score",
+    "analytics.highestScore": "Highest Score",
+    "analytics.attendanceRate": "Attendance Rate",
+    "analytics.scoreAchieved": "Score Achieved",
+    "analytics.totalScore": "Total Score",
+    "analytics.date": "Date",
+    "analytics.percentage": "Percentage",
+    "analytics.loading": "Loading analytics...",
+    "analytics.noResults": "No exam results have been recorded yet",
+    "analytics.noAttendance": "No attendance data yet",
     "dashboard.tabs.schedule": "Class Schedule",
     "dashboard.tabs.homework": "Homework",
     "homework.noAvailable": "No homework available right now.",
@@ -2069,7 +2162,7 @@ const translations = {
     "homework.status.submitted": "Submitted",
     "homework.status.late": "Late",
     "homework.attachment": "Attachment or link",
-    "dashboard.tabs.notes": "Notes",
+    "dashboard.tabs.notes": "Notes & Materials",
     "notes.title": "Notes",
     "notes.add": "Add note",
     "notes.edit": "Edit note",
@@ -2080,6 +2173,30 @@ const translations = {
     "notes.refresh": "Refresh",
     "notes.loadError": "Failed to load notes.",
     "dashboard.tabs.fees": "Fees",
+    "dashboard.vitals.attendance": "Attendance rate",
+    "dashboard.vitals.regular": "On track",
+    "dashboard.vitals.followUp": "Needs attention",
+    "dashboard.vitals.averageScore": "Average score",
+    "dashboard.vitals.excellent": "Excellent",
+    "dashboard.vitals.keepGoing": "Keep progressing",
+    "dashboard.vitals.financial": "Billing status",
+    "dashboard.vitals.paid": "Paid",
+    "dashboard.vitals.overdue": "Overdue",
+    "dashboard.vitals.unpaid": "Payment due",
+    "dashboard.vitals.todayClass": "Today’s class",
+    "dashboard.vitals.presentToday": "Present today",
+    "dashboard.vitals.pendingToday": "Pending review",
+    "dashboard.vitals.noMovement": "No activity today",
+    "dashboard.vitals.noOpenClass": "No open class right now",
+    "dashboard.vitals.noData": "No data yet",
+    "dashboard.vitals.loading": "Loading...",
+    "dashboard.overviewTitle": "Monitoring Hub",
+    "dashboard.overviewSubtitle": "A clear family-friendly summary of progress, attendance, and billing.",
+    "dashboard.overviewRecentAttendance": "Recent attendance",
+    "dashboard.overviewLatestScore": "Latest result",
+    "dashboard.overviewNextClass": "Next class",
+    "dashboard.overviewNoAttendance": "No attendance activity has been recorded yet.",
+    "dashboard.overviewNoSchedule": "No class schedule is available right now.",
     "studentFees.title": "Fees",
     "studentFees.monthlyFee": "Monthly fee",
     "studentFees.currentCycleFee": "Current cycle fee",
@@ -2392,7 +2509,11 @@ function safeSessionPayload(data: LoginResponse): LoginResponse {
           id: data.student.id,
           full_name: data.student.full_name,
           student_code: data.student.student_code,
+          student_serial: data.student.student_serial,
+          scan_serial: data.student.scan_serial,
           group_name: data.student.group_name,
+          grade: data.student.grade,
+          grade_level: data.student.grade_level,
           subject: data.student.subject
         }
       : undefined,
@@ -2504,6 +2625,19 @@ function formatLocalTime(value: string | undefined, language: Language) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { hour: "numeric", minute: "2-digit" }).format(date);
+}
+
+function formatTimeOfDay(value: string | undefined, language: Language) {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "—";
+  return scheduleTimeLabel(`${match[1].padStart(2, "0")}:${match[2]}`, language);
+}
+
+function profileSessionTitle(row: Record<string, any>) {
+  const sessionName = String(row.session_name || row.subject || "").trim();
+  const groupName = String(row.group_name || "").trim();
+  if (sessionName && groupName && sessionName !== groupName) return `${sessionName} · ${groupName}`;
+  return sessionName || groupName || "—";
 }
 
 function formatSessionWindow(session: Record<string, any>, language: Language) {
@@ -2736,6 +2870,10 @@ function SettingsIcon() {
 
 function LogoutIcon() {
   return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5H6.8A1.8 1.8 0 0 0 5 6.8v10.4A1.8 1.8 0 0 0 6.8 19H13" /><path d="M12 12h8M17 8l4 4-4 4" /></svg>;
+}
+
+function DigitalCardIcon() {
+  return <svg className="digital-card-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18M7 13h4M7 16h6" /><path d="m16 13 1.5 1.5L20 12" /></svg>;
 }
 
 function App() {
@@ -3968,7 +4106,7 @@ function TeacherDashboard({
             {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
             {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} t={t} /> : null}
             {activeTab === "fees" && can("payments.view") ? <FeesPanel session={session} t={t} /> : null}
-            {activeTab === "reports" && can("payments.view") && can("payments.reports.view") ? <FinanceReportsPanel session={session} t={t} canReverse={can("payments.reverse")} /> : null}
+            {activeTab === "reports" && can("payments.view") && can("payments.reports.view") ? <FinanceReportsPanel session={session} language={language} t={t} canReverse={can("payments.reverse")} /> : null}
             {activeTab === "attendance" && can("attendance.view") ? <AttendancePanel session={session} language={language} t={t} /> : null}
             {activeTab === "exams" && can("exams.view") ? <ExamResultsManager session={session} t={t} /> : null}
             {activeTab === "inbox" && can("messages.view") ? <StaffInboxControls session={session} language={language} t={t} onUnreadCountChange={setInboxUnread} /> : null}
@@ -4750,6 +4888,8 @@ type StudentCardNotice = {
   message: string;
 };
 
+type StudentBulkToast = StudentCardNotice;
+
 type StudentRetention = {
   evaluations: boolean;
   financial: boolean;
@@ -4948,11 +5088,15 @@ function AcademicManager({
   const [groupDeletePinTarget, setGroupDeletePinTarget] = useState<AdminGroup | null>(null);
   const [groupDeletePin, setGroupDeletePin] = useState("");
   const bulkDeleteFeedback = useActionFeedback();
+  const bulkRestoreFeedback = useActionFeedback();
   const permanentBulkDeleteFeedback = useActionFeedback();
+  const bulkActionsBusy = [bulkDeleteFeedback.state, bulkRestoreFeedback.state, permanentBulkDeleteFeedback.state].some((state) => state === "loading");
   const [studentActionStates, setStudentActionStates] = useState<Record<string, ActionButtonState>>({});
   const studentActionTimers = useRef<Record<string, number>>({});
   const [studentCardNotices, setStudentCardNotices] = useState<Record<number, StudentCardNotice | undefined>>({});
   const studentNoticeTimers = useRef<Record<number, number>>({});
+  const [studentBulkToast, setStudentBulkToast] = useState<StudentBulkToast | null>(null);
+  const studentBulkToastTimer = useRef<number | null>(null);
   const [groupActionStates, setGroupActionStates] = useState<Record<string, ActionButtonState>>({});
   const [groupActionErrors, setGroupActionErrors] = useState<Record<string, string>>({});
   const groupActionTimers = useRef<Record<string, number>>({});
@@ -5037,6 +5181,7 @@ function AcademicManager({
     Object.values(groupActionTimers.current).forEach((timer) => window.clearTimeout(timer));
     Object.values(studentActionTimers.current).forEach((timer) => window.clearTimeout(timer));
     Object.values(studentNoticeTimers.current).forEach((timer) => window.clearTimeout(timer));
+    if (studentBulkToastTimer.current !== null) window.clearTimeout(studentBulkToastTimer.current);
   }, []);
 
   function groupActionState(key: string): ActionButtonState {
@@ -5054,6 +5199,15 @@ function AcademicManager({
     studentNoticeTimers.current[studentId] = window.setTimeout(() => {
       setStudentCardNotices((current) => ({ ...current, [studentId]: undefined }));
     }, 3000);
+  }
+
+  function showStudentBulkToast(notice: StudentBulkToast) {
+    if (studentBulkToastTimer.current !== null) window.clearTimeout(studentBulkToastTimer.current);
+    setStudentBulkToast(notice);
+    studentBulkToastTimer.current = window.setTimeout(() => {
+      setStudentBulkToast(null);
+      studentBulkToastTimer.current = null;
+    }, 3600);
   }
 
   async function runStudentAction(key: string, studentId: number, action: () => Promise<void>, successMessage: string, refresh = false) {
@@ -5126,33 +5280,61 @@ function AcademicManager({
 
   function bulkDeleteStudents() {
     const count = selectedStudentIds.length;
-    if (!count || !sessionHasPermission(session, "students.delete")) return;
+    if (!count || bulkActionsBusy || !sessionHasPermission(session, "students.delete")) return;
     setBulkDeleteConfirmOpen(true);
   }
 
   function permanentBulkDeleteStudents() {
     const count = selectedStudentIds.length;
-    if (!count || !sessionHasPermission(session, "students.delete")) return;
+    if (!count || bulkActionsBusy || !sessionHasPermission(session, "students.delete")) return;
     setPermanentBulkDeletePhrase("");
     setPermanentBulkDeleteRetention({ ...defaultStudentRetention });
     setPermanentBulkDeleteConfirmOpen(true);
+  }
+
+  async function restoreSelectedStudents() {
+    const studentIds = [...selectedStudentIds];
+    if (!studentIds.length || bulkActionsBusy || statusFilter !== "deleted" || !sessionHasPermission(session, "students.manage")) return;
+    try {
+      await bulkRestoreFeedback.run(async () => {
+        const results = await Promise.allSettled(studentIds.map(async (studentId) => {
+          const response = await fetch(`${API_BASE_URL}/admin/students/${studentId}/restore`, { method: "PATCH", headers });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
+        }));
+        const restoredIds = studentIds.filter((_studentId, index) => results[index]?.status === "fulfilled");
+        const failedCount = results.length - restoredIds.length;
+        setSelectedStudentIds((current) => current.filter((studentId) => !restoredIds.includes(studentId)));
+        await loadData();
+        if (failedCount) throw new Error(t("admin.bulkRestoreFailed"));
+      });
+      setSelectedStudentIds([]);
+      showStudentBulkToast({ type: "success", message: t("admin.bulkRestoreSuccess", { count: String(studentIds.length) }) });
+    } catch (error) {
+      showStudentBulkToast({ type: "error", message: error instanceof Error ? error.message : t("errors.loginFailed") });
+    }
   }
 
   async function confirmBulkDeleteStudents() {
     const count = selectedStudentIds.length;
     if (!count) return;
     setBulkDeleteConfirmOpen(false);
-    await bulkDeleteFeedback.run(async () => {
-      const response = await fetch(`${API_BASE_URL}/admin/students/bulk-delete`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ studentIds: selectedStudentIds })
+    try {
+      await bulkDeleteFeedback.run(async () => {
+        const response = await fetch(`${API_BASE_URL}/admin/students/bulk-delete`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ studentIds: selectedStudentIds })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
+        await loadData();
+        window.setTimeout(() => setSelectedStudentIds([]), 1800);
       });
-      const data = await response.json();
-      if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
-      await loadData();
-      window.setTimeout(() => setSelectedStudentIds([]), 1800);
-    }).catch((error) => setStatus(error instanceof Error ? error.message : t("errors.loginFailed")));
+      showStudentBulkToast({ type: "success", message: t("admin.bulkDeleteSuccess", { count: String(count) }) });
+    } catch (error) {
+      showStudentBulkToast({ type: "error", message: error instanceof Error ? error.message : t("errors.loginFailed") });
+    }
   }
 
   async function confirmPermanentBulkDeleteStudents() {
@@ -5173,10 +5355,10 @@ function AcademicManager({
       setSelectedStudentIds([]);
       setPermanentBulkDeletePhrase("");
       setPermanentBulkDeleteConfirmOpen(false);
-      setStatus(t("admin.permanentBulkDeleteSuccess", { count: String(count) }));
+      showStudentBulkToast({ type: "success", message: t("admin.permanentBulkDeleteSuccess", { count: String(count) }) });
       await loadData().catch((error) => setStatus(error instanceof Error ? error.message : t("errors.loginFailed")));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+      showStudentBulkToast({ type: "error", message: error instanceof Error ? error.message : t("errors.loginFailed") });
     }
   }
 
@@ -5600,7 +5782,6 @@ function AcademicManager({
     <section className="admin-editor academic-manager">
       {profileStudentId ? <StudentProfileModal studentId={profileStudentId} initialSection={profileSection} session={session} t={t} onClose={closeStudentProfile} /> : null}
       <div className="section-heading">
-        <p className="eyebrow">{t(`admin.tabs.${kind}` as TranslationKey)}</p>
         <h2>{editingId ? t("admin.update") : t(`admin.tabs.${kind}` as TranslationKey)}</h2>
       </div>
       <form onSubmit={save} noValidate>
@@ -5641,7 +5822,7 @@ function AcademicManager({
             <label className="checkbox-label"><input type="checkbox" checked={studentForm.is_active} onChange={(e) => setStudentForm({ ...studentForm, is_active: e.target.checked })} />{t("admin.active")}</label>
           </div>
           <section className="student-label-details" aria-label={t("admin.labelDetails")}>
-            <div className="section-heading"><p className="eyebrow">{t("admin.labelDetails")}</p><h3>{t("admin.labelDetails")}</h3></div>
+            <div className="section-heading"><h3>{t("admin.labelDetails")}</h3></div>
             <div className="label-detail-grid">
               <div><span>{t("admin.loginCode")}</span><strong>{studentForm.student_code || "—"}</strong></div>
               <div><span>{t("admin.scanSerial")}</span><strong>{studentForm.scan_serial || "—"}</strong></div>
@@ -5667,16 +5848,21 @@ function AcademicManager({
           </select>
         </label>
         <div className="student-selection-actions">
+          {selectedStudentIds.length ? <span className="selected-student-count" role="status">{t("admin.selectedStudents", { count: String(selectedStudentIds.length) })}</span> : null}
           <button className="secondary-button compact-button" type="button" onClick={toggleAllVisibleStudents} disabled={!students.length || !showStudents}>
             {allVisibleStudentsSelected ? t("admin.deselectAll") : t("admin.selectAll")}
           </button>
-          {selectedStudentIds.length && sessionHasPermission(session, "students.delete") ? <button className={`danger-button compact-button permanent-bulk-delete-button action-feedback-${permanentBulkDeleteFeedback.state}`} type="button" disabled={permanentBulkDeleteFeedback.state === "loading"} onClick={() => permanentBulkDeleteStudents()}>
-            {actionButtonText(permanentBulkDeleteFeedback.state, { idle: t("admin.permanentBulkDelete", { count: String(selectedStudentIds.length) }), loading: t("admin.permanentBulkDeleteLoading", { count: String(selectedStudentIds.length) }), success: t("admin.permanentBulkDeleteSuccess", { count: String(selectedStudentIds.length) }), error: t("admin.actionFailedDelete") })}
-          </button> : null}
-          {selectedStudentIds.length ? <span className="selected-student-count">{t("admin.selectedStudents", { count: String(selectedStudentIds.length) })}</span> : null}
-          {selectedStudentIds.length && sessionHasPermission(session, "students.delete") ? <button className={`danger-button compact-button action-feedback-${bulkDeleteFeedback.state}`} type="button" disabled={bulkDeleteFeedback.state === "loading"} onClick={() => void bulkDeleteStudents()}>
-            {actionButtonText(bulkDeleteFeedback.state, { idle: t("admin.bulkDelete", { count: String(selectedStudentIds.length) }), loading: t("admin.bulkDeleteLoading", { count: String(selectedStudentIds.length) }), success: t("admin.bulkDeleteSuccess", { count: String(selectedStudentIds.length) }), error: t("admin.actionFailedDelete") })}
-          </button> : null}
+          {selectedStudentIds.length && (sessionHasPermission(session, "students.manage") || sessionHasPermission(session, "students.delete")) ? <div className="student-selection-danger-actions">
+            {statusFilter === "deleted" && sessionHasPermission(session, "students.manage") ? <button className={`secondary-button compact-button bulk-restore-button action-feedback-${bulkRestoreFeedback.state}`} type="button" disabled={bulkActionsBusy} onClick={() => void restoreSelectedStudents()}>
+              <StudentActionIcon name="restore" />{actionButtonText(bulkRestoreFeedback.state, { idle: t("admin.bulkRestore", { count: String(selectedStudentIds.length) }), loading: t("admin.bulkRestoreLoading", { count: String(selectedStudentIds.length) }), success: t("admin.bulkRestoreSuccess", { count: String(selectedStudentIds.length) }), error: t("admin.actionFailedSave") })}
+            </button> : null}
+            {statusFilter !== "deleted" && sessionHasPermission(session, "students.delete") ? <button className={`danger-button compact-button soft-bulk-delete-button action-feedback-${bulkDeleteFeedback.state}`} type="button" disabled={bulkActionsBusy} onClick={() => void bulkDeleteStudents()}>
+              {actionButtonText(bulkDeleteFeedback.state, { idle: t("admin.bulkDelete", { count: String(selectedStudentIds.length) }), loading: t("admin.bulkDeleteLoading", { count: String(selectedStudentIds.length) }), success: t("admin.bulkDeleteSuccess", { count: String(selectedStudentIds.length) }), error: t("admin.actionFailedDelete") })}
+            </button> : null}
+            {sessionHasPermission(session, "students.delete") ? <button className={`danger-button compact-button permanent-bulk-delete-button action-feedback-${permanentBulkDeleteFeedback.state}`} type="button" disabled={bulkActionsBusy} onClick={() => permanentBulkDeleteStudents()}>
+              <StudentActionIcon name="trash" />{actionButtonText(permanentBulkDeleteFeedback.state, { idle: t("admin.permanentBulkDelete", { count: String(selectedStudentIds.length) }), loading: t("admin.permanentBulkDeleteLoading", { count: String(selectedStudentIds.length) }), success: t("admin.permanentBulkDeleteSuccess", { count: String(selectedStudentIds.length) }), error: t("admin.actionFailedDelete") })}
+            </button> : null}
+          </div> : null}
         </div>
       </div> : null}
       {kind === "students" ? <div className="student-profile-picker">
@@ -5763,6 +5949,10 @@ function AcademicManager({
         {!students.length ? <p className="empty-state">{t("admin.noStudents")}</p> : null}
       </div> : null}
       {kind !== "groups" && status ? <p className={status.startsWith(t("admin.studentSaved", { code: "" })) ? "lookup-result" : "form-error"}>{status}</p> : null}
+      {kind === "students" && studentBulkToast ? <div className={`student-bulk-toast ${studentBulkToast.type}`} role={studentBulkToast.type === "error" ? "alert" : "status"} aria-live={studentBulkToast.type === "error" ? "assertive" : "polite"}>
+        <span className="student-bulk-toast-icon" aria-hidden="true">{studentBulkToast.type === "success" ? "✓" : "!"}</span>
+        <span>{studentBulkToast.message}</span>
+      </div> : null}
       {bulkDeleteConfirmOpen ? <div className="modal-backdrop" role="presentation"><section className="modal-card bulk-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-confirm-title">
         <h3 id="bulk-delete-confirm-title">{t("admin.bulkDelete", { count: String(selectedStudentIds.length) })}</h3>
         <p>{t("admin.bulkDeleteConfirm", { count: String(selectedStudentIds.length) })}</p>
@@ -5946,10 +6136,10 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
         <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b>{profile.student.student_code || "—"}</span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
       </div></section>
       <section className="profile-section profile-label-section"><h3>{t("admin.labelDetails")}</h3><div className="profile-label-card"><StudentLabelPreview student={profile.student} />{sessionHasPermission(session, "students.manage") ? <div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printProfileLabel} disabled={labelPrinting || !labelScanSerial(profile.student)}>{labelPrinting ? t("admin.printingLabel") : t("admin.printLabel")}</button><button className="secondary-button compact-button" type="button" onClick={regenerateProfileScanSerial} disabled={serialRegenerating}>{serialRegenerating ? t("admin.updating") : t("admin.regenerateScanSerial")}</button></div> : null}</div></section>
-      {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div key={`${row.session_id}-${row.session_date}`}><span>{row.session_date} · {row.start_time?.slice(0, 5)}–{row.end_time?.slice(0, 5)}</span><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
+      {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{formatTimeOfDay(row.start_time, language)}–{formatTimeOfDay(row.end_time, language)}</span></small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
       {profile.exams ? <section className="profile-section" id="student360-evaluations"><h3>{t("admin.examHistory")}</h3>{profile.exams?.length ? <div className="profile-record-list profile-exam-list">{profile.exams.map((row: any) => { const evaluation = scoreEvaluation(row.score, row.max_score, t); return <div className="profile-exam-record" key={row.id}><div className="profile-exam-details"><strong>{displayValue(row.title, language)}</strong><small>{t("dashboard.latestExamDate")}: {formatDateOnly(String(row.exam_date || ""), language, "—")}</small>{row.note ? <small>{t("admin.assessment")}: {displayValue(row.note, language)}</small> : null}</div><div className="profile-exam-score">{row.score == null ? <strong>—</strong> : <><strong className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</strong>{evaluation ? <small className={`profile-exam-evaluation score-${evaluation.tone}`}>{evaluation.percentage.toFixed(0)}% — {evaluation.label}</small> : null}</>}</div></div>; })}</div> : <p className="empty-state">{t("admin.noProfileExams")}</p>}</section> : null}
       {profile.notes ? <section className="profile-section" id="student360-notes"><h3>{t("admin.notes")}</h3>{sessionHasPermission(session, "notes.manage") ? <form className="profile-note-form" onSubmit={saveNote}><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder={t("admin.notePlaceholder")} rows={3} /><button className="secondary-button compact-button" type="submit">{editingNoteId ? t("admin.editNote") : t("admin.addNote")}</button></form> : null}{profile.notes?.length ? <div className="profile-record-list">{profile.notes.map((note: any) => <div key={note.id}><span>{note.body}<small>{note.author_name} · {new Date(note.created_at).toLocaleString()}</small></span>{sessionHasPermission(session, "notes.manage") ? <div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setEditingNoteId(Number(note.id)); setNoteBody(note.body); }}>{t("admin.editNote")}</button><button className="secondary-button compact-button" type="button" onClick={() => deleteNote(Number(note.id))}>{t("admin.deleteNote")}</button></div> : null}</div>)}</div> : <p className="empty-state">{t("admin.noProfileNotes")}</p>}</section> : null}
-      {profile.fees ? <section className="profile-section" id="student360-payments"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p>{profile.fees.payments ? <><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div key={row.id}><span>{new Date(row.paid_at || row.payment_date).toLocaleString()} · {row.paid_by || "—"}</span><strong>{money(row.amount)}</strong></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</> : null}</section> : null}
+      {profile.fees ? <section className="profile-section" id="student360-payments"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p>{profile.fees.payments ? <><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div className="profile-payment-record" key={row.id}><div className="profile-payment-amount"><strong>{money(row.amount)}</strong><span>{row.payment_method || t("fees.normalPayment")}</span></div><div className="profile-record-primary"><span><b>{t("fees.paidBy")}:</b> {row.paid_by || "—"}</span><small><b>{t("fees.paymentDate")}:</b> {formatDateTime(String(row.paid_at || row.payment_date || ""), language, "—")}</small></div></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</> : null}</section> : null}
       {profile.inbox ? <section className="profile-section" id="student360-messages"><h3>{t("admin.profileMessages")}</h3>{profile.inbox?.length ? <div className="profile-record-list">{profile.inbox.map((row: any) => <div key={row.id}><span>{row.subject}<small>{row.last_message || "—"}</small></span><strong>{row.message_count}</strong></div>)}</div> : <p className="empty-state">{t("admin.noProfileMessages")}</p>}</section> : null}
     </> : <p className="form-error">{status || t("admin.profileLoadFailed")}</p>}
     {status && profile ? <p className="form-error">{status}</p> : null}
@@ -5980,7 +6170,7 @@ function AttendancePanel({ session, language, t }: { session: TeacherSession; la
   }
   const selectedSession = sessions.find((item) => String(item.id) === selected);
   const groupStudents = students.filter((item) => !selectedSession || item.group_id === selectedSession.group_id);
-  return <section className="admin-editor"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.attendance")}</p><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => setSelected(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {item.start_time?.slice(0, 5)} إلى {item.end_time?.slice(0, 5)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}<div className="academic-list">{groupStudents.map((student) => { const currentStatus = records.find((record) => record.student_id === student.id)?.status || "not_marked"; const feedback = rowFeedback[student.id]; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "present")}>Present / حاضر</button><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "absent")}>Absent / غائب</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
+  return <section className="admin-editor"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => setSelected(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {item.start_time?.slice(0, 5)} إلى {item.end_time?.slice(0, 5)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}<div className="academic-list">{groupStudents.map((student) => { const currentStatus = records.find((record) => record.student_id === student.id)?.status || "not_marked"; const feedback = rowFeedback[student.id]; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "present")}>Present / حاضر</button><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "absent")}>Absent / غائب</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
 function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }) {
@@ -6080,7 +6270,6 @@ function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }
   return (
     <section className="admin-editor scanner-panel">
       <div className="section-heading">
-        <p className="eyebrow">{t("admin.tabs.scanner")}</p>
         <h2>{t("admin.tabs.scanner")}</h2>
       </div>
       <form onSubmit={scan}>
@@ -6269,16 +6458,17 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
     ? summary.monthly_dues.filter((due: any) => Number(due?.remaining_amount || 0) > 0).map((due: any) => monthLabel(String(due.month))).join(document.documentElement.lang === "en" ? ", " : "، ")
     : "";
   const dueMonthsKey = dueMonths && dueMonths.split(document.documentElement.lang === "en" ? "," : "،").length > 1 ? "fees.dueMonths" : "fees.dueMonth";
+  const availableMonthsCount = advanceMonths.filter((month: any) => month.available).length;
 
   return <section className="admin-editor fees-panel">
-    <div className="section-heading"><p className="eyebrow">{t("admin.tabs.fees")}</p><h2>{mode === "advance" ? t("fees.advanceTitle") : t("fees.title")}</h2></div>
+    <div className="section-heading"><h2>{mode === "advance" ? t("fees.advanceTitle") : t("fees.title")}</h2></div>
     <div className="internal-tabs">
       {canCollect ? <button className={mode === "new" ? "active" : ""} type="button" onClick={() => { setMode("new"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setStatus(""); }}>{t("fees.newPayment")}</button> : null}
       {canAdvance ? <button className={mode === "advance" ? "active" : ""} type="button" onClick={() => { setMode("advance"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setStatus(""); }}>{t("fees.advancePayment")}</button> : null}
     </div>
     <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input ref={inputRef} autoFocus dir="ltr" type="text" value={code} onChange={(event) => setCode(event.target.value)} placeholder="A-2303" autoComplete="off" disabled={lookupLoading} /></label><button className="primary-button" type="submit" disabled={lookupLoading || !code.trim()}>{lookupLoading ? t("dashboard.refreshing") : t("fees.find")}</button></form>
     {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>{canCollect ? <><small>{t("fees.fullOnly")}</small><button className="secondary-button" type="button" onClick={pay} disabled={paymentLoading}>{paymentLoading ? t("dashboard.refreshing") : t("fees.payFull")}</button></> : null}</div> : null}
-      {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : monthlyFee <= 0 ? <p className="empty-state">{t("fees.advanceFeeNotConfigured")}</p> : <><div className="advance-sequence-heading"><div><h3>{t("fees.advanceMonths")}</h3><p>{t("fees.advanceSequenceHint")}</p></div><span className="advance-sequence-count">{selectedMonths.length} / {advanceMonths.filter((month: any) => month.available).length}</span></div><div className="advance-month-grid">{advanceMonths.map((month: any, index: number) => { const key = monthKey(month); const paid = isMonthPaid(month); const selected = selectedMonthSet.has(key); const unlocked = isMonthUnlocked(index); const locked = !paid && !unlocked; const stateLabel = paid ? t("fees.advancePaidMonth") : locked ? t("fees.advanceLockedMonth") : t("fees.advanceNextMonth"); return <label className={`advance-month-option ${paid ? "is-paid" : unlocked ? "is-next" : "is-locked"} ${selected ? "is-selected" : ""}`} key={month.month} title={stateLabel}><span className={`advance-month-state-icon ${paid ? "is-paid" : locked ? "is-locked" : "is-next"}`} aria-hidden="true">{paid ? "✓" : String(index + 1).padStart(2, "0")}</span><span className="advance-month-content"><strong>{monthLabel(month.month)}</strong><small>{stateLabel}</small></span><b>{Number(month.remaining_amount || month.amount || 0).toFixed(2)} EGP</b>{paid ? <span className="advance-month-status">{t("fees.advancePaidMonth")}</span> : <input type="checkbox" checked={selected} disabled={!unlocked && !selected} aria-label={`${monthLabel(month.month)} — ${stateLabel}`} onChange={(event) => toggleAdvanceMonth(month, index, event.target.checked)} />}</label>; })}</div>{!advanceMonths.some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total">{t("fees.advanceSelected")}: {selectedMonths.length} · {t("fees.advanceTotal")}: {totalAdvance.toFixed(2)} EGP</p><button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
+      {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : monthlyFee <= 0 ? <p className="empty-state">{t("fees.advanceFeeNotConfigured")}</p> : <><div className="advance-sequence-heading"><div><span className="advance-section-kicker">{t("fees.advancePayment")}</span><h3>{t("fees.advanceMonths")}</h3><p>{t("fees.advanceSequenceHint")}</p></div><div className="advance-selection-summary"><span className="advance-sequence-count"><strong>{selectedMonths.length}</strong><small>{t("fees.advanceSelected")}</small></span><span className="advance-available-count"><strong>{availableMonthsCount}</strong><small>{t("fees.advanceAvailableMonth")}</small></span></div></div><div className="advance-month-legend" aria-label={t("fees.advanceMonths")}><span className="advance-legend-item is-next"><i aria-hidden="true" />{t("fees.advanceAvailableMonth")}</span><span className="advance-legend-item is-paid"><i aria-hidden="true" />{t("fees.advancePaidMonth")}</span><span className="advance-legend-item is-locked"><i aria-hidden="true" />{t("fees.advanceLockedStatus")}</span></div><div className="advance-month-grid">{advanceMonths.map((month: any, index: number) => { const key = monthKey(month); const paid = isMonthPaid(month); const selected = selectedMonthSet.has(key); const unlocked = isMonthUnlocked(index); const locked = !paid && !unlocked; const stateLabel = paid ? t("fees.advancePaidMonth") : locked ? t("fees.advanceLockedMonth") : selected ? t("fees.advanceSelectedStatus") : t("fees.advanceAvailableMonth"); return <label className={`advance-month-option ${paid ? "is-paid" : unlocked ? "is-next" : "is-locked"} ${selected ? "is-selected" : ""}`} key={month.month} title={locked ? t("fees.advanceLockedMonth") : stateLabel}><span className="advance-month-card-top"><span className={`advance-month-state-icon ${paid ? "is-paid" : locked ? "is-locked" : "is-next"}`} aria-hidden="true">{paid ? "✓" : String(index + 1).padStart(2, "0")}</span><span className="advance-month-status">{stateLabel}</span></span><span className="advance-month-content"><strong>{monthLabel(month.month)}</strong><small>{locked ? t("fees.advanceLockedMonth") : t("fees.advancePaymentLabel")}</small></span><span className="advance-month-footer"><b>{Number(month.remaining_amount || month.amount || 0).toFixed(2)} EGP</b>{paid ? <span className="advance-month-paid-mark" aria-label={t("fees.advancePaidMonth")}>✓</span> : <input type="checkbox" checked={selected} disabled={!unlocked && !selected} aria-label={`${monthLabel(month.month)} — ${stateLabel}`} onChange={(event) => toggleAdvanceMonth(month, index, event.target.checked)} />}</span></label>; })}</div>{!advanceMonths.some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total"><span>{t("fees.advanceSelected")}: <strong>{selectedMonths.length}</strong></span><span>{t("fees.advanceTotal")}: <strong>{totalAdvance.toFixed(2)} EGP</strong></span></p><button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
   </section>;
 }
@@ -6701,13 +6891,27 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><div className="report-filters payment-report-filters"><label>{t("audit.search")}<input value={search} onChange={(event) => setSearch(event.target.value)} /></label><label>{t("audit.action")}<select value={action} onChange={(event) => { setAction(event.target.value); setPage(1); }}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.user")}<input value={userId} onChange={(event) => setUserId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.student")}<input value={studentId} onChange={(event) => setStudentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.dateFrom")}<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={refreshLogs}>{refreshLabel}</button><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div><p className="report-total">{total} · {t("audit.title")}</p>{logs.length ? <div className="table-wrap"><table><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.student")}</th><th>{t("audit.payment")}</th><th>{t("audit.details")}</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td>{new Date(log.created_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</td><td>{log.actor_name || log.actor_username || "—"}</td><td>{t(auditActionKey(log.action))}</td><td><strong>{log.student_name || "—"}</strong>{log.student_code ? <small className="audit-student-code">{log.student_code}</small> : log.student_id ? <small className="audit-student-code">ID: {log.student_id}</small> : null}</td><td>{log.payment_id ? `${log.payment_id}${log.payment_amount ? ` · ${log.payment_amount} EGP` : ""}` : "—"}</td><td><details><summary>{t("audit.details")}</summary><div className="audit-detail-list">{formatAuditDetails(log.details || {}, language, t, log.actor_name || log.actor_username || "").map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}{log.reversal_reason ? <div className="audit-detail-item"><b>{t("audit.reason")}</b><span>{log.reversal_reason}</span></div> : null}</div></details></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("audit.noLogs")}</p>}<div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => loadLogs(page - 1)}>{"‹"}</button><span>{page} / {Math.max(1, Math.ceil(total / 50))}</span><button className="secondary-button compact-button" type="button" disabled={page >= Math.max(1, Math.ceil(total / 50)) || loading} onClick={() => loadLogs(page + 1)}>{"›"}</button></div>{maintenancePanel}{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
-function FinanceReportsPanel({ session, t, canReverse }: { session: TeacherSession; t: Translator; canReverse: boolean }) {
+function formatBillingMonth(value: unknown, language: Language) {
+  const raw = String(value ?? "").trim();
+  const match = raw.match(/^(\d{4})-(\d{2})/);
+  if (!match) return raw;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const date = new Date(Date.UTC(year, month - 1, 1));
+  if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1) return raw;
+  const monthName = new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", {
+    month: language === "ar" ? "long" : "short",
+    timeZone: "UTC"
+  }).format(date);
+  return `${monthName} ${match[1].slice(-2)}`;
+}
+
+function FinanceReportsPanel({ session, language, t, canReverse }: { session: TeacherSession; language: Language; t: Translator; canReverse: boolean }) {
   const [view, setView] = useState<"payments" | "overdue">("payments");
 
   return <div className="finance-reports-workspace">
     <div className="finance-reports-toolbar">
       <div className="section-heading">
-        <p className="eyebrow">{t("admin.tabs.reports")}</p>
         <h2>{t("admin.tabs.reports")}</h2>
         <p>{t("fees.reportsDescription")}</p>
       </div>
@@ -6716,11 +6920,11 @@ function FinanceReportsPanel({ session, t, canReverse }: { session: TeacherSessi
         <button className={view === "overdue" ? "active" : ""} type="button" role="tab" aria-selected={view === "overdue"} onClick={() => setView("overdue")}>{t("fees.overdueReportTab")}</button>
       </div>
     </div>
-    {view === "payments" ? <PaymentReportsPanel session={session} t={t} canReverse={canReverse} embedded /> : <LatePaymentsReportPanel session={session} t={t} embedded />}
+    {view === "payments" ? <PaymentReportsPanel session={session} language={language} t={t} canReverse={canReverse} embedded /> : <LatePaymentsReportPanel session={session} t={t} embedded />}
   </div>;
 }
 
-function PaymentReportsPanel({ session, t, canReverse, embedded = false }: { session: TeacherSession; t: Translator; canReverse: boolean; embedded?: boolean }) {
+function PaymentReportsPanel({ session, language, t, canReverse, embedded = false }: { session: TeacherSession; language: Language; t: Translator; canReverse: boolean; embedded?: boolean }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [query, setQuery] = useState("");
@@ -6778,11 +6982,20 @@ function PaymentReportsPanel({ session, t, canReverse, embedded = false }: { ses
     const today = localDateInputValue(); const monthStart = `${today.slice(0, 7)}-01`; setFrom(monthStart); setTo(today); searchReport(monthStart, today).catch(() => undefined);
   }
 
+  const formatPaymentMonths = (row: any) => Array.isArray(row.payment_months)
+    ? row.payment_months.map((item: any) => formatBillingMonth(item?.month || item?.billing_month || item?.due_month, language)).filter(Boolean).join(language === "ar" ? "، " : ", ")
+    : "";
+  const formatPaymentType = (row: any) => {
+    const label = row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment");
+    const targetMonth = formatPaymentMonths(row);
+    return row.payment_type === "advance" && targetMonth ? `${label} (${targetMonth})` : label;
+  };
+
   function exportCsv() {
     if (!rows.length || exportFeedback.state === "loading") return;
     void exportFeedback.run(async () => {
       const headers = [t("fees.paymentDate"), t("fees.paymentTime"), t("admin.studentName"), t("admin.studentCode"), t("admin.scanSerial"), t("admin.selectGroup"), t("admin.grade"), t("fees.amount"), t("fees.paidBy"), t("fees.coveredMonth"), t("fees.paymentType")];
-      const csvRows = rows.map((row) => { const date = new Date(row.paid_at); const months = Array.isArray(row.payment_months) ? row.payment_months.map((item: any) => String(item.month || "").slice(0, 7)).join("; ") : ""; return [date.toLocaleDateString(), date.toLocaleTimeString(), row.full_name, row.student_code, row.scan_serial, row.group_name, row.grade_level, row.amount, row.paid_by, months, row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")]; });
+      const csvRows = rows.map((row) => { const date = new Date(row.paid_at); const months = formatPaymentMonths(row); return [date.toLocaleDateString(), date.toLocaleTimeString(), row.full_name, row.student_code, row.scan_serial, row.group_name, row.grade_level, row.amount, row.paid_by, months, formatPaymentType(row)]; });
       const escape = (value: unknown) => `"${String(value ?? "").replace(/"/g, '""')}"`;
       const csv = [headers, ...csvRows].map((row) => row.map(escape).join(",")).join("\r\n");
       const blob = new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `payments-report-${localDateInputValue()}.csv`; link.click(); URL.revokeObjectURL(url);
@@ -6806,7 +7019,7 @@ function PaymentReportsPanel({ session, t, canReverse, embedded = false }: { ses
   return <div className="report-panel-stack">
     {noResults ? <p className="report-empty-message">{t("fees.noMatchingResults")}</p> : null}
     <section className={`admin-editor payment-reports ${embedded ? "embedded-report-panel" : ""}`}>
-    {!embedded ? <div className="section-heading reports-header"><p className="eyebrow">{t("fees.reports")}</p><h2>{t("fees.reports")}</h2></div> : null}
+    {!embedded ? <div className="section-heading reports-header"><h2>{t("fees.reports")}</h2></div> : null}
     <div className="report-filters payment-report-filters">
       <label>{t("fees.dateFrom")}<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
       <label>{t("fees.dateTo")}<input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
@@ -6816,7 +7029,7 @@ function PaymentReportsPanel({ session, t, canReverse, embedded = false }: { ses
     </div>
     <div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setToday}>{t("fees.today")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setThisMonth}>{t("fees.thisMonth")}</button><button className={`primary-button compact-button action-feedback-${searchFeedback.state} ${searchFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={loading || searchFeedback.state === "loading"} onClick={() => searchReport().catch(() => undefined)}>{searchButtonLabel}</button><button className={`secondary-button compact-button action-feedback-${exportFeedback.state} ${exportFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={!rows.length || exportFeedback.state === "loading"} onClick={exportCsv}>{exportButtonLabel}</button></div>
     <p className="report-total">{t("fees.totalPaid")}: {totalPaid.toFixed(2)} EGP · {t("fees.paymentCount")}: {paymentCount}</p>
-    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, document.documentElement.lang === "en" ? "en" : "ar")}</td><td>{row.amount} EGP</td><td>{row.payment_type === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment")}</td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td>{canReverse ? <td><button className="secondary-button compact-button" type="button" onClick={() => { setReverseTarget(row); setReverseReason(""); }}>{t("fees.reversePayment")}</button></td> : null}</tr>)}</tbody></table></div> : null}
+    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td>{row.amount} EGP</td><td><span className="payment-type-cell">{formatPaymentType(row)}</span></td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td>{canReverse ? <td><button className="secondary-button compact-button" type="button" onClick={() => { setReverseTarget(row); setReverseReason(""); }}>{t("fees.reversePayment")}</button></td> : null}</tr>)}</tbody></table></div> : null}
     {status ? <p className="form-error">{status}</p> : null}
     {reverseTarget ? <div className="modal-backdrop"><div className="modal-card" role="dialog" aria-modal="true"><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => setReverseReason(event.target.value)} rows={4} autoFocus /></label><div className="report-actions"><button className="primary-button" type="button" disabled={reversing || reverseReason.trim().length < 3} onClick={reversePayment}>{t("fees.confirmReversal")}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></div></div> : null}
     </section>
@@ -7302,7 +7515,6 @@ function SiteContentEditor({
   return (
     <section className="admin-editor">
       <div className="section-heading">
-        <p className="eyebrow">{t("admin.siteContent")}</p>
         <h2>{t("admin.siteContent")}</h2>
       </div>
       <form onSubmit={saveContent}>
@@ -7492,7 +7704,6 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
   return (
     <section className="admin-editor exam-results-manager">
       <div className="section-heading">
-        <p className="eyebrow">{t("admin.tabs.exams")}</p>
         <h2>{t("dashboard.tabs.examResults")}</h2>
       </div>
       <form onSubmit={save} className="exam-result-form">
@@ -7763,6 +7974,100 @@ function StudentNotesPanel({ studentCode, language, t, onUnreadCountChange, refr
   </section>;
 }
 
+type StudentNavIconName = "overview" | "analytics" | "exams" | "attendance" | "fees" | "assignments" | "schedule" | "notes" | "inbox";
+
+function StudentNavIcon({ name }: { name: StudentNavIconName }) {
+  const svgProps = { className: "student-nav-icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  if (name === "overview") return <svg {...svgProps}><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>;
+  if (name === "analytics") return <svg {...svgProps}><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 3-4 3 2 5-7" /><circle cx="18" cy="6" r="1.2" /></svg>;
+  if (name === "exams") return <svg {...svgProps}><path d="M6 3.5h9l3 3V20.5H6z" /><path d="M15 3.5v4h3" /><path d="M9 12h6M9 16h4" /></svg>;
+  if (name === "attendance") return <svg {...svgProps}><rect x="3.5" y="5" width="17" height="16" rx="2" /><path d="M8 3v4M16 3v4M3.5 9.5h17" /><path d="m8 15 2 2 5-5" /></svg>;
+  if (name === "fees") return <svg {...svgProps}><path d="M4 7.5h13a3 3 0 0 1 3 3v7H6a2 2 0 0 1-2-2z" /><path d="M4 7.5V6a2 2 0 0 1 2-2h10" /><path d="M16 13.5h4" /><circle cx="16" cy="13.5" r=".7" fill="currentColor" stroke="none" /></svg>;
+  if (name === "assignments") return <svg {...svgProps}><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 0 4 22z" /><path d="M4 5.5V22M8 7h8M8 11h8M8 15h5" /></svg>;
+  if (name === "schedule") return <svg {...svgProps}><circle cx="12" cy="12" r="8.5" /><path d="M12 7v5l3 2M8 3.5 6.5 2M16 3.5 17.5 2" /></svg>;
+  if (name === "notes") return <svg {...svgProps}><path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-7l-5 4v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" /><path d="M7 9h10M7 13h6" /></svg>;
+  return <svg {...svgProps}><path d="M4 5.5h16v12H8l-4 3z" /><path d="M8 10h8M8 13.5h5" /></svg>;
+}
+
+function studentAttendanceRate(rows: Array<Record<string, any>>) {
+  if (!rows.length) return null;
+  return (rows.filter((row) => row.status === "present" || row.status === "late").length / rows.length) * 100;
+}
+
+function studentAverageScore(rows: Array<Record<string, any>>) {
+  const scoredRows = rows
+    .map((row) => ({ score: Number(row.score), maxScore: Number(row.max_score) }))
+    .filter((row) => Number.isFinite(row.score) && Number.isFinite(row.maxScore) && row.maxScore > 0);
+  if (!scoredRows.length) return null;
+  return scoredRows.reduce((sum, row) => sum + (row.score / row.maxScore) * 100, 0) / scoredRows.length;
+}
+
+function dashboardMonthLabel(value: unknown, language: Language) {
+  const month = String(value || "").slice(0, 7);
+  const date = new Date(`${month}-01T00:00:00Z`);
+  return month && !Number.isNaN(date.getTime())
+    ? date.toLocaleDateString(language === "ar" ? "ar-EG" : "en-US", { month: "short", year: "2-digit", timeZone: "UTC" })
+    : "";
+}
+
+function StudentOverviewPanel({
+  dashboard,
+  studentFees,
+  feesLoading,
+  attendanceRate,
+  averageScore,
+  language,
+  t
+}: {
+  dashboard: DashboardData;
+  studentFees: any;
+  feesLoading: boolean;
+  attendanceRate: number | null;
+  averageScore: number | null;
+  language: Language;
+  t: Translator;
+}) {
+  const latestAttendance = dashboard.attendance[0];
+  const latestExam = dashboard.exams[0];
+  const nextClass = dashboard.schedules[0];
+  const paymentStatus = String(studentFees?.payment_status || studentFees?.summary?.payment_status || "");
+  const paymentLabel = paymentStatus === "paid" ? t("dashboard.vitals.paid") : paymentStatus === "overdue" ? t("dashboard.vitals.overdue") : paymentStatus ? t("dashboard.vitals.unpaid") : t("dashboard.vitals.noData");
+  const paymentTone = paymentStatus === "paid" ? "success" : paymentStatus === "overdue" ? "warning" : "muted";
+  const latestEvaluation = latestExam ? scoreEvaluation(latestExam.score, latestExam.max_score, t) : null;
+
+  return <section className="student-overview-panel" aria-labelledby="student-overview-title">
+    <div className="student-content-heading">
+      <div>
+        <span className="student-section-kicker">{t("dashboard.tabs.overview")}</span>
+        <h2 id="student-overview-title">{t("dashboard.overviewTitle")}</h2>
+        <p>{t("dashboard.overviewSubtitle")}</p>
+      </div>
+      <span className="student-content-heading-icon"><StudentNavIcon name="overview" /></span>
+    </div>
+    <div className="student-overview-grid">
+      <article className="student-overview-card">
+        <div className="student-overview-card-heading"><StudentNavIcon name="attendance" /><span>{t("dashboard.overviewRecentAttendance")}</span></div>
+        <strong>{attendanceRate == null ? t("dashboard.vitals.noData") : `${Math.round(attendanceRate)}%`}</strong>
+        {latestAttendance ? <><span>{formatDateTime(latestAttendance.session_date, language, "—")}</span><AttendanceStatusBadge status={latestAttendance.status} t={t} /></> : <p>{t("dashboard.overviewNoAttendance")}</p>}
+      </article>
+      <article className="student-overview-card">
+        <div className="student-overview-card-heading"><StudentNavIcon name="analytics" /><span>{t("dashboard.overviewLatestScore")}</span></div>
+        <strong>{averageScore == null ? t("dashboard.vitals.noData") : `${Math.round(averageScore)}%`}</strong>
+        {latestExam ? <><span>{displayValue(latestExam.title, language)}</span><small className={`latest-exam-evaluation score-${latestEvaluation?.tone || ""}`}>{latestEvaluation?.label || t("dashboard.vitals.keepGoing")}</small></> : <p>{t("analytics.noResults")}</p>}
+      </article>
+      <article className={`student-overview-card is-${paymentTone}`}>
+        <div className="student-overview-card-heading"><StudentNavIcon name="fees" /><span>{t("dashboard.vitals.financial")}</span></div>
+        <strong>{feesLoading ? t("dashboard.vitals.loading") : paymentLabel}</strong>
+        {studentFees?.summary?.current_month ? <span>{dashboardMonthLabel(studentFees.summary.current_month, language)}</span> : <p>{t("studentFees.noHistory")}</p>}
+      </article>
+      <article className="student-overview-card">
+        <div className="student-overview-card-heading"><StudentNavIcon name="schedule" /><span>{t("dashboard.overviewNextClass")}</span></div>
+        {nextClass ? <><strong>{displayValue(nextClass.subject, language)}</strong><span>{t(`days.${Number(nextClass.day_of_week)}` as TranslationKey)} · {formatTimeOfDay(nextClass.start_time, language)}</span><small>{displayValue(nextClass.group_name, language)}</small></> : <p>{t("dashboard.overviewNoSchedule")}</p>}
+      </article>
+    </div>
+  </section>;
+}
+
 function StudentDashboard({
   data,
   language,
@@ -7776,7 +8081,7 @@ function StudentDashboard({
   onLogout: () => void;
   t: Translator;
 }) {
-  const [activeTab, setActiveTab] = useState("attendance");
+  const [activeTab, setActiveTab] = useState<StudentDashboardTab>("overview");
   const [dashboardData, setDashboardData] = useState<DashboardData | undefined>(data.dashboard);
   const [refreshKey, setRefreshKey] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -7787,7 +8092,12 @@ function StudentDashboard({
   const [examRows, setExamRows] = useState<Array<Record<string, any>>>([]);
   const [examLoaded, setExamLoaded] = useState(false);
   const [examLoading, setExamLoading] = useState(false);
+  const [attendanceRows, setAttendanceRows] = useState<Array<Record<string, any>>>(
+    () => Array.isArray(data.dashboard?.attendance) ? data.dashboard.attendance : []
+  );
   const [notesUnread, setNotesUnread] = useState(0);
+  const [digitalCardOpen, setDigitalCardOpen] = useState(false);
+  const [renewalDismissed, setRenewalDismissed] = useState(false);
   const student = data.student!;
   const [inboxUnread, setInboxUnread] = useState(0);
   const rawDashboard: Partial<DashboardData> = dashboardData || {};
@@ -7798,15 +8108,21 @@ function StudentDashboard({
     assignments: Array.isArray(rawDashboard.assignments) ? rawDashboard.assignments : [],
     notes: Array.isArray(rawDashboard.notes) ? rawDashboard.notes : []
   };
-
-  const statusTone = useMemo(() => {
-    if (data.status === "attendance_recorded") return "success";
-    if (data.status === "pending_review") return "warning";
-    return "muted";
-  }, [data.status]);
+  const vitalsAttendanceRate = studentAttendanceRate(attendanceRows);
+  const vitalsAverageScore = studentAverageScore(examLoaded ? examRows : dashboard.exams);
+  const studentNavItems = [
+    { id: "overview", icon: "overview", label: t("dashboard.tabs.overview") },
+    { id: "analytics", icon: "analytics", label: t("dashboard.tabs.analytics") },
+    { id: "exams", icon: "exams", label: t("dashboard.tabs.examResults") },
+    { id: "attendance", icon: "attendance", label: t("dashboard.tabs.attendance") },
+    { id: "fees", icon: "fees", label: t("dashboard.tabs.fees") },
+    { id: "assignments", icon: "assignments", label: t("dashboard.tabs.homework") },
+    { id: "schedule", icon: "schedule", label: t("dashboard.tabs.schedule") },
+    { id: "notes", icon: "notes", label: `${t("dashboard.tabs.notes")}${notesUnread ? ` (${notesUnread})` : ""}` },
+    { id: "inbox", icon: "inbox", label: t("admin.tabs.inbox") }
+  ] as const;
 
   useEffect(() => {
-    if (activeTab !== "fees") return;
     let cancelled = false;
     setFeesLoading(true);
     setFeesError("");
@@ -7821,10 +8137,10 @@ function StudentDashboard({
       })
       .finally(() => { if (!cancelled) setFeesLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, refreshKey, student.student_code, t]);
+  }, [refreshKey, student.student_code, t]);
 
   useEffect(() => {
-    if (activeTab !== "exams") return;
+    if (activeTab !== "exams" && activeTab !== "analytics") return;
     let cancelled = false;
     setExamLoading(true);
     fetch(`${API_BASE_URL}/student/me/exams`, { headers: studentAuthHeaders(student.student_code) })
@@ -7833,10 +8149,25 @@ function StudentDashboard({
         if (!response.ok || !result.ok) throw new Error(t("studentFees.loadError"));
         if (!cancelled) { setExamRows(Array.isArray(result.exams) ? result.exams : []); setExamLoaded(true); }
       })
-      .catch(() => { if (!cancelled) setExamLoaded(true); })
+      .catch(() => { if (!cancelled) { setExamRows(Array.isArray(data.dashboard?.exams) ? data.dashboard.exams : []); setExamLoaded(true); } })
       .finally(() => { if (!cancelled) setExamLoading(false); });
     return () => { cancelled = true; };
   }, [activeTab, refreshKey, student.student_code, t]);
+
+  useEffect(() => {
+    if (activeTab !== "analytics" || !student.id) return;
+    let cancelled = false;
+    fetch(`${API_BASE_URL}/student/${student.id}/attendance`, { headers: studentAuthHeaders(student.student_code) })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok || !result.ok) throw new Error("attendance_load_failed");
+        if (!cancelled) setAttendanceRows(Array.isArray(result.attendance) ? result.attendance : []);
+      })
+      .catch(() => {
+        if (!cancelled) setAttendanceRows(Array.isArray(data.dashboard?.attendance) ? data.dashboard.attendance : []);
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, refreshKey, student.id, student.student_code]);
 
   useEffect(() => {
     if (!student.id) return;
@@ -7856,6 +8187,7 @@ function StudentDashboard({
       const nextDashboard = result.dashboard as DashboardData;
       setDashboardData(nextDashboard);
       setExamRows(Array.isArray(nextDashboard.exams) ? nextDashboard.exams : []);
+      setAttendanceRows(Array.isArray(nextDashboard.attendance) ? nextDashboard.attendance : []);
       setExamLoaded(true);
       setRefreshKey((current) => current + 1);
       setRefreshStatus(t("dashboard.refreshed"));
@@ -7870,8 +8202,9 @@ function StudentDashboard({
   return (
     <Shell language={language} setLanguage={setLanguage} t={t} onLogout={onLogout}>
       <main className="dashboard">
-        <section className="dashboard-hero">
-          <div>
+        {digitalCardOpen ? <DigitalStudentCardModal student={student} language={language} t={t} onClose={() => setDigitalCardOpen(false)} /> : null}
+        <section className="dashboard-hero student-dashboard-header">
+          <div className="student-dashboard-intro">
             <p className="eyebrow">{t("dashboard.eyebrow")}</p>
             <h1>{t("dashboard.welcome", { name: student.full_name })}</h1>
             <p>
@@ -7881,60 +8214,11 @@ function StudentDashboard({
               })}
             </p>
           </div>
-          <div className={`status-panel ${statusTone}`}>
-            <span>{t("dashboard.attendanceLabel")}</span>
-            <strong>{statusMessage(data.status, t)}</strong>
-            <small>
-              {t("dashboard.attendanceTime", {
-                time: formatDateTime(
-                  data.attendance_record?.checkin_time,
-                  language,
-                  t("dashboard.notCheckedIn")
-                )
-              })}
-            </small>
-          </div>
-        </section>
-
-        <section className="summary-grid">
-          <Metric label={t("dashboard.studentCode")} value={student.student_code} />
-          <Metric label={t("dashboard.group")} value={displayValue(student.group_name, language)} />
-          <LatestExamMetric exam={dashboard.exams[0]} language={language} t={t} />
-        </section>
-
-        <section className="tabs-surface">
-          <div className="tabs-toolbar">
-            <div className="tabs" role="tablist" aria-label={language === "ar" ? "بيانات الطالب" : "Student data"}>
-            <Tab
-              id="attendance"
-              active={activeTab}
-              onClick={setActiveTab}
-              label={t("dashboard.tabs.attendance")}
-            />
-            <Tab id="exams" active={activeTab} onClick={setActiveTab} label={t("dashboard.tabs.examResults")} />
-            <Tab id="fees" active={activeTab} onClick={setActiveTab} label={t("dashboard.tabs.fees")} />
-            <Tab
-              id="assignments"
-              active={activeTab}
-              onClick={setActiveTab}
-              label={t("dashboard.tabs.homework")}
-            />
-            <Tab
-              id="schedule"
-              active={activeTab}
-              onClick={setActiveTab}
-              label={t("dashboard.tabs.schedule")}
-            />
-            <Tab id="notes" active={activeTab} onClick={setActiveTab} label={`${t("dashboard.tabs.notes")}${notesUnread ? ` (${notesUnread})` : ""}`} />
-            <Tab
-              id="inbox"
-              active={activeTab}
-              onClick={setActiveTab}
-              label={t("admin.tabs.inbox")}
-              unreadCount={inboxUnread}
-              ariaLabel={inboxUnread === 1 ? t("admin.messagesUnreadOne") : t("admin.messagesUnreadMany", { count: String(inboxUnread) })}
-            />
-            </div>
+          <div className="student-dashboard-header-actions">
+            <button className="digital-card-launch-button" type="button" onClick={() => setDigitalCardOpen(true)}>
+              <DigitalCardIcon />
+              <span>{t("dashboard.digitalCard")}</span>
+            </button>
             <div className="refresh-control">
               <button className={`secondary-button compact-button ${refreshStatus === t("dashboard.refreshed") ? "refresh-success" : ""}`} type="button" onClick={() => refreshDashboard()} disabled={refreshing}>
                 {refreshing ? <span className="refresh-icon is-spinning" aria-hidden="true">↻</span> : null}
@@ -7942,21 +8226,236 @@ function StudentDashboard({
               </button>
             </div>
           </div>
+        </section>
 
-          {activeTab === "attendance" ? (
-            <AttendanceTable rows={dashboard.attendance} language={language} t={t} />
-          ) : null}
-          {activeTab === "exams" ? examLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : <ExamsTable rows={examLoaded ? examRows : dashboard.exams} language={language} t={t} /> : null}
-          {activeTab === "schedule" ? (
-            <ScheduleTable rows={dashboard.schedules} language={language} t={t} />
-          ) : null}
-          {activeTab === "assignments" ? <HomeworkPanel studentCode={student.student_code} language={language} t={t} refreshKey={refreshKey} /> : null}
-          {activeTab === "notes" ? <StudentNotesPanel studentCode={student.student_code} language={language} t={t} onUnreadCountChange={setNotesUnread} refreshKey={refreshKey} /> : null}
-          {activeTab === "fees" ? <StudentFeesPanel data={studentFees} loading={feesLoading} error={feesError} language={language} t={t} /> : null}
-          {activeTab === "inbox" ? <StudentInboxControls studentCode={student.student_code} language={language} t={t} onUnreadCountChange={setInboxUnread} refreshKey={refreshKey} /> : null}
+        {!renewalDismissed ? <RenewalReminderBanner summary={studentFees?.summary} language={language} t={t} onDismiss={() => setRenewalDismissed(true)} /> : null}
+
+        <section className="student-vitals-strip" aria-label={t("dashboard.overviewTitle")}>
+          <article className={`student-vital-card ${vitalsAttendanceRate != null && vitalsAttendanceRate < 70 ? "is-warning" : "is-success"}`}>
+            <span className="student-vital-icon"><StudentNavIcon name="attendance" /></span>
+            <div><span>{t("dashboard.vitals.attendance")}</span><strong>{vitalsAttendanceRate == null ? t("dashboard.vitals.noData") : `${Math.round(vitalsAttendanceRate)}%`}</strong><small>{vitalsAttendanceRate == null ? t("dashboard.vitals.noData") : vitalsAttendanceRate >= 85 ? t("dashboard.vitals.regular") : t("dashboard.vitals.followUp")}</small></div>
+          </article>
+          <article className={`student-vital-card ${vitalsAverageScore != null && vitalsAverageScore < 60 ? "is-warning" : "is-accent"}`}>
+            <span className="student-vital-icon"><StudentNavIcon name="analytics" /></span>
+            <div><span>{t("dashboard.vitals.averageScore")}</span><strong>{vitalsAverageScore == null ? t("dashboard.vitals.noData") : `${Math.round(vitalsAverageScore)}%`}</strong><small>{vitalsAverageScore == null ? t("dashboard.vitals.noData") : vitalsAverageScore >= 85 ? t("dashboard.vitals.excellent") : t("dashboard.vitals.keepGoing")}</small></div>
+          </article>
+          <article className={`student-vital-card ${studentFees?.payment_status === "paid" ? "is-success" : studentFees?.payment_status === "overdue" ? "is-warning" : "is-muted"}`}>
+            <span className="student-vital-icon"><StudentNavIcon name="fees" /></span>
+            <div><span>{t("dashboard.vitals.financial")}</span><strong>{feesLoading ? t("dashboard.vitals.loading") : studentFees?.payment_status === "paid" ? t("dashboard.vitals.paid") : studentFees?.payment_status === "overdue" ? t("dashboard.vitals.overdue") : studentFees ? t("dashboard.vitals.unpaid") : t("dashboard.vitals.noData")}</strong><small>{dashboardMonthLabel(studentFees?.summary?.current_month, language) || t("dashboard.vitals.noData")}</small></div>
+          </article>
+          <article className={`student-vital-card ${data.status === "attendance_recorded" ? "is-success" : data.status === "pending_review" ? "is-warning" : "is-muted"}`}>
+            <span className="student-vital-icon"><StudentNavIcon name="schedule" /></span>
+            <div><span>{t("dashboard.vitals.todayClass")}</span><strong>{data.status === "attendance_recorded" ? t("dashboard.vitals.presentToday") : data.status === "pending_review" ? t("dashboard.vitals.pendingToday") : data.today_session ? t("dashboard.vitals.noOpenClass") : t("dashboard.vitals.noMovement")}</strong><small>{data.attendance_record?.checkin_time ? formatDateTime(data.attendance_record.checkin_time, language, t("dashboard.notCheckedIn")) : t("dashboard.todayClass", { subject: displayValue(data.today_session?.subject || student.subject, language), group: displayValue(data.today_session?.group_name || student.group_name, language) })}</small></div>
+          </article>
+        </section>
+
+        <section className="student-dashboard-layout">
+          <nav className="student-sidebar-nav" aria-label={language === "ar" ? "أقسام متابعة الطالب" : "Student monitoring sections"}>
+            <div className="student-sidebar-heading"><span className="student-section-kicker">{t("dashboard.eyebrow")}</span><strong>{t("dashboard.overviewTitle")}</strong></div>
+            <div className="student-sidebar-links" role="tablist" aria-label={t("dashboard.overviewTitle")}>
+              {studentNavItems.map((item) => {
+                const unreadCount = item.id === "notes" ? notesUnread : item.id === "inbox" ? inboxUnread : 0;
+                return <button key={item.id} className={`student-sidebar-tab ${activeTab === item.id ? "active" : ""}`} type="button" role="tab" aria-selected={activeTab === item.id} aria-controls="student-tab-content" onClick={() => setActiveTab(item.id)}>
+                  <StudentNavIcon name={item.icon} />
+                  <span>{item.label}</span>
+                  {unreadCount > 0 ? <b className="student-sidebar-badge">{unreadCount >= 100 ? "99+" : unreadCount}</b> : null}
+                </button>;
+              })}
+            </div>
+          </nav>
+
+          <section className="student-tab-content" id="student-tab-content" role="tabpanel" aria-label={studentNavItems.find((item) => item.id === activeTab)?.label}>
+            {activeTab === "overview" ? <StudentOverviewPanel dashboard={dashboard} studentFees={studentFees} feesLoading={feesLoading} attendanceRate={vitalsAttendanceRate} averageScore={vitalsAverageScore} language={language} t={t} /> : null}
+            {activeTab === "attendance" ? <AttendanceTable rows={dashboard.attendance} language={language} t={t} /> : null}
+            {activeTab === "exams" ? examLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : <ExamsTable rows={examLoaded ? examRows : dashboard.exams} language={language} t={t} /> : null}
+            {activeTab === "analytics" ? <StudentAnalyticsPanel rows={examLoaded ? examRows : dashboard.exams} attendanceRows={attendanceRows} loading={examLoading && !examLoaded} language={language} t={t} /> : null}
+            {activeTab === "schedule" ? <ScheduleTable rows={dashboard.schedules} language={language} t={t} /> : null}
+            {activeTab === "assignments" ? <HomeworkPanel studentCode={student.student_code} language={language} t={t} refreshKey={refreshKey} /> : null}
+            {activeTab === "notes" ? <StudentNotesPanel studentCode={student.student_code} language={language} t={t} onUnreadCountChange={setNotesUnread} refreshKey={refreshKey} /> : null}
+            {activeTab === "fees" ? <StudentFeesPanel data={studentFees} loading={feesLoading} error={feesError} language={language} t={t} /> : null}
+            {activeTab === "inbox" ? <StudentInboxControls studentCode={student.student_code} language={language} t={t} onUnreadCountChange={setInboxUnread} refreshKey={refreshKey} /> : null}
+          </section>
         </section>
       </main>
     </Shell>
+  );
+}
+
+function StudentAnalyticsPanel({
+  rows,
+  attendanceRows,
+  loading,
+  language,
+  t
+}: {
+  rows: Array<Record<string, any>>;
+  attendanceRows: Array<Record<string, any>>;
+  loading: boolean;
+  language: Language;
+  t: Translator;
+}) {
+  const numberFormatter = useMemo(
+    () => new Intl.NumberFormat(language === "ar" ? "ar-EG" : "en-US", { maximumFractionDigits: 2 }),
+    [language]
+  );
+  const percentageFormatter = useMemo(
+    () => new Intl.NumberFormat(language === "ar" ? "ar-EG" : "en-US", { maximumFractionDigits: 0 }),
+    [language]
+  );
+  const chartData = useMemo(() => rows
+    .map((row) => {
+      const score = Number(row.score);
+      const totalScore = Number(row.max_score);
+      const examDate = String(row.exam_date || "");
+      if (!Number.isFinite(score) || !Number.isFinite(totalScore) || totalScore <= 0 || !examDate) return null;
+      const title = displayValue(row.title, language) || (language === "ar" ? "امتحان" : "Exam");
+      const parsedDate = new Date(`${examDate.slice(0, 10)}T12:00:00`);
+      const dateLabel = Number.isNaN(parsedDate.getTime())
+        ? examDate.slice(0, 10)
+        : new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short" }).format(parsedDate);
+      return {
+        id: row.id,
+        examTitle: title,
+        examDate,
+        label: `${title} · ${dateLabel}`,
+        score,
+        totalScore,
+        percentage: Math.min(100, Math.max(0, (score / totalScore) * 100))
+      };
+    })
+    .filter((row): row is { id: any; examTitle: string; examDate: string; label: string; score: number; totalScore: number; percentage: number } => Boolean(row))
+    .sort((left, right) => {
+      const dateDifference = Date.parse(left.examDate) - Date.parse(right.examDate);
+      return dateDifference || Number(left.id || 0) - Number(right.id || 0);
+    }), [rows, language]);
+
+  const averageScore = chartData.length
+    ? chartData.reduce((sum, row) => sum + row.percentage, 0) / chartData.length
+    : null;
+  const highestScore = chartData.length
+    ? chartData.reduce((highest, row) => row.score > highest.score ? row : highest, chartData[0])
+    : null;
+  const attendanceRate = attendanceRows.length
+    ? (attendanceRows.filter((row) => row.status === "present" || row.status === "late").length / attendanceRows.length) * 100
+    : null;
+  const formatPercentage = (value: number | null) => value == null ? "—" : `${percentageFormatter.format(value)}%`;
+  const formatScore = (value: number) => numberFormatter.format(value);
+
+  return (
+    <section className="analytics-panel" aria-labelledby="student-analytics-title">
+      <div className="analytics-heading">
+        <div>
+          <p className="eyebrow">{t("dashboard.tabs.analytics")}</p>
+          <h2 id="student-analytics-title">{t("analytics.title")}</h2>
+          <p>{t("analytics.subtitle")}</p>
+        </div>
+        <span className="analytics-heading-icon" aria-hidden="true">↗</span>
+      </div>
+
+      <div className="analytics-summary-grid">
+        <div className="analytics-summary-card analytics-summary-average">
+          <span>{t("analytics.averageScore")}</span>
+          <strong>{formatPercentage(averageScore)}</strong>
+        </div>
+        <div className="analytics-summary-card analytics-summary-highest">
+          <span>{t("analytics.highestScore")}</span>
+          <strong>{highestScore ? `${formatScore(highestScore.score)}/${formatScore(highestScore.totalScore)}` : "—"}</strong>
+          {highestScore ? <small>{formatPercentage(highestScore.percentage)}</small> : null}
+        </div>
+        <div className="analytics-summary-card analytics-summary-attendance">
+          <span>{t("analytics.attendanceRate")}</span>
+          <strong>{formatPercentage(attendanceRate)}</strong>
+          {!attendanceRows.length ? <small>{t("analytics.noAttendance")}</small> : null}
+        </div>
+      </div>
+
+      {loading ? <p className="field-hint analytics-loading">{t("analytics.loading")}</p> : chartData.length ? (
+        <div className="analytics-chart-scroll" dir="ltr">
+          <div className="analytics-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 8 }}>
+                <defs>
+                  <linearGradient id="studentAnalyticsArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#38bdf8" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="#38bdf8" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="rgba(159, 176, 199, 0.13)" strokeDasharray="3 5" vertical={false} />
+                <XAxis
+                  dataKey="label"
+                  interval={0}
+                  angle={language === "ar" ? -18 : -22}
+                  textAnchor="end"
+                  height={76}
+                  tick={{ fill: "#9fb0c7", fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={{ stroke: "rgba(159, 176, 199, 0.2)" }}
+                />
+                <YAxis
+                  domain={[0, 100]}
+                  ticks={[0, 25, 50, 75, 100]}
+                  tickFormatter={(value) => `${value}%`}
+                  tick={{ fill: "#9fb0c7", fontSize: 11 }}
+                  tickLine={false}
+                  axisLine={false}
+                  width={44}
+                />
+                <Tooltip
+                  cursor={{ stroke: "rgba(56, 189, 248, 0.45)", strokeDasharray: "4 4" }}
+                  content={({ active, payload }: any) => {
+                    if (!active || !payload?.length) return null;
+                    const point = payload[0].payload;
+                    return (
+                      <div className="analytics-tooltip" dir={language === "ar" ? "rtl" : "ltr"}>
+                        <strong>{point.examTitle}</strong>
+                        <span>{t("analytics.scoreAchieved")}: {formatScore(point.score)}</span>
+                        <span>{t("analytics.totalScore")}: {formatScore(point.totalScore)}</span>
+                        <span>{t("analytics.percentage")}: {formatPercentage(point.percentage)}</span>
+                        <span>{t("analytics.date")}: {formatDateOnly(point.examDate, language, "—")}</span>
+                      </div>
+                    );
+                  }}
+                />
+                <Area type="monotone" dataKey="percentage" stroke="#38bdf8" strokeWidth={3} fill="url(#studentAnalyticsArea)" dot={{ r: 4, fill: "#22c55e", stroke: "#071321", strokeWidth: 2 }} activeDot={{ r: 6, fill: "#22c55e", stroke: "#e0f2fe", strokeWidth: 2 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      ) : <div className="analytics-empty-state"><span aria-hidden="true">⌁</span><p>{t("analytics.noResults")}</p></div>}
+    </section>
+  );
+}
+
+function RenewalReminderBanner({
+  summary,
+  language,
+  t,
+  onDismiss
+}: {
+  summary: Record<string, any> | undefined;
+  language: Language;
+  t: Translator;
+  onDismiss: () => void;
+}) {
+  if (!summary?.renewal_should_show) return null;
+  const targetMonth = String(summary.renewal_target_month || summary.upcoming_month || "").slice(0, 7);
+  const monthDate = new Date(`${targetMonth}-01T00:00:00Z`);
+  if (!targetMonth || Number.isNaN(monthDate.getTime())) return null;
+  const month = monthDate.toLocaleDateString(language === "ar" ? "ar-EG" : "en-US", {
+    month: "short",
+    year: "2-digit",
+    timeZone: "UTC"
+  });
+  const amount = `${Number(summary.renewal_amount ?? summary.fees_amount ?? 0).toFixed(2)} EGP`;
+  return (
+    <aside className="renewal-reminder" role="status" aria-live="polite">
+      <span className="renewal-reminder-icon" aria-hidden="true">⚠</span>
+      <div className="renewal-reminder-content">
+        <h2>{t("renewal.title")}</h2>
+        <p>{t("renewal.message", { month, amount })}</p>
+      </div>
+      <button className="renewal-reminder-close" type="button" onClick={onDismiss} aria-label={t("renewal.dismiss")}>×</button>
+    </aside>
   );
 }
 
@@ -8056,6 +8555,57 @@ function StudentLabelPreview({ student }: { student: Record<string, any> }) {
     <strong className="profile-label-code">Student code / كود الطالب: {student.student_code || "—"}</strong>
     <span className="profile-label-grade">{gradeAndGroup || "—"}</span>
     {scanSerial ? <><BarcodePreview value={scanSerial} displayValue={false} /><strong className="profile-label-serial">{scanSerial}</strong></> : <span className="empty-state">—</span>}
+  </div>;
+}
+
+function DigitalStudentCardModal({ student, language, t, onClose }: { student: Record<string, any>; language: Language; t: Translator; onClose: () => void }) {
+  const [cardStudent, setCardStudent] = useState(student);
+  const labelStudent = {
+    ...cardStudent,
+    scan_serial: labelScanSerial(cardStudent) || cardStudent.student_code,
+    grade: cardStudent.grade || cardStudent.grade_level
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE_URL}/student/me/profile`, { headers: studentAuthHeaders(String(student.student_code || "")) })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok || !result.ok || !result.student || cancelled) return;
+        setCardStudent((current) => ({ ...current, ...result.student }));
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [student.student_code]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  return <div className="modal-backdrop digital-card-backdrop" dir={language === "ar" ? "rtl" : "ltr"} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className="modal-card digital-card-modal" role="dialog" aria-modal="true" aria-labelledby="digital-card-title">
+      <div className="digital-card-modal-header">
+        <div>
+          <span className="digital-card-system-title">Mr. Ahmed Abdrabo System</span>
+          <h2 id="digital-card-title">{t("dashboard.digitalCardTitle")}</h2>
+          <p>{cardStudent.full_name || "—"}</p>
+        </div>
+        <button className="modal-close-button" type="button" onClick={onClose} aria-label={t("dashboard.digitalCardClose")}>×</button>
+      </div>
+      <div className="digital-card-scan-surface">
+        <StudentLabelPreview student={labelStudent} />
+      </div>
+      <div className="digital-card-info" aria-label={t("dashboard.digitalCardTitle")}>
+        <div><span>{t("dashboard.digitalCardStudentCode")}</span><strong dir="ltr">{cardStudent.student_code || "—"}</strong></div>
+        <div><span>{t("dashboard.digitalCardGroup")}</span><strong>{displayValue(cardStudent.group_name, language)}</strong></div>
+        <div><span>{t("dashboard.digitalCardGrade")}</span><strong>{displayValue(labelStudent.grade, language)}</strong></div>
+      </div>
+      <p className="digital-card-hint"><span aria-hidden="true">☀</span>{t("dashboard.digitalCardHint")}</p>
+    </section>
   </div>;
 }
 

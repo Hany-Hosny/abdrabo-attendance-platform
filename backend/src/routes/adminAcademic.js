@@ -379,7 +379,7 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
     const canViewAttention = hasPermission(req.teacher, "dashboard.alerts.view");
     const [attendance, exams, notes, payments, threads, feeSummary] = await Promise.all([
       canViewAttendance ? query(`SELECT s.id AS session_id, s.session_date, s.starts_at, s.closes_at, cs.start_time, cs.end_time,
-          g.name AS group_name, ar.status, ar.checkin_time
+          g.name AS group_name, COALESCE(NULLIF(TRIM(g.subject), ''), g.name) AS session_name, ar.status, ar.checkin_time
         FROM attendance_sessions s
         JOIN groups g ON g.id = s.group_id
         JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
@@ -394,7 +394,7 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
         FROM student_notes n LEFT JOIN teachers t ON t.id = n.author_id
         WHERE n.student_id = $1 ORDER BY n.created_at DESC`, [studentId]) : Promise.resolve({ rows: [] }),
       canViewPaymentReports ? query(`SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes,
-          p.payment_months, COALESCE(t.name, t.username, t.email, 'Staff') AS paid_by
+          p.payment_months, COALESCE(t.username, t.name, t.email, 'Staff') AS paid_by
         FROM payments p LEFT JOIN teachers t ON t.id = COALESCE(p.paid_by, p.recorded_by)
         WHERE p.student_id = $1 AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
         ORDER BY COALESCE(p.paid_at, p.payment_date) DESC`, [studentId]) : Promise.resolve({ rows: [] }),

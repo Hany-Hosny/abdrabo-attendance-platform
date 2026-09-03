@@ -24,25 +24,48 @@ export async function ensureMonthlyFees(studentId = null) {
 export async function getFeeSummary(studentId, { ensure = true } = {}) {
   if (ensure) await ensureMonthlyFees(Number(studentId));
   const result = await query(`
-    WITH current_due AS (
-      SELECT fd.amount, fd.paid_amount
-      FROM fee_dues fd
-      WHERE fd.student_id = $1
-        AND fd.due_month = date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo'))::date
+    WITH bounds AS (
+      SELECT date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo'))::date AS current_month,
+        (date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')) + INTERVAL '1 month')::date AS upcoming_month,
+        (date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')) + INTERVAL '2 months' - INTERVAL '1 day')::date AS month_end,
+        (NOW() AT TIME ZONE 'Africa/Cairo')::date AS today
+    ), current_due AS (
+      SELECT COALESCE(SUM(fd.amount), 0) AS amount, COALESCE(SUM(fd.paid_amount), 0) AS paid_amount
+      FROM fee_dues fd CROSS JOIN bounds
+      WHERE fd.student_id = $1 AND fd.due_month = bounds.current_month
+    ), upcoming_due AS (
+      SELECT COALESCE(SUM(fd.amount), 0) AS amount, COALESCE(SUM(fd.paid_amount), 0) AS paid_amount
+      FROM fee_dues fd CROSS JOIN bounds
+      WHERE fd.student_id = $1 AND fd.due_month = bounds.upcoming_month
     ), totals AS (
       SELECT COALESCE(SUM(fd.amount), 0) AS required_amount,
         COALESCE(SUM(fd.paid_amount), 0) AS paid_amount,
         COALESCE(SUM(fd.amount - fd.paid_amount), 0) AS remaining_balance,
-        BOOL_OR(fd.due_month < date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo'))::date AND fd.amount > fd.paid_amount) AS has_overdue
+        BOOL_OR(fd.due_month < (SELECT current_month FROM bounds) AND fd.amount > fd.paid_amount) AS has_overdue
       FROM fee_dues fd WHERE fd.student_id = $1
     )
     SELECT s.id, s.full_name, s.student_serial, s.student_code,
       COALESCE(g.grade_level, g.grade) AS grade_level, g.name AS group_name,
       g.fees_amount,
       totals.required_amount, totals.paid_amount, totals.remaining_balance,
-      COALESCE((SELECT SUM(amount) FROM current_due), 0) AS current_cycle_fee,
-      COALESCE((SELECT SUM(paid_amount) FROM current_due), 0) AS current_cycle_paid,
-      COALESCE((SELECT SUM(amount - paid_amount) FROM current_due), 0) AS current_cycle_outstanding,
+      current_due.amount AS current_cycle_fee,
+      current_due.paid_amount AS current_cycle_paid,
+      GREATEST(0, current_due.amount - current_due.paid_amount) AS current_cycle_outstanding,
+      upcoming_due.amount AS upcoming_cycle_fee,
+      upcoming_due.paid_amount AS upcoming_cycle_paid,
+      GREATEST(0, upcoming_due.amount - upcoming_due.paid_amount) AS upcoming_cycle_outstanding,
+      bounds.current_month::text AS current_month,
+      bounds.upcoming_month::text AS upcoming_month,
+      (upcoming_due.amount > 0 AND upcoming_due.amount <= upcoming_due.paid_amount) AS upcoming_month_covered,
+      (
+        NOT (upcoming_due.amount > 0 AND upcoming_due.amount <= upcoming_due.paid_amount)
+        AND (
+          current_due.amount > current_due.paid_amount
+          OR bounds.today >= (bounds.month_end - 5)
+        )
+      ) AS renewal_should_show,
+      CASE WHEN current_due.amount > current_due.paid_amount THEN bounds.current_month ELSE bounds.upcoming_month END::text AS renewal_target_month,
+      CASE WHEN current_due.amount > current_due.paid_amount THEN g.fees_amount ELSE COALESCE(upcoming_due.amount, g.fees_amount) END AS renewal_amount,
       COALESCE((SELECT SUM(p.amount) FROM payments p
         WHERE p.student_id = s.id
           AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)), 0) AS total_historical_payments,
@@ -56,10 +79,15 @@ export async function getFeeSummary(studentId, { ensure = true } = {}) {
       ) FILTER (WHERE fd.id IS NOT NULL), '[]'::jsonb) AS monthly_dues
     FROM students s
     JOIN groups g ON g.id = s.group_id
+    CROSS JOIN bounds
+    CROSS JOIN current_due
+    CROSS JOIN upcoming_due
     CROSS JOIN totals
     LEFT JOIN fee_dues fd ON fd.student_id = s.id
     WHERE s.id = $1
-    GROUP BY s.id, g.id, totals.required_amount, totals.paid_amount, totals.remaining_balance, totals.has_overdue
+    GROUP BY s.id, g.id, bounds.current_month, bounds.upcoming_month, bounds.month_end, bounds.today,
+      current_due.amount, current_due.paid_amount, upcoming_due.amount, upcoming_due.paid_amount,
+      totals.required_amount, totals.paid_amount, totals.remaining_balance, totals.has_overdue
   `, [studentId]);
   return result.rows[0] || null;
 }

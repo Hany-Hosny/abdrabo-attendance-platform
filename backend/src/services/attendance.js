@@ -26,8 +26,11 @@ export async function loginAndRecordAttendance({ student_code, device_id, latitu
         st.id,
         st.full_name,
         st.student_code,
+        st.student_serial,
+        st.scan_serial,
         st.group_id,
         g.name AS group_name,
+        COALESCE(g.grade_level, g.grade) AS grade_level,
         g.subject,
         g.is_active AS group_active,
         c.name AS center_name,
@@ -52,7 +55,10 @@ export async function loginAndRecordAttendance({ student_code, device_id, latitu
     id: student.id,
     full_name: student.full_name,
     student_code: student.student_code,
+    student_serial: student.student_serial,
+    scan_serial: student.scan_serial,
     group_name: student.group_name,
+    grade_level: student.grade_level,
     subject: student.subject
   };
   const dashboard = await getDashboardData(student.id);

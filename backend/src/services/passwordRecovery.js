@@ -54,8 +54,64 @@ function resetEmail(language, code) {
       ? `Mr. Ahmed Abdrabo System\n\nرمز استعادة كلمة المرور\n\n${code}\n\nالرمز صالح لمدة 10 دقائق.\nإذا لم تطلب تغيير كلمة المرور، يمكنك تجاهل هذه الرسالة.`
       : `Mr. Ahmed Abdrabo System\n\nPassword recovery verification code\n\n${code}\n\nThis code is valid for 10 minutes.\nIf you did not request a password change, you can ignore this email.`,
     html: arabic
-      ? `<div dir="rtl" style="font-family:Arial,sans-serif;line-height:1.8"><p style="color:#667085">Mr. Ahmed Abdrabo System</p><h2>رمز استعادة كلمة المرور</h2><p style="font-size:32px;letter-spacing:8px;font-weight:700">${code}</p><p>الرمز صالح لمدة 10 دقائق.</p><p>إذا لم تطلب تغيير كلمة المرور، يمكنك تجاهل هذه الرسالة.</p></div>`
-      : `<div style="font-family:Arial,sans-serif;line-height:1.8"><p style="color:#667085">Mr. Ahmed Abdrabo System</p><h2>Password recovery verification code</h2><p style="font-size:32px;letter-spacing:8px;font-weight:700">${code}</p><p>This code is valid for 10 minutes.</p><p>If you did not request a password change, you can ignore this email.</p></div>`
+      ? `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <body style="margin:0;padding:0;background-color:#f1f5f9;color:#0f172a;font-family:Arial,Helvetica,sans-serif;line-height:1.6;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:0;padding:24px 12px;background-color:#f1f5f9;">
+      <tr>
+        <td align="center" style="padding:0;">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:480px;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,0.08);overflow:hidden;">
+            <tr>
+              <td align="center" style="padding:24px 28px;background-color:#0f172a;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.2px;">Mr. Ahmed Abdrabo System</td>
+            </tr>
+            <tr>
+              <td style="padding:32px 28px 28px;text-align:right;">
+                <h1 style="margin:0 0 12px;color:#0f172a;font-size:24px;line-height:1.4;font-weight:700;">رمز استعادة كلمة المرور</h1>
+                <p style="margin:0 0 24px;color:#475569;font-size:15px;">استخدم رمز التحقق التالي لإكمال استعادة كلمة المرور.</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+                  <tr>
+                    <td align="center" style="padding:20px 12px;border:2px dashed #0284c7;border-radius:10px;background-color:#f0f9ff;color:#0f172a;font-family:'Courier New',Courier,monospace;font-size:34px;line-height:1;font-weight:700;letter-spacing:10px;direction:ltr;">${code}</td>
+                  </tr>
+                </table>
+                <p style="margin:20px 0 0;text-align:center;"><span style="display:inline-block;padding:6px 12px;border-radius:999px;background-color:#fef3c7;color:#92400e;font-size:13px;font-weight:700;">صالح لمدة 10 دقائق</span></p>
+                <p style="margin:24px 0 0;padding:14px 16px;border:1px solid #e2e8f0;border-radius:8px;background-color:#f8fafc;color:#64748b;font-size:13px;">ملاحظة أمنية: إذا لم تطلب تغيير كلمة المرور، يمكنك تجاهل هذه الرسالة.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+      : `<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <body style="margin:0;padding:0;background-color:#f1f5f9;color:#0f172a;font-family:Arial,Helvetica,sans-serif;line-height:1.6;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;margin:0;padding:24px 12px;background-color:#f1f5f9;">
+      <tr>
+        <td align="center" style="padding:0;">
+          <table role="presentation" width="480" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:480px;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,0.08);overflow:hidden;">
+            <tr>
+              <td align="center" style="padding:24px 28px;background-color:#0f172a;color:#ffffff;font-size:18px;font-weight:700;letter-spacing:0.2px;">Mr. Ahmed Abdrabo System</td>
+            </tr>
+            <tr>
+              <td style="padding:32px 28px 28px;text-align:left;">
+                <h1 style="margin:0 0 12px;color:#0f172a;font-size:24px;line-height:1.4;font-weight:700;">Password recovery verification code</h1>
+                <p style="margin:0 0 24px;color:#475569;font-size:15px;">Use the verification code below to complete your password recovery.</p>
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">
+                  <tr>
+                    <td align="center" style="padding:20px 12px;border:2px dashed #0284c7;border-radius:10px;background-color:#f0f9ff;color:#0f172a;font-family:'Courier New',Courier,monospace;font-size:34px;line-height:1;font-weight:700;letter-spacing:10px;direction:ltr;">${code}</td>
+                  </tr>
+                </table>
+                <p style="margin:20px 0 0;text-align:center;"><span style="display:inline-block;padding:6px 12px;border-radius:999px;background-color:#fef3c7;color:#92400e;font-size:13px;font-weight:700;">Valid for 10 minutes</span></p>
+                <p style="margin:24px 0 0;padding:14px 16px;border:1px solid #e2e8f0;border-radius:8px;background-color:#f8fafc;color:#64748b;font-size:13px;">Security notice: If you did not request a password change, you can ignore this email.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
   };
 }
 
