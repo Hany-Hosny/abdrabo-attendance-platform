@@ -50,6 +50,7 @@ export function SystemSettingsPanel({ token, language, isOwner = false, t }: Pro
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [error, setError] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const dirty = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings]);
 
   useEffect(() => {
@@ -104,16 +105,23 @@ export function SystemSettingsPanel({ token, language, isOwner = false, t }: Pro
   }
 
   return <section className="admin-editor system-settings-panel" dir={language === "ar" ? "rtl" : "ltr"}>
-    <div className="section-heading system-settings-heading"><div><p className="eyebrow">{t("admin.tabs.settings")}</p><h2>{t("settings.title")}</h2><p>{t("settings.subtitle")}</p></div><span className="settings-lock-mark" aria-hidden="true">⚙</span></div>
+    <div className="section-heading system-settings-heading"><div><p className="eyebrow">{t("admin.tabs.settings")}</p><h2>{t("settings.title")}</h2><p>{t("settings.subtitle")}</p></div><div className="system-settings-heading-actions"><span className={status === "error" ? "form-error" : "form-hint"} role={status === "saved" || status === "error" ? "status" : undefined}>{status === "saved" ? t("settings.saved") : error || t("settings.safeDefaults")}</span><button className={`primary-button compact-button ${status === "saved" ? "success-button" : ""}`} type="button" disabled={saving || !dirty} onClick={save}><SaveIcon />{saving ? t("settings.saving") : status === "saved" ? t("settings.saved") : t("settings.save")}</button></div></div>
     <div className="settings-sections">
       <section className="settings-section settings-section-readonly"><div className="settings-section-heading"><span>01</span><div><h3>{t("settings.generalTitle")}</h3><p>{t("settings.generalDescription")}</p></div></div><div className="settings-note-grid"><div><strong>{t("settings.brandingSource")}</strong><span>{t("settings.brandingSourceDescription")}</span></div><div><strong>{t("settings.currencyLabel")}</strong><span>EGP · {t("settings.currencyDescription")}</span></div></div></section>
       <section className="settings-section"><div className="settings-section-heading"><span>02</span><div><h3>{t("settings.attendanceTitle")}</h3><p>{t("settings.attendanceDescription")}</p></div></div><div className="system-settings-grid"><NumberSetting label={t("settings.openBeforeLabel")} description={t("settings.openBeforeDescription")} value={settings.attendance_open_before_minutes} min={0} max={180} suffix={t("settings.minutes")} onChange={(value) => update("attendance_open_before_minutes", value)} /><NumberSetting label={t("settings.closeAfterLabel")} description={t("settings.closeAfterDescription")} value={settings.attendance_close_after_minutes} min={0} max={240} suffix={t("settings.minutes")} onChange={(value) => update("attendance_close_after_minutes", value)} /><NumberSetting label={t("settings.attendanceAlertLabel")} description={t("settings.attendanceAlertDescription")} value={settings.attendance_alert_threshold} min={0} max={100} suffix="%" onChange={(value) => update("attendance_alert_threshold", value)} /></div></section>
       <section className="settings-section"><div className="settings-section-heading"><span>03</span><div><h3>{t("settings.evaluationTitle")}</h3><p>{t("settings.evaluationDescription")}</p></div></div><div className="system-settings-grid system-settings-grid-single"><NumberSetting label={t("settings.evaluationAlertLabel")} description={t("settings.evaluationAlertDescription")} value={settings.evaluation_alert_threshold} min={0} max={100} suffix="%" onChange={(value) => update("evaluation_alert_threshold", value)} /></div></section>
       <section className="settings-section settings-section-readonly"><div className="settings-section-heading"><span>04</span><div><h3>{t("settings.paymentsTitle")}</h3><p>{t("settings.paymentsDescription")}</p></div></div><div className="settings-note-grid"><div><strong>{t("settings.paymentFeesSource")}</strong><span>{t("settings.paymentFeesSourceDescription")}</span></div><div><strong>{t("settings.reversalSource")}</strong><span>{t("settings.reversalSourceDescription")}</span></div></div></section>
     </div>
-    {isOwner ? <AdvancedPasswordRecoveryPanel token={token} t={t} /> : null}
-    <div className="system-settings-actions"><span className={status === "error" ? "form-error" : "form-hint"} role={status === "saved" || status === "error" ? "status" : undefined}>{status === "saved" ? t("settings.saved") : error || t("settings.safeDefaults")}</span><button className={`primary-button ${status === "saved" ? "success-button" : ""}`} type="button" disabled={saving || !dirty} onClick={save}>{saving ? t("settings.saving") : status === "saved" ? t("settings.saved") : t("settings.save")}</button></div>
+    {isOwner ? <AdvancedPasswordRecoveryPanel token={token} t={t} open={advancedOpen} onToggle={() => setAdvancedOpen((value) => !value)} /> : null}
   </section>;
+}
+
+function SaveIcon() {
+  return <svg className="settings-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h11.2L19.5 8v11.5H5z" /><path d="M8 4.5v5h8v-5M8.5 19.5v-5h7v5" /></svg>;
+}
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return <svg className="settings-accordion-icon" viewBox="0 0 24 24" aria-hidden="true"><path d={open ? "m5 15 7-7 7 7" : "m5 9 7 7 7-7"} /></svg>;
 }
 
 type RecoveryConfig = {
@@ -131,7 +139,7 @@ type RecoveryConfig = {
   configured: boolean;
 };
 
-function AdvancedPasswordRecoveryPanel({ token, t }: { token: string; t: Translator }) {
+function AdvancedPasswordRecoveryPanel({ token, t, open, onToggle }: { token: string; t: Translator; open: boolean; onToggle: () => void }) {
   const [config, setConfig] = useState<RecoveryConfig | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [provider, setProvider] = useState<RecoveryConfig["provider"]>("gmail-smtp");
@@ -200,19 +208,28 @@ function AdvancedPasswordRecoveryPanel({ token, t }: { token: string; t: Transla
     finally { setBusy(false); }
   }
 
-  if (loading) return <section className="settings-section settings-advanced-section"><div className="system-settings-skeleton"><i /><i /></div></section>;
-  if (!config) return <section className="settings-section settings-advanced-section"><p className="form-error">{status}</p><button className="secondary-button compact-button" type="button" onClick={() => void load()}>{t("dashboard.retry")}</button></section>;
+  const advancedContent = loading
+    ? <div className="system-settings-skeleton"><i /><i /></div>
+    : !config
+      ? <div className="settings-error"><p className="form-error">{status}</p><button className="secondary-button compact-button" type="button" onClick={() => void load()}>{t("dashboard.retry")}</button></div>
+      : <>
+        <div className="system-settings-grid">
+          <label className="checkbox-label setting-toggle"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /><span>{t("settings.passwordRecoveryEnabled")}</span></label>
+          <label className="system-setting-field"><span>{t("settings.emailProvider")}</span><select value={provider} onChange={(event) => setProvider(event.target.value as RecoveryConfig["provider"])}><option value="gmail-smtp">{t("settings.gmailSmtp")}</option><option value="resend">Resend</option></select></label>
+          {provider === "gmail-smtp" ? <div className="settings-provider-status"><b>{t("settings.smtpCredentials")}</b><span>{provider === config.provider && config.smtpConfigured ? t("settings.configured") : t("settings.notConfigured")}</span><small>{t("settings.smtpCredentialsHint")}</small></div> : <label className="system-setting-field"><span>{t("settings.resendApiKey")}</span><small>{config.apiKeyConfigured ? t("settings.apiKeyConfigured") : t("settings.apiKeyReplace")}</small><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={config.apiKeyConfigured ? t("settings.apiKeyReplace") : "re_..."} autoComplete="new-password" /></label>}
+          <label className="system-setting-field"><span>{t("settings.senderName")}</span><input value={config.senderName} readOnly /></label>
+          <label className="system-setting-field"><span>{t("settings.senderEmail")}</span><input type="email" value={fromEmail} onChange={(event) => setFromEmail(event.target.value)} placeholder="no-reply@example.com" autoComplete="email" disabled={provider === "gmail-smtp"} /></label>
+        </div>
+        <div className="settings-secret-status"><span><b>{t("settings.securitySecret")}</b><small>{config.resetSecretConfigured ? t("settings.secretConfigured") : t("settings.secretMissing")}</small></span>{config.resetSecretConfigured ? <button className="secondary-button compact-button" type="button" disabled={busy} onClick={() => void secretAction("rotate-secret")}>{t("settings.rotateSecret")}</button> : <button className="secondary-button compact-button" type="button" disabled={busy} onClick={() => void secretAction("generate-secret")}>{t("settings.generateSecret")}</button>}</div>
+        {provider !== config.provider || !config.providerConfigured || !config.resetSecretConfigured ? <p className="form-hint">{t("settings.incompleteRecovery")}</p> : null}
+        <div className="system-settings-actions advanced-settings-actions"><span className={statusTone === "error" ? "form-error" : statusTone === "success" ? "lookup-result" : "form-hint"} role={status ? "status" : undefined}>{status || t("settings.secretConfigured")}</span><div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={busy} onClick={() => void testEmail()}>{busy ? t("settings.testingEmail") : t("settings.testEmail")}</button><button className={`primary-button compact-button ${statusTone === "success" ? "success-button" : ""}`} type="button" disabled={busy} onClick={() => void save()}>{busy ? t("settings.savingEmail") : t("settings.saveEmail")}</button></div></div>
+      </>;
+
   return <section className="settings-section settings-advanced-section">
-    <div className="settings-section-heading"><span>05</span><div><h3>{t("settings.advancedTitle")}</h3><p>{t("settings.passwordRecoveryTitle")}</p></div></div>
-    <div className="system-settings-grid">
-      <label className="checkbox-label setting-toggle"><input type="checkbox" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} /><span>{t("settings.passwordRecoveryEnabled")}</span></label>
-      <label className="system-setting-field"><span>{t("settings.emailProvider")}</span><select value={provider} onChange={(event) => setProvider(event.target.value as RecoveryConfig["provider"])}><option value="gmail-smtp">{t("settings.gmailSmtp")}</option><option value="resend">Resend</option></select></label>
-      {provider === "gmail-smtp" ? <div className="settings-provider-status"><b>{t("settings.smtpCredentials")}</b><span>{provider === config.provider && config.smtpConfigured ? t("settings.configured") : t("settings.notConfigured")}</span><small>{t("settings.smtpCredentialsHint")}</small></div> : <label className="system-setting-field"><span>{t("settings.resendApiKey")}</span><small>{config.apiKeyConfigured ? t("settings.apiKeyConfigured") : t("settings.apiKeyReplace")}</small><input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={config.apiKeyConfigured ? t("settings.apiKeyReplace") : "re_..."} autoComplete="new-password" /></label>}
-      <label className="system-setting-field"><span>{t("settings.senderName")}</span><input value={config.senderName} readOnly /></label>
-      <label className="system-setting-field"><span>{t("settings.senderEmail")}</span><input type="email" value={fromEmail} onChange={(event) => setFromEmail(event.target.value)} placeholder="no-reply@example.com" autoComplete="email" disabled={provider === "gmail-smtp"} /></label>
-    </div>
-    <div className="settings-secret-status"><span><b>{t("settings.securitySecret")}</b><small>{config.resetSecretConfigured ? t("settings.secretConfigured") : t("settings.secretMissing")}</small></span>{config.resetSecretConfigured ? <button className="secondary-button compact-button" type="button" disabled={busy} onClick={() => void secretAction("rotate-secret")}>{t("settings.rotateSecret")}</button> : <button className="secondary-button compact-button" type="button" disabled={busy} onClick={() => void secretAction("generate-secret")}>{t("settings.generateSecret")}</button>}</div>
-    {provider !== config.provider || !config.providerConfigured || !config.resetSecretConfigured ? <p className="form-hint">{t("settings.incompleteRecovery")}</p> : null}
-    <div className="system-settings-actions advanced-settings-actions"><span className={statusTone === "error" ? "form-error" : statusTone === "success" ? "lookup-result" : "form-hint"} role={status ? "status" : undefined}>{status || t("settings.secretConfigured")}</span><div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={busy} onClick={() => void testEmail()}>{busy ? t("settings.testingEmail") : t("settings.testEmail")}</button><button className={`primary-button compact-button ${statusTone === "success" ? "success-button" : ""}`} type="button" disabled={busy} onClick={() => void save()}>{busy ? t("settings.saving") : t("settings.save")}</button></div></div>
+    <button className="settings-accordion-toggle" type="button" aria-expanded={open} aria-controls="advanced-settings-content" onClick={onToggle}>
+      <span className="settings-section-heading"><span>05</span><span className="settings-accordion-copy"><strong>{t("settings.advancedTitle")}</strong><small>{t("settings.passwordRecoveryTitle")}</small><small className="settings-advanced-hint">{t("settings.advancedHint")}</small></span></span>
+      <ChevronIcon open={open} />
+    </button>
+    <div id="advanced-settings-content" className={`settings-accordion-content ${open ? "is-open" : ""}`} aria-hidden={!open}><div>{advancedContent}</div></div>
   </section>;
 }

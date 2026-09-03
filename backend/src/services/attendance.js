@@ -2,6 +2,7 @@ import { query } from "../db/pool.js";
 import { getDashboardData } from "./dashboard.js";
 import { finalizeExpiredAttendanceSessions } from "./attendanceFinalizer.js";
 import { normalizeStudentCode } from "../utils/normalizeDigits.js";
+import { enqueueAttendanceNotification } from "./whatsapp.js";
 
 export async function loginAndRecordAttendance({ student_code, device_id, ip }) {
   student_code = normalizeStudentCode(student_code);
@@ -118,6 +119,11 @@ export async function loginAndRecordAttendance({ student_code, device_id, ip }) 
       suspiciousReason
     ]
   );
+
+  if (record.rows[0]?.status === "present" || record.rows[0]?.status === "late") {
+    void enqueueAttendanceNotification({ attendanceRecordId: record.rows[0].id, studentId: student.id })
+      .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
+  }
 
   return {
     ok: true,

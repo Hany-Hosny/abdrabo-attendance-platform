@@ -30,6 +30,8 @@ export const PERMISSIONS = Object.freeze([
   "users.disable",
   "users.delete",
   "activity_log.view",
+  "whatsapp.view",
+  "whatsapp.manage",
   "settings.manage",
   "dashboard.view",
   "dashboard.financial.view",
@@ -51,7 +53,9 @@ export const DASHBOARD_PERMISSIONS = Object.freeze([
 // grants access to financial reports.
 const LEGACY_PERMISSION_ALIASES = Object.freeze({
   "payments.collect": ["payments.collect", "payments.manage"],
-  "payments.advance": ["payments.advance", "payments.manage"]
+  "payments.advance": ["payments.advance", "payments.manage"],
+  "whatsapp.view": ["whatsapp.view", "whatsapp.manage", "settings.manage"],
+  "whatsapp.manage": ["whatsapp.manage", "settings.manage"]
 });
 
 const DEFAULT_ADMIN_EXCLUDED_PERMISSIONS = new Set([

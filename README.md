@@ -45,6 +45,7 @@ Keep these settings aligned with the repository:
 - Backend start command: `npm run start --workspace=@abdrabo/backend`.
 - Backend public target port: the port printed by the backend (`PORT`), currently `8080`.
 - Backend `CORS_ORIGIN`: `https://abdrabo.up.railway.app`.
+- Backend `PUBLIC_APP_URL`: `https://abdrabo.up.railway.app` (used by WhatsApp `{portal_link}`).
 - Frontend build command: `npm run build --workspace=@abdrabo/frontend`.
 - Frontend start command: `npm run start --workspace=@abdrabo/frontend`.
 - Frontend `VITE_API_BASE_URL`: `https://abdrabobackend-production.up.railway.app/api`.

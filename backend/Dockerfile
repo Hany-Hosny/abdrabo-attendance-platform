@@ -24,6 +24,9 @@ RUN npm ci \
 
 COPY --chown=appuser:appgroup backend/src ./backend/src
 
+RUN mkdir -p /app/backend/whatsapp_auth \
+    && chown appuser:appgroup /app/backend/whatsapp_auth
+
 WORKDIR /app/backend
 
 USER appuser

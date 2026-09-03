@@ -15,10 +15,12 @@ import { adminSearchRouter } from "./routes/adminSearch.js";
 import { adminNotificationsRouter } from "./routes/adminNotifications.js";
 import { operationsRouter } from "./routes/operations.js";
 import { inboxRouter, staffInboxRouter } from "./routes/inbox.js";
+import { whatsappRouter } from "./routes/whatsapp.js";
 import { ensureMonthlyFees } from "./services/fees.js";
 import { finalizeExpiredAttendanceSessions } from "./services/attendanceFinalizer.js";
 import { purgeDeletedStudents } from "./services/studentCleanup.js";
 import { installAuditFallback } from "./services/audit.js";
+import { startWhatsAppService } from "./services/whatsapp.js";
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -80,6 +82,7 @@ app.use("/api/admin", adminAcademicRouter);
 app.use("/api", operationsRouter);
 app.use("/api/admin", operationsRouter);
 app.use("/api/admin", staffInboxRouter);
+app.use("/api/whatsapp", whatsappRouter);
 
 app.use((req, res) => {
   res.status(404).json({ ok: false, message: "Not found", path: req.path });
@@ -98,6 +101,7 @@ migrate()
     ensureMonthlyFees().catch((error) => console.error("Failed to create monthly fees", error));
     finalizeExpiredAttendanceSessions().catch((error) => console.error("Failed to finalize expired attendance sessions", error));
     purgeDeletedStudents().catch((error) => console.error("Failed to purge deleted students", error));
+    startWhatsAppService().catch((error) => console.error("Failed to start WhatsApp service", error));
     setInterval(() => ensureMonthlyFees().catch((error) => console.error("Failed to renew monthly fees", error)), 60 * 60 * 1000);
     setInterval(() => finalizeExpiredAttendanceSessions().catch((error) => console.error("Failed to finalize expired attendance sessions", error)), 60 * 1000);
     setInterval(() => purgeDeletedStudents().catch((error) => console.error("Failed to purge deleted students", error)), 24 * 60 * 60 * 1000);

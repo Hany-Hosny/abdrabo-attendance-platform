@@ -528,6 +528,49 @@ export async function migrate() {
   await query(`
     SET search_path TO public;
 
+    CREATE TABLE IF NOT EXISTS whatsapp_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      auto_send BOOLEAN NOT NULL DEFAULT FALSE,
+      templates JSONB NOT NULL DEFAULT '[]'::jsonb,
+      min_delay_seconds INTEGER NOT NULL DEFAULT 4 CHECK (min_delay_seconds BETWEEN 4 AND 8),
+      max_delay_seconds INTEGER NOT NULL DEFAULT 8 CHECK (max_delay_seconds BETWEEN 4 AND 8),
+      updated_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (min_delay_seconds <= max_delay_seconds)
+    );
+    CREATE TABLE IF NOT EXISTS whatsapp_notification_jobs (
+      id BIGSERIAL PRIMARY KEY,
+      attendance_record_id BIGINT NOT NULL UNIQUE REFERENCES attendance_records(id) ON DELETE CASCADE,
+      student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
+      phone_number TEXT NOT NULL,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ref_code TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped')),
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      last_error TEXT,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      sent_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS whatsapp_notification_jobs_queue_idx
+      ON whatsapp_notification_jobs(status, next_attempt_at, id);
+  `);
+  await query(
+    `INSERT INTO whatsapp_settings (id, templates)
+     VALUES (1, $1::jsonb)
+     ON CONFLICT (id) DO NOTHING`,
+    [JSON.stringify([
+    "مرحباً، تم تسجيل حضور الطالب {student_name} ({student_code}) اليوم {date} الساعة {time} في {group_name}.\nرابط البوابة: {portal_link}\nكود المتابعة: {ref_code}",
+    "تنبيه حضور: حضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام {time}.\nيمكنك متابعة البوابة من هنا: {portal_link}\nالمرجع: {ref_code}",
+    "تم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}. التاريخ: {date}، الوقت: {time}.\nكود الطالب: {student_code}\nرابط الطالب: {portal_link}\nرقم المرجع: {ref_code}"
+    ])]
+  );
+
+  await query(`
+    SET search_path TO public;
+
     CREATE TABLE IF NOT EXISTS fee_dues (
       id BIGSERIAL PRIMARY KEY,
       student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,

@@ -77,12 +77,16 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
 
       PRIMARY_OWNER_USER_ID: ${PRIMARY_OWNER_USER_ID:-1}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-https://abdrabo.up.railway.app}
 
       TRUST_PROXY: "1"
 
     depends_on:
       postgres:
         condition: service_healthy
+
+    volumes:
+      - whatsapp-auth:/app/backend/whatsapp_auth
 
     networks:
       - database_net
@@ -173,3 +177,4 @@ networks:
 # =========================================================
 volumes:
   postgres-data:
+  whatsapp-auth:

@@ -9,6 +9,7 @@ import { normalizeDigits } from "./utils/normalizeDigits";
 import { createIdempotencyKey, normalizeScanValue, playScannerFeedback, type ScannerState } from "./utils/scanner";
 import { AdminExecutiveDashboard } from "./AdminExecutiveDashboard";
 import { SystemSettingsPanel } from "./SystemSettingsPanel";
+import { WhatsAppSettingsPanel } from "./WhatsAppSettingsPanel";
 import { PasswordRecoveryDialog } from "./PasswordRecoveryDialog";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
@@ -140,9 +141,9 @@ type AdminStudent = {
 };
 
 type SiteSlug = "about-teacher" | "about-center" | "contact" | "tips";
-type AdminTab = "overview" | "add-user" | "users" | "site-content" | "students" | "groups" | "attendance" | "scanner" | "fees" | "reports" | "exams" | "inbox" | "audit-logs" | "settings";
+type AdminTab = "overview" | "add-user" | "users" | "site-content" | "students" | "groups" | "attendance" | "scanner" | "fees" | "reports" | "exams" | "inbox" | "audit-logs" | "whatsapp" | "settings";
 
-const adminTabIds: AdminTab[] = ["overview", "add-user", "users", "site-content", "students", "groups", "attendance", "scanner", "fees", "reports", "exams", "inbox", "audit-logs", "settings"];
+const adminTabIds: AdminTab[] = ["overview", "add-user", "users", "site-content", "students", "groups", "attendance", "scanner", "fees", "reports", "exams", "inbox", "audit-logs", "whatsapp", "settings"];
 const mobilePrimaryAdminTabIds: AdminTab[] = ["overview", "students", "attendance", "fees"];
 const adminTabIcons: Partial<Record<AdminTab, string>> = {
   overview: "⌂",
@@ -158,6 +159,7 @@ const adminTabIcons: Partial<Record<AdminTab, string>> = {
   "add-user": "+",
   "site-content": "▤",
   "audit-logs": "◷",
+  whatsapp: "◉",
   settings: "⚙"
 };
 
@@ -322,7 +324,51 @@ const translations = {
     "admin.messagesUnreadOne": "الرسائل، رسالة غير مقروءة",
     "admin.messagesUnreadMany": "الرسائل، {{count}} رسائل غير مقروءة",
     "admin.tabs.auditLogs": "سجل النشاط",
+    "admin.tabs.whatsapp": "إعدادات واتساب",
     "admin.tabs.settings": "إعدادات النظام",
+    "whatsapp.title": "إعدادات واتساب",
+    "whatsapp.subtitle": "اربط حساب واتساب وأرسل إشعارات الحضور تلقائياً إلى أولياء الأمور.",
+    "whatsapp.connectionTitle": "اتصال واتساب",
+    "whatsapp.connectionDescription": "يتم حفظ جلسة الاتصال على الخادم حتى لا تحتاج إلى المسح بعد كل إعادة تشغيل.",
+    "whatsapp.status.disconnected": "غير متصل",
+    "whatsapp.status.connecting": "جاري الاتصال",
+    "whatsapp.status.connected": "متصل",
+    "whatsapp.connectedAs": "الحساب المتصل: {{phone}}",
+    "whatsapp.noPhone": "لم يتم ربط رقم واتساب بعد",
+    "whatsapp.readyDescription": "النظام جاهز لإرسال إشعارات الحضور من الرقم المتصل.",
+    "whatsapp.pairDescription": "افتح واتساب على الهاتف، ثم الأجهزة المرتبطة، وامسح رمز QR.",
+    "whatsapp.connect": "ربط الواتساب",
+    "whatsapp.connecting": "جاري تجهيز رمز الربط...",
+    "whatsapp.disconnect": "تسجيل الخروج",
+    "whatsapp.disconnecting": "جاري تسجيل الخروج...",
+    "whatsapp.qrAlt": "رمز QR لربط واتساب",
+    "whatsapp.qrLoading": "جاري إنشاء رمز QR...",
+    "whatsapp.qrHint": "سيتم تحديث الحالة تلقائياً بعد مسح الرمز.",
+    "whatsapp.connectionFailed": "تعذر تحديث اتصال واتساب.",
+    "whatsapp.loadFailed": "تعذر تحميل إعدادات واتساب.",
+    "whatsapp.automationTitle": "الأتمتة ومكافحة الحظر",
+    "whatsapp.automationDescription": "تُرسل الرسائل في قائمة انتظار متسلسلة مع تأخير عشوائي بين كل رسالة.",
+    "whatsapp.autoSendLabel": "إرسال رسالة تلقائية لولي الأمر فور تسجيل الحضور",
+    "whatsapp.autoSendDescription": "تُضاف الرسالة إلى قائمة الانتظار بعد تسجيل حضور الطالب.",
+    "whatsapp.delayLabel": "التأخير بين الرسائل",
+    "whatsapp.delayDescription": "يتم اختيار تأخير عشوائي داخل هذا النطاق لتقليل معدل الإرسال.",
+    "whatsapp.minimum": "الأدنى",
+    "whatsapp.maximum": "الأقصى",
+    "whatsapp.seconds": "ثانية",
+    "whatsapp.templatesTitle": "قوالب الرسائل",
+    "whatsapp.templatesDescription": "اختر النظام قالباً عشوائياً لكل إشعار واستبدل المتغيرات تلقائياً.",
+    "whatsapp.templateLabel": "القالب {{number}}",
+    "whatsapp.placeholders": "المتغيرات المتاحة",
+    "whatsapp.viewOnly": "صلاحية عرض فقط — اطلب صلاحية إدارة واتساب للتعديل أو الربط.",
+    "whatsapp.previewTitle": "معاينة مباشرة",
+    "whatsapp.previewDescription": "مثال بالبيانات التجريبية والرابط القابل للفتح.",
+    "whatsapp.sampleStudent": "أحمد محمد",
+    "whatsapp.sampleGroup": "مجموعة السبت 6 مساء",
+    "whatsapp.saveHint": "يمكنك استخدام أي من المتغيرات الظاهرة داخل الرسالة.",
+    "whatsapp.save": "حفظ الإعدادات",
+    "whatsapp.saving": "جاري حفظ الإعدادات...",
+    "whatsapp.saved": "تم حفظ الإعدادات",
+    "whatsapp.saveFailed": "تعذر حفظ إعدادات واتساب.",
     "admin.mobileMore": "المزيد",
     "admin.mobileCloseMore": "إغلاق",
     "admin.mobileAccount": "الحساب",
@@ -358,6 +404,8 @@ const translations = {
     "settings.safeDefaults": "القيم الافتراضية آمنة وتحافظ على السلوك الحالي.",
     "settings.save": "حفظ التغييرات",
     "settings.saving": "جاري الحفظ...",
+    "settings.saveEmail": "حفظ إعدادات البريد",
+    "settings.savingEmail": "جاري حفظ إعدادات البريد...",
     "settings.saved": "تم الحفظ",
     "settings.saveFailed": "تعذر حفظ الإعدادات.",
     "settings.loadFailed": "تعذر تحميل الإعدادات.",
@@ -365,6 +413,7 @@ const translations = {
     "settings.accessDenied": "ليس لديك صلاحية للوصول إلى إعدادات النظام.",
     "settings.advancedTitle": "إعدادات متقدمة",
     "settings.passwordRecoveryTitle": "تهيئة استعادة كلمة المرور",
+    "settings.advancedHint": "تهيئة البريد وSMTP (موصى بتركها افتراضية)",
     "settings.passwordRecoveryEnabled": "تفعيل استعادة كلمة المرور",
     "settings.emailProvider": "مزود خدمة البريد",
     "settings.gmailSmtp": "Gmail SMTP",
@@ -627,6 +676,7 @@ const translations = {
     "audit.action.publicInquiryCreated": "تم إنشاء استفسار عام",
     "audit.action.systemAction": "إجراء إداري بالنظام",
     "audit.action.systemSettingsChanged": "تم تعديل إعدادات النظام",
+    "audit.action.whatsappSettingsChanged": "تم تعديل إعدادات واتساب",
     "audit.detail.summary": "وصف العملية",
     "audit.detail.before": "قبل التغيير",
     "audit.detail.after": "بعد التغيير",
@@ -902,6 +952,7 @@ const translations = {
     "admin.permissionGroup.users": "المستخدمون",
     "admin.permissionGroup.activity": "سجل النشاط",
     "admin.permissionGroup.settings": "الإعدادات",
+    "admin.permissionGroup.whatsapp": "واتساب",
     "admin.permissionGroup.dashboard": "لوحة التحكم التنفيذية",
     "admin.permission.view": "عرض",
     "admin.permission.manage": "إدارة",
@@ -1371,7 +1422,51 @@ const translations = {
     "admin.messagesUnreadOne": "Messages, 1 unread message",
     "admin.messagesUnreadMany": "Messages, {{count}} unread messages",
     "admin.tabs.auditLogs": "Audit Logs",
+    "admin.tabs.whatsapp": "WhatsApp Settings",
     "admin.tabs.settings": "System Settings",
+    "whatsapp.title": "WhatsApp Settings",
+    "whatsapp.subtitle": "Connect WhatsApp and automatically send attendance notifications to guardians.",
+    "whatsapp.connectionTitle": "WhatsApp connection",
+    "whatsapp.connectionDescription": "The connection session is stored on the server so pairing survives restarts.",
+    "whatsapp.status.disconnected": "Disconnected",
+    "whatsapp.status.connecting": "Connecting",
+    "whatsapp.status.connected": "Connected",
+    "whatsapp.connectedAs": "Connected account: {{phone}}",
+    "whatsapp.noPhone": "No WhatsApp number is connected yet",
+    "whatsapp.readyDescription": "The system is ready to send attendance notifications from this number.",
+    "whatsapp.pairDescription": "Open WhatsApp on your phone, choose Linked devices, then scan the QR code.",
+    "whatsapp.connect": "Connect WhatsApp",
+    "whatsapp.connecting": "Preparing pairing code...",
+    "whatsapp.disconnect": "Log out",
+    "whatsapp.disconnecting": "Logging out...",
+    "whatsapp.qrAlt": "WhatsApp pairing QR code",
+    "whatsapp.qrLoading": "Generating QR code...",
+    "whatsapp.qrHint": "The status updates automatically after the code is scanned.",
+    "whatsapp.connectionFailed": "Could not update the WhatsApp connection.",
+    "whatsapp.loadFailed": "Could not load WhatsApp settings.",
+    "whatsapp.automationTitle": "Automation and anti-ban queue",
+    "whatsapp.automationDescription": "Messages are sent sequentially with a randomized delay between each message.",
+    "whatsapp.autoSendLabel": "Automatically notify the guardian when attendance is recorded",
+    "whatsapp.autoSendDescription": "The notification is added to the queue after attendance is recorded.",
+    "whatsapp.delayLabel": "Delay between messages",
+    "whatsapp.delayDescription": "A random delay in this range is chosen to reduce sending frequency.",
+    "whatsapp.minimum": "Minimum",
+    "whatsapp.maximum": "Maximum",
+    "whatsapp.seconds": "seconds",
+    "whatsapp.templatesTitle": "Message templates",
+    "whatsapp.templatesDescription": "A random template is selected for each notification and placeholders are replaced automatically.",
+    "whatsapp.templateLabel": "Template {{number}}",
+    "whatsapp.placeholders": "Available placeholders",
+    "whatsapp.viewOnly": "View-only access — request WhatsApp management permission to edit or pair.",
+    "whatsapp.previewTitle": "Live preview",
+    "whatsapp.previewDescription": "A sample message with dummy data and a clickable portal link.",
+    "whatsapp.sampleStudent": "Ahmed Mohamed",
+    "whatsapp.sampleGroup": "Saturday 6 PM Group",
+    "whatsapp.saveHint": "Use any of the visible placeholders inside your message.",
+    "whatsapp.save": "Save settings",
+    "whatsapp.saving": "Saving settings...",
+    "whatsapp.saved": "Settings saved",
+    "whatsapp.saveFailed": "Could not save WhatsApp settings.",
     "admin.mobileMore": "More",
     "admin.mobileCloseMore": "Close",
     "admin.mobileAccount": "Account",
@@ -1407,6 +1502,8 @@ const translations = {
     "settings.safeDefaults": "Safe defaults preserve current application behavior.",
     "settings.save": "Save changes",
     "settings.saving": "Saving...",
+    "settings.saveEmail": "Save email settings",
+    "settings.savingEmail": "Saving email settings...",
     "settings.saved": "Saved",
     "settings.saveFailed": "Could not save settings.",
     "settings.loadFailed": "Could not load settings.",
@@ -1414,6 +1511,7 @@ const translations = {
     "settings.accessDenied": "You do not have permission to access System Settings.",
     "settings.advancedTitle": "Advanced Settings",
     "settings.passwordRecoveryTitle": "Password Recovery Configuration",
+    "settings.advancedHint": "Email and SMTP setup (recommended to leave as default)",
     "settings.passwordRecoveryEnabled": "Enable Password Recovery",
     "settings.emailProvider": "Email Provider",
     "settings.gmailSmtp": "Gmail SMTP",
@@ -1676,6 +1774,7 @@ const translations = {
     "audit.action.publicInquiryCreated": "Public inquiry created",
     "audit.action.systemAction": "Administrative system action",
     "audit.action.systemSettingsChanged": "System settings changed",
+    "audit.action.whatsappSettingsChanged": "WhatsApp settings changed",
     "audit.detail.summary": "Operation summary",
     "audit.detail.before": "Before change",
     "audit.detail.after": "After change",
@@ -1951,6 +2050,7 @@ const translations = {
     "admin.permissionGroup.users": "Users",
     "admin.permissionGroup.activity": "Activity log",
     "admin.permissionGroup.settings": "Settings",
+    "admin.permissionGroup.whatsapp": "WhatsApp",
     "admin.permissionGroup.dashboard": "Executive dashboard",
     "admin.permission.view": "View",
     "admin.permission.manage": "Manage",
@@ -2299,14 +2399,14 @@ type PermissionKey =
   | "messages.view" | "messages.manage"
   | "notes.view" | "notes.manage"
   | "users.view" | "users.create" | "users.edit" | "users.disable" | "users.delete"
-  | "activity_log.view" | "settings.manage"
+  | "activity_log.view" | "whatsapp.view" | "whatsapp.manage" | "settings.manage"
   | "dashboard.view" | "dashboard.financial.view" | "dashboard.group_performance.view" | "dashboard.alerts.view" | "dashboard.activity.view";
 
 const allRbacPermissions: PermissionKey[] = [
   "students.view", "students.manage", "students.delete", "attendance.view", "attendance.manage", "exams.view", "exams.manage",
   "homework.view", "homework.manage", "schedule.view", "schedule.manage", "payments.view", "payments.collect", "payments.advance", "payments.reports.view", "payments.reverse",
   "messages.view", "messages.manage", "notes.view", "notes.manage", "users.view", "users.create", "users.edit", "users.disable",
-  "users.delete", "activity_log.view", "settings.manage", "dashboard.view", "dashboard.financial.view",
+  "users.delete", "activity_log.view", "whatsapp.view", "whatsapp.manage", "settings.manage", "dashboard.view", "dashboard.financial.view",
   "dashboard.group_performance.view", "dashboard.alerts.view", "dashboard.activity.view"
 ];
 
@@ -2328,6 +2428,7 @@ const permissionGroups: Array<{ label: TranslationKey; permissions: Array<{ key:
   { label: "admin.permissionGroup.users", permissions: [{ key: "users.view", label: "admin.permission.view" }, { key: "users.create", label: "admin.permission.create" }, { key: "users.edit", label: "admin.permission.edit" }, { key: "users.disable", label: "admin.permission.disable" }, { key: "users.delete", label: "admin.permission.delete" }] },
   { label: "admin.permissionGroup.activity", permissions: [{ key: "activity_log.view", label: "admin.permission.view" }] },
   { label: "admin.permissionGroup.settings", permissions: [{ key: "settings.manage", label: "admin.permission.manage" }] },
+  { label: "admin.permissionGroup.whatsapp", permissions: [{ key: "whatsapp.view", label: "admin.permission.view" }, { key: "whatsapp.manage", label: "admin.permission.manage" }] },
   { label: "admin.permissionGroup.dashboard", permissions: [
     { key: "dashboard.view", label: "admin.permission.dashboard.view" },
     { key: "dashboard.financial.view", label: "admin.permission.dashboard.financial" },
@@ -2347,6 +2448,7 @@ const permissionPresets: Array<{ key: string; label: TranslationKey; permissions
 
 function sessionHasPermission(session: TeacherSession, permission: PermissionKey) {
   if (session.teacher.role === "owner" || session.teacher.permissions?.includes(permission) === true) return true;
+  if ((permission === "whatsapp.view" || permission === "whatsapp.manage") && session.teacher.permissions?.includes("settings.manage") === true) return true;
   return (permission === "payments.collect" || permission === "payments.advance") && session.teacher.permissions?.includes("payments.manage") === true;
 }
 
@@ -3843,10 +3945,11 @@ function TeacherDashboard({
     { id: "reports", label: t("admin.tabs.reports"), permission: "payments.reports.view" },
     { id: "exams", label: t("admin.tabs.exams"), permission: "exams.view" },
     { id: "inbox", label: t("admin.tabs.inbox"), permission: "messages.view" },
+    { id: "whatsapp", label: t("admin.tabs.whatsapp"), permission: "whatsapp.view" },
     { id: "settings", label: t("admin.tabs.settings"), permission: "settings.manage" }
   ] satisfies Array<{ id: AdminTab; label: string; permission?: PermissionKey }>).filter((tab) => (!tab.permission || can(tab.permission)) && (tab.id !== "overview" || can("dashboard.view")) && (tab.id !== "reports" || can("payments.view")));
   const primaryAdminTabs = adminTabs.filter((tab) => ["overview", "students", "groups", "attendance", "scanner", "fees", "reports", "exams", "inbox"].includes(tab.id));
-  const gearOrder: AdminTab[] = ["users", "add-user", "site-content", "audit-logs", "settings"];
+  const gearOrder: AdminTab[] = ["users", "add-user", "site-content", "audit-logs", "whatsapp", "settings"];
   const gearAdminTabs = gearOrder.map((id) => adminTabs.find((tab) => tab.id === id)).filter((tab): tab is (typeof adminTabs)[number] => Boolean(tab));
   const [gearOpen, setGearOpen] = useState(false);
   const gearRef = useRef<HTMLDivElement | null>(null);
@@ -4051,7 +4154,7 @@ function TeacherDashboard({
                   if (!items.length) return;
                   const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
                   items[nextIndex]?.focus();
-                }}><span aria-hidden="true">{tab.id === "users" ? "♙" : tab.id === "add-user" ? "+" : tab.id === "site-content" ? "▤" : tab.id === "audit-logs" ? "◷" : "⚙"}</span>{tab.label}</button>
+                }}><span aria-hidden="true">{tab.id === "users" ? "♙" : tab.id === "add-user" ? "+" : tab.id === "site-content" ? "▤" : tab.id === "audit-logs" ? "◷" : tab.id === "whatsapp" ? "◉" : "⚙"}</span>{tab.label}</button>
               </span>)}
             </div> : null}
             <button className="admin-logout-tab" type="button" onClick={onLogout} style={{ flexShrink: 0 }}><LogoutIcon /><span>{t("teacher.logout")}</span></button>
@@ -4124,6 +4227,7 @@ function TeacherDashboard({
             {activeTab === "site-content" && can("settings.manage") ? <SiteContentEditor session={session} language={language} t={t} /> : null}
             {activeTab === "audit-logs" && can("activity_log.view") ? <AuditLogsPanel session={session} language={language} t={t} /> : null}
             {activeTab === "settings" && can("settings.manage") ? <SystemSettingsPanel token={session.token} language={language} isOwner={session.teacher.role === "owner"} t={(key, values) => t(key as TranslationKey, values)} /> : null}
+            {activeTab === "whatsapp" && can("whatsapp.view") ? <WhatsAppSettingsPanel token={session.token} language={language} canManage={can("whatsapp.manage")} t={(key, values) => t(key as TranslationKey, values)} /> : null}
             {activeTab === "groups" && can("schedule.view") ? <AcademicManager kind="groups" session={session} t={t} /> : null}
             {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
             {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} t={t} /> : null}
@@ -6782,6 +6886,7 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     student_permanently_anonymized: "audit.action.studentPermanentlyAnonymized",
     site_page_updated: "audit.action.sitePageUpdated",
     public_inquiry_created: "audit.action.publicInquiryCreated",
+    whatsapp_settings_changed: "audit.action.whatsappSettingsChanged",
     system_settings_changed: "audit.action.systemSettingsChanged",
     system_action: "audit.action.systemAction"
   };

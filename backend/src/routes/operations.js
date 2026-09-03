@@ -11,6 +11,7 @@ import { getAttendanceTimingDefaults } from "../services/systemSettings.js";
 import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue, scanLookupValues } from "../utils/scan.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { hasPermission } from "../services/rbac.js";
+import { enqueueAttendanceNotification } from "../services/whatsapp.js";
 
 export const operationsRouter = express.Router();
 operationsRouter.use(requireTeacher);
@@ -535,6 +536,10 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
     return { duplicate: true, record: existing.rows[0] || null };
   }
   await auditLog({ action: "attendance_recorded", actorId, studentId, sessionId, details: { method, status_after: status, record_id: result.rows[0].id, checkin_time: result.rows[0].checkin_time }, request });
+  if (status === "present" || status === "late") {
+    void enqueueAttendanceNotification({ attendanceRecordId: result.rows[0].id, studentId })
+      .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
+  }
   return { record: result.rows[0] };
 }
 
@@ -551,6 +556,10 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
         WHERE id=$2
         RETURNING *`, [status, existing.rows[0].id]);
       await auditLog({ action: "attendance_recorded", actorId: req.teacher.id, studentId, sessionId, details: { method: "manual", status_before: "absent", status_after: status, record_id: updated.rows[0].id }, request: req });
+      if (status === "present" || status === "late") {
+        void enqueueAttendanceNotification({ attendanceRecordId: updated.rows[0].id, studentId })
+          .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
+      }
       return res.status(200).json({ok:true,record:updated.rows[0],corrected:true});
     }
     const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,request:req});
