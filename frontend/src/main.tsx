@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
+import { BrowserMultiFormatReader } from "@zxing/browser";
 import JsBarcode from "jsbarcode";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import "./styles.css";
@@ -301,6 +302,20 @@ const translations = {
     "scanner.duplicate": "تم تسجيل حضور هذا الطالب بالفعل.",
     "scanner.networkError": "تعذر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.",
     "scanner.serverError": "حدث خطأ أثناء تسجيل الحضور. حاول مرة أخرى.",
+    "scanner.openCamera": "فتح ماسح الكاميرا",
+    "scanner.cameraTitle": "ماسح الكاميرا",
+    "scanner.cameraDescription": "امسح باركود الطالب أو رمز QR مباشرة",
+    "scanner.cameraInstruction": "وجّه الكاميرا نحو كود الطالب",
+    "scanner.cameraStarting": "جاري تشغيل الكاميرا...",
+    "scanner.cameraReady": "الكاميرا جاهزة للمسح",
+    "scanner.cameraProcessing": "جاري تسجيل الحضور...",
+    "scanner.cameraDenied": "يرجى السماح للتطبيق بالوصول للكاميرا لإتمام المسح",
+    "scanner.cameraSecureContext": "لتمكين الكاميرا على الهاتف، افتح الموقع عبر HTTPS ثم اسمح بالوصول للكاميرا",
+    "scanner.cameraUnavailable": "تعذر تشغيل الكاميرا. استخدم الإدخال اليدوي أدناه.",
+    "scanner.cameraClose": "إغلاق ماسح الكاميرا",
+    "scanner.cameraRetry": "إعادة المحاولة",
+    "scanner.manualCodeLabel": "إدخال الكود يدوياً",
+    "scanner.manualCodePlaceholder": "اكتب كود الطالب هنا",
     "admin.tabs.fees": "المصروفات",
     "admin.tabs.exams": "الامتحانات",
     "admin.tabs.inbox": "الرسائل",
@@ -1336,6 +1351,20 @@ const translations = {
     "scanner.duplicate": "This student’s attendance was already recorded.",
     "scanner.networkError": "Could not connect to the server. Check the internet and try again.",
     "scanner.serverError": "An error occurred while recording attendance. Try again.",
+    "scanner.openCamera": "Open camera scanner",
+    "scanner.cameraTitle": "Camera scanner",
+    "scanner.cameraDescription": "Scan the student barcode or QR code directly",
+    "scanner.cameraInstruction": "Point the camera at the student code",
+    "scanner.cameraStarting": "Starting camera...",
+    "scanner.cameraReady": "Camera ready to scan",
+    "scanner.cameraProcessing": "Recording attendance...",
+    "scanner.cameraDenied": "Please allow camera access to complete the scan",
+    "scanner.cameraSecureContext": "To use the camera on your phone, open the site over HTTPS and allow camera access",
+    "scanner.cameraUnavailable": "The camera could not be started. Use the manual input below.",
+    "scanner.cameraClose": "Close camera scanner",
+    "scanner.cameraRetry": "Try again",
+    "scanner.manualCodeLabel": "Enter code manually",
+    "scanner.manualCodePlaceholder": "Enter the student code here",
     "admin.tabs.fees": "Fees",
     "admin.tabs.exams": "Exams",
     "admin.tabs.inbox": "Inbox",
@@ -2835,10 +2864,22 @@ function DateTimeWidget({
     day: "numeric",
     timeZone: "Africa/Cairo"
   }).format(now);
+  const compactDateText = new Intl.DateTimeFormat(locale, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: "Africa/Cairo"
+  }).format(now);
   const timeParts = new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
+    hour12: true,
+    timeZone: "Africa/Cairo"
+  }).formatToParts(now);
+  const compactTimeParts = new Intl.DateTimeFormat(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
     hour12: true,
     timeZone: "Africa/Cairo"
   }).formatToParts(now);
@@ -2851,6 +2892,11 @@ function DateTimeWidget({
           <span key={`${part.type}-${index}`} className={`clock-part clock-${part.type}`}>{part.value}</span>
         ))}
       </time>
+      <span className="mobile-date-time-line" aria-hidden="true">
+        <span>{compactDateText}</span>
+        <b>•</b>
+        <time>{compactTimeParts.map((part, index) => <span key={`${part.type}-${index}`}>{part.value}</span>)}</time>
+      </span>
     </div>
   );
 }
@@ -3768,6 +3814,7 @@ function TeacherDashboard({
     [t]
   );
   const [inboxUnread, setInboxUnread] = useState(0);
+  const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
   const previousInboxUnread = useRef(0);
   const [inboxBadgeAnimationKey, setInboxBadgeAnimationKey] = useState(0);
   useEffect(() => {
@@ -3968,6 +4015,7 @@ function TeacherDashboard({
             })}
           </nav>
           <div className="admin-header-tools">
+            {can("attendance.manage") ? <button className="admin-tool-button mobile-camera-scanner-button" type="button" onClick={() => setCameraScannerOpen(true)} aria-label={t("scanner.openCamera")} title={t("scanner.openCamera")}><span aria-hidden="true">▥</span></button> : null}
             {can("students.view") ? <GlobalSearch session={session} language={language} t={t} onSelect={(studentId) => navigateAdmin("students", studentId)} /> : null}
             {can("dashboard.alerts.view") || can("messages.view") ? <NotificationCenter session={session} language={language} t={t} onSelect={(notification) => {
               if (notification.entity_type === "student" && notification.entity_id && adminTabs.some((item) => item.id === "students")) navigateAdmin("students", Number(notification.entity_id), notification.target_section || undefined);
@@ -4070,7 +4118,7 @@ function TeacherDashboard({
                 <h2>{t("dashboard.accessDenied")}</h2>
               </div>
             ) : null}
-            {activeTab === "overview" && can("dashboard.view") ? <AdminExecutiveDashboard token={session.token} language={language} t={dashboardTranslator} can={(permission) => can(permission as PermissionKey)} onNavigate={(tab, studentId, section) => navigateAdmin(tab as AdminTab, studentId, section)} /> : null}
+            {activeTab === "overview" && can("dashboard.view") ? <AdminExecutiveDashboard token={session.token} language={language} t={dashboardTranslator} can={(permission) => can(permission as PermissionKey)} onNavigate={(tab, studentId, section) => navigateAdmin(tab as AdminTab, studentId, section)} onOpenScanner={can("attendance.manage") ? () => setCameraScannerOpen(true) : undefined} /> : null}
             {activeTab === "add-user" && can("users.create") ? <UsersTeamManager mode="create" session={session} t={t} /> : null}
             {activeTab === "users" && can("users.view") ? <UsersTeamManager mode="list" session={session} t={t} /> : null}
             {activeTab === "site-content" && can("settings.manage") ? <SiteContentEditor session={session} language={language} t={t} /> : null}
@@ -4097,6 +4145,7 @@ function TeacherDashboard({
       <footer className="site-footer" dir="ltr" lang="en">
         © 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny
       </footer>
+      <MobileScannerModal open={cameraScannerOpen} onClose={() => setCameraScannerOpen(false)} session={session} language={language} t={t} />
       <nav className="mobile-bottom-nav" aria-label={t("admin.mobileNavigation")}>
         {mobilePrimaryTabs.map((tab) => (
           <button
@@ -6145,6 +6194,207 @@ function AttendancePanel({ session, language, t }: { session: TeacherSession; la
   const selectedSession = sessions.find((item) => String(item.id) === selected);
   const groupStudents = students.filter((item) => !selectedSession || item.group_id === selectedSession.group_id);
   return <section className="admin-editor"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => setSelected(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {item.start_time?.slice(0, 5)} إلى {item.end_time?.slice(0, 5)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}<div className="academic-list">{groupStudents.map((student) => { const currentStatus = records.find((record) => record.student_id === student.id)?.status || "not_marked"; const feedback = rowFeedback[student.id]; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "present")}>Present / حاضر</button><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "absent")}>Absent / غائب</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
+}
+
+type CameraScannerToast = { tone: "success" | "error"; message: string };
+
+function MobileScannerModal({
+  open,
+  onClose,
+  session,
+  language,
+  t
+}: {
+  open: boolean;
+  onClose: () => void;
+  session: TeacherSession;
+  language: Language;
+  t: Translator;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
+  const lastScanRef = useRef({ value: "", at: 0 });
+  const cameraBusyRef = useRef(false);
+  const toastTimerRef = useRef<number | null>(null);
+  const [manualCode, setManualCode] = useState("");
+  const [cameraStatus, setCameraStatus] = useState<"starting" | "ready" | "error">("starting");
+  const [cameraError, setCameraError] = useState("");
+  const [processing, setProcessing] = useState(false);
+  const [toast, setToast] = useState<CameraScannerToast | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
+
+  async function submitCameraScan(value: string) {
+    if (cameraBusyRef.current) return;
+    const token = normalizeScanValue(value);
+    if (!token) {
+      setToast({ tone: "error", message: t("scanner.scanRequired") });
+      playScannerFeedback("error");
+      return;
+    }
+    const now = Date.now();
+    if (lastScanRef.current.value === token && now - lastScanRef.current.at < 2000) return;
+    lastScanRef.current = { value: token, at: now };
+    cameraBusyRef.current = true;
+    setProcessing(true);
+    setManualCode("");
+    setToast(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/scanner/attendance`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.token}`,
+          "Idempotency-Key": createIdempotencyKey()
+        },
+        body: JSON.stringify({ value: token })
+      });
+      const rawBody = await response.text();
+      let data: { ok?: boolean; status?: string; student?: any } = {};
+      try {
+        data = rawBody ? JSON.parse(rawBody) : {};
+      } catch (_error) {
+        data = {};
+      }
+      if (response.ok && data.ok) {
+        const studentName = data.student?.full_name || token;
+        setToast({ tone: "success", message: `${studentName} — ${t("scanner.recorded")}` });
+        playScannerFeedback("success");
+        if (typeof navigator.vibrate === "function") navigator.vibrate(90);
+        if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = window.setTimeout(() => {
+          setToast(null);
+          toastTimerRef.current = null;
+        }, 2600);
+      } else {
+        const name = data.student?.full_name ? `${data.student.full_name} — ` : "";
+        setToast({ tone: "error", message: `${name}${scannerStatusMessage(String(data.status || ""), t)}` });
+        playScannerFeedback("error");
+      }
+    } catch (_error) {
+      setToast({ tone: "error", message: t("scanner.networkError") });
+      playScannerFeedback("error");
+    } finally {
+      cameraBusyRef.current = false;
+      setProcessing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    lastScanRef.current = { value: "", at: 0 };
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = null;
+    setToast(null);
+    setCameraStatus("starting");
+    setCameraError("");
+    const reader = new BrowserMultiFormatReader(undefined, { delayBetweenScanSuccess: 250, delayBetweenScanAttempts: 120 });
+    const video = videoRef.current;
+
+    async function startCamera() {
+      const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname);
+      if (!window.isSecureContext && !localHost) {
+        setCameraStatus("error");
+        setCameraError(t("scanner.cameraSecureContext"));
+        return;
+      }
+      if (!video || !navigator.mediaDevices?.getUserMedia) {
+        setCameraStatus("error");
+        setCameraError(t("scanner.cameraUnavailable"));
+        return;
+      }
+      try {
+        const controls = await reader.decodeFromConstraints(
+          {
+            audio: false,
+            video: {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          },
+          video,
+          (result) => {
+            if (!cancelled && result) void submitCameraScan(result.getText());
+          }
+        );
+        if (cancelled) {
+          controls.stop();
+          return;
+        }
+        scannerControlsRef.current = controls;
+        setCameraStatus("ready");
+      } catch (error) {
+        if (cancelled) return;
+        const denied = error instanceof DOMException && ["NotAllowedError", "PermissionDeniedError"].includes(error.name);
+        setCameraStatus("error");
+        setCameraError(denied ? t("scanner.cameraDenied") : t("scanner.cameraUnavailable"));
+      }
+    }
+
+    void startCamera();
+    return () => {
+      cancelled = true;
+      scannerControlsRef.current?.stop();
+      scannerControlsRef.current = null;
+      const stream = video?.srcObject;
+      if (stream instanceof MediaStream) stream.getTracks().forEach((track) => track.stop());
+      if (video) video.srcObject = null;
+    };
+  }, [open, retryKey, t]);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+  }, []);
+
+  if (!open) return null;
+  return createPortal(
+    <div className="camera-scanner-backdrop" role="presentation">
+      <section className="camera-scanner-modal" dir={language === "ar" ? "rtl" : "ltr"} role="dialog" aria-modal="true" aria-labelledby="camera-scanner-title">
+        <div className="camera-scanner-header">
+          <div>
+            <span className="camera-scanner-kicker">{t("admin.tabs.scanner")}</span>
+            <h2 id="camera-scanner-title">{t("scanner.cameraTitle")}</h2>
+            <p>{t("scanner.cameraDescription")}</p>
+          </div>
+          <button className="camera-scanner-close" type="button" onClick={onClose} aria-label={t("scanner.cameraClose")} title={t("scanner.cameraClose")}>✕</button>
+        </div>
+        <div className="camera-scanner-stage">
+          <video ref={videoRef} autoPlay muted playsInline aria-label={t("scanner.cameraTitle")} />
+          <div className="camera-scanner-overlay" aria-hidden="true"><div className="camera-scanner-frame" /></div>
+          <p className="camera-scanner-instruction">{t("scanner.cameraInstruction")}</p>
+        </div>
+        <div className={`camera-scanner-status camera-scanner-status-${cameraStatus}`} role="status">
+          <span className="camera-scanner-status-dot" aria-hidden="true" />
+          {cameraStatus === "starting" ? t("scanner.cameraStarting") : cameraStatus === "ready" ? t("scanner.cameraReady") : cameraError}
+        </div>
+        {cameraStatus === "error" ? <button className="secondary-button camera-scanner-retry" type="button" onClick={() => setRetryKey((value) => value + 1)}>{t("scanner.cameraRetry")}</button> : null}
+        <form className="camera-scanner-manual" onSubmit={(event) => { event.preventDefault(); void submitCameraScan(manualCode); }}>
+          <label htmlFor="camera-scanner-manual-code">{t("scanner.manualCodeLabel")}</label>
+          <div className="camera-scanner-manual-row">
+            <input id="camera-scanner-manual-code" dir="ltr" type="text" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder={t("scanner.manualCodePlaceholder")} autoComplete="off" disabled={processing} />
+            <button className="primary-button" type="submit" disabled={processing || !manualCode.trim()}>{processing ? t("scanner.cameraProcessing") : t("scanner.submit")}</button>
+          </div>
+        </form>
+        {toast ? <p className={`camera-scanner-toast camera-scanner-toast-${toast.tone}`} role="status">{toast.message}</p> : null}
+      </section>
+    </div>,
+    document.body
+  );
 }
 
 function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }) {

@@ -74,6 +74,11 @@ npm run dev
 
 For non-Docker local development, provide `DATABASE_URL` through `backend/.env` or the shell environment.
 
+For camera scanning from a phone on the same Wi-Fi network, use the Vite HTTPS address printed by
+`npm run dev`, for example `https://192.168.1.3:3000`. Accept the local development certificate
+warning once on the phone if prompted. Camera access is intentionally unavailable on
+`http://192.168.1.3:3000` because mobile browsers require HTTPS for camera permissions.
+
 ## Project Structure
 
 - `frontend`: React + Vite bilingual UI.
