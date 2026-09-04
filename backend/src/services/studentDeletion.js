@@ -8,6 +8,32 @@ export const DEFAULT_STUDENT_RETENTION = Object.freeze({
 });
 
 const RETENTION_KEYS = Object.keys(DEFAULT_STUDENT_RETENTION);
+const RETAIN_ROWS_QUERIES = Object.freeze({
+  attendance_records: `UPDATE attendance_records r
+    SET student_name_snapshot = COALESCE(r.student_name_snapshot, s.full_name),
+        student_code_snapshot = COALESCE(r.student_code_snapshot, s.student_code),
+        student_id = NULL
+    FROM students s
+    WHERE r.student_id = s.id AND r.student_id = ANY($1::int[])`,
+  exam_results: `UPDATE exam_results r
+    SET student_name_snapshot = COALESCE(r.student_name_snapshot, s.full_name),
+        student_code_snapshot = COALESCE(r.student_code_snapshot, s.student_code),
+        student_id = NULL
+    FROM students s
+    WHERE r.student_id = s.id AND r.student_id = ANY($1::int[])`,
+  student_notes: `UPDATE student_notes r
+    SET student_name_snapshot = COALESCE(r.student_name_snapshot, s.full_name),
+        student_code_snapshot = COALESCE(r.student_code_snapshot, s.student_code),
+        student_id = NULL
+    FROM students s
+    WHERE r.student_id = s.id AND r.student_id = ANY($1::int[])`,
+  homework_submissions: `UPDATE homework_submissions r
+    SET student_name_snapshot = COALESCE(r.student_name_snapshot, s.full_name),
+        student_code_snapshot = COALESCE(r.student_code_snapshot, s.student_code),
+        student_id = NULL
+    FROM students s
+    WHERE r.student_id = s.id AND r.student_id = ANY($1::int[])`
+});
 
 export function parseStudentRetention(value) {
   if (value === undefined || value === null) return { ok: true, retain: { ...DEFAULT_STUDENT_RETENTION } };
@@ -26,15 +52,9 @@ export function parseStudentRetention(value) {
 }
 
 async function retainRows(client, table, studentIds) {
-  await client.query(
-    `UPDATE ${table} r
-     SET student_name_snapshot = COALESCE(r.student_name_snapshot, s.full_name),
-         student_code_snapshot = COALESCE(r.student_code_snapshot, s.student_code),
-         student_id = NULL
-     FROM students s
-     WHERE r.student_id = s.id AND r.student_id = ANY($1::int[])`,
-    [studentIds]
-  );
+  const statement = RETAIN_ROWS_QUERIES[table];
+  if (!statement) throw new Error("unsupported_retention_table");
+  await client.query(statement, [studentIds]);
 }
 
 async function retainFinancialRows(client, studentIds) {

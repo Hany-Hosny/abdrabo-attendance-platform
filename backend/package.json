@@ -7,16 +7,19 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "migrate": "node src/db/migrate.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:load": "node test/load-test.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "express-rate-limit": "^8.7.0",
     "helmet": "^7.1.0",
     "nodemailer": "^9.1.1",
     "pg": "^8.12.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "undici": "^8.10.1"
   }
 }

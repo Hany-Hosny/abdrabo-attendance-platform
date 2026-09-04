@@ -6,6 +6,7 @@ import {
   INVALID_CODE_MESSAGE,
   normalizeOtp,
   normalizeResetIdentifier,
+  PasswordRecoveryUnavailableError,
   requestPasswordReset,
   verifyPasswordResetCode
 } from "../src/services/passwordRecovery.js";
@@ -48,6 +49,19 @@ test("reset request returns the same generic contract and never persists the OTP
   assert.equal(inserted[2].includes(sent.text), false);
   assert.equal(JSON.stringify(queries).includes(sent.text), false);
   assert.deepEqual(GENERIC_RESET_MESSAGE.en, "If the account exists, a verification code will be sent to the associated email address.");
+});
+
+test("unavailable recovery does not return a fake OTP flow", async () => {
+  let auditEntry = null;
+  await assert.rejects(
+    () => requestPasswordReset("staff", {
+      db: async () => ({ rowCount: 0, rows: [] }),
+      getConfig: async () => ({ enabled: false }),
+      audit: async (entry) => { auditEntry = entry; }
+    }),
+    (error) => error instanceof PasswordRecoveryUnavailableError && error.code === "password_recovery_unavailable"
+  );
+  assert.equal(auditEntry.details.result, "unavailable");
 });
 
 test("correct OTP creates a reset authorization and a wrong OTP is generic", async () => {
@@ -166,6 +180,14 @@ test("Gmail SMTP configuration is provider-specific and parses secure mode safel
   assert.equal(transportOptions.secure, true);
   assert.equal(transportOptions.auth.user, "abdrabo.system@gmail.com");
   await sendPasswordRecoveryEmail({ provider: EMAIL_PROVIDERS.GMAIL_SMTP, to: "owner@example.com", fromEmail: config.fromEmail, senderName: config.fromName, smtpConfig: config, transporter, subject: "Test", text: "Test", html: "<p>Test</p>" });
+
+  const defaults = readGmailSmtpConfig({
+    SMTP_USER: "abdrabo.system@gmail.com",
+    SMTP_APP_PASSWORD: "app-password-not-logged"
+  });
+  assert.equal(defaults.host, "smtp.gmail.com");
+  assert.equal(defaults.port, 465);
+  assert.equal(defaults.configured, true);
 });
 
 test("Gmail is the default provider and does not require a Resend key", async () => {
@@ -203,6 +225,43 @@ test("Gmail is the default provider and does not require a Resend key", async ()
     assert.equal(config.providerConfigured, true);
     assert.equal(config.configured, true);
     assert.equal(config.enabled, true);
+  } finally {
+    for (const [key, value] of Object.entries(environment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("configured environment enables recovery on a fresh database but honors an explicit disable", async () => {
+  const environment = {
+    EMAIL_PROVIDER: process.env.EMAIL_PROVIDER,
+    SMTP_HOST: process.env.SMTP_HOST,
+    SMTP_PORT: process.env.SMTP_PORT,
+    SMTP_SECURE: process.env.SMTP_SECURE,
+    SMTP_USER: process.env.SMTP_USER,
+    SMTP_APP_PASSWORD: process.env.SMTP_APP_PASSWORD,
+    MAIL_FROM_EMAIL: process.env.MAIL_FROM_EMAIL,
+    PASSWORD_RESET_SECRET: process.env.PASSWORD_RESET_SECRET
+  };
+  Object.assign(process.env, {
+    EMAIL_PROVIDER: "gmail-smtp",
+    SMTP_USER: "abdrabo.system@gmail.com",
+    SMTP_APP_PASSWORD: "app-password-not-logged",
+    PASSWORD_RESET_SECRET: "e".repeat(32)
+  });
+  try {
+    const freshDatabase = async () => ({ rowCount: 0, rows: [] });
+    const freshConfig = await getPasswordRecoveryConfig(freshDatabase);
+    assert.equal(freshConfig.enabled, true);
+    assert.equal(freshConfig.requestedEnabled, true);
+
+    const explicitlyDisabledDatabase = async (text) => text.includes("FROM system_settings")
+      ? { rowCount: 1, rows: [{ key: "password_recovery_enabled", value_json: false, updated_at: new Date() }] }
+      : { rowCount: 0, rows: [] };
+    const disabledConfig = await getPasswordRecoveryConfig(explicitlyDisabledDatabase);
+    assert.equal(disabledConfig.enabled, false);
+    assert.equal(disabledConfig.requestedEnabled, false);
   } finally {
     for (const [key, value] of Object.entries(environment)) {
       if (value === undefined) delete process.env[key];

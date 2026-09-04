@@ -304,11 +304,19 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
     ORDER BY COALESCE(g.display_name, g.name)
   `, selectedGroupId ? [bounds.from, bounds.endExclusive, bounds.from, bounds.dueEndExclusive, selectedGroupId] : [bounds.from, bounds.endExclusive, bounds.from, bounds.dueEndExclusive]) : Promise.resolve(null);
 
+  const alertValues = [bounds.from, bounds.endExclusive];
+  const alertGroupClause = selectedGroupId ? "AND s.group_id = $3" : "";
+  if (selectedGroupId) alertValues.push(selectedGroupId);
+  const attendanceThresholdParam = `$${alertValues.length + 1}`;
+  alertValues.push(thresholds.attendanceAlert / 100);
+  const evaluationThresholdParam = `$${alertValues.length + 1}`;
+  alertValues.push(thresholds.evaluationAlert);
+
   const alertsPromise = canAlerts ? query(`
     WITH students_in_scope AS (
       SELECT s.id, s.group_id
       FROM students s JOIN groups g ON g.id = s.group_id
-      WHERE s.is_active = TRUE AND s.deleted_at IS NULL AND g.is_active = TRUE AND g.deleted_at IS NULL ${selectedGroupId ? "AND s.group_id = $3" : ""}
+      WHERE s.is_active = TRUE AND s.deleted_at IS NULL AND g.is_active = TRUE AND g.deleted_at IS NULL ${alertGroupClause}
     ), attendance_scope AS (
       SELECT sis.id, COUNT(DISTINCT ats.id) AS sessions,
         COUNT(*) FILTER (WHERE ar.status IN ('present', 'late')) AS attended
@@ -318,18 +326,18 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
       GROUP BY sis.id
     ), low_attendance AS (
       SELECT COUNT(*)::int AS count FROM attendance_scope
-      WHERE sessions > 0 AND attended / sessions::numeric < ${thresholds.attendanceAlert / 100}
+      WHERE sessions > 0 AND attended / sessions::numeric < ${attendanceThresholdParam}
     ), low_evaluations AS (
       SELECT COUNT(*)::int AS count FROM (
         SELECT er.student_id, AVG(CASE WHEN e.max_score > 0 THEN er.score / e.max_score * 100 END) AS average
         FROM exam_results er JOIN exams e ON e.id = er.exam_id JOIN students s ON s.id = er.student_id
-        WHERE e.exam_date >= $1::date AND e.exam_date < $2::date AND s.is_active = TRUE AND s.deleted_at IS NULL ${selectedGroupId ? "AND s.group_id = $3" : ""}
+        WHERE e.exam_date >= $1::date AND e.exam_date < $2::date AND s.is_active = TRUE AND s.deleted_at IS NULL ${alertGroupClause}
         GROUP BY er.student_id
-      ) scores WHERE average < ${thresholds.evaluationAlert}
+      ) scores WHERE average < ${evaluationThresholdParam}
     )
     SELECT (SELECT count FROM low_attendance) AS low_attendance_count,
       (SELECT count FROM low_evaluations) AS low_evaluation_count
-  `, selectedGroupId ? [bounds.from, bounds.endExclusive, selectedGroupId] : [bounds.from, bounds.endExclusive]) : Promise.resolve(null);
+  `, alertValues) : Promise.resolve(null);
 
   const revenueTrendPromise = canFinancial ? query(`
     WITH months AS (

@@ -44,9 +44,14 @@ export async function getPasswordRecoveryConfig(db = query) {
   const providerStatus = emailProviderStatus(provider, { apiKey, fromEmail: resendFromEmail, smtpConfig: smtp });
   const fromEmail = providerStatus.senderEmail;
   const configured = Boolean(resetSecret) && providerStatus.configured;
+  const hasExplicitEnabledSetting = Object.prototype.hasOwnProperty.call(updatedAt, "password_recovery_enabled");
+  // If deployment credentials are complete, a fresh database can start recovery
+  // without requiring an owner to log in and enable a feature that is already configured.
+  // An explicit false value always wins.
+  const requestedEnabled = hasExplicitEnabledSetting ? settings.password_recovery_enabled === true : configured;
   return {
-    enabled: settings.password_recovery_enabled === true && configured,
-    requestedEnabled: settings.password_recovery_enabled === true,
+    enabled: requestedEnabled && configured,
+    requestedEnabled,
     provider,
     fromEmail,
     senderName: providerStatus.senderName,

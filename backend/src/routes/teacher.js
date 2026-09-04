@@ -1,16 +1,26 @@
 import express from "express";
+import crypto from "node:crypto";
 import { query } from "../db/pool.js";
-import { createTeacherToken, verifyPassword, verifyTeacherToken } from "../services/auth.js";
+import { createTeacherToken, verifyPassword } from "../services/auth.js";
 import { requireTeacher } from "../middleware/requireTeacher.js";
 import { auditLog } from "../services/audit.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
-import { requestPasswordReset, resetPassword, verifyPasswordResetCode, GENERIC_RESET_MESSAGE, INVALID_CODE_MESSAGE } from "../services/passwordRecovery.js";
+import { ipKeyGenerator } from "express-rate-limit";
+import { requestPasswordReset, resetPassword, verifyPasswordResetCode, GENERIC_RESET_MESSAGE, INVALID_CODE_MESSAGE, PasswordRecoveryUnavailableError } from "../services/passwordRecovery.js";
 
 export const teacherRouter = express.Router();
-const loginRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, key: (req) => `teacher-login:${req.ip}` });
-const resetRequestIpRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 8, key: (req) => `password-reset-ip:${req.ip}` });
-const resetRequestIdentifierRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 5, key: (req) => `password-reset-identifier:${String(req.body?.identifier || "").trim().toLowerCase() || "empty"}` });
-const resetVerifyIpRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 30, key: (req) => `password-reset-verify-ip:${req.ip}` });
+export const loginRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, key: (req) => `teacher-login:${ipKeyGenerator(req.ip || "unknown")}` });
+export const resetRequestIpRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 8, key: (req) => `password-reset-ip:${ipKeyGenerator(req.ip || "unknown")}` });
+const resetRequestIdentifierRateLimit = createRateLimiter({
+  windowMs: 15 * 60_000,
+  max: 5,
+  key: (req) => {
+    const identifier = String(req.body?.identifier || "").trim().toLowerCase();
+    return `password-reset-identifier:${crypto.createHash("sha256").update(identifier).digest("hex")}`;
+  }
+});
+const resetVerifyIpRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 10, key: (req) => `password-reset-verify-ip:${ipKeyGenerator(req.ip || "unknown")}` });
+const resetPasswordIpRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 10, key: (req) => `password-reset-complete-ip:${ipKeyGenerator(req.ip || "unknown")}` });
 
 function localizedError(language) {
   return language === "ar" ? "بيانات الدخول غير صحيحة." : "Invalid login credentials.";
@@ -82,21 +92,8 @@ teacherRouter.post("/logout", requireTeacher, async (req, res, next) => {
   }
 });
 
-teacherRouter.get("/me", async (req, res) => {
-  const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
-  const payload = verifyTeacherToken(token);
-
-  if (!payload) {
-    return res.status(401).json({ ok: false, status: "unauthorized" });
-  }
-  const result = await query(
-    `SELECT id, name, email, username, role, permissions, auth_version
-     FROM teachers
-     WHERE id = $1 AND is_active = TRUE AND deleted_at IS NULL`,
-    [payload.sub]
-  );
-  const teacher = result.rows[0];
-  if (!teacher || Number(payload.auth_version || 0) !== Number(teacher.auth_version || 0)) return res.status(401).json({ ok: false, status: "unauthorized" });
+teacherRouter.get("/me", requireTeacher, async (req, res) => {
+  const teacher = req.teacher;
   return res.json({
     ok: true,
     teacher: {
@@ -116,7 +113,15 @@ teacherRouter.post("/forgot-password", resetRequestIpRateLimit, resetRequestIden
     const result = await requestPasswordReset(req.body?.identifier, { language, request: req });
     return res.status(202).json({ ok: true, status: "accepted", flowId: result.flowId, message: GENERIC_RESET_MESSAGE[language] });
   } catch (error) {
-    // Recovery requests remain deliberately generic even when email delivery is unavailable.
+    if (error instanceof PasswordRecoveryUnavailableError) {
+      return res.status(503).json({
+        ok: false,
+        status: "password_recovery_unavailable",
+        message: language === "ar"
+          ? "استعادة كلمة المرور غير متاحة حالياً. يرجى التواصل مع مدير النظام."
+          : "Password recovery is currently unavailable. Please contact the system administrator."
+      });
+    }
     return next(error);
   }
 });
@@ -132,7 +137,7 @@ teacherRouter.post("/verify-reset-code", resetVerifyIpRateLimit, async (req, res
   }
 });
 
-teacherRouter.post("/reset-password", async (req, res, next) => {
+teacherRouter.post("/reset-password", resetPasswordIpRateLimit, async (req, res, next) => {
   const language = req.body?.language === "ar" ? "ar" : "en";
   try {
     const result = await resetPassword(req.body?.resetToken, req.body?.password, req.body?.confirmation ?? req.body?.confirmPassword, { request: req });

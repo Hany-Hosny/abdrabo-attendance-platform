@@ -5,6 +5,7 @@ import { createPasswordResetSecret, getPasswordRecoveryConfig, safePasswordRecov
 import { sendPasswordRecoveryEmail, verifyGmailSmtp } from "../services/email.js";
 import { auditLog } from "../services/audit.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
+import { ipKeyGenerator } from "express-rate-limit";
 
 export const adminSettingsRouter = express.Router();
 adminSettingsRouter.use(requireTeacher, requirePermission("settings.manage"));
@@ -32,7 +33,7 @@ adminSettingsRouter.patch("/", async (req, res, next) => {
 });
 
 const advancedSettingsAccess = [requireRoles("owner")];
-const passwordRecoveryTestRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 3, key: (req) => `password-recovery-test:${req.teacher?.id || "unknown"}:${req.ip}` });
+const passwordRecoveryTestRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 3, key: (req) => `password-recovery-test:${req.teacher?.id || "unknown"}:${ipKeyGenerator(req.ip || "unknown")}` });
 adminSettingsRouter.get("/advanced/password-recovery", ...advancedSettingsAccess, async (_req, res, next) => {
   try {
     return res.json({ ok: true, ...safePasswordRecoveryConfig(await getPasswordRecoveryConfig()) });

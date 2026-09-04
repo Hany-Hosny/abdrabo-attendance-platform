@@ -258,9 +258,15 @@ function normalizeTemplateKey(key) {
     .toLowerCase();
 }
 
+const TEMPLATE_TOKEN_PATTERN = /\{\{?\s*([a-zA-Z0-9_-]+)\s*\}\}?/gi;
+
 function templateHasPlaceholder(template, key) {
-  const normalizedKey = normalizeTemplateKey(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`\\{\\{?\\s*${normalizedKey}\\s*\\}\\}?`, "i").test(String(template ?? ""));
+  const normalizedKey = normalizeTemplateKey(key);
+  const source = String(template ?? "");
+  for (const match of source.matchAll(TEMPLATE_TOKEN_PATTERN)) {
+    if (normalizeTemplateKey(match[1]) === normalizedKey) return true;
+  }
+  return false;
 }
 
 export function applyTemplate(template, values) {

@@ -52,13 +52,16 @@ export function verifyStudentToken(token) {
   try {
     const parts = String(token || "").split(".");
     if (parts.length !== 3) return null;
+    const header = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+    if (header.alg !== "HS256" || header.typ !== "JWT") return null;
     const unsignedToken = `${parts[0]}.${parts[1]}`;
     const expected = signToken(unsignedToken);
     const signature = Buffer.from(parts[2]);
     const expectedBuffer = Buffer.from(expected);
     if (signature.length !== expectedBuffer.length || !crypto.timingSafeEqual(signature, expectedBuffer)) return null;
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    return payload.type === "student" && Number(payload.sub) > 0 && Number(payload.exp) > Math.floor(Date.now() / 1000) ? payload : null;
+    const subject = Number(payload.sub);
+    return payload.type === "student" && Number.isSafeInteger(subject) && subject > 0 && Number(payload.exp) > Math.floor(Date.now() / 1000) ? payload : null;
   } catch (_error) {
     return null;
   }
@@ -70,6 +73,8 @@ export function verifyTeacherToken(token) {
     if (parts.length !== 3) return null;
 
     const [header, payload, signature] = parts;
+    const headerData = JSON.parse(Buffer.from(header, "base64url").toString("utf8"));
+    if (headerData.alg !== "HS256" || headerData.typ !== "JWT") return null;
     const unsignedToken = `${header}.${payload}`;
     const expected = signToken(unsignedToken);
     const expectedBuffer = Buffer.from(expected);
@@ -78,7 +83,7 @@ export function verifyTeacherToken(token) {
     if (expectedBuffer.length !== signatureBuffer.length || !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)) return null;
 
     const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    if (!data.exp || data.exp < Math.floor(Date.now() / 1000)) return null;
+    if (!Number.isSafeInteger(Number(data.sub)) || Number(data.sub) <= 0 || !Number.isFinite(Number(data.exp)) || Number(data.exp) < Math.floor(Date.now() / 1000)) return null;
     return data;
   } catch (_error) {
     return null;

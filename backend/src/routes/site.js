@@ -6,11 +6,14 @@ import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { isPhoneNumber } from "../utils/normalizeDigits.js";
 import { auditLog } from "../services/audit.js";
 import { authenticatedStudent } from "../services/studentAuth.js";
+import { createRateLimiter } from "../middleware/rateLimit.js";
+import { ipKeyGenerator } from "express-rate-limit";
 
 export const siteRouter = express.Router();
 export const adminSiteRouter = express.Router();
+const publicContactRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 10, key: (req) => `public-contact:${ipKeyGenerator(req.ip || "unknown")}` });
 
-siteRouter.post("/contact", async (req, res, next) => {
+siteRouter.post("/contact", publicContactRateLimit, async (req, res, next) => {
   try {
     const name = String(req.body?.name || "").trim();
     const phone = normalizeDigits(req.body?.phone || "").trim();

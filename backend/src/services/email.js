@@ -25,8 +25,13 @@ export function parseSmtpSecure(value, fallback = false) {
 }
 
 export function readGmailSmtpConfig(env = process.env) {
-  const host = String(env.SMTP_HOST || "").trim();
-  const port = Number(env.SMTP_PORT || 0);
+  // Keep Gmail's standard connection defaults in code as well as docker-compose.
+  // Railway/Nixpacks deployments do not evaluate docker-compose variable defaults.
+  const host = String(env.SMTP_HOST || "smtp.gmail.com").trim();
+  const configuredPort = env.SMTP_PORT === undefined || env.SMTP_PORT === null || String(env.SMTP_PORT).trim() === ""
+    ? 465
+    : Number(env.SMTP_PORT);
+  const port = Number(configuredPort);
   const secure = parseSmtpSecure(env.SMTP_SECURE, port === 465);
   const user = String(env.SMTP_USER || "").trim();
   const appPassword = String(env.SMTP_APP_PASSWORD || "");

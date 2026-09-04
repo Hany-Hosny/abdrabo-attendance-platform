@@ -83,15 +83,15 @@ export function PasswordRecoveryDialog({ open, identifier: initialIdentifier, la
         body: JSON.stringify({ identifier: identifier.trim(), language })
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok || !payload.flowId) throw new Error("request_failed");
+      if (!response.ok || !payload.ok || !payload.flowId) throw new Error(String(payload.status || "request_failed"));
       setFlowId(String(payload.flowId));
       setGenericMessage(String(payload.message || t("recovery.genericMessage")));
       setCode(Array(6).fill(""));
       setStep("code");
       setSecondsLeft(60);
       window.setTimeout(() => inputRefs.current[0]?.focus(), 0);
-    } catch (_error) {
-      setError(t("recovery.requestFailed"));
+    } catch (reason) {
+      setError(reason instanceof Error && reason.message === "password_recovery_unavailable" ? t("recovery.unavailable") : t("recovery.requestFailed"));
     } finally {
       setLoading(false);
     }

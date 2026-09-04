@@ -10,11 +10,12 @@ import { auditLog } from "../services/audit.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { createStudentToken } from "../services/auth.js";
 import { authenticatedStudent } from "../services/studentAuth.js";
+import { ipKeyGenerator } from "express-rate-limit";
 
 export const studentRouter = express.Router();
 const studentCodePattern = /^A-\d{4}$/;
-const studentLoginRateLimit = createRateLimiter({ windowMs: 60_000, max: 12, key: (req) => `student-login:${req.ip}` });
-const studentLookupRateLimit = createRateLimiter({ windowMs: 60_000, max: 12, key: (req) => `student-lookup:${req.ip}` });
+const studentLoginRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, key: (req) => `student-login:${ipKeyGenerator(req.ip || "unknown")}` });
+const studentLookupRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 10, key: (req) => `student-lookup:${ipKeyGenerator(req.ip || "unknown")}` });
 
 function hashValue(value) {
   return crypto.createHash("sha256").update(value).digest("hex");

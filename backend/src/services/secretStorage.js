@@ -29,8 +29,15 @@ export function encryptSecret(value) {
 export function decryptSecret(record) {
   if (!record?.encrypted_value || !record?.iv || !record?.auth_tag) throw new SecretStorageError();
   try {
-    const decipher = crypto.createDecipheriv("aes-256-gcm", masterKey(), Buffer.from(record.iv, "base64url"));
-    decipher.setAuthTag(Buffer.from(record.auth_tag, "base64url"));
+    const authTag = Buffer.from(record.auth_tag, "base64url");
+    if (authTag.length !== 16) throw new SecretStorageError();
+    const decipher = crypto.createDecipheriv(
+      "aes-256-gcm",
+      masterKey(),
+      Buffer.from(record.iv, "base64url"),
+      { authTagLength: 16 }
+    );
+    decipher.setAuthTag(authTag);
     return Buffer.concat([
       decipher.update(Buffer.from(record.encrypted_value, "base64url")),
       decipher.final()

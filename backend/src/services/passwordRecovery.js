@@ -10,6 +10,14 @@ export const PASSWORD_RESET_RESEND_COOLDOWN_MS = 60 * 1000;
 export const PASSWORD_RESET_MAX_ATTEMPTS = 5;
 export const PASSWORD_MIN_LENGTH = 8;
 
+export class PasswordRecoveryUnavailableError extends Error {
+  constructor() {
+    super("password_recovery_unavailable");
+    this.name = "PasswordRecoveryUnavailableError";
+    this.code = "password_recovery_unavailable";
+  }
+}
+
 export const GENERIC_RESET_MESSAGE = Object.freeze({
   ar: "إذا كان الحساب مسجلاً، سيتم إرسال رمز التحقق إلى البريد الإلكتروني المرتبط به.",
   en: "If the account exists, a verification code will be sent to the associated email address."
@@ -118,10 +126,14 @@ function resetEmail(language, code) {
 export async function requestPasswordReset(identifier, { language = "en", request = null, db = pool, audit = auditLog, sendEmail = sendPasswordRecoveryEmail, getConfig = getPasswordRecoveryConfig } = {}) {
   const normalized = normalizeResetIdentifier(identifier);
   const anonymousFlowId = crypto.randomUUID();
-  const config = await getConfig(db === pool ? query : db);
-  if (!normalized || !config.enabled) {
+  if (!normalized) {
     await audit({ action: "password_reset_requested", details: { result: "accepted" }, request });
     return { accepted: true, flowId: anonymousFlowId };
+  }
+  const config = await getConfig(db === pool ? query : db);
+  if (!config.enabled) {
+    await audit({ action: "password_reset_requested", details: { result: "unavailable" }, request });
+    throw new PasswordRecoveryUnavailableError();
   }
 
   const execute = typeof db === "function" ? db : db.query.bind(db);

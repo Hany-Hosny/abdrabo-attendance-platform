@@ -20,6 +20,8 @@ type WhatsAppStatus = {
 type Props = { token: string; language: Language; canManage?: boolean; t: Translator };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
+const TEMPLATE_TOKEN_PATTERN = /\{\{?\s*([a-zA-Z0-9_-]+)\s*\}\}?/gi;
+
 const fallbackTemplates = ["مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}", "تنبيه حضور - مستر أحمد عبدربه:\nحضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام الساعة {time}.\nرابط ملف المتابعة: {portal_link}\nالمرجع: {ref_code}", "إشعار حضور | مستر أحمد عبدربه\nتم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}.\nالتاريخ: {date} - الوقت: {time}.\nكود الطالب: {student_code}\nتقرير فوري: {portal_link}\nرقم المرجع: {ref_code}"];
 const fallbackGradeTemplates = ["نتيجة تقييم - مستر أحمد عبدربه 📝\nمرحباً بحضرتك، تم رصد نتيجة امتحان {exam_title} للطالب: {student_name}.\nالدرجة: {score} من {max_score} (النسبة: {percentage}%).\nكود الطالب: {student_code}\nتقرير الإجابات والتقييم: {portal_link}\nالمرجع: {ref_code}", "إشعار درجات | منصة مستر أحمد عبدربه\nحصل الطالب {student_name} في {exam_title} على نتيجة {score}/{max_score} بمعدل {percentage}%.\nتفاصيل التقييم: {portal_link}\nمع تحيات مستر أحمد عبدربه وإدارة المنصة.\nالمرجع: {ref_code}", "تقييم دراسي - مستر أحمد عبدربه:\nتم تصحيح {exam_title} للطالب {student_name}.\nالنتيجة المحققة: {score} من أصل {max_score}.\nرابط التقرير الكامل: {portal_link}\nكود: {ref_code}"];
 const fallbackReceiptTemplates = ["إيصال سداد مصروفات - مستر أحمد عبدربه 🧾\nالسلام عليكم يا فندم، تم استلام مبلغ {amount_paid} ج.م سداداً لمصروفات شهر {month} للطالب: {student_name}.\nرقم الإيصال: {receipt_number}\nكود الطالب: {student_code}\nعرض الإيصال: {portal_link}\nشكراً لتعاونكم الدائم.", "سند قبض إلكتروني | مستر أحمد عبدربه\nتم بنجاح تسجيل دفعة مالية بقيمة {amount_paid} ج.م لحساب الطالب: {student_name} (سداد {month}).\nرقم السند: {receipt_number}\nالسجل المالي: {portal_link}\nالمرجع: {ref_code}", "إشعار تحصيل نقدية - مكتب مستر أحمد عبدربه:\nتم استلام مبلغ {amount_paid} جنيه لمصروفات {month} الخاصة بالطالب {student_name}.\nإيصال رقم: #{receipt_number}.\nمتابعة الحساب: {portal_link}"];
@@ -54,8 +56,10 @@ const defaultSettings: WhatsAppSettings = {
 function normalizeSettings(value: Partial<WhatsAppSettings> | undefined): WhatsAppSettings {
   const normalizeTemplates = (input: string[] | undefined, fallback: string[], requiredPlaceholder: string) => {
     const templates = Array.isArray(input) ? input.map((item) => String(item ?? "").trim()).filter(Boolean).slice(0, 4) : [];
-    const placeholderKey = requiredPlaceholder.replace(/^\{+|\}+$/g, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return templates.length >= 3 && templates.every((template) => new RegExp(`\\{\\{?\\s*${placeholderKey}\\s*\\}\\}?`, "i").test(template)) ? templates : [...fallback];
+    const placeholderKey = requiredPlaceholder.replace(/^\{+|\}+$/g, "").trim().toLowerCase();
+    const hasPlaceholder = (template: string) => Array.from(template.matchAll(TEMPLATE_TOKEN_PATTERN))
+      .some((match) => match[1].toLowerCase() === placeholderKey);
+    return templates.length >= 3 && templates.every(hasPlaceholder) ? templates : [...fallback];
   };
   return {
     auto_send: value?.auto_send === true,

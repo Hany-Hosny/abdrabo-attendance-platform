@@ -12,6 +12,7 @@ import { getAttendanceTimingDefaults } from "../services/systemSettings.js";
 import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue, scanLookupValues } from "../utils/scan.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { hasPermission } from "../services/rbac.js";
+import { ipKeyGenerator } from "express-rate-limit";
 import { enqueueAdvancePaymentNotification, enqueueAttendanceNotification, enqueueReceiptNotification } from "../services/whatsapp.js";
 
 export const operationsRouter = express.Router();
@@ -20,8 +21,8 @@ operationsRouter.use(requireTeacher);
 // report middleware below then apply the narrower capability for that route.
 operationsRouter.use("/fees/payments", requirePermission("payments.view"));
 operationsRouter.use("/fees/overdue", requirePermission("payments.view"));
-const scannerRateLimit = createRateLimiter({ windowMs: 60_000, max: 180, key: (req) => `scanner:${req.teacher?.id || req.ip}` });
-const paymentRateLimit = createRateLimiter({ windowMs: 60_000, max: 30, key: (req) => `payment:${req.teacher?.id || req.ip}` });
+const scannerRateLimit = createRateLimiter({ windowMs: 60_000, max: 180, key: (req) => `scanner:${req.teacher?.id || ipKeyGenerator(req.ip || "unknown")}` });
+const paymentRateLimit = createRateLimiter({ windowMs: 60_000, max: 30, key: (req) => `payment:${req.teacher?.id || ipKeyGenerator(req.ip || "unknown")}` });
 
 function cairoSessionTimeSql(dateExpression, timeExpression) {
   return `((${dateExpression}::date + ${timeExpression}) AT TIME ZONE 'Africa/Cairo')`;
