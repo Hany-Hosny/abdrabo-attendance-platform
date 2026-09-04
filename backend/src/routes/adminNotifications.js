@@ -6,7 +6,7 @@ import { query } from "../db/pool.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 
 export const adminNotificationsRouter = express.Router();
-adminNotificationsRouter.use(requireTeacher, requireAnyPermission("dashboard.alerts.view", "messages.view"));
+adminNotificationsRouter.use(requireTeacher, requireAnyPermission("dashboard.alerts.view", "messages.view", "whatsapp.view"));
 
 adminNotificationsRouter.get("/", async (req, res, next) => {
   try {

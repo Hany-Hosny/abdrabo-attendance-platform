@@ -857,6 +857,8 @@ const translations = {
     "dashboard.attendanceNotification": "تنبيه حضور",
     "dashboard.evaluationNotification": "تنبيه تقييم",
     "dashboard.paymentNotification": "تنبيه مصروفات",
+    "dashboard.whatsappDisconnectedNotification": "انقطاع اتصال واتساب",
+    "dashboard.whatsappDisconnectedDescription": "تم انقطاع اتصال واتساب. راجع إعدادات واتساب وأعد الربط عند الحاجة.",
     "dashboard.notificationDescriptionMessage": "رسالة جديدة من {{name}}",
     "dashboard.notificationDescriptionAttendance": "{{name}} يحتاج متابعة في الحضور",
     "dashboard.notificationDescriptionEvaluation": "{{name}} لديه متوسط تقييم منخفض",
@@ -1979,6 +1981,8 @@ const translations = {
     "dashboard.attendanceNotification": "Attendance alert",
     "dashboard.evaluationNotification": "Evaluation alert",
     "dashboard.paymentNotification": "Payment alert",
+    "dashboard.whatsappDisconnectedNotification": "WhatsApp disconnected",
+    "dashboard.whatsappDisconnectedDescription": "The WhatsApp connection was disconnected. Check WhatsApp settings and relink if needed.",
     "dashboard.notificationDescriptionMessage": "New message from {{name}}",
     "dashboard.notificationDescriptionAttendance": "{{name}} needs attendance follow-up",
     "dashboard.notificationDescriptionEvaluation": "{{name}} has a low evaluation average",
@@ -3836,7 +3840,7 @@ type HeaderNotification = {
   entity_type?: string | null;
   entity_id?: number | null;
   target_section?: string | null;
-  payload?: { studentName?: string; studentCode?: string; groupName?: string; amount?: number | null; value?: number | null };
+  payload?: { studentName?: string; studentCode?: string; groupName?: string; amount?: number | null; value?: number | null; phoneNumber?: string | null; reason?: string; status?: string };
   is_read: boolean;
   created_at: string;
 };
@@ -3914,6 +3918,7 @@ function notificationTitle(type: string, t: Translator) {
   if (type === "new_message") return t("dashboard.newMessageNotification");
   if (type === "attendance_low") return t("dashboard.attendanceNotification");
   if (type === "evaluation_low") return t("dashboard.evaluationNotification");
+  if (type === "whatsapp_disconnected") return t("dashboard.whatsappDisconnectedNotification");
   return t("dashboard.paymentNotification");
 }
 
@@ -3922,6 +3927,7 @@ function notificationDescription(notification: HeaderNotification, t: Translator
   if (notification.type === "new_message") return t("dashboard.notificationDescriptionMessage", { name });
   if (notification.type === "attendance_low") return t("dashboard.notificationDescriptionAttendance", { name });
   if (notification.type === "evaluation_low") return t("dashboard.notificationDescriptionEvaluation", { name });
+  if (notification.type === "whatsapp_disconnected") return t("dashboard.whatsappDisconnectedDescription");
   return t("dashboard.notificationDescriptionPayment", { name });
 }
 
@@ -3993,7 +3999,7 @@ function NotificationCenter({ session, language, t, onSelect }: { session: Teach
   const badge = unreadCount > 99 ? "99+" : String(unreadCount);
   return <div className="admin-header-tool notification-center" ref={containerRef}>
     <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={t("dashboard.notificationCenter")} title={t("dashboard.notificationCenter")} aria-expanded={open} onClick={() => setOpen((value) => !value)}><BellIcon />{unreadCount > 0 ? <span className="header-unread-badge" aria-label={badge}>{badge}</span> : null}</button>
-    {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button type="button" onClick={markAllRead} disabled={!unreadCount}>{t("dashboard.markAllRead")}</button></div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : notifications.length ? <div className="notification-list">{notifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.type}`}>{notification.type === "new_message" ? "✉" : notification.type === "payment_overdue" ? "₤" : "!"}</span><span><strong>{notificationTitle(notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setExpanded(true); void load(20); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
+    {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button type="button" onClick={markAllRead} disabled={!unreadCount}>{t("dashboard.markAllRead")}</button></div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : notifications.length ? <div className="notification-list">{notifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.type}`}>{notification.type === "new_message" ? "✉" : notification.type === "payment_overdue" ? "₤" : notification.type === "whatsapp_disconnected" ? "⚠" : "!"}</span><span><strong>{notificationTitle(notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setExpanded(true); void load(20); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
   </div>;
 }
 
@@ -4220,8 +4226,9 @@ function TeacherDashboard({
           <div className="admin-header-tools">
             {can("attendance.manage") ? <button className="admin-tool-button mobile-camera-scanner-button" type="button" onClick={() => setCameraScannerOpen(true)} aria-label={t("scanner.openCamera")} title={t("scanner.openCamera")}><span aria-hidden="true">▥</span></button> : null}
             {can("students.view") ? <GlobalSearch session={session} language={language} t={t} onSelect={(studentId) => navigateAdmin("students", studentId)} /> : null}
-            {can("dashboard.alerts.view") || can("messages.view") ? <NotificationCenter session={session} language={language} t={t} onSelect={(notification) => {
+            {can("dashboard.alerts.view") || can("messages.view") || can("whatsapp.view") ? <NotificationCenter session={session} language={language} t={t} onSelect={(notification) => {
               if (notification.entity_type === "student" && notification.entity_id && adminTabs.some((item) => item.id === "students")) navigateAdmin("students", Number(notification.entity_id), notification.target_section || undefined);
+              else if (notification.type === "whatsapp_disconnected" && adminTabs.some((item) => item.id === "whatsapp")) navigateAdmin("whatsapp");
               else if (can("messages.view")) navigateAdmin("inbox");
             }} /> : null}
           </div>
@@ -4327,7 +4334,7 @@ function TeacherDashboard({
             {activeTab === "site-content" && can("settings.manage") ? <SiteContentEditor session={session} language={language} t={t} /> : null}
             {activeTab === "audit-logs" && can("activity_log.view") ? <AuditLogsPanel session={session} language={language} t={t} /> : null}
             {activeTab === "settings" && can("settings.manage") ? <SystemSettingsPanel token={session.token} language={language} isOwner={session.teacher.role === "owner"} t={(key, values) => t(key as TranslationKey, values)} /> : null}
-            {activeTab === "whatsapp" && can("whatsapp.view") ? <WhatsAppSettingsPanel token={session.token} language={language} canManage={can("whatsapp.manage")} t={(key, values) => t(key as TranslationKey, values)} /> : null}
+            {activeTab === "whatsapp" && can("whatsapp.view") ? <WhatsAppSettingsPanel token={session.token} language={language} canManage={can("whatsapp.manage")} canControlConnection={can("whatsapp.manage") && (session.teacher.role === "owner" || session.teacher.role === "admin")} t={(key, values) => t(key as TranslationKey, values)} /> : null}
             {activeTab === "groups" && can("schedule.view") ? <AcademicManager kind="groups" session={session} t={t} /> : null}
             {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
             {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} t={t} /> : null}

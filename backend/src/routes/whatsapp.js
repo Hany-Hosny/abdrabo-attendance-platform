@@ -1,5 +1,5 @@
 import express from "express";
-import { requirePermission, requireTeacher } from "../middleware/requireTeacher.js";
+import { requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
 import { auditLog } from "../services/audit.js";
 import { hasPermission } from "../services/rbac.js";
 import {
@@ -18,13 +18,13 @@ whatsappRouter.get("/status", requirePermission("whatsapp.view"), (_req, res) =>
   res.json({ ok: true, ...getWhatsAppStatus() });
 });
 
-whatsappRouter.get("/qr", requirePermission("whatsapp.manage"), async (_req, res, next) => {
+whatsappRouter.get("/qr", requireRoles("owner", "admin"), requirePermission("whatsapp.manage"), async (_req, res, next) => {
   try {
     res.json({ ok: true, ...await getWhatsAppQr() });
   } catch (error) { next(error); }
 });
 
-whatsappRouter.post("/disconnect", requirePermission("whatsapp.manage"), async (req, res, next) => {
+whatsappRouter.post("/disconnect", requireRoles("owner", "admin"), requirePermission("whatsapp.manage"), async (req, res, next) => {
   try {
     const status = await disconnectWhatsApp();
     await auditLog({ action: "whatsapp_disconnected", actorId: req.teacher.id, request: req });

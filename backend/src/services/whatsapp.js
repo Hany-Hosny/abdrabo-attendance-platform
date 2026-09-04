@@ -4,6 +4,7 @@ import { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } from 
 import QRCode from "qrcode";
 import { pool, query } from "../db/pool.js";
 import { createStudentPortalAccessToken } from "./auth.js";
+import { recordWhatsAppConnectionNotification } from "./notifications.js";
 
 const DEFAULT_TEMPLATES = Object.freeze([
   "مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}",
@@ -54,6 +55,7 @@ const state = {
   workerTimer: null,
   workerRunning: false,
   lastSentAt: 0,
+  connectionEstablished: false,
   templateQueue: new Map(),
   lastTemplateByType: new Map(),
   lastTemplateText: null
@@ -197,13 +199,25 @@ export async function connectWhatsApp() {
       }
       if (connection === "open") {
         state.status = "connected";
+        state.connectionEstablished = true;
         state.qr = null;
         state.phoneNumber = normalizeEgyptianPhone(socket.user?.id?.split(":")[0]) || socket.user?.id?.split(":")[0] || null;
         console.log(`WhatsApp connected${state.phoneNumber ? ` as ${state.phoneNumber}` : ""}`);
       }
       if (connection === "close") {
         const code = lastDisconnect?.error?.output?.statusCode;
+        const wasEstablished = state.connectionEstablished;
+        const wasManual = state.manuallyDisconnected;
+        const phoneNumber = state.phoneNumber;
+        state.connectionEstablished = false;
         setDisconnected();
+        if (wasEstablished && !wasManual) {
+          void recordWhatsAppConnectionNotification({
+            status: "disconnected",
+            reason: code === DisconnectReason.loggedOut ? "logged_out" : "connection_closed",
+            phoneNumber
+          }).catch((error) => console.error("Failed to record WhatsApp disconnect notification", error));
+        }
         if (code !== DisconnectReason.loggedOut) scheduleReconnect();
       }
     });
@@ -233,12 +247,19 @@ export async function getWhatsAppQr() {
 }
 
 export async function disconnectWhatsApp() {
+  const wasEstablished = state.connectionEstablished;
+  const phoneNumber = state.phoneNumber;
   state.manuallyDisconnected = true;
   if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
   state.reconnectTimer = null;
   try { await state.socket?.logout(); } catch (error) { console.warn("WhatsApp logout failed", error); }
   setDisconnected();
+  state.connectionEstablished = false;
   await fs.promises.rm(authDirectory, { recursive: true, force: true });
+  if (wasEstablished) {
+    void recordWhatsAppConnectionNotification({ status: "disconnected", reason: "manual_disconnect", phoneNumber })
+      .catch((error) => console.error("Failed to record WhatsApp disconnect notification", error));
+  }
   return getWhatsAppStatus();
 }
 

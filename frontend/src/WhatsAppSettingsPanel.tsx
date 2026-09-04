@@ -17,7 +17,7 @@ type WhatsAppStatus = {
   phone_number: string | null;
   has_qr?: boolean;
 };
-type Props = { token: string; language: Language; canManage?: boolean; t: Translator };
+type Props = { token: string; language: Language; canManage?: boolean; canControlConnection?: boolean; t: Translator };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const TEMPLATE_TOKEN_PATTERN = /\{\{?\s*([a-zA-Z0-9_-]+)\s*\}\}?/gi;
@@ -82,7 +82,7 @@ function ChevronIcon({ open }: { open: boolean }) {
   return <svg className={`whatsapp-template-accordion-icon ${open ? "is-open" : ""}`} viewBox="0 0 24 24" aria-hidden="true"><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>;
 }
 
-export function WhatsAppSettingsPanel({ token, language, canManage = false, t }: Props) {
+export function WhatsAppSettingsPanel({ token, language, canManage = false, canControlConnection = canManage, t }: Props) {
   const [status, setStatus] = useState<WhatsAppStatus>({ status: "disconnected", phone_number: null });
   const [settings, setSettings] = useState<WhatsAppSettings>(defaultSettings);
   const [savedSettings, setSavedSettings] = useState<WhatsAppSettings>(defaultSettings);
@@ -136,7 +136,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, t }:
   }, [status.status, token]);
 
   async function startPairing() {
-    if (!canManage || pairing || status.status === "connected") return;
+    if (!canControlConnection || pairing || status.status === "connected") return;
     setPairing(true); setError("");
     try {
       const response = await fetch(`${API_BASE_URL}/whatsapp/qr`, { headers: { Authorization: `Bearer ${token}` } });
@@ -149,7 +149,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, t }:
   }
 
   async function disconnect() {
-    if (!canManage || disconnecting) return;
+    if (!canControlConnection || disconnecting) return;
     setDisconnecting(true); setError("");
     try {
       const response = await fetch(`${API_BASE_URL}/whatsapp/disconnect`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
@@ -238,7 +238,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, t }:
           <strong>{status.phone_number ? t("whatsapp.connectedAs", { phone: status.phone_number }) : t("whatsapp.noPhone")}</strong>
           <small>{status.status === "connected" ? t("whatsapp.readyDescription") : t("whatsapp.pairDescription")}</small>
           <div className="whatsapp-connection-actions">
-            {canManage ? (status.status === "connected" ? <button className="secondary-button" type="button" disabled={disconnecting} onClick={() => void disconnect()}>{disconnecting ? t("whatsapp.disconnecting") : t("whatsapp.disconnect")}</button> : <button className="primary-button" type="button" disabled={pairing} onClick={() => void startPairing()}>{pairing ? t("whatsapp.connecting") : t("whatsapp.connect")}</button>) : <small className="whatsapp-view-only">{t("whatsapp.viewOnly")}</small>}
+            {canControlConnection ? (status.status === "connected" ? <button className="secondary-button" type="button" disabled={disconnecting} onClick={() => void disconnect()}>{disconnecting ? t("whatsapp.disconnecting") : t("whatsapp.disconnect")}</button> : <button className="primary-button" type="button" disabled={pairing} onClick={() => void startPairing()}>{pairing ? t("whatsapp.connecting") : t("whatsapp.connect")}</button>) : <small className="whatsapp-view-only">{t("whatsapp.viewOnly")}</small>}
           </div>
         </div>
         {status.status !== "connected" && (qr || status.status === "connecting") ? <div className="whatsapp-qr-panel"><div className="whatsapp-qr-frame">{qr ? <img src={qr} alt={t("whatsapp.qrAlt")} /> : <span className="whatsapp-qr-loading">{t("whatsapp.qrLoading")}</span>}</div><small>{t("whatsapp.qrHint")}</small></div> : null}

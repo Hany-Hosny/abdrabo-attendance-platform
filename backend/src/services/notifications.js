@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { query } from "../db/pool.js";
 import { hasPermission } from "./rbac.js";
 import { listStudentsNeedingAttention } from "./studentAttention.js";
@@ -117,6 +118,26 @@ async function syncMessageNotifications(recipientUserId, teacher, db = query) {
 export async function syncNotificationsForUser(teacher, db = query) {
   await syncAttentionNotifications(teacher.id, teacher, db);
   await syncMessageNotifications(teacher.id, teacher, db);
+}
+
+export async function recordWhatsAppConnectionNotification({ status = "disconnected", reason = "connection_closed", phoneNumber = null, db = query } = {}) {
+  const recipients = await db(
+    "SELECT id, role, permissions FROM teachers WHERE is_active = TRUE AND deleted_at IS NULL"
+  );
+  const dedupeKey = `whatsapp_connection:${crypto.randomUUID()}`;
+  const payload = { status, reason, phoneNumber: phoneNumber || null };
+  let recorded = 0;
+  for (const recipient of recipients.rows || []) {
+    if (!hasPermission(recipient, "whatsapp.view")) continue;
+    await db(
+      `INSERT INTO notifications (recipient_user_id, type, entity_type, entity_id, target_section, payload, dedupe_key, is_read, resolved_at)
+       VALUES ($1, 'whatsapp_disconnected', 'whatsapp', NULL, 'whatsapp', $2::jsonb, $3, FALSE, NULL)
+       ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING`,
+      [recipient.id, JSON.stringify(payload), dedupeKey]
+    );
+    recorded += 1;
+  }
+  return { recorded, status, reason };
 }
 
 export async function listNotificationsForUser(teacher, { limit = 10, db = query } = {}) {
