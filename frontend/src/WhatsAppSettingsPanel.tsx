@@ -108,6 +108,8 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
   const [to, setTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -121,20 +123,23 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
     fetch(`${API_BASE_URL}/whatsapp/history?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json().catch(() => ({}));
+        if (response.status === 403 || payload.permission === "whatsapp.view") throw new Error("history_permission_denied");
         if (!response.ok || !payload.ok) throw new Error("history_failed");
         setMessages(Array.isArray(payload.messages) ? payload.messages : []);
         setError(false);
+        setPermissionDenied(false);
       })
-      .catch((reason) => { if (reason?.name !== "AbortError") setError(true); })
+      .catch((reason) => { if (reason?.name !== "AbortError") { setError(true); setPermissionDenied(reason?.message === "history_permission_denied"); } })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [from, search, status, to, token, type]);
+  }, [from, refreshKey, search, status, to, token, type]);
 
   const typeLabel = (value: string) => t(`whatsapp.historyType.${value}`);
   const statusLabel = (value: string) => t(`whatsapp.historyStatus.${value}`);
   const formatDate = (value: string) => new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Cairo" }).format(new Date(value));
 
   return <div className="whatsapp-history-panel">
+    <div className="whatsapp-history-toolbar"><button className="secondary-button compact-button whatsapp-history-refresh" type="button" onClick={() => setRefreshKey((current) => current + 1)} disabled={loading}>{loading ? t("whatsapp.historyRefreshing") : t("whatsapp.historyRefresh")}</button></div>
     <div className="whatsapp-history-filters">
       <label><span>{t("whatsapp.historyTypeLabel")}</span><select value={type} onChange={(event) => setType(event.target.value)}><option value="">{t("whatsapp.historyAllTypes")}</option><option value="attendance">{typeLabel("attendance")}</option><option value="grade">{typeLabel("grade")}</option><option value="receipt">{typeLabel("receipt")}</option><option value="advance_payment">{typeLabel("advance_payment")}</option></select></label>
       <label><span>{t("whatsapp.historyStatusLabel")}</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">{t("whatsapp.historyAllStatuses")}</option><option value="sent">{statusLabel("sent")}</option><option value="pending">{statusLabel("pending")}</option><option value="processing">{statusLabel("processing")}</option><option value="failed">{statusLabel("failed")}</option><option value="skipped">{statusLabel("skipped")}</option></select></label>
@@ -142,7 +147,7 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
       <label><span>{t("whatsapp.historyFrom")}</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
       <label><span>{t("whatsapp.historyTo")}</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
     </div>
-    {loading ? <p className="form-hint">{t("whatsapp.historyLoading")}</p> : error ? <p className="form-error">{t("whatsapp.historyLoadFailed")}</p> : !messages.length ? <p className="form-hint">{t("whatsapp.historyEmpty")}</p> : <div className="whatsapp-history-list">
+    {loading ? <p className="form-hint">{t("whatsapp.historyLoading")}</p> : error ? <div className="whatsapp-history-load-error"><p className="form-error">{permissionDenied ? t("whatsapp.historyPermissionDenied") : t("whatsapp.historyLoadFailed")}</p><button className="secondary-button compact-button" type="button" onClick={() => setRefreshKey((current) => current + 1)}>{t("whatsapp.historyRefresh")}</button></div> : !messages.length ? <p className="form-hint">{t("whatsapp.historyEmpty")}</p> : <div className="whatsapp-history-list">
       {messages.map((message) => {
         const isOpen = expandedId === message.id;
         return <article className={`whatsapp-history-item ${isOpen ? "is-open" : ""}`} key={message.id}>

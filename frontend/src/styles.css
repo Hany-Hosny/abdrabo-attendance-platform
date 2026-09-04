@@ -1645,6 +1645,10 @@ input:disabled {
 .whatsapp-panel-tabs button:hover { color: var(--text); background: rgba(105, 173, 255, 0.06); }
 .whatsapp-panel-tabs button.active { border-color: rgba(77, 208, 225, 0.28); color: #8de8eb; background: rgba(77, 208, 225, 0.1); }
 .whatsapp-history-panel { display: grid; gap: 14px; }
+.whatsapp-history-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.whatsapp-history-refresh { width: auto; min-width: 132px; flex: 0 0 auto; }
+.whatsapp-history-load-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(244, 63, 94, 0.2); border-radius: 8px; background: rgba(244, 63, 94, 0.06); }
+.whatsapp-history-load-error .form-error { margin: 0; }
 .whatsapp-history-filters { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)); gap: 9px; }
 .whatsapp-history-filters label { display: grid; gap: 5px; min-width: 0; }
 .whatsapp-history-filters label > span { color: var(--muted); font-size: 10px; font-weight: 700; }
@@ -1700,6 +1704,9 @@ input:disabled {
   .whatsapp-history-filters,
   .whatsapp-history-details dl { grid-template-columns: 1fr; }
   .whatsapp-history-search { grid-column: auto; }
+  .whatsapp-history-toolbar,
+  .whatsapp-history-load-error { align-items: stretch; flex-direction: column; }
+  .whatsapp-history-refresh { width: 100%; }
   .whatsapp-history-toggle { grid-template-columns: minmax(0, 1fr) auto; }
   .whatsapp-history-status,
   .whatsapp-history-date { display: none; }
