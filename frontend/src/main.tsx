@@ -381,6 +381,7 @@ const translations = {
     "whatsapp.historyRefreshHint": "يمكنك إعادة تحميل السجل بعد وصول رسائل جديدة.",
     "whatsapp.historyRefresh": "تحديث السجل",
     "whatsapp.historyRefreshing": "جاري التحديث...",
+    "whatsapp.historyCount": "عدد الرسائل: {{count}}",
     "whatsapp.historyEmpty": "لا توجد رسائل مطابقة للبحث.",
     "whatsapp.historyUnknownStudent": "طالب غير معروف",
     "whatsapp.historyStudent": "الطالب",
@@ -1544,6 +1545,7 @@ const translations = {
     "whatsapp.historyRefreshHint": "Refresh the history after new messages arrive.",
     "whatsapp.historyRefresh": "Refresh history",
     "whatsapp.historyRefreshing": "Refreshing...",
+    "whatsapp.historyCount": "Messages: {{count}}",
     "whatsapp.historyEmpty": "No matching messages were found.",
     "whatsapp.historyUnknownStudent": "Unknown student",
     "whatsapp.historyStudent": "Student",
@@ -4050,7 +4052,7 @@ function NotificationCenter({ session, language, t, onSelect }: { session: Teach
     const controller = new AbortController();
     requestRef.current = controller;
     void load(10, controller.signal);
-    const interval = window.setInterval(() => { if (!document.hidden) void load(expanded ? 20 : 10); }, 45000);
+    const interval = window.setInterval(() => { if (!document.hidden) void load(expanded ? 20 : 10); }, 10000);
     return () => { controller.abort(); requestRef.current?.abort(); window.clearInterval(interval); };
   }, [session.token]);
   useEffect(() => {

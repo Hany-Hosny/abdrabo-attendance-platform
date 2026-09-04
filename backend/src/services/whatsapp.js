@@ -44,6 +44,10 @@ const publicAppUrl = String(
 ).replace(/\/+$/, "");
 
 const authDirectory = path.resolve(process.env.WHATSAPP_AUTH_DIR || path.resolve(process.cwd(), "whatsapp_auth"));
+const QR_RENDER_TIMEOUT_MS = 5000;
+const QR_WAIT_TIMEOUT_MS = 10000;
+const CONNECTION_STALL_TIMEOUT_MS = 45000;
+const MAX_RECONNECT_DELAY_MS = 30000;
 const state = {
   status: "disconnected",
   phoneNumber: null,
@@ -56,6 +60,10 @@ const state = {
   workerRunning: false,
   lastSentAt: 0,
   connectionEstablished: false,
+  qrGeneration: 0,
+  reconnectAttempt: 0,
+  connectionWatchdog: null,
+  authResetting: null,
 };
 
 function normalizeDigits(value) {
@@ -157,23 +165,54 @@ export async function updateWhatsAppSettings(input, { actorId, request = null, d
 }
 
 function setDisconnected() {
+  if (state.connectionWatchdog) clearTimeout(state.connectionWatchdog);
+  state.connectionWatchdog = null;
   state.status = "disconnected";
   state.phoneNumber = null;
   state.qr = null;
   state.socket = null;
+  state.qrGeneration += 1;
 }
 
 function scheduleReconnect() {
   if (state.manuallyDisconnected || state.reconnectTimer || state.connecting) return;
+  const delay = Math.min(3000 * (2 ** state.reconnectAttempt), MAX_RECONNECT_DELAY_MS);
+  state.reconnectAttempt = Math.min(state.reconnectAttempt + 1, 4);
   state.reconnectTimer = setTimeout(() => {
     state.reconnectTimer = null;
     void connectWhatsApp();
-  }, 3000);
+  }, delay);
+}
+
+function withTimeout(promise, timeoutMs, errorCode) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(errorCode)), timeoutMs);
+    Promise.resolve(promise).then((value) => {
+      clearTimeout(timer);
+      resolve(value);
+    }, (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+function armConnectionWatchdog(socket) {
+  if (state.connectionWatchdog) clearTimeout(state.connectionWatchdog);
+  state.connectionWatchdog = setTimeout(() => {
+    if (state.socket !== socket || state.status === "connected" || state.manuallyDisconnected) return;
+    console.warn("WhatsApp connection stalled; closing the socket so it can reconnect safely");
+    void Promise.resolve(socket.end(new Error("whatsapp_connection_timeout"))).catch((error) => {
+      console.error("Failed to close stalled WhatsApp socket", error);
+    });
+  }, CONNECTION_STALL_TIMEOUT_MS);
 }
 
 export async function connectWhatsApp() {
   if (state.status === "connected" && state.socket) return getWhatsAppStatus();
+  if (state.status === "connecting" && state.socket) return getWhatsAppStatus();
   if (state.connecting) return state.connecting;
+  if (state.authResetting) await state.authResetting;
   state.manuallyDisconnected = false;
   state.status = "connecting";
   state.connecting = (async () => {
@@ -182,21 +221,40 @@ export async function connectWhatsApp() {
     const socket = makeWASocket({
       auth: authState,
       browser: Browsers.ubuntu("Abdrabo Attendance"),
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 30000,
+      qrTimeout: 60000,
       markOnlineOnConnect: false,
       syncFullHistory: false,
+      fireInitQueries: true,
       generateHighQualityLinkPreview: false,
       getMessage: async () => undefined
     });
     state.socket = socket;
+    armConnectionWatchdog(socket);
     socket.ev.on("creds.update", saveCreds);
     socket.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
+      if (state.socket !== socket) return;
       if (qr) {
         state.status = "connecting";
-        state.qr = await QRCode.toDataURL(qr, { margin: 1, width: 320 });
+        state.qr = null;
+        armConnectionWatchdog(socket);
+        const generation = ++state.qrGeneration;
+        try {
+          const qrData = await withTimeout(QRCode.toDataURL(qr, { margin: 1, width: 320 }), QR_RENDER_TIMEOUT_MS, "qr_generation_timeout");
+          if (state.socket === socket && state.status === "connecting" && state.qrGeneration === generation) state.qr = qrData;
+        } catch (error) {
+          console.error("WhatsApp QR generation failed", error);
+        }
       }
       if (connection === "open") {
         state.status = "connected";
         state.connectionEstablished = true;
+        state.reconnectAttempt = 0;
+        if (state.connectionWatchdog) clearTimeout(state.connectionWatchdog);
+        state.connectionWatchdog = null;
+        state.qrGeneration += 1;
         state.qr = null;
         state.phoneNumber = normalizeEgyptianPhone(socket.user?.id?.split(":")[0]) || socket.user?.id?.split(":")[0] || null;
         console.log(`WhatsApp connected${state.phoneNumber ? ` as ${state.phoneNumber}` : ""}`);
@@ -213,9 +271,17 @@ export async function connectWhatsApp() {
             status: "disconnected",
             reason: code === DisconnectReason.loggedOut ? "logged_out" : "connection_closed",
             phoneNumber
+          }).then((result) => {
+            if (result.failed) console.error(`WhatsApp disconnect alert email failures: ${result.failed}`);
           }).catch((error) => console.error("Failed to record WhatsApp disconnect notification", error));
         }
-        if (code !== DisconnectReason.loggedOut) scheduleReconnect();
+        if (code === DisconnectReason.loggedOut) {
+          state.authResetting = fs.promises.rm(authDirectory, { recursive: true, force: true })
+            .catch((error) => console.error("Failed to clear logged-out WhatsApp session", error))
+            .finally(() => { state.authResetting = null; });
+        } else {
+          scheduleReconnect();
+        }
       }
     });
     return getWhatsAppStatus();
@@ -238,7 +304,7 @@ export function getWhatsAppStatus() {
 export async function getWhatsAppQr() {
   if (state.status === "connected") return { ...getWhatsAppStatus(), qr: null };
   await connectWhatsApp();
-  const deadline = Date.now() + 10000;
+  const deadline = Date.now() + QR_WAIT_TIMEOUT_MS;
   while (!state.qr && state.status !== "connected" && Date.now() < deadline) await sleep(100);
   return { ...getWhatsAppStatus(), qr: state.qr };
 }
@@ -247,6 +313,7 @@ export async function disconnectWhatsApp() {
   const wasEstablished = state.connectionEstablished;
   const phoneNumber = state.phoneNumber;
   state.manuallyDisconnected = true;
+  state.reconnectAttempt = 0;
   if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
   state.reconnectTimer = null;
   try { await state.socket?.logout(); } catch (error) { console.warn("WhatsApp logout failed", error); }

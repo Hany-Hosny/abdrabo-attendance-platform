@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import { query } from "../db/pool.js";
 import { hasPermission } from "./rbac.js";
 import { listStudentsNeedingAttention } from "./studentAttention.js";
+import { sendPasswordRecoveryEmail } from "./email.js";
+import { getPasswordRecoveryConfig } from "./passwordRecoveryConfig.js";
 
 function cairoMonth() {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit" }).formatToParts(new Date());
@@ -120,9 +122,126 @@ export async function syncNotificationsForUser(teacher, db = query) {
   await syncMessageNotifications(teacher.id, teacher, db);
 }
 
-export async function recordWhatsAppConnectionNotification({ status = "disconnected", reason = "connection_closed", phoneNumber = null, db = query } = {}) {
+function validEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function maskedPhone(value) {
+  const phone = String(value || "");
+  if (phone.length <= 4) return phone ? "****" : "not available";
+  return `${phone.slice(0, 3)}****${phone.slice(-2)}`;
+}
+
+function whatsappDisconnectEmail({ reason, phoneNumber, occurredAt = new Date() } = {}) {
+  const reasonLabel = reason === "logged_out" ? "The WhatsApp account was logged out." : "The WhatsApp connection was closed unexpectedly.";
+  const arabicReason = reason === "logged_out" ? "تم تسجيل خروج حساب واتساب." : "تم فقد اتصال واتساب بشكل غير متوقع.";
+  const timestamp = new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Africa/Cairo"
+  }).format(occurredAt);
+  const safeReason = escapeHtml(reasonLabel);
+  const safeArabicReason = escapeHtml(arabicReason);
+  const safePhone = escapeHtml(maskedPhone(phoneNumber));
+  const safeTimestamp = escapeHtml(timestamp);
+  const appUrl = String(
+    process.env.FRONTEND_URL ||
+    process.env.PUBLIC_APP_URL ||
+    (process.env.NODE_ENV === "production" ? "https://abdrabo.up.railway.app" : "http://localhost:3000")
+  ).replace(/\/+$/, "");
+  const settingsUrl = appUrl ? `${appUrl}/teacher/dashboard?tab=whatsapp` : "";
+  const safeSettingsUrl = escapeHtml(settingsUrl);
+  const actionHtml = settingsUrl
+    ? `<p style="margin:24px 0 0;text-align:center;"><a href="${safeSettingsUrl}" style="display:inline-block;padding:12px 18px;border-radius:8px;background:#f59e0b;color:#111827;text-decoration:none;font-weight:700;">Open WhatsApp settings</a></p>`
+    : "";
+  return {
+    subject: "WhatsApp connection alert - action required",
+    text: [
+      "WhatsApp connection alert",
+      "",
+      reasonLabel,
+      `Time: ${timestamp}`,
+      `Connected number: ${maskedPhone(phoneNumber)}`,
+      "",
+      "Automatic reconnection has been started. Please open WhatsApp settings and relink the account if the connection does not recover."
+    ].join("\n"),
+    html: `<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <body style="margin:0;padding:24px 12px;background:#f1f5f9;color:#0f172a;font-family:Arial,Helvetica,sans-serif;line-height:1.6;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center">
+      <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+        <tr><td style="padding:22px 26px;background:#0f172a;color:#ffffff;font-size:19px;font-weight:700;">WhatsApp connection alert</td></tr>
+        <tr><td style="padding:28px 26px;">
+          <p style="margin:0 0 10px;font-size:17px;font-weight:700;color:#b45309;">${safeReason}</p>
+          <p style="margin:0 0 20px;color:#475569;">${safeArabicReason}</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;">
+            <tr><td style="padding:12px 14px;color:#475569;">Time</td><td style="padding:12px 14px;text-align:right;font-weight:700;">${safeTimestamp} (Cairo)</td></tr>
+            <tr><td style="padding:12px 14px;color:#475569;">Connected number</td><td style="padding:12px 14px;text-align:right;font-weight:700;">${safePhone}</td></tr>
+          </table>
+          <p style="margin:20px 0 0;color:#475569;">Automatic reconnection has been started. If the connection does not recover, open WhatsApp settings and relink the account.</p>
+          ${actionHtml}
+        </td></tr>
+      </table>
+    </td></tr></table>
+  </body>
+</html>`
+  };
+}
+
+async function sendWhatsAppDisconnectEmails(recipients, { reason, phoneNumber, db, sendEmail, getEmailConfig }) {
+  const emailRecipients = recipients.filter((recipient) => validEmail(recipient.email));
+  if (!emailRecipients.length || reason === "manual_disconnect") return { sent: 0, failed: 0, skipped: emailRecipients.length };
+
+  let config;
+  try {
+    config = await getEmailConfig(db);
+  } catch (error) {
+    console.error("Failed to load WhatsApp disconnect email configuration", error);
+    return { sent: 0, failed: emailRecipients.length, skipped: 0 };
+  }
+  if (!config?.providerConfigured) {
+    console.warn("WhatsApp disconnect emails skipped because the email provider is not configured");
+    return { sent: 0, failed: 0, skipped: emailRecipients.length };
+  }
+
+  const email = whatsappDisconnectEmail({ reason, phoneNumber });
+  const results = await Promise.allSettled(emailRecipients.map((recipient) => sendEmail({
+    provider: config.provider,
+    to: recipient.email,
+    fromEmail: config.fromEmail,
+    senderName: config.senderName,
+    smtpConfig: config.smtp,
+    apiKey: config.apiKey,
+    subject: email.subject,
+    text: email.text,
+    html: email.html
+  })));
+  return {
+    sent: results.filter((result) => result.status === "fulfilled").length,
+    failed: results.filter((result) => result.status === "rejected").length,
+    skipped: 0
+  };
+}
+
+export async function recordWhatsAppConnectionNotification({
+  status = "disconnected",
+  reason = "connection_closed",
+  phoneNumber = null,
+  db = query,
+  sendEmail = sendPasswordRecoveryEmail,
+  getEmailConfig = getPasswordRecoveryConfig
+} = {}) {
   const recipients = await db(
-    "SELECT id, role, permissions FROM teachers WHERE is_active = TRUE AND deleted_at IS NULL"
+    "SELECT id, role, permissions, email FROM teachers WHERE is_active = TRUE AND deleted_at IS NULL"
   );
   const dedupeKey = `whatsapp_connection:${crypto.randomUUID()}`;
   const payload = { status, reason, phoneNumber: phoneNumber || null };
@@ -137,7 +256,8 @@ export async function recordWhatsAppConnectionNotification({ status = "disconnec
     );
     recorded += 1;
   }
-  return { recorded, status, reason };
+  const emails = await sendWhatsAppDisconnectEmails(recipients.rows || [], { reason, phoneNumber, db, sendEmail, getEmailConfig });
+  return { recorded, status, reason, ...emails };
 }
 
 export async function listNotificationsForUser(teacher, { limit = 10, db = query } = {}) {

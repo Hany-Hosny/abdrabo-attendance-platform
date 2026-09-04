@@ -100,6 +100,7 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "language" | "t">) {
   const [messages, setMessages] = useState<WhatsAppHistoryRow[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [type, setType] = useState("");
   const [status, setStatus] = useState("");
@@ -125,7 +126,9 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
         const payload = await response.json().catch(() => ({}));
         if (response.status === 403 || payload.permission === "whatsapp.view") throw new Error("history_permission_denied");
         if (!response.ok || !payload.ok) throw new Error("history_failed");
-        setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+        const nextMessages = Array.isArray(payload.messages) ? payload.messages : [];
+        setMessages(nextMessages);
+        setTotalCount(Number.isSafeInteger(Number(payload.total)) ? Number(payload.total) : nextMessages.length);
         setError(false);
         setPermissionDenied(false);
       })
@@ -139,7 +142,7 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
   const formatDate = (value: string) => new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Cairo" }).format(new Date(value));
 
   return <div className="whatsapp-history-panel">
-    <div className="whatsapp-history-toolbar"><button className="secondary-button compact-button whatsapp-history-refresh" type="button" onClick={() => setRefreshKey((current) => current + 1)} disabled={loading}>{loading ? t("whatsapp.historyRefreshing") : t("whatsapp.historyRefresh")}</button></div>
+    <div className="whatsapp-history-toolbar"><span className="whatsapp-history-count">{t("whatsapp.historyCount", { count: String(totalCount) })}</span><button className="secondary-button compact-button whatsapp-history-refresh" type="button" onClick={() => setRefreshKey((current) => current + 1)} disabled={loading}>{loading ? t("whatsapp.historyRefreshing") : t("whatsapp.historyRefresh")}</button></div>
     <div className="whatsapp-history-filters">
       <label><span>{t("whatsapp.historyTypeLabel")}</span><select value={type} onChange={(event) => setType(event.target.value)}><option value="">{t("whatsapp.historyAllTypes")}</option><option value="attendance">{typeLabel("attendance")}</option><option value="grade">{typeLabel("grade")}</option><option value="receipt">{typeLabel("receipt")}</option><option value="advance_payment">{typeLabel("advance_payment")}</option></select></label>
       <label><span>{t("whatsapp.historyStatusLabel")}</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">{t("whatsapp.historyAllStatuses")}</option><option value="sent">{statusLabel("sent")}</option><option value="pending">{statusLabel("pending")}</option><option value="processing">{statusLabel("processing")}</option><option value="failed">{statusLabel("failed")}</option><option value="skipped">{statusLabel("skipped")}</option></select></label>
@@ -217,22 +220,24 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
   }, [token]);
 
   useEffect(() => {
-    if (status.status === "connected") return undefined;
-    const interval = window.setInterval(() => { void loadStatus().catch(() => undefined); }, 2000);
+    const interval = window.setInterval(() => { void loadStatus().catch(() => undefined); }, status.status === "connected" ? 5000 : 2000);
     return () => window.clearInterval(interval);
   }, [status.status, token]);
 
   async function startPairing() {
     if (!canControlConnection || pairing || status.status === "connected") return;
     setPairing(true); setError("");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(`${API_BASE_URL}/whatsapp/qr`, { headers: { Authorization: `Bearer ${token}` } });
+      const response = await fetch(`${API_BASE_URL}/whatsapp/qr`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error("pairing_failed");
       setStatus({ status: payload.status, phone_number: payload.phone_number || null, has_qr: payload.has_qr });
       setQr(payload.qr || "");
+      if (!payload.qr && payload.status !== "connected") throw new Error("qr_unavailable");
     } catch (_error) { setError(t("whatsapp.connectionFailed")); }
-    finally { setPairing(false); }
+    finally { window.clearTimeout(timeout); setPairing(false); }
   }
 
   async function disconnect() {

@@ -96,6 +96,14 @@ whatsappRouter.get("/history", requirePermission("whatsapp.view"), async (req, r
     }
     const requestedLimit = Number(req.query.limit);
     const limit = Number.isSafeInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 25;
+    const whereClause = filters.length ? filters.join(" AND ") : "TRUE";
+    const countResult = await query(
+      `SELECT COUNT(*)::int AS count
+       FROM whatsapp_notification_jobs j
+       LEFT JOIN students s ON s.id = j.student_id
+       WHERE ${whereClause}`,
+      values
+    );
     values.push(limit);
     const result = await query(
       `SELECT j.id, j.notification_type, j.phone_number, j.status, j.attempts, j.ref_code,
@@ -103,13 +111,14 @@ whatsappRouter.get("/history", requirePermission("whatsapp.view"), async (req, r
           j.created_at, j.sent_at, s.full_name AS student_name, s.student_code
        FROM whatsapp_notification_jobs j
        LEFT JOIN students s ON s.id = j.student_id
-       WHERE ${filters.length ? filters.join(" AND ") : "TRUE"}
+       WHERE ${whereClause}
        ORDER BY j.created_at DESC, j.id DESC
        LIMIT $${values.length}`,
       values
     );
     res.json({
       ok: true,
+      total: Number(countResult.rows[0]?.count || 0),
       messages: result.rows.map((row) => ({
         ...row,
         phone_number: maskPhoneNumber(row.phone_number),

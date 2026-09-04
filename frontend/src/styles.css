@@ -1645,7 +1645,8 @@ input:disabled {
 .whatsapp-panel-tabs button:hover { color: var(--text); background: rgba(105, 173, 255, 0.06); }
 .whatsapp-panel-tabs button.active { border-color: rgba(77, 208, 225, 0.28); color: #8de8eb; background: rgba(77, 208, 225, 0.1); }
 .whatsapp-history-panel { display: grid; gap: 14px; }
-.whatsapp-history-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+.whatsapp-history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.whatsapp-history-count { color: var(--muted); font-size: 11px; font-weight: 700; }
 .whatsapp-history-refresh { width: auto; min-width: 132px; flex: 0 0 auto; }
 .whatsapp-history-load-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(244, 63, 94, 0.2); border-radius: 8px; background: rgba(244, 63, 94, 0.06); }
 .whatsapp-history-load-error .form-error { margin: 0; }
