@@ -3104,6 +3104,7 @@ function App() {
   const [teacherSession, setTeacherSession] = useState<TeacherSession | null>(() =>
     loadStoredTeacherSession()
   );
+  const [portalAccessLoading, setPortalAccessLoading] = useState(() => new URLSearchParams(window.location.search).has("access_token"));
   const t = useMemo(() => createTranslator(language), [language]);
 
   useEffect(() => {
@@ -3128,6 +3129,36 @@ function App() {
   }, [teacherSession?.token]);
 
   useEffect(() => {
+    const accessToken = new URLSearchParams(window.location.search).get("access_token");
+    if (!accessToken) return undefined;
+    let cancelled = false;
+    setPortalAccessLoading(true);
+    fetch(`${API_BASE_URL}/student/portal-access`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ access_token: accessToken })
+    })
+      .then(async (response) => {
+        const data = (await response.json()) as LoginResponse;
+        if (!response.ok || !data.ok || !data.student?.student_code || !data.student_token) {
+          throw new Error(data.message || "portal_access_failed");
+        }
+        if (cancelled) return;
+        saveStudentSession(data);
+        setLoginData(data);
+        window.history.replaceState({}, "", "/student/dashboard");
+        setPath("/student/dashboard");
+      })
+      .catch(() => {
+        if (!cancelled) setError(t("errors.loginFailed"));
+      })
+      .finally(() => {
+        if (!cancelled) setPortalAccessLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [t]);
+
+  useEffect(() => {
     const updatePath = () => setPath(window.location.pathname);
     window.addEventListener("popstate", updatePath);
     return () => window.removeEventListener("popstate", updatePath);
@@ -3136,6 +3167,10 @@ function App() {
   function navigate(nextPath: string) {
     window.history.pushState({}, "", nextPath);
     setPath(window.location.pathname);
+  }
+
+  if (portalAccessLoading) {
+    return <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth"><main className="teacher-auth"><section className="login-card teacher-login-card student-login-card"><p>{t("student.enteringButton")}</p></section></main></Shell>;
   }
 
   function setLanguage(nextLanguage: Language) {

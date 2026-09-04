@@ -8,7 +8,7 @@ import { normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.
 import { normalizeScanValue } from "../utils/scan.js";
 import { auditLog } from "../services/audit.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
-import { createStudentToken } from "../services/auth.js";
+import { createStudentToken, verifyStudentPortalAccessToken } from "../services/auth.js";
 import { authenticatedStudent } from "../services/studentAuth.js";
 import { ipKeyGenerator } from "express-rate-limit";
 
@@ -16,10 +16,43 @@ export const studentRouter = express.Router();
 const studentCodePattern = /^A-\d{4}$/;
 const studentLoginRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, key: (req) => `student-login:${ipKeyGenerator(req.ip || "unknown")}` });
 const studentLookupRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 10, key: (req) => `student-lookup:${ipKeyGenerator(req.ip || "unknown")}` });
+const studentPortalAccessRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 30, key: (req) => `student-portal-access:${ipKeyGenerator(req.ip || "unknown")}` });
 
 function hashValue(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
 }
+
+studentRouter.post("/portal-access", studentPortalAccessRateLimit, async (req, res, next) => {
+  try {
+    const token = String(req.body?.access_token || "").trim();
+    const tokenPayload = verifyStudentPortalAccessToken(token);
+    if (!tokenPayload) return res.status(401).json({ ok: false, status: "invalid_portal_access" });
+
+    const result = await query(
+      `SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
+        g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
+       FROM students s
+       JOIN groups g ON g.id = s.group_id
+       WHERE s.id = $1 AND s.is_active = TRUE AND s.deleted_at IS NULL
+         AND g.is_active = TRUE AND g.deleted_at IS NULL
+       LIMIT 1`,
+      [tokenPayload.sub]
+    );
+    if (!result.rowCount) return res.status(404).json({ ok: false, status: "student_not_found" });
+
+    const student = result.rows[0];
+    return res.json({
+      ok: true,
+      status: "portal_access_granted",
+      message: "Student portal access granted.",
+      student_token: createStudentToken(student),
+      student,
+      dashboard: await getDashboardData(student.id)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 studentRouter.post("/login", studentLoginRateLimit, async (req, res, next) => {
   try {

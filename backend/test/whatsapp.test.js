@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyTemplate, normalizeEgyptianPhone, validateWhatsAppSettings } from "../src/services/whatsapp.js";
+import { applyTemplate, buildStudentPortalLink, normalizeEgyptianPhone, validateWhatsAppSettings } from "../src/services/whatsapp.js";
 import { hasPermission } from "../src/services/rbac.js";
+import { createStudentPortalAccessToken, createStudentToken, verifyStudentPortalAccessToken } from "../src/services/auth.js";
 
 test("normalizes common Egyptian guardian phone formats", () => {
   assert.equal(normalizeEgyptianPhone("01012345678"), "+201012345678");
@@ -17,6 +18,28 @@ test("replaces attendance, portal, grade, receipt, and advance placeholders", ()
     date: "04/09/2026", time: "01:29 AM", group_name: "Group A", ref_code: "ATT-1",
     exam_title: "Math", score: 9, max_score: 10, percentage: "90", amount_paid: "500.00", month: "2026-09", months: "2026-10, 2026-11", receipt_number: "P-00000001"
   }), "Ahmed|A-4260|https://example.com/student/A-4260|04/09/2026|01:29 AM|Group A|ATT-1|Math|9|10|90|500.00|2026-09|2026-10, 2026-11|P-00000001");
+});
+
+test("renders both placeholder formats and normalizes camelCase keys", () => {
+  assert.equal(applyTemplate("{{studentName}} / {student_code} / {{ portal_link }} / {portal-link}", {
+    student_name: "Ahmed",
+    student_code: "A-4260",
+    portal_link: "https://example.com/student/A-4260",
+    "portal-link": "https://example.com/student/A-4260"
+  }), "Ahmed / A-4260 / https://example.com/student/A-4260 / https://example.com/student/A-4260");
+});
+
+test("creates a one-hour passwordless portal link scoped to a student", () => {
+  const link = buildStudentPortalLink(101, "A-0101");
+  const parsed = new URL(link);
+  const token = parsed.searchParams.get("access_token");
+  assert.equal(parsed.pathname, "/student/A-0101");
+  assert.ok(token);
+  const payload = verifyStudentPortalAccessToken(token);
+  assert.equal(payload?.sub, 101);
+  assert.equal(payload?.purpose, "whatsapp_portal");
+  assert.equal(verifyStudentPortalAccessToken(createStudentToken({ id: 101 })), null);
+  assert.equal(verifyStudentPortalAccessToken(createStudentPortalAccessToken({ id: 0 })), null);
 });
 
 test("preserves editable bilingual templates and supports flexible placeholder spelling", () => {

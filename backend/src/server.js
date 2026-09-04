@@ -21,6 +21,7 @@ import { finalizeExpiredAttendanceSessions } from "./services/attendanceFinalize
 import { purgeDeletedStudents } from "./services/studentCleanup.js";
 import { installAuditFallback } from "./services/audit.js";
 import { startWhatsAppService } from "./services/whatsapp.js";
+import { metricsMiddleware, metricsRegistry } from "./services/metrics.js";
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -32,6 +33,7 @@ app.use(helmet({
   noSniff: true
 }));
 app.disable("x-powered-by");
+app.use(metricsMiddleware);
 
 if (process.env.TRUST_PROXY) {
   app.set("trust proxy", Number(process.env.TRUST_PROXY));
@@ -63,6 +65,18 @@ app.get("/api/health", async (_req, res, next) => {
   try {
     await pool.query("SELECT 1");
     res.json({ ok: true, service: "abdrabo-attendance-api" });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/metrics", async (req, res, next) => {
+  if (process.env.METRICS_TOKEN !== undefined && req.headers["x-metrics-token"] !== process.env.METRICS_TOKEN) {
+    return res.status(401).json({ ok: false, message: "Unauthorized" });
+  }
+  try {
+    res.set("Content-Type", metricsRegistry.contentType);
+    res.end(await metricsRegistry.metrics());
   } catch (error) {
     next(error);
   }

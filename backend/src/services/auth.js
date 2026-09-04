@@ -48,6 +48,18 @@ export function createStudentToken(student) {
   return `${unsignedToken}.${signToken(unsignedToken)}`;
 }
 
+export function createStudentPortalAccessToken(student) {
+  const header = base64UrlEncode({ alg: "HS256", typ: "JWT" });
+  const payload = base64UrlEncode({
+    sub: Number(student.id),
+    type: "student_portal",
+    purpose: "whatsapp_portal",
+    exp: Math.floor(Date.now() / 1000) + 60 * 60
+  });
+  const unsignedToken = `${header}.${payload}`;
+  return `${unsignedToken}.${signToken(unsignedToken)}`;
+}
+
 export function verifyStudentToken(token) {
   try {
     const parts = String(token || "").split(".");
@@ -62,6 +74,32 @@ export function verifyStudentToken(token) {
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
     const subject = Number(payload.sub);
     return payload.type === "student" && Number.isSafeInteger(subject) && subject > 0 && Number(payload.exp) > Math.floor(Date.now() / 1000) ? payload : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+export function verifyStudentPortalAccessToken(token) {
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3) return null;
+    const [header, payload, signature] = parts;
+    const headerData = JSON.parse(Buffer.from(header, "base64url").toString("utf8"));
+    if (headerData.alg !== "HS256" || headerData.typ !== "JWT") return null;
+    const unsignedToken = `${header}.${payload}`;
+    const expected = signToken(unsignedToken);
+    const expectedBuffer = Buffer.from(expected);
+    const signatureBuffer = Buffer.from(signature);
+    if (expectedBuffer.length !== signatureBuffer.length || !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)) return null;
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const subject = Number(data.sub);
+    return data.type === "student_portal"
+      && data.purpose === "whatsapp_portal"
+      && Number.isSafeInteger(subject)
+      && subject > 0
+      && Number(data.exp) > Math.floor(Date.now() / 1000)
+      ? data
+      : null;
   } catch (_error) {
     return null;
   }

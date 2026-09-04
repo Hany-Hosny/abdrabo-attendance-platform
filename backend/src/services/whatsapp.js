@@ -3,6 +3,7 @@ import path from "node:path";
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import { pool, query } from "../db/pool.js";
+import { createStudentPortalAccessToken } from "./auth.js";
 
 const DEFAULT_TEMPLATES = Object.freeze([
   "مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}",
@@ -242,11 +243,13 @@ export async function disconnectWhatsApp() {
 }
 
 function cairoParts(value) {
-  const date = new Date(value || Date.now());
+  const rawValue = String(value || "").trim();
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(rawValue);
+  const date = new Date(dateOnly ? `${rawValue}T12:00:00Z` : rawValue || Date.now());
   const locale = "en-GB";
   return {
     date: new Intl.DateTimeFormat(locale, { dateStyle: "short", timeZone: "Africa/Cairo" }).format(date),
-    time: new Intl.DateTimeFormat(locale, { timeStyle: "short", timeZone: "Africa/Cairo" }).format(date)
+    time: dateOnly ? "—" : new Intl.DateTimeFormat(locale, { timeStyle: "short", timeZone: "Africa/Cairo" }).format(date)
   };
 }
 
@@ -273,14 +276,11 @@ export function applyTemplate(template, values) {
   const normalizedValues = Object.fromEntries(
     Object.entries(values || {}).map(([key, value]) => [normalizeTemplateKey(key), value])
   );
-  return String(template ?? "").replace(
-    /\{\{\s*([a-z][a-z\d_]*)\s*\}\}|\{\s*([a-z][a-z\d_]*)\s*\}/gi,
-    (_match, doubleKey, singleKey) => {
-      const key = normalizeTemplateKey(doubleKey || singleKey);
-      const value = normalizedValues[key];
-      return value == null ? "" : String(value);
-    }
-  );
+  return String(template ?? "").replace(TEMPLATE_TOKEN_PATTERN, (_match, capturedKey) => {
+    const key = normalizeTemplateKey(capturedKey);
+    const value = normalizedValues[key];
+    return value == null ? "" : String(value);
+  });
 }
 
 function randomInteger(min, max) {
@@ -377,6 +377,14 @@ function notificationTemplates(settings, type) {
 
 function compileWhatsAppMessage(_type, template, values) {
   return applyTemplate(template, values);
+}
+
+export function buildStudentPortalLink(studentId, studentCode) {
+  const numericStudentId = Number(studentId);
+  if (!Number.isSafeInteger(numericStudentId) || numericStudentId <= 0) return "";
+  const accessToken = createStudentPortalAccessToken({ id: numericStudentId });
+  const pathSegment = String(studentCode || numericStudentId).trim();
+  return `${publicAppUrl}/student/${encodeURIComponent(pathSegment)}?access_token=${encodeURIComponent(accessToken)}`;
 }
 
 function notificationRefCode(prefix, dateValue, id, unique = false) {
@@ -540,23 +548,27 @@ async function processWhatsAppJob() {
     const elapsed = Date.now() - state.lastSentAt;
     const delay = randomInteger(settings.min_delay_seconds, settings.max_delay_seconds) * 1000;
     if (state.lastSentAt && elapsed < delay) await sleep(delay - elapsed);
-    const parts = cairoParts(job.payload?.event_time || job.payload?.checkin_time);
+    const payload = job.payload && typeof job.payload === "object" ? job.payload : {};
+    const parts = cairoParts(payload.event_time || payload.checkin_time);
     const templates = notificationTemplates(settings, type).filter(Boolean);
     if (!templates.length) {
       await updateJob(job.id, "failed", { error: "no_whatsapp_templates" });
       return;
     }
     const template = chooseTemplate(type, templates);
-    const studentCode = String(job.payload?.student_code || "").trim();
-    const portalStudentId = studentCode || String(job.payload?.student_id || job.student_id || "").trim();
+    const studentCode = String(payload.student_code || "").trim();
+    const portalLink = buildStudentPortalLink(job.student_id, studentCode);
     const templateValues = {
-      ...job.payload,
+      ...payload,
       ...parts,
       ref_code: job.ref_code,
       student_code: studentCode,
-      portal_link: `${publicAppUrl}/student/${encodeURIComponent(portalStudentId)}`
+      portal_link: portalLink
     };
-    const body = compileWhatsAppMessage(type, template, templateValues);
+    const renderedBody = compileWhatsAppMessage(type, template, templateValues).trim();
+    const body = portalLink && !templateHasPlaceholder(template, "portal_link")
+      ? `${renderedBody}\n${portalLink}`
+      : renderedBody;
     const phone = normalizeEgyptianPhone(job.phone_number);
     if (!phone) { await updateJob(job.id, "skipped", { error: "invalid_phone" }); return; }
     const messagePayload = { text: body };
