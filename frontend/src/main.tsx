@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { BrowserMultiFormatReader } from "@zxing/browser";
@@ -14,12 +14,66 @@ import { PasswordRecoveryDialog } from "./PasswordRecoveryDialog";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const LANGUAGE_STORAGE_KEY = "abdrabo_language";
+const THEME_STORAGE_KEY = "abdrabo_theme";
 const STUDENT_SESSION_STORAGE_KEY = "student_session";
 const ADMIN_SESSION_STORAGE_KEY = "admin_session";
 const TEACHER_SESSION_STORAGE_KEY = "teacher_session";
 const ASSISTANT_SESSION_STORAGE_KEY = "assistant_session";
 
 type Language = "ar" | "en";
+type Theme = "dark" | "light";
+
+type ThemeContextValue = {
+  theme: Theme;
+  toggleTheme: () => void;
+};
+
+const ThemeContext = createContext<ThemeContextValue | null>(null);
+
+function getInitialTheme(): Theme {
+  const storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+  if (storedTheme === "light" || storedTheme === "dark") return storedTheme;
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(getInitialTheme);
+  const [hasUserPreference, setHasUserPreference] = useState(() => Boolean(localStorage.getItem(THEME_STORAGE_KEY)));
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+  }, [theme]);
+
+  useEffect(() => {
+    if (hasUserPreference) return undefined;
+    const mediaQuery = window.matchMedia?.("(prefers-color-scheme: light)");
+    if (!mediaQuery) return undefined;
+    const handlePreferenceChange = (event: MediaQueryListEvent) => setTheme(event.matches ? "light" : "dark");
+    mediaQuery.addEventListener?.("change", handlePreferenceChange);
+    return () => mediaQuery.removeEventListener?.("change", handlePreferenceChange);
+  }, [hasUserPreference]);
+
+  const value = useMemo<ThemeContextValue>(() => ({
+    theme,
+    toggleTheme: () => {
+      setTheme((current) => {
+        const nextTheme = current === "dark" ? "light" : "dark";
+        localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+        return nextTheme;
+      });
+      setHasUserPreference(true);
+    }
+  }), [theme]);
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
+
+function useTheme() {
+  const context = useContext(ThemeContext);
+  if (!context) throw new Error("useTheme must be used inside ThemeProvider");
+  return context;
+}
 
 type DashboardData = {
   attendance: Array<Record<string, any>>;
@@ -200,6 +254,8 @@ const translations = {
     "nav.aboutCenter": "عن السنتر",
     "nav.contact": "التواصل",
     "nav.tips": "نصائح",
+    "theme.switchToLight": "التبديل إلى الوضع الفاتح",
+    "theme.switchToDark": "التبديل إلى الوضع الداكن",
     "public.statExperience": "سنوات الخبرة",
     "public.teachingStyle": "طريقة الشرح",
     "public.results": "نتائج ومؤشرات",
@@ -628,6 +684,61 @@ const translations = {
     "fees.reversalFailed": "تعذر عكس الدفعة.",
     "fees.showDeleted": "إظهار الطلاب المحذوفين",
     "audit.title": "سجل النشاط الكامل",
+    "audit.activityCenter": "مركز النشاط",
+    "audit.activityCenterDescription": "تابع كل ما يحدث داخل النظام بوضوح، وابحث في السجلات وصدّر النتائج عند الحاجة.",
+    "audit.totalActivities": "إجمالي الأنشطة",
+    "audit.successfulActivities": "عمليات ناجحة",
+    "audit.failedActivities": "عمليات فاشلة",
+    "audit.activeUsers": "مستخدمون نشطون",
+    "audit.filters": "تصفية السجل",
+    "audit.systemUser": "مستخدم النظام",
+    "audit.allUsers": "كل المستخدمين",
+    "audit.role": "الدور",
+    "audit.allRoles": "كل الأدوار",
+    "audit.targetType": "القسم المتأثر",
+    "audit.allTargetTypes": "كل الأقسام",
+    "audit.outcome": "النتيجة",
+    "audit.allOutcomes": "كل النتائج",
+    "audit.success": "نجاح",
+    "audit.failure": "فشل",
+    "audit.studentSearch": "بحث عن طالب",
+    "audit.studentSearchPlaceholder": "الاسم أو الكود أو السريال أو الهاتف",
+    "audit.group": "المجموعة",
+    "audit.allGroups": "كل المجموعات",
+    "audit.applyFilters": "تطبيق التصفية",
+    "audit.clearFilters": "مسح التصفية",
+    "audit.activeFilters": "التصفية الحالية",
+    "audit.removeFilter": "إزالة التصفية",
+    "audit.viewDetails": "عرض التفاصيل",
+    "audit.closeDetails": "إغلاق التفاصيل",
+    "audit.whatHappened": "ماذا حدث؟",
+    "audit.target": "السجل المتأثر",
+    "audit.result": "نتيجة العملية",
+    "audit.beforeAfter": "التغييرات",
+    "audit.noChanges": "لا توجد تغييرات مسجلة.",
+    "audit.noTarget": "لا يوجد سجل مرتبط",
+    "audit.copyId": "نسخ رقم النشاط",
+    "audit.copied": "تم النسخ",
+    "audit.copyFailed": "تعذر نسخ رقم النشاط.",
+    "audit.exportCsv": "CSV",
+    "audit.exportXlsx": "Excel",
+    "audit.exportCurrent": "تصدير الصفحة الحالية",
+    "audit.exportAll": "تصدير كل النتائج",
+    "audit.exporting": "جاري التصدير...",
+    "audit.exported": "تم التصدير",
+    "audit.exportFailed": "تعذر تصدير السجل.",
+    "audit.role.owner": "المالك",
+    "audit.role.admin": "مدير",
+    "audit.role.staff": "موظف",
+    "audit.role.system": "النظام",
+    "audit.target.students": "الطلاب",
+    "audit.target.groups": "المجموعات",
+    "audit.target.attendance": "الحضور",
+    "audit.target.fees": "المصروفات",
+    "audit.target.exams": "الامتحانات",
+    "audit.target.whatsapp": "واتساب والرسائل",
+    "audit.target.settings": "الإعدادات",
+    "audit.target.login": "الدخول والخروج",
     "audit.pin": "الرقم السري المكون من 4 أرقام",
     "audit.adminPassword": "كلمة مرور المدير",
     "audit.unlock": "فتح سجل النشاط",
@@ -738,6 +849,7 @@ const translations = {
     "audit.action.systemAction": "إجراء إداري بالنظام",
     "audit.action.systemSettingsChanged": "تم تعديل إعدادات النظام",
     "audit.action.whatsappSettingsChanged": "تم تعديل إعدادات واتساب",
+    "audit.action.logsExported": "تم تصدير سجل النشاط",
     "audit.detail.summary": "وصف العملية",
     "audit.detail.before": "قبل التغيير",
     "audit.detail.after": "بعد التغيير",
@@ -904,6 +1016,19 @@ const translations = {
     "dashboard.notificationDescriptionEvaluation": "{{name}} لديه متوسط تقييم منخفض",
     "dashboard.notificationDescriptionPayment": "{{name}} لديه مصروفات متأخرة",
     "dashboard.notificationsLoadFailed": "تعذر تحميل الإشعارات",
+    "studentNotifications.title": "إشعارات الطالب",
+    "studentNotifications.markAllRead": "تحديد الكل كمقروء",
+    "studentNotifications.allCaughtUp": "أحسنت! لا توجد إشعارات جديدة.",
+    "studentNotifications.academicTitle": "تحديث أكاديمي",
+    "studentNotifications.academicDescription": "لديك ملاحظة أكاديمية جديدة من المعلم.",
+    "studentNotifications.alertTitle": "تذكير مهم",
+    "studentNotifications.alertDescription": "لديك حصة {{subject}} اليوم.",
+    "studentNotifications.administrativeTitle": "رسالة إدارية",
+    "studentNotifications.administrativeDescription": "لديك رسالة جديدة من إدارة المنصة.",
+    "studentNotifications.loading": "جاري تحميل الإشعارات...",
+    "studentNotifications.loadFailed": "تعذر تحميل الإشعارات",
+    "studentNotifications.openNotes": "فتح الملاحظات",
+    "studentNotifications.openInbox": "فتح الرسائل",
     "dashboard.loading": "جاري تحميل بيانات اللوحة...",
     "dashboard.retry": "إعادة المحاولة",
     "dashboard.accessDenied": "ليس لديك صلاحية لعرض لوحة التحكم.",
@@ -1015,6 +1140,7 @@ const translations = {
     "admin.permissionGroup.notes": "الملاحظات",
     "admin.permissionGroup.users": "المستخدمون",
     "admin.permissionGroup.activity": "سجل النشاط",
+    "admin.permission.export": "التصدير",
     "admin.permissionGroup.settings": "الإعدادات",
     "admin.permissionGroup.whatsapp": "واتساب",
     "admin.permissionGroup.dashboard": "لوحة التحكم التنفيذية",
@@ -1364,6 +1490,8 @@ const translations = {
     "nav.aboutCenter": "About Center",
     "nav.contact": "Contact",
     "nav.tips": "Tips",
+    "theme.switchToLight": "Switch to light mode",
+    "theme.switchToDark": "Switch to dark mode",
     "public.statExperience": "Experience",
     "public.teachingStyle": "Teaching Style",
     "public.results": "Results & Stats",
@@ -1792,6 +1920,61 @@ const translations = {
     "fees.reversalFailed": "Could not reverse the payment.",
     "fees.showDeleted": "Show deleted students",
     "audit.title": "Complete Audit Logs",
+    "audit.activityCenter": "Activity Center",
+    "audit.activityCenterDescription": "See everything happening in the system, filter activity clearly, and export results when needed.",
+    "audit.totalActivities": "Total activities",
+    "audit.successfulActivities": "Successful actions",
+    "audit.failedActivities": "Failed actions",
+    "audit.activeUsers": "Active users",
+    "audit.filters": "Filter activity",
+    "audit.systemUser": "System user",
+    "audit.allUsers": "All users",
+    "audit.role": "Role",
+    "audit.allRoles": "All roles",
+    "audit.targetType": "Target area",
+    "audit.allTargetTypes": "All target areas",
+    "audit.outcome": "Result",
+    "audit.allOutcomes": "All results",
+    "audit.success": "Success",
+    "audit.failure": "Failed",
+    "audit.studentSearch": "Find a student",
+    "audit.studentSearchPlaceholder": "Name, code, serial, or phone",
+    "audit.group": "Group",
+    "audit.allGroups": "All groups",
+    "audit.applyFilters": "Apply filters",
+    "audit.clearFilters": "Clear filters",
+    "audit.activeFilters": "Active filters",
+    "audit.removeFilter": "Remove filter",
+    "audit.viewDetails": "View details",
+    "audit.closeDetails": "Close details",
+    "audit.whatHappened": "What happened?",
+    "audit.target": "Affected record",
+    "audit.result": "Operation result",
+    "audit.beforeAfter": "Changes",
+    "audit.noChanges": "No recorded changes.",
+    "audit.noTarget": "No linked record",
+    "audit.copyId": "Copy activity ID",
+    "audit.copied": "Copied",
+    "audit.copyFailed": "Could not copy the activity ID.",
+    "audit.exportCsv": "CSV",
+    "audit.exportXlsx": "Excel",
+    "audit.exportCurrent": "Export current page",
+    "audit.exportAll": "Export all results",
+    "audit.exporting": "Exporting...",
+    "audit.exported": "Exported",
+    "audit.exportFailed": "Could not export the activity log.",
+    "audit.role.owner": "Owner",
+    "audit.role.admin": "Admin",
+    "audit.role.staff": "Staff",
+    "audit.role.system": "System",
+    "audit.target.students": "Students",
+    "audit.target.groups": "Groups",
+    "audit.target.attendance": "Attendance",
+    "audit.target.fees": "Fees",
+    "audit.target.exams": "Exams",
+    "audit.target.whatsapp": "WhatsApp and messages",
+    "audit.target.settings": "Settings",
+    "audit.target.login": "Login and logout",
     "audit.pin": "4-digit audit PIN",
     "audit.adminPassword": "Admin password",
     "audit.unlock": "Unlock audit logs",
@@ -1902,6 +2085,7 @@ const translations = {
     "audit.action.systemAction": "Administrative system action",
     "audit.action.systemSettingsChanged": "System settings changed",
     "audit.action.whatsappSettingsChanged": "WhatsApp settings changed",
+    "audit.action.logsExported": "Audit log exported",
     "audit.detail.summary": "Operation summary",
     "audit.detail.before": "Before change",
     "audit.detail.after": "After change",
@@ -2068,6 +2252,19 @@ const translations = {
     "dashboard.notificationDescriptionEvaluation": "{{name}} has a low evaluation average",
     "dashboard.notificationDescriptionPayment": "{{name}} has overdue payments",
     "dashboard.notificationsLoadFailed": "Unable to load notifications",
+    "studentNotifications.title": "Student notifications",
+    "studentNotifications.markAllRead": "Mark all as read",
+    "studentNotifications.allCaughtUp": "You are all caught up!",
+    "studentNotifications.academicTitle": "Academic update",
+    "studentNotifications.academicDescription": "You have a new academic note from your teacher.",
+    "studentNotifications.alertTitle": "Important reminder",
+    "studentNotifications.alertDescription": "You have a {{subject}} class today.",
+    "studentNotifications.administrativeTitle": "Administrative message",
+    "studentNotifications.administrativeDescription": "You have a new message from the platform team.",
+    "studentNotifications.loading": "Loading notifications...",
+    "studentNotifications.loadFailed": "Unable to load notifications",
+    "studentNotifications.openNotes": "Open notes",
+    "studentNotifications.openInbox": "Open messages",
     "dashboard.loading": "Loading dashboard data...",
     "dashboard.retry": "Retry",
     "dashboard.accessDenied": "You do not have permission to view the dashboard.",
@@ -2179,6 +2376,7 @@ const translations = {
     "admin.permissionGroup.notes": "Notes",
     "admin.permissionGroup.users": "Users",
     "admin.permissionGroup.activity": "Activity log",
+    "admin.permission.export": "Export",
     "admin.permissionGroup.settings": "Settings",
     "admin.permissionGroup.whatsapp": "WhatsApp",
     "admin.permissionGroup.dashboard": "Executive dashboard",
@@ -2532,14 +2730,14 @@ type PermissionKey =
   | "messages.view" | "messages.manage"
   | "notes.view" | "notes.manage"
   | "users.view" | "users.create" | "users.edit" | "users.disable" | "users.delete"
-  | "activity_log.view" | "whatsapp.view" | "whatsapp.manage" | "whatsapp.send_attendance" | "whatsapp.send_grades" | "whatsapp.send_receipts" | "settings.manage"
+  | "activity_log.view" | "activity_log.export" | "whatsapp.view" | "whatsapp.manage" | "whatsapp.send_attendance" | "whatsapp.send_grades" | "whatsapp.send_receipts" | "settings.manage"
   | "dashboard.view" | "dashboard.financial.view" | "dashboard.group_performance.view" | "dashboard.alerts.view" | "dashboard.activity.view";
 
 const allRbacPermissions: PermissionKey[] = [
   "students.view", "students.manage", "students.delete", "attendance.view", "attendance.manage", "exams.view", "exams.manage",
   "homework.view", "homework.manage", "schedule.view", "schedule.manage", "payments.view", "payments.collect", "payments.advance", "payments.reports.view", "payments.reverse",
   "messages.view", "messages.manage", "notes.view", "notes.manage", "users.view", "users.create", "users.edit", "users.disable",
-  "users.delete", "activity_log.view", "whatsapp.view", "whatsapp.manage", "whatsapp.send_attendance", "whatsapp.send_grades", "whatsapp.send_receipts", "settings.manage", "dashboard.view", "dashboard.financial.view",
+  "users.delete", "activity_log.view", "activity_log.export", "whatsapp.view", "whatsapp.manage", "whatsapp.send_attendance", "whatsapp.send_grades", "whatsapp.send_receipts", "settings.manage", "dashboard.view", "dashboard.financial.view",
   "dashboard.group_performance.view", "dashboard.alerts.view", "dashboard.activity.view"
 ];
 
@@ -2559,7 +2757,7 @@ const permissionGroups: Array<{ label: TranslationKey; permissions: Array<{ key:
   { label: "admin.permissionGroup.messages", permissions: [{ key: "messages.view", label: "admin.permission.view" }, { key: "messages.manage", label: "admin.permission.manage" }] },
   { label: "admin.permissionGroup.notes", permissions: [{ key: "notes.view", label: "admin.permission.view" }, { key: "notes.manage", label: "admin.permission.manage" }] },
   { label: "admin.permissionGroup.users", permissions: [{ key: "users.view", label: "admin.permission.view" }, { key: "users.create", label: "admin.permission.create" }, { key: "users.edit", label: "admin.permission.edit" }, { key: "users.disable", label: "admin.permission.disable" }, { key: "users.delete", label: "admin.permission.delete" }] },
-  { label: "admin.permissionGroup.activity", permissions: [{ key: "activity_log.view", label: "admin.permission.view" }] },
+  { label: "admin.permissionGroup.activity", permissions: [{ key: "activity_log.view", label: "admin.permission.view" }, { key: "activity_log.export", label: "admin.permission.export" }] },
   { label: "admin.permissionGroup.settings", permissions: [{ key: "settings.manage", label: "admin.permission.manage" }] },
   { label: "admin.permissionGroup.whatsapp", permissions: [
     { key: "whatsapp.view", label: "admin.permission.view" },
@@ -3163,6 +3361,33 @@ function SettingsIcon() {
 
 function LogoutIcon() {
   return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5H6.8A1.8 1.8 0 0 0 5 6.8v10.4A1.8 1.8 0 0 0 6.8 19H13" /><path d="M12 12h8M17 8l4 4-4 4" /></svg>;
+}
+
+function MoonIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.2A8.5 8.5 0 0 1 8.8 4 8.5 8.5 0 1 0 20 15.2Z" /></svg>;
+}
+
+function SunIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg>;
+}
+
+function ThemeToggle({ t }: { t: Translator }) {
+  const { theme, toggleTheme } = useTheme();
+  const label = t(theme === "dark" ? "theme.switchToLight" : "theme.switchToDark");
+
+  return (
+    <button
+      className="theme-toggle"
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={theme === "light"}
+      onClick={toggleTheme}
+    >
+      <span className={`theme-icon theme-icon-moon ${theme === "dark" ? "is-visible" : ""}`}><MoonIcon /></span>
+      <span className={`theme-icon theme-icon-sun ${theme === "light" ? "is-visible" : ""}`}><SunIcon /></span>
+    </button>
+  );
 }
 
 function DigitalCardIcon() {
@@ -4093,6 +4318,228 @@ function NotificationCenter({ session, language, t, onSelect }: { session: Teach
   </div>;
 }
 
+type StudentNotificationType = "academic" | "alert" | "administrative";
+
+type StudentNotificationItem = {
+  id: string;
+  type: StudentNotificationType;
+  title: string;
+  description: string;
+  createdAt?: string;
+  isRead: boolean;
+};
+
+type StudentNotificationAlert = Omit<StudentNotificationItem, "isRead"> & { isRead?: boolean };
+
+function StudentNotificationIcon({ type }: { type: StudentNotificationType }) {
+  const props = {
+    className: "student-notification-icon-svg",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.8,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true
+  };
+  if (type === "academic") {
+    return <svg {...props}><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v17H6.5A2.5 2.5 0 0 0 4 22z" /><path d="M4 5.5V22M8 7h8M8 11h8M8 15h5" /></svg>;
+  }
+  if (type === "alert") {
+    return <svg {...props}><path d="m12 3 9 17H3z" /><path d="M12 9v5M12 17.5h.01" /></svg>;
+  }
+  return <svg {...props}><path d="M6 3.5h9l3 3V20.5H6z" /><path d="M15 3.5v4h3M9 12h6M9 16h4" /></svg>;
+}
+
+function StudentNotificationBell({
+  studentCode,
+  language,
+  t,
+  refreshKey = 0,
+  alert,
+  onOpenNotes,
+  onOpenInbox
+}: {
+  studentCode: string;
+  language: Language;
+  t: Translator;
+  refreshKey?: number;
+  alert?: StudentNotificationAlert | null;
+  onOpenNotes: () => void;
+  onOpenInbox: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<StudentNotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [markingRead, setMarkingRead] = useState(false);
+  const [error, setError] = useState("");
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      setError("");
+      const headers = studentAuthHeaders(studentCode);
+      const results = await Promise.allSettled([
+        fetch(`${API_BASE_URL}/student/me/notes`, { headers, signal: controller.signal }),
+        fetch(`${API_BASE_URL}/student/inbox`, { headers, signal: controller.signal })
+      ]);
+      if (cancelled) return;
+
+      const nextItems: StudentNotificationItem[] = alert ? [{ ...alert, isRead: alert.isRead ?? true }] : [];
+      let successfulSources = 0;
+
+      const notesResult = results[0];
+      if (notesResult.status === "fulfilled") {
+        const payload = await notesResult.value.json().catch(() => ({}));
+        if (notesResult.value.ok && payload.ok) {
+          successfulSources += 1;
+          for (const note of Array.isArray(payload.notes) ? payload.notes.slice(0, 6) : []) {
+            const description = String(note.text || note.body || "").trim();
+            if (!description) continue;
+            nextItems.push({
+              id: `note:${String(note.id)}`,
+              type: "academic",
+              title: t("studentNotifications.academicTitle"),
+              description,
+              createdAt: note.created_at,
+              isRead: Boolean(note.is_read)
+            });
+          }
+        }
+      }
+
+      const inboxResult = results[1];
+      if (inboxResult.status === "fulfilled") {
+        const payload = await inboxResult.value.json().catch(() => ({}));
+        if (inboxResult.value.ok && payload.ok) {
+          successfulSources += 1;
+          for (const thread of Array.isArray(payload.threads) ? payload.threads.slice(0, 6) : []) {
+            const description = String(thread.last_message || t("studentNotifications.administrativeDescription")).trim();
+            nextItems.push({
+              id: `inbox:${String(thread.id)}`,
+              type: "administrative",
+              title: String(thread.subject || t("studentNotifications.administrativeTitle")),
+              description,
+              createdAt: thread.updated_at || thread.created_at,
+              isRead: Number(thread.unread_count || 0) === 0
+            });
+          }
+        }
+      }
+
+      nextItems.sort((left, right) => {
+        if (left.isRead !== right.isRead) return left.isRead ? 1 : -1;
+        return Date.parse(String(right.createdAt || "")) - Date.parse(String(left.createdAt || ""));
+      });
+      setItems(nextItems.slice(0, 10));
+      if (!successfulSources && !nextItems.length) setError(t("studentNotifications.loadFailed"));
+      setLoading(false);
+    }
+
+    void load().catch((reason) => {
+      if (reason?.name !== "AbortError" && !cancelled) {
+        setItems(alert ? [{ ...alert, isRead: alert.isRead ?? true }] : []);
+        setError(t("studentNotifications.loadFailed"));
+        setLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [alert?.description, alert?.id, alert?.isRead, alert?.title, language, open, refreshKey, studentCode, t]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onOutside = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onOutside);
+    document.addEventListener("keydown", onEscape);
+    return () => {
+      document.removeEventListener("mousedown", onOutside);
+      document.removeEventListener("keydown", onEscape);
+    };
+  }, [open]);
+
+  const unreadCount = items.filter((item) => !item.isRead).length;
+  const badge = unreadCount > 99 ? "99+" : String(unreadCount);
+
+  async function markAllRead() {
+    if (!unreadCount || markingRead) return;
+    setMarkingRead(true);
+    const unread = items.filter((item) => !item.isRead);
+    const operations: Promise<Response>[] = [];
+    if (unread.some((item) => item.id.startsWith("note:"))) {
+      operations.push(fetch(`${API_BASE_URL}/student/me/notes/read`, { method: "PUT", headers: studentAuthHeaders(studentCode) }));
+    }
+    for (const item of unread.filter((entry) => entry.id.startsWith("inbox:"))) {
+      operations.push(fetch(`${API_BASE_URL}/student/inbox/${encodeURIComponent(item.id.slice(6))}/read`, { method: "PUT", headers: studentAuthHeaders(studentCode) }));
+    }
+    const results = await Promise.allSettled(operations);
+    const failed = results.some((result) => result.status === "rejected" || (result.status === "fulfilled" && !result.value.ok));
+    if (failed) setError(t("studentNotifications.loadFailed"));
+    else setItems((current) => current.map((item) => ({ ...item, isRead: true })));
+    setMarkingRead(false);
+  }
+
+  async function selectItem(item: StudentNotificationItem) {
+    if (!item.isRead) {
+      if (item.id.startsWith("note:")) {
+        await fetch(`${API_BASE_URL}/student/me/notes/read`, { method: "PUT", headers: studentAuthHeaders(studentCode) }).catch(() => undefined);
+        setItems((current) => current.map((entry) => entry.id.startsWith("note:") ? { ...entry, isRead: true } : entry));
+      } else if (item.id.startsWith("inbox:")) {
+        await fetch(`${API_BASE_URL}/student/inbox/${encodeURIComponent(item.id.slice(6))}/read`, { method: "PUT", headers: studentAuthHeaders(studentCode) }).catch(() => undefined);
+        setItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, isRead: true } : entry));
+      }
+    }
+    setOpen(false);
+    if (item.type === "academic") onOpenNotes();
+    if (item.type === "administrative") onOpenInbox();
+  }
+
+  return <div className="student-notification-center" ref={containerRef}>
+    <button
+      className={`student-notification-trigger ${open ? "is-open" : ""}`}
+      type="button"
+      aria-label={t("studentNotifications.title")}
+      title={t("studentNotifications.title")}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onClick={() => setOpen((current) => !current)}
+    >
+      <BellIcon />
+      {unreadCount > 0 ? <span className="student-notification-badge" aria-label={badge}>{badge}</span> : null}
+    </button>
+    {open ? <div className="student-notification-popover" role="dialog" aria-label={t("studentNotifications.title")}>
+      <div className="student-notification-heading">
+        <strong>{t("studentNotifications.title")}</strong>
+        <button type="button" onClick={() => void markAllRead()} disabled={!unreadCount || markingRead}>
+          {markingRead ? t("studentNotifications.loading") : t("studentNotifications.markAllRead")}
+        </button>
+      </div>
+      {loading && !items.length ? <p className="student-notification-state">{t("studentNotifications.loading")}</p> : error && !items.length ? <p className="student-notification-state is-error">{error}</p> : items.length ? <div className="student-notification-list">
+        {items.map((item) => <button className={`student-notification-item student-notification-item--${item.type} ${item.isRead ? "is-read" : "is-unread"}`} type="button" key={item.id} onClick={() => void selectItem(item)}>
+          <span className="student-notification-icon"><StudentNotificationIcon type={item.type} /></span>
+          <span className="student-notification-copy">
+            <strong>{item.title}</strong>
+            <small>{item.description}</small>
+            {item.createdAt ? <time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(item.createdAt))}</time> : null}
+          </span>
+          {!item.isRead ? <i className="student-notification-unread-mark" aria-hidden="true" /> : null}
+        </button>)}
+      </div> : <div className="student-notification-empty"><span aria-hidden="true">✓</span><strong>{t("studentNotifications.allCaughtUp")}</strong></div>}
+    </div> : null}
+  </div>;
+}
+
 function TeacherDashboard({
   session,
   language,
@@ -4385,6 +4832,7 @@ function TeacherDashboard({
               {t("teacher.logout")}
             </button>
           </nav>
+          <ThemeToggle t={t} />
           <div
             className="language-switcher"
             aria-label={language === "ar" ? "اختيار اللغة" : "Language selector"}
@@ -7096,7 +7544,8 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     public_inquiry_created: "audit.action.publicInquiryCreated",
     whatsapp_settings_changed: "audit.action.whatsappSettingsChanged",
     system_settings_changed: "audit.action.systemSettingsChanged",
-    system_action: "audit.action.systemAction"
+    system_action: "audit.action.systemAction",
+    audit_logs_exported: "audit.action.logsExported"
   };
   return keys[action] || "audit.action.systemRequest";
 }
@@ -7166,7 +7615,8 @@ const auditActionOptions: Array<{ value: string; label: TranslationKey }> = [
   { value: "system_settings_changed", label: "audit.action.systemSettingsChanged" },
   { value: "public_inquiry_created", label: "audit.action.publicInquiryCreated" },
   { value: "system_action", label: "audit.action.systemAction" },
-  { value: "system_request", label: "audit.action.systemRequest" }
+  { value: "system_request", label: "audit.action.systemRequest" },
+  { value: "audit_logs_exported", label: "audit.action.logsExported" }
 ];
 
 function auditDetailLabelKey(key: string): TranslationKey | null {
@@ -7281,6 +7731,8 @@ function formatAuditDetails(details: Record<string, unknown>, language: Language
 }
 
 function AuditLogsPanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
+  type AuditFilters = { search: string; action: string; userId: string; actorRole: string; entityType: string; outcome: string; student: string; groupId: string; dateFrom: string; dateTo: string };
+  const emptyFilters: AuditFilters = { search: "", action: "", userId: "", actorRole: "", entityType: "", outcome: "", student: "", groupId: "", dateFrom: "", dateTo: "" };
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [unlocked, setUnlocked] = useState(false);
   const [accessToken, setAccessToken] = useState("");
@@ -7288,6 +7740,10 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   const [newPin, setNewPin] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [showChangePin, setShowChangePin] = useState(false);
+  const [filters, setFilters] = useState<AuditFilters>(emptyFilters);
+  const [appliedFilters, setAppliedFilters] = useState<AuditFilters>(emptyFilters);
+  const [filterOptions, setFilterOptions] = useState<{ users: any[]; groups: any[]; students: any[] }>({ users: [], groups: [], students: [] });
+  // Kept for the legacy JSX below while the new Activity Center is returned above it.
   const [search, setSearch] = useState("");
   const [action, setAction] = useState("");
   const [userId, setUserId] = useState("");
@@ -7297,6 +7753,11 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   const [logs, setLogs] = useState<any[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState({ success_count: 0, failure_count: 0, user_count: 0 });
+  const [selectedLog, setSelectedLog] = useState<any | null>(null);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [exportingKey, setExportingKey] = useState("");
+  const [exportSuccessKey, setExportSuccessKey] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [refreshState, setRefreshState] = useState<"idle" | "loading" | "success">("idle");
@@ -7335,19 +7796,45 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
       const response = await fetch(`${API_BASE_URL}/admin/audit-logs/unlock`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.status || "unlock_failed");
-      setAccessToken(data.audit_access_token); setUnlocked(true); setPin(""); setPage(1); await loadLogs(1, data.audit_access_token);
+      setAccessToken(data.audit_access_token); setUnlocked(true); setPin(""); setPage(1);
+      await Promise.all([loadLogs(1, data.audit_access_token, appliedFilters), loadFilterOptions(data.audit_access_token)]);
     } catch (error) { setStatus(error instanceof Error && error.message === "audit_pin_locked" ? t("audit.locked") : t("audit.invalidPin")); }
   }
 
-  async function loadLogs(nextPage = page, token = accessToken) {
+  async function loadFilterOptions(token = accessToken, studentSearch = "") {
+    if (!token) return;
+    try {
+      const params = studentSearch.trim() ? `?student_search=${encodeURIComponent(studentSearch.trim())}` : "";
+      const response = await fetch(`${API_BASE_URL}/admin/audit-logs/filters${params}`, { headers: { ...auth, "X-Audit-Access-Token": token } });
+      const data = await response.json();
+      if (response.ok && data.ok) setFilterOptions({ users: Array.isArray(data.users) ? data.users : [], groups: Array.isArray(data.groups) ? data.groups : [], students: Array.isArray(data.students) ? data.students : [] });
+    } catch { /* filter options are helpful but should not block the activity table */ }
+  }
+
+  function paramsForFilters(filterSet: AuditFilters, nextPage = 1, includePagination = true) {
+    const params = new URLSearchParams();
+    if (includePagination) { params.set("page", String(nextPage)); params.set("limit", "50"); }
+    if (filterSet.search.trim()) params.set("search", filterSet.search.trim());
+    if (filterSet.action) params.set("action", filterSet.action);
+    if (filterSet.userId) params.set("user_id", filterSet.userId);
+    if (filterSet.actorRole) params.set("actor_role", filterSet.actorRole);
+    if (filterSet.entityType) params.set("entity_type", filterSet.entityType);
+    if (filterSet.outcome) params.set("outcome", filterSet.outcome);
+    if (filterSet.student.trim()) params.set("student", filterSet.student.trim());
+    if (filterSet.groupId) params.set("group_id", filterSet.groupId);
+    if (filterSet.dateFrom) params.set("date_from", filterSet.dateFrom);
+    if (filterSet.dateTo) params.set("date_to", filterSet.dateTo);
+    return params;
+  }
+
+  async function loadLogs(nextPage = page, token = accessToken, filterSet = appliedFilters) {
     if (!token) return false;
     setLoading(true); setStatus("");
     try {
-      const params = new URLSearchParams({ page: String(nextPage), limit: "50" });
-      if (search.trim()) params.set("search", search.trim()); if (action) params.set("action", action); if (userId.trim()) params.set("user_id", userId.trim()); if (studentId.trim()) params.set("student_id", studentId.trim()); if (dateFrom) params.set("date_from", dateFrom); if (dateTo) params.set("date_to", dateTo);
+      const params = paramsForFilters(filterSet, nextPage);
       const response = await fetch(`${API_BASE_URL}/admin/audit-logs?${params}`, { headers: { ...auth, "X-Audit-Access-Token": token } });
       const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.status || "logs_failed");
-      setLogs(Array.isArray(data.logs) ? data.logs : []); setTotal(Number(data.total || 0)); setPage(nextPage);
+      setLogs(Array.isArray(data.logs) ? data.logs : []); setTotal(Number(data.total || 0)); setStats({ success_count: Number(data.stats?.success_count || 0), failure_count: Number(data.stats?.failure_count || 0), user_count: Number(data.stats?.user_count || 0) }); setPage(nextPage);
       return true;
     } catch (error) { if (error instanceof Error && error.message === "audit_access_required") { setUnlocked(false); setAccessToken(""); } setStatus(t("fees.reportLoadFailed")); return false; }
     finally { setLoading(false); }
@@ -7355,7 +7842,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
 
   async function refreshLogs() {
     setRefreshState("loading");
-    const refreshed = await loadLogs(1);
+    const refreshed = await loadLogs(1, accessToken, appliedFilters);
     if (!refreshed) { setRefreshState("idle"); return; }
     setRefreshState("success");
     window.setTimeout(() => setRefreshState("idle"), 1500);
@@ -7422,9 +7909,138 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
     } finally { setMaintenanceOperation("idle"); }
   }
 
+  useEffect(() => {
+    if (!selectedLog) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectedLog(null); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", closeOnEscape); };
+  }, [selectedLog]);
+
+  useEffect(() => {
+    const openActivityRow = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const row = target.closest(".audit-activity-table tbody tr");
+      if (!row || !row.parentElement) return;
+      const index = Array.from(row.parentElement.children).indexOf(row);
+      if (index >= 0) setSelectedLog(logs[index] || null);
+    };
+    document.addEventListener("click", openActivityRow);
+    return () => document.removeEventListener("click", openActivityRow);
+  }, [logs]);
+
+  function applyFilters(event?: React.FormEvent) {
+    event?.preventDefault();
+    const nextFilters = { ...filters };
+    setAppliedFilters(nextFilters);
+    setPage(1);
+    void loadLogs(1, accessToken, nextFilters);
+  }
+
+  function clearFilters() {
+    const nextFilters = { ...emptyFilters };
+    setFilters(nextFilters);
+    setAppliedFilters(nextFilters);
+    setPage(1);
+    void loadLogs(1, accessToken, nextFilters);
+  }
+
+  function updateFilter<K extends keyof AuditFilters>(key: K, value: AuditFilters[K]) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  async function copyActivityId(id: number) {
+    try {
+      await navigator.clipboard.writeText(String(id));
+      setCopiedId(id);
+      window.setTimeout(() => setCopiedId((current) => current === id ? null : current), 1500);
+    } catch { setStatus(t("audit.copyFailed" as TranslationKey)); }
+  }
+
+  async function downloadExport(format: "csv" | "xlsx", scope: "current" | "all", logId?: number) {
+    if (!accessToken || !sessionHasPermission(session, "activity_log.export")) return;
+    const key = `${format}-${scope}-${logId || "all"}`;
+    setExportingKey(key); setExportSuccessKey(""); setStatus("");
+    try {
+      const params = paramsForFilters(appliedFilters, page, scope === "current");
+      params.set("format", format); params.set("scope", scope === "current" ? "current" : "all"); params.set("language", language);
+      if (logId) params.set("log_id", String(logId));
+      const response = await fetch(`${API_BASE_URL}/admin/audit-logs/export?${params}`, { headers: { ...auth, "X-Audit-Access-Token": accessToken } });
+      if (!response.ok) throw new Error("export_failed");
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = filenameMatch?.[1] || `activity-center.${format}`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+      setExportSuccessKey(key);
+      window.setTimeout(() => setExportSuccessKey((current) => current === key ? "" : current), 1400);
+    } catch { setStatus(t("audit.exportFailed")); }
+    finally { setExportingKey(""); }
+  }
+
+  const actionLabel = (log: any) => t(auditActionKey(String(log.action || "system_action"), log.details || {}));
+  const targetLabel = (value: string) => t(`audit.target.${value || "settings"}` as TranslationKey);
+  const roleLabelForAudit = (value: string) => value ? t(`audit.role.${value}` as TranslationKey) : t("audit.role.system");
+  const eventTone = (log: any) => {
+    const actionValue = String(log.action || "");
+    if (String(log.outcome) === "failure" || actionValue.includes("failed") || actionValue.includes("deleted") || actionValue.includes("archived") || actionValue.includes("reversed")) return "danger";
+    if (actionValue.includes("login") || actionValue === "logout" || actionValue === "audit_logs_unlocked") return "info";
+    if (actionValue.includes("updated") || actionValue.includes("changed") || actionValue.includes("status") || actionValue.includes("exported")) return "warning";
+    return "success";
+  };
+  const formatAuditDate = (value: unknown) => new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(String(value)));
+  const detailRowsFor = (log: any) => formatAuditDetails(log.details || {}, language, t, log.actor_name || log.actor_username || "").filter((item) => item.key !== t("audit.detail.summary") && item.key !== t("audit.detail.actor"));
+  const changeRowsFor = (log: any) => {
+    const details = log.details || {};
+    if (Array.isArray(details.changes) && details.changes.length) return details.changes.map((change: any, index: number) => {
+      const field = String(change?.field || change?.setting || `field_${index + 1}`);
+      return { field: auditDetailLabelKey(field) ? t(auditDetailLabelKey(field) as TranslationKey) : humanizeAuditKey(field), before: formatAuditDetailValue(change?.before ?? change?.previous_value, language, t), after: formatAuditDetailValue(change?.after ?? change?.new_value, language, t) };
+    });
+    const before = details.before && typeof details.before === "object" && !Array.isArray(details.before) ? details.before : {};
+    const after = details.after && typeof details.after === "object" && !Array.isArray(details.after) ? details.after : {};
+    return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((key) => !isAuditHiddenKey(key) && !key.startsWith("_")).map((key) => ({ field: auditDetailLabelKey(key) ? t(auditDetailLabelKey(key) as TranslationKey) : humanizeAuditKey(key), before: formatAuditDetailValue(before[key], language, t), after: formatAuditDetailValue(after[key], language, t) }));
+  };
+  const filterChipItems = ([
+    ["search", t("audit.search")], ["action", t("audit.action")], ["userId", t("audit.systemUser")], ["actorRole", t("audit.role")], ["entityType", t("audit.targetType")], ["outcome", t("audit.outcome")], ["student", t("audit.studentSearch")], ["groupId", t("audit.group")], ["dateFrom", t("audit.dateFrom")], ["dateTo", t("audit.dateTo")]
+  ] as Array<[keyof AuditFilters, string]>).filter(([key]) => appliedFilters[key]).map(([key, label]) => {
+    let value = appliedFilters[key];
+    if (key === "action") value = actionLabel({ action: value, details: {} });
+    if (key === "entityType") value = targetLabel(String(value));
+    if (key === "outcome") value = value === "failure" ? t("audit.failure") : t("audit.success");
+    if (key === "actorRole") value = roleLabelForAudit(String(value));
+    if (key === "userId") value = filterOptions.users.find((user) => String(user.id) === String(value))?.name || value;
+    if (key === "groupId") value = filterOptions.groups.find((group) => String(group.id) === String(value))?.name || value;
+    return { key, label, value: String(value) };
+  });
+
+  const canExport = sessionHasPermission(session, "activity_log.export");
+  const pageCount = Math.max(1, Math.ceil(total / 50));
+  const exportButtonLabel = (format: "csv" | "xlsx", scope: "current" | "all", logId?: number) => {
+    const key = `${format}-${scope}-${logId || "all"}`;
+    return exportingKey === key ? t("audit.exporting") : exportSuccessKey === key ? t("audit.exported") : format === "csv" ? t("audit.exportCsv") : t("audit.exportXlsx");
+  };
+
   if (configured === null) return <section className="admin-editor audit-logs-panel"><p className="field-hint">{t("fees.reportLoadFailed")}</p></section>;
   if (!configured || showChangePin) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{configured ? t("audit.changePin") : t("audit.setup")}</h2></div><form onSubmit={savePin} className="audit-pin-form"><label>{t("audit.pin")}<input value={newPin} onChange={(event) => setNewPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="new-password" /></label><label>{t("audit.adminPassword")}<input value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} type="password" autoComplete="current-password" /></label><div className="report-actions"><button className="primary-button" type="submit">{t("audit.setup")}</button>{configured ? <button className="secondary-button" type="button" onClick={() => setShowChangePin(false)}>{t("admin.cancel")}</button> : null}</div>{status ? <p className="form-error">{status}</p> : null}</form></section>;
   if (!unlocked) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><form onSubmit={unlock} className="audit-pin-form"><label>{t("audit.pin")}<input value={pin} onChange={(event) => setPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><button className="primary-button" type="submit">{t("audit.unlock")}</button>{status ? <p className="form-error">{status}</p> : null}</form></section>;
+  const selectedDetailRows = selectedLog ? detailRowsFor(selectedLog).filter((item) => item.key !== t("audit.detail.summary") && item.key !== t("audit.detail.actor")) : [];
+  const selectedChangeRows = selectedLog ? changeRowsFor(selectedLog) : [];
+  const maintenancePanelForCenter = <details className="audit-maintenance audit-maintenance-center"><summary>{t("audit.maintenance")}</summary><form className="audit-maintenance-form" onSubmit={deleteMaintenance}><p className="audit-maintenance-warning">{t("audit.maintenanceWarning")}</p><div className="audit-maintenance-fields"><label>{t("audit.maintenanceFrom")}<input type="date" value={maintenanceFrom} onChange={(event) => { setMaintenanceFrom(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenanceTo")}<input type="date" value={maintenanceTo} onChange={(event) => { setMaintenanceTo(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenancePin")}<input value={maintenancePin} onChange={(event) => setMaintenancePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><label>{t("audit.maintenancePassword")}<input value={maintenancePassword} onChange={(event) => setMaintenancePassword(event.target.value)} type="password" autoComplete="current-password" /></label></div><label>{t("audit.maintenanceReason")}<textarea value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} placeholder={t("audit.maintenanceReasonPlaceholder")} rows={3} maxLength={500} /></label><label>{t("audit.maintenanceConfirmation")}<input value={maintenanceConfirmation} onChange={(event) => setMaintenanceConfirmation(event.target.value)} placeholder={t("audit.maintenanceConfirmationHint")} autoComplete="off" /></label><div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={maintenanceOperation !== "idle"} onClick={previewMaintenance}>{maintenanceOperation === "preview" ? t("audit.maintenancePreviewing") : t("audit.maintenancePreview")}</button><button className="danger-button compact-button" type="submit" disabled={maintenanceOperation !== "idle" || maintenanceCount === null}>{maintenanceOperation === "delete" ? t("audit.maintenanceDeleting") : t("audit.maintenanceDelete")}</button></div>{maintenanceCount !== null ? <p className="audit-maintenance-count">{t("audit.maintenanceCount", { count: String(maintenanceCount) })}</p> : null}{maintenanceStatus ? <p className={"audit-maintenance-status " + maintenanceStatusTone}>{maintenanceStatus}</p> : null}</form></details>;
+  return <section className="admin-editor audit-logs-panel audit-center">
+    <div className="audit-center-hero"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.activityCenter")}</h2><p>{t("audit.activityCenterDescription")}</p></div><div className="audit-center-hero-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); setSelectedLog(null); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div></div>
+    <div className="audit-summary-grid"><article className="audit-summary-card audit-summary-total"><span>{t("audit.totalActivities")}</span><strong>{total.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.title")}</small></article><article className="audit-summary-card audit-summary-success"><span>{t("audit.successfulActivities")}</span><strong>{stats.success_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.success")}</small></article><article className="audit-summary-card audit-summary-failure"><span>{t("audit.failedActivities")}</span><strong>{stats.failure_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.failure")}</small></article><article className="audit-summary-card audit-summary-users"><span>{t("audit.activeUsers")}</span><strong>{stats.user_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.systemUser")}</small></article></div>
+    <form className="audit-filter-panel" onSubmit={applyFilters}><div className="audit-filter-heading"><div><span className="audit-section-kicker">{t("audit.filters")}</span><h3>{t("audit.filters")}</h3></div><span className="audit-filter-hint">{loading ? t("audit.refreshing") : total.toLocaleString(language === "ar" ? "ar-EG" : "en-US") + " · " + t("audit.title")}</span></div><div className="audit-filter-grid"><label className="audit-filter-search">{t("audit.search")}<input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder={t("audit.studentSearchPlaceholder")} /></label><label>{t("audit.systemUser")}<select value={filters.userId} onChange={(event) => updateFilter("userId", event.target.value)}><option value="">{t("audit.allUsers")}</option>{filterOptions.users.map((user) => <option key={user.id} value={user.id}>{user.name || user.username || user.email}</option>)}</select></label><label>{t("audit.role")}<select value={filters.actorRole} onChange={(event) => updateFilter("actorRole", event.target.value)}><option value="">{t("audit.allRoles")}</option><option value="owner">{t("audit.role.owner")}</option><option value="admin">{t("audit.role.admin")}</option><option value="staff">{t("audit.role.staff")}</option></select></label><label>{t("audit.targetType")}<select value={filters.entityType} onChange={(event) => updateFilter("entityType", event.target.value)}><option value="">{t("audit.allTargetTypes")}</option>{["students", "groups", "attendance", "fees", "exams", "whatsapp", "settings", "login"].map((target) => <option key={target} value={target}>{targetLabel(target)}</option>)}</select></label><label>{t("audit.action")}<select value={filters.action} onChange={(event) => updateFilter("action", event.target.value)}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.outcome")}<select value={filters.outcome} onChange={(event) => updateFilter("outcome", event.target.value)}><option value="">{t("audit.allOutcomes")}</option><option value="success">{t("audit.success")}</option><option value="failure">{t("audit.failure")}</option></select></label><label>{t("audit.studentSearch")}<input list="audit-student-options" value={filters.student} onChange={(event) => { updateFilter("student", event.target.value); if (event.target.value.length >= 3) void loadFilterOptions(accessToken, event.target.value); }} placeholder={t("audit.studentSearchPlaceholder")} /></label><datalist id="audit-student-options">{filterOptions.students.map((student) => <option key={student.id} value={student.student_code || student.student_serial || student.full_name}>{student.full_name}{student.student_code ? " · " + student.student_code : ""}</option>)}</datalist><label>{t("audit.group")}<select value={filters.groupId} onChange={(event) => updateFilter("groupId", event.target.value)}><option value="">{t("audit.allGroups")}</option>{filterOptions.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>{t("audit.dateFrom")}<input type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} /></label></div>{filterChipItems.length ? <div className="audit-filter-chips"><span>{t("audit.activeFilters")}</span>{filterChipItems.map((chip) => <button key={String(chip.key)} type="button" onClick={() => { const next = { ...appliedFilters, [chip.key]: "" }; setFilters(next); setAppliedFilters(next); void loadLogs(1, accessToken, next); }} title={t("audit.removeFilter")}>{chip.label}: {chip.value} <b aria-hidden="true">×</b></button>)}</div> : null}<div className="audit-filter-actions"><button className="primary-button compact-button" type="submit" disabled={loading}>{loading ? t("audit.refreshing") : t("audit.applyFilters")}</button><button className="secondary-button compact-button" type="button" onClick={clearFilters} disabled={loading}>{t("audit.clearFilters")}</button></div></form>
+    <div className="audit-toolbar"><div><strong>{t("audit.title")}</strong><span>{t("audit.activityCenterDescription")}</span></div>{canExport ? <div className="audit-export-actions"><span>{t("audit.exportCurrent")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "current")}>{exportButtonLabel("csv", "current")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "current")}>{exportButtonLabel("xlsx", "current")}</button><span>{t("audit.exportAll")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "all")}>{exportButtonLabel("csv", "all")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "all")}>{exportButtonLabel("xlsx", "all")}</button></div> : null}</div>
+    {logs.length ? <div className="audit-table-wrap"><table className="audit-activity-table"><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.target")}</th><th>{t("audit.outcome")}</th><th><span className="sr-only">{t("audit.viewDetails")}</span></th></tr></thead><tbody>{logs.map((log) => { const tone = eventTone(log); return <tr key={log.id} className={"audit-event-row audit-event-" + tone}><td data-label={t("audit.date")}><time dateTime={String(log.created_at)}>{formatAuditDate(log.created_at)}</time></td><td data-label={t("audit.user")}><strong>{log.actor_name || log.actor_username || t("audit.role.system")}</strong><small>{roleLabelForAudit(log.actor_role)}</small></td><td data-label={t("audit.action")}><span className={"audit-event-badge audit-event-badge-" + tone}>{actionLabel(log)}</span></td><td data-label={t("audit.target")}><strong>{log.student_name || log.group_name || log.payment_id ? (log.student_name || log.group_name || t("audit.payment") + " #" + log.payment_id) : t("audit.noTarget")}</strong><small>{targetLabel(log.entity_type)}{log.student_code ? " · " + log.student_code : ""}{log.group_name && log.student_name ? " · " + log.group_name : ""}</small></td><td data-label={t("audit.outcome")}><span className={"audit-outcome audit-outcome-" + tone}>{String(log.outcome) === "failure" ? t("audit.failure") : t("audit.success")}</span></td><td data-label=""><button className="secondary-button compact-button audit-view-button" type="button" onClick={() => setSelectedLog(log)}>{t("audit.viewDetails")}</button></td></tr>; })}</tbody></table></div> : <p className="empty-state audit-empty-state">{t("audit.noLogs")}</p>}
+    <div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => void loadLogs(page - 1)}>{"‹"}</button><span>{page} / {pageCount}</span><button className="secondary-button compact-button" type="button" disabled={page >= pageCount || loading} onClick={() => void loadLogs(page + 1)}>{"›"}</button></div>
+    {maintenancePanelForCenter}
+    {status ? <p className="form-error">{status}</p> : null}
+    {selectedLog ? <div className="modal-backdrop audit-detail-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedLog(null); }}><section className="audit-detail-modal" role="dialog" aria-modal="true" aria-labelledby="audit-detail-title" dir={language === "ar" ? "rtl" : "ltr"}><header className="audit-detail-header"><div><span className={"audit-event-badge audit-event-badge-" + eventTone(selectedLog)}>{actionLabel(selectedLog)}</span><h3 id="audit-detail-title">{t("audit.whatHappened")}</h3><p>{auditNarrativeFromDetails(String(selectedLog.action || "system_action"), selectedLog.details || {}, language, t, selectedLog.actor_name || selectedLog.actor_username || t("audit.role.system"))}</p></div><button className="modal-close-button" type="button" onClick={() => setSelectedLog(null)} aria-label={t("audit.closeDetails")} title={t("audit.closeDetails")}>×</button></header><div className="audit-detail-scroll"><div className="audit-detail-meta"><div><span>{t("audit.user")}</span><strong>{selectedLog.actor_name || selectedLog.actor_username || t("audit.role.system")}</strong><small>{roleLabelForAudit(selectedLog.actor_role)}</small></div><div><span>{t("audit.date")}</span><strong>{formatAuditDate(selectedLog.created_at)}</strong></div><div><span>{t("audit.target")}</span><strong>{selectedLog.student_name || selectedLog.group_name || selectedLog.payment_id ? (selectedLog.student_name || selectedLog.group_name || t("audit.payment") + " #" + selectedLog.payment_id) : t("audit.noTarget")}</strong><small>{targetLabel(selectedLog.entity_type)}{selectedLog.student_code ? " · " + selectedLog.student_code : ""}</small></div><div><span>{t("audit.result")}</span><strong className={"audit-result-text audit-result-" + eventTone(selectedLog)}>{String(selectedLog.outcome) === "failure" ? t("audit.failure") : t("audit.success")}</strong></div></div>{selectedChangeRows.length ? <section className="audit-detail-section"><h4>{t("audit.beforeAfter")}</h4><div className="audit-change-list">{selectedChangeRows.map((change, index) => <div className="audit-change-row" key={change.field + "-" + index}><strong>{change.field}</strong><span>{change.before}</span><b aria-hidden="true">→</b><span>{change.after}</span></div>)}</div></section> : null}<section className="audit-detail-section"><h4>{t("audit.details")}</h4>{selectedDetailRows.length ? <div className="audit-detail-list">{selectedDetailRows.map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}</div> : <p className="empty-state">{t("audit.noChanges")}</p>}</section></div><footer className="audit-detail-footer"><span>{t("audit.detail.recordId")}: <b dir="ltr">{selectedLog.id}</b></span><button className="secondary-button compact-button" type="button" onClick={() => void copyActivityId(Number(selectedLog.id))}>{copiedId === Number(selectedLog.id) ? t("audit.copied") : t("audit.copyId")}</button>{canExport ? <><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "all", Number(selectedLog.id))}>{exportButtonLabel("csv", "all", Number(selectedLog.id))}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "all", Number(selectedLog.id))}>{exportButtonLabel("xlsx", "all", Number(selectedLog.id))}</button></> : null}</footer></section></div> : null}
+  </section>;
   const refreshLabel = refreshState === "loading" ? t("audit.refreshing") : refreshState === "success" ? t("audit.refreshed") : t("audit.refresh");
   const maintenancePanel = <details className="audit-maintenance"><summary>{t("audit.maintenance")}</summary><form className="audit-maintenance-form" onSubmit={deleteMaintenance}><p className="audit-maintenance-warning">{t("audit.maintenanceWarning")}</p><div className="audit-maintenance-fields"><label>{t("audit.maintenanceFrom")}<input type="date" value={maintenanceFrom} onChange={(event) => { setMaintenanceFrom(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenanceTo")}<input type="date" value={maintenanceTo} onChange={(event) => { setMaintenanceTo(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenancePin")}<input value={maintenancePin} onChange={(event) => setMaintenancePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><label>{t("audit.maintenancePassword")}<input value={maintenancePassword} onChange={(event) => setMaintenancePassword(event.target.value)} type="password" autoComplete="current-password" /></label></div><label>{t("audit.maintenanceReason")}<textarea value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} placeholder={t("audit.maintenanceReasonPlaceholder")} rows={3} maxLength={500} /></label><label>{t("audit.maintenanceConfirmation")}<input value={maintenanceConfirmation} onChange={(event) => setMaintenanceConfirmation(event.target.value)} placeholder={t("audit.maintenanceConfirmationHint")} autoComplete="off" /></label><div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={maintenanceOperation !== "idle"} onClick={previewMaintenance}>{maintenanceOperation === "preview" ? t("audit.maintenancePreviewing") : t("audit.maintenancePreview")}</button><button className="danger-button compact-button" type="submit" disabled={maintenanceOperation !== "idle" || maintenanceCount === null}>{maintenanceOperation === "delete" ? t("audit.maintenanceDeleting") : t("audit.maintenanceDelete")}</button></div>{maintenanceCount !== null ? <p className="audit-maintenance-count">{t("audit.maintenanceCount", { count: String(maintenanceCount) })}</p> : null}{maintenanceStatus ? <p className={`audit-maintenance-status ${maintenanceStatusTone}`}>{maintenanceStatus}</p> : null}</form></details>;
   return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><div className="report-filters payment-report-filters"><label>{t("audit.search")}<input value={search} onChange={(event) => setSearch(event.target.value)} /></label><label>{t("audit.action")}<select value={action} onChange={(event) => { setAction(event.target.value); setPage(1); }}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.user")}<input value={userId} onChange={(event) => setUserId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.student")}<input value={studentId} onChange={(event) => setStudentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.dateFrom")}<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={refreshLogs}>{refreshLabel}</button><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div><p className="report-total">{total} · {t("audit.title")}</p>{logs.length ? <div className="table-wrap"><table><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.student")}</th><th>{t("audit.payment")}</th><th>{t("audit.details")}</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td>{new Date(log.created_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</td><td>{log.actor_name || log.actor_username || "—"}</td><td>{t(auditActionKey(log.action))}</td><td><strong>{log.student_name || "—"}</strong>{log.student_code ? <small className="audit-student-code">{log.student_code}</small> : log.student_id ? <small className="audit-student-code">ID: {log.student_id}</small> : null}</td><td>{log.payment_id ? `${log.payment_id}${log.payment_amount ? ` · ${log.payment_amount} EGP` : ""}` : "—"}</td><td><details><summary>{t("audit.details")}</summary><div className="audit-detail-list">{formatAuditDetails(log.details || {}, language, t, log.actor_name || log.actor_username || "").map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}{log.reversal_reason ? <div className="audit-detail-item"><b>{t("audit.reason")}</b><span>{log.reversal_reason}</span></div> : null}</div></details></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("audit.noLogs")}</p>}<div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => loadLogs(page - 1)}>{"‹"}</button><span>{page} / {Math.max(1, Math.ceil(total / 50))}</span><button className="secondary-button compact-button" type="button" disabled={page >= Math.max(1, Math.ceil(total / 50)) || loading} onClick={() => loadLogs(page + 1)}>{"›"}</button></div>{maintenancePanel}{status ? <p className="form-error">{status}</p> : null}</section>;
@@ -8321,7 +8937,8 @@ function Shell({
   t,
   onLogout,
   logoutLabel,
-  headerVariant
+  headerVariant,
+  studentNotifications
 }: {
   children: React.ReactNode;
   language: Language;
@@ -8330,6 +8947,13 @@ function Shell({
   onLogout?: () => void;
   logoutLabel?: string;
   headerVariant?: "teacher-auth";
+  studentNotifications?: {
+    studentCode: string;
+    refreshKey?: number;
+    alert?: StudentNotificationAlert | null;
+    onOpenNotes: () => void;
+    onOpenInbox: () => void;
+  };
 }) {
   const [activeNav, setActiveNav] = useState(() => getActiveNavKey());
 
@@ -8377,8 +9001,9 @@ function Shell({
               <small>{t("site.description")}</small>
             </span>
           </a>
+          {studentNotifications ? <StudentNotificationBell {...studentNotifications} language={language} t={t} /> : null}
           {headerVariant === "teacher-auth" ? <span className="site-header-divider" aria-hidden="true" /> : null}
-          <DateTimeWidget language={language} compact header={headerVariant === "teacher-auth"} />
+          <DateTimeWidget language={language} compact header />
         </div>
         <div
           className="header-actions"
@@ -8431,6 +9056,7 @@ function Shell({
               {t("nav.teacherLogin")}
             </a>
           </nav>
+          <ThemeToggle t={t} />
           <div
             className="language-switcher"
             aria-label={language === "ar" ? "اختيار اللغة" : "Language selector"}
@@ -8679,6 +9305,15 @@ function StudentDashboard({
   const todayAttendance = studentTodayAttendance(dashboard.attendance);
   const todayAttendanceStatus = String(todayAttendance?.status || data.attendance_record?.status || "");
   const todayAttendanceIsPresent = todayAttendanceStatus === "present" || todayAttendanceStatus === "late";
+  const studentAlert: StudentNotificationAlert | null = data.today_session ? {
+    id: "alert:today-class",
+    type: "alert",
+    title: t("studentNotifications.alertTitle"),
+    description: t("studentNotifications.alertDescription", {
+      subject: displayValue(data.today_session.subject || student.subject, language)
+    }),
+    isRead: true
+  } : null;
   const studentNavItems = [
     { id: "overview", icon: "overview", label: t("dashboard.tabs.overview") },
     { id: "analytics", icon: "analytics", label: t("dashboard.tabs.analytics") },
@@ -8769,7 +9404,19 @@ function StudentDashboard({
   }
 
   return (
-    <Shell language={language} setLanguage={setLanguage} t={t} onLogout={onLogout}>
+    <Shell
+      language={language}
+      setLanguage={setLanguage}
+      t={t}
+      onLogout={onLogout}
+      studentNotifications={{
+        studentCode: student.student_code,
+        refreshKey,
+        alert: studentAlert,
+        onOpenNotes: () => setActiveTab("notes"),
+        onOpenInbox: () => setActiveTab("inbox")
+      }}
+    >
       <main className="dashboard">
         {digitalCardOpen ? <DigitalStudentCardModal student={student} language={language} t={t} onClose={() => setDigitalCardOpen(false)} /> : null}
         <section className="dashboard-hero student-dashboard-header">
@@ -9500,4 +10147,8 @@ function EmptyRow({ columns, t }: { columns: number; t: Translator }) {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+createRoot(document.getElementById("root")!).render(
+  <ThemeProvider>
+    <App />
+  </ThemeProvider>
+);

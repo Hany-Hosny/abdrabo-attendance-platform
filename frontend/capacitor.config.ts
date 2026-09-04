@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.abdrabo.app',
-  appName: 'Abdrabo System',
+  appName: 'Abdrabo Edu',
   webDir: 'dist'
 };
 
