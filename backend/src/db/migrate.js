@@ -44,6 +44,7 @@ export async function migrate() {
       full_name TEXT NOT NULL,
       phone TEXT,
       guardian_phone TEXT,
+      whatsapp_opted_out BOOLEAN NOT NULL DEFAULT FALSE,
       national_id_hash TEXT,
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
       purge_after TIMESTAMPTZ,
@@ -564,6 +565,9 @@ export async function migrate() {
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped')),
       attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
       last_error TEXT,
+      template_index INTEGER,
+      template_text TEXT,
+      rendered_message TEXT,
       next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       sent_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -571,6 +575,20 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS whatsapp_notification_jobs_queue_idx
       ON whatsapp_notification_jobs(status, next_attempt_at, id);
+    CREATE TABLE IF NOT EXISTS whatsapp_template_rotation (
+      notification_type TEXT PRIMARY KEY CHECK (notification_type IN ('attendance', 'grade', 'receipt', 'advance_payment')),
+      next_index INTEGER NOT NULL DEFAULT 0 CHECK (next_index >= 0),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS student_portal_access_tokens (
+      token_hash TEXT PRIMARY KEY,
+      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS student_portal_access_tokens_expiry_idx
+      ON student_portal_access_tokens(expires_at, used_at);
   `);
   // Keep every DDL/DML command separate when no transaction client is used.
   // node-postgres rejects a multi-command query whenever parameters are passed
@@ -578,16 +596,24 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS grade_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS receipt_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS advance_payment_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE students ADD COLUMN IF NOT EXISTS whatsapp_opted_out BOOLEAN NOT NULL DEFAULT FALSE");
   await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_min_delay_seconds_check");
   await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_max_delay_seconds_check");
   await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_min_delay_seconds_check CHECK (min_delay_seconds BETWEEN 2 AND 60)");
   await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_max_delay_seconds_check CHECK (max_delay_seconds BETWEEN 2 AND 60)");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS notification_type TEXT NOT NULL DEFAULT 'attendance'");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS source_id BIGINT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_index INTEGER");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_text TEXT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS rendered_message TEXT");
   await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN attendance_record_id DROP NOT NULL");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_notification_type_check");
   await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'grade', 'receipt', 'advance_payment'))");
   await query("UPDATE whatsapp_notification_jobs SET source_id = attendance_record_id WHERE source_id IS NULL");
+  await query("DROP INDEX IF EXISTS whatsapp_notification_jobs_source_type_idx");
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_notification_jobs_source_type_idx
+    ON whatsapp_notification_jobs(notification_type, source_id)
+    WHERE source_id IS NOT NULL AND status IN ('pending', 'processing')`);
   await query(
     `INSERT INTO whatsapp_settings (id, templates, grade_templates, receipt_templates, advance_payment_templates)
      VALUES (1, $1::jsonb, $2::jsonb, $3::jsonb, $4::jsonb)

@@ -323,7 +323,7 @@ adminAcademicRouter.get("/groups/:id/details", requirePermission("schedule.view"
 });
 
 const studentSelect = `
-  SELECT s.id, s.group_id, s.student_code, s.student_serial, s.scan_serial, s.qr_token, s.full_name, s.phone, s.guardian_phone, s.gender,
+  SELECT s.id, s.group_id, s.student_code, s.student_serial, s.scan_serial, s.qr_token, s.full_name, s.phone, s.guardian_phone, s.whatsapp_opted_out, s.gender,
     s.is_active, s.deleted_at, s.purge_after, s.created_at, g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
   FROM students s JOIN groups g ON g.id = s.group_id
 `;
@@ -588,6 +588,7 @@ adminAcademicRouter.post("/students", requirePermission("students.manage"), asyn
     const groupId = Number(normalizeDigits(req.body?.group_id));
     const phone = normalizeDigits(req.body?.phone || "").trim() || null;
     const nationalId = normalizeDigits(req.body?.national_id || "").trim();
+    const whatsappOptedOut = req.body?.whatsapp_opted_out === true;
     const isActive = parseBoolean(req.body?.is_active);
     if (!isPhoneNumber(guardianPhone) || (phone && !isPhoneNumber(phone))) {
       return res.status(400).json({ ok: false, status: "invalid_phone", message: "يجب إدخال ١١ رقمًا لرقم الهاتف. / Phone number must contain exactly 11 digits." });
@@ -608,9 +609,9 @@ adminAcademicRouter.post("/students", requirePermission("students.manage"), asyn
     const group = await query("SELECT id FROM groups WHERE id = $1 AND is_active = TRUE", [groupId]);
     if (!group.rowCount) return res.status(400).json({ ok: false, status: "invalid_group" });
     const result = await query(
-      `INSERT INTO students (group_id, student_code, student_serial, scan_serial, qr_token, full_name, phone, guardian_phone, national_id_hash, gender, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
-      [groupId, studentCode, studentSerial, scanSerial, crypto.randomBytes(24).toString("hex"), fullName, phone, guardianPhone, nationalId ? hashNationalId(nationalId) : null, gender, isActive]
+      `INSERT INTO students (group_id, student_code, student_serial, scan_serial, qr_token, full_name, phone, guardian_phone, whatsapp_opted_out, national_id_hash, gender, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+      [groupId, studentCode, studentSerial, scanSerial, crypto.randomBytes(24).toString("hex"), fullName, phone, guardianPhone, whatsappOptedOut, nationalId ? hashNationalId(nationalId) : null, gender, isActive]
     );
     const student = await query(`${studentSelect} WHERE s.id = $1`, [result.rows[0].id]);
     await auditLog({ action: "student_created", actorId: req.teacher.id, studentId: result.rows[0].id, details: { student_id: result.rows[0].id, after: student.rows[0], changes: [{ field: "record", before: null, after: "created" }] }, request: req });
@@ -648,6 +649,7 @@ adminAcademicRouter.put("/students/:id", requirePermission("students.manage"), a
     const groupId = Number(normalizeDigits(req.body?.group_id));
     const phone = normalizeDigits(req.body?.phone || "").trim() || null;
     const nationalId = normalizeDigits(req.body?.national_id || "").trim();
+    const whatsappOptedOut = req.body?.whatsapp_opted_out === true;
     const isActive = parseBoolean(req.body?.is_active);
     if (!isPhoneNumber(guardianPhone) || (phone && !isPhoneNumber(phone))) {
       return res.status(400).json({ ok: false, status: "invalid_phone", message: "يجب إدخال ١١ رقمًا لرقم الهاتف. / Phone number must contain exactly 11 digits." });
@@ -663,12 +665,12 @@ adminAcademicRouter.put("/students/:id", requirePermission("students.manage"), a
     if (!studentCodePattern.test(studentCode)) {
       return res.status(400).json({ ok: false, status: "invalid_student_code" });
     }
-    const before = await query("SELECT id, group_id, student_code, student_serial, scan_serial, full_name, phone, guardian_phone, gender, is_active FROM students WHERE id=$1", [studentId]);
+    const before = await query("SELECT id, group_id, student_code, student_serial, scan_serial, full_name, phone, guardian_phone, whatsapp_opted_out, gender, is_active FROM students WHERE id=$1", [studentId]);
     if (!before.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const result = await query(
       `UPDATE students SET group_id = $1, student_code = $2, student_serial = $3, full_name = $4, phone = $5,
-        guardian_phone = $6, national_id_hash = COALESCE($7, national_id_hash), gender = $8, is_active = $9, updated_at=NOW() WHERE id = $10 RETURNING id`,
-      [groupId, studentCode, studentSerial, fullName, phone, guardianPhone, nationalId ? hashNationalId(nationalId) : null, gender, isActive, studentId]
+        guardian_phone = $6, whatsapp_opted_out = $7, national_id_hash = COALESCE($8, national_id_hash), gender = $9, is_active = $10, updated_at=NOW() WHERE id = $11 RETURNING id`,
+      [groupId, studentCode, studentSerial, fullName, phone, guardianPhone, whatsappOptedOut, nationalId ? hashNationalId(nationalId) : null, gender, isActive, studentId]
     );
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const student = await query(`${studentSelect} WHERE s.id = $1`, [studentId]);

@@ -18,6 +18,22 @@ type WhatsAppStatus = {
   has_qr?: boolean;
 };
 type Props = { token: string; language: Language; canManage?: boolean; canControlConnection?: boolean; t: Translator };
+type WhatsAppHistoryRow = {
+  id: number;
+  notification_type: string;
+  phone_number: string;
+  status: string;
+  attempts: number;
+  ref_code: string;
+  template_index: number | null;
+  template_text: string;
+  rendered_message: string;
+  last_error: string | null;
+  created_at: string;
+  sent_at: string | null;
+  student_name: string | null;
+  student_code: string | null;
+};
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const TEMPLATE_TOKEN_PATTERN = /\{\{?\s*([a-zA-Z0-9_-]+)\s*\}\}?/gi;
@@ -82,6 +98,71 @@ function ChevronIcon({ open }: { open: boolean }) {
   return <svg className={`whatsapp-template-accordion-icon ${open ? "is-open" : ""}`} viewBox="0 0 24 24" aria-hidden="true"><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>;
 }
 
+function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "language" | "t">) {
+  const [messages, setMessages] = useState<WhatsAppHistoryRow[]>([]);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [type, setType] = useState("");
+  const [status, setStatus] = useState("");
+  const [search, setSearch] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({ limit: "100" });
+    if (type) params.set("type", type);
+    if (status) params.set("status", status);
+    if (search.trim()) params.set("search", search.trim());
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    setLoading(true);
+    fetch(`${API_BASE_URL}/whatsapp/history?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) throw new Error("history_failed");
+        setMessages(Array.isArray(payload.messages) ? payload.messages : []);
+        setError(false);
+      })
+      .catch((reason) => { if (reason?.name !== "AbortError") setError(true); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [from, search, status, to, token, type]);
+
+  const typeLabel = (value: string) => t(`whatsapp.historyType.${value}`);
+  const statusLabel = (value: string) => t(`whatsapp.historyStatus.${value}`);
+  const formatDate = (value: string) => new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Cairo" }).format(new Date(value));
+
+  return <div className="whatsapp-history-panel">
+    <div className="whatsapp-history-filters">
+      <label><span>{t("whatsapp.historyTypeLabel")}</span><select value={type} onChange={(event) => setType(event.target.value)}><option value="">{t("whatsapp.historyAllTypes")}</option><option value="attendance">{typeLabel("attendance")}</option><option value="grade">{typeLabel("grade")}</option><option value="receipt">{typeLabel("receipt")}</option><option value="advance_payment">{typeLabel("advance_payment")}</option></select></label>
+      <label><span>{t("whatsapp.historyStatusLabel")}</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">{t("whatsapp.historyAllStatuses")}</option><option value="sent">{statusLabel("sent")}</option><option value="pending">{statusLabel("pending")}</option><option value="processing">{statusLabel("processing")}</option><option value="failed">{statusLabel("failed")}</option><option value="skipped">{statusLabel("skipped")}</option></select></label>
+      <label className="whatsapp-history-search"><span>{t("whatsapp.historyStudentFilter")}</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("whatsapp.historyStudentPlaceholder")} /></label>
+      <label><span>{t("whatsapp.historyFrom")}</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
+      <label><span>{t("whatsapp.historyTo")}</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
+    </div>
+    {loading ? <p className="form-hint">{t("whatsapp.historyLoading")}</p> : error ? <p className="form-error">{t("whatsapp.historyLoadFailed")}</p> : !messages.length ? <p className="form-hint">{t("whatsapp.historyEmpty")}</p> : <div className="whatsapp-history-list">
+      {messages.map((message) => {
+        const isOpen = expandedId === message.id;
+        return <article className={`whatsapp-history-item ${isOpen ? "is-open" : ""}`} key={message.id}>
+          <button className="whatsapp-history-toggle" type="button" aria-expanded={isOpen} onClick={() => setExpandedId(isOpen ? null : message.id)}>
+            <span className="whatsapp-history-main"><strong>{message.student_name || message.student_code || t("whatsapp.historyUnknownStudent")}</strong><small>{typeLabel(message.notification_type)} · {message.ref_code}</small></span>
+            <span className={`whatsapp-history-status ${message.status}`}>{statusLabel(message.status)}</span>
+            <span className="whatsapp-history-date">{formatDate(message.created_at)}</span>
+            <ChevronIcon open={isOpen} />
+          </button>
+          {isOpen ? <div className="whatsapp-history-details">
+            <dl><div><dt>{t("whatsapp.historyStudent")}</dt><dd>{message.student_name || "—"}{message.student_code ? ` (${message.student_code})` : ""}</dd></div><div><dt>{t("whatsapp.historyRecipient")}</dt><dd>{message.phone_number || "—"}</dd></div><div><dt>{t("whatsapp.historyReference")}</dt><dd>{message.ref_code}</dd></div><div><dt>{t("whatsapp.historyTemplate")}</dt><dd>{message.template_index == null ? "—" : `#${message.template_index + 1}`}</dd></div><div><dt>{t("whatsapp.historyCreated")}</dt><dd>{formatDate(message.created_at)}</dd></div>{message.sent_at ? <div><dt>{t("whatsapp.historySent")}</dt><dd>{formatDate(message.sent_at)}</dd></div> : null}</dl>
+            <div><span className="whatsapp-history-label">{t("whatsapp.historyMessage")}</span><pre className="whatsapp-history-message" dir="auto">{message.rendered_message || "—"}</pre></div>
+            {message.last_error ? <div className="whatsapp-history-error"><span className="whatsapp-history-label">{t("whatsapp.historyError")}</span><p>{message.last_error}</p></div> : null}
+          </div> : null}
+        </article>;
+      })}
+    </div>}
+  </div>;
+}
+
 export function WhatsAppSettingsPanel({ token, language, canManage = false, canControlConnection = canManage, t }: Props) {
   const [status, setStatus] = useState<WhatsAppStatus>({ status: "disconnected", phone_number: null });
   const [settings, setSettings] = useState<WhatsAppSettings>(defaultSettings);
@@ -93,6 +174,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<"idle" | "saved" | "error">("idle");
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState<"templates" | "history">("templates");
   const [openTemplateGroups, setOpenTemplateGroups] = useState<Record<TemplateKey, boolean>>({ templates: false, grade_templates: false, receipt_templates: false, advance_payment_templates: false });
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const dirty = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings]);
@@ -212,7 +294,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     setOpenTemplateGroups((current) => ({ ...current, [group]: !current[group] }));
   }
 
-  const portalLink = `${settings.portal_base_url || window.location.origin}/student/A-1001`;
+  const portalLink = `${settings.portal_base_url || window.location.origin}/p/7Kx92QmY7Q4xP3nL8sV2`;
   const previewTextWithoutLink = (settings.templates[0] || "")
     .replace(/\{student_name\}/g, t("whatsapp.sampleStudent"))
     .replace(/\{student_code\}/g, "A-1001")
@@ -254,8 +336,13 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     </section>
 
     <section className="whatsapp-templates-section">
-      <div className="settings-section-heading"><span>03–06</span><div><h3>{t("whatsapp.templatesTitle")}</h3><p>{t("whatsapp.templatesDescription")}</p></div></div>
-      <div className="whatsapp-template-groups">
+      <div className="whatsapp-panel-tabs" role="tablist" aria-label={t("whatsapp.panelTabsLabel")}>
+        <button className={activeTab === "templates" ? "active" : ""} type="button" role="tab" aria-selected={activeTab === "templates"} onClick={() => setActiveTab("templates")}>{t("whatsapp.templatesTab")}</button>
+        <button className={activeTab === "history" ? "active" : ""} type="button" role="tab" aria-selected={activeTab === "history"} onClick={() => setActiveTab("history")}>{t("whatsapp.historyTab")}</button>
+      </div>
+      <div className="settings-section-heading"><span>{activeTab === "templates" ? "03–06" : "07"}</span><div><h3>{t(activeTab === "templates" ? "whatsapp.templatesTitle" : "whatsapp.messageHistoryTitle")}</h3><p>{t(activeTab === "templates" ? "whatsapp.templatesDescription" : "whatsapp.messageHistoryDescription")}</p></div></div>
+      {activeTab === "history" ? <WhatsAppMessageHistory token={token} language={language} t={t} /> : <>
+        <div className="whatsapp-template-groups">
         {templateGroups.map((group) => {
           const isOpen = openTemplateGroups[group.key];
           const templates = settings[group.key];
@@ -273,8 +360,9 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
             </div>
           </article>;
         })}
-      </div>
-      <div className="whatsapp-save-row"><span className={feedback === "error" ? "form-error" : feedback === "saved" ? "lookup-result" : "form-hint"} role={feedback !== "idle" ? "status" : undefined}>{feedback === "saved" ? t("whatsapp.saved") : feedback === "error" ? t("whatsapp.saveFailed") : t("whatsapp.saveHint")}</span><button className={`primary-button ${feedback === "saved" ? "success-button" : ""}`} type="button" disabled={!canManage || saving || !dirty} onClick={() => void save()}>{saving ? t("whatsapp.saving") : feedback === "saved" ? t("whatsapp.saved") : t("whatsapp.save")}</button></div>
+        </div>
+        <div className="whatsapp-save-row"><span className={feedback === "error" ? "form-error" : feedback === "saved" ? "lookup-result" : "form-hint"} role={feedback !== "idle" ? "status" : undefined}>{feedback === "saved" ? t("whatsapp.saved") : feedback === "error" ? t("whatsapp.saveFailed") : t("whatsapp.saveHint")}</span><button className={`primary-button ${feedback === "saved" ? "success-button" : ""}`} type="button" disabled={!canManage || saving || !dirty} onClick={() => void save()}>{saving ? t("whatsapp.saving") : feedback === "saved" ? t("whatsapp.saved") : t("whatsapp.save")}</button></div>
+      </>}
     </section>
   </section>;
 }

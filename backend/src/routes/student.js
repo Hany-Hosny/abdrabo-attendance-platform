@@ -8,7 +8,7 @@ import { normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.
 import { normalizeScanValue } from "../utils/scan.js";
 import { auditLog } from "../services/audit.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
-import { createStudentToken, verifyStudentPortalAccessToken } from "../services/auth.js";
+import { createStudentToken, hashStudentPortalAccessToken } from "../services/auth.js";
 import { authenticatedStudent } from "../services/studentAuth.js";
 import { ipKeyGenerator } from "express-rate-limit";
 
@@ -25,8 +25,16 @@ function hashValue(value) {
 studentRouter.post("/portal-access", studentPortalAccessRateLimit, async (req, res, next) => {
   try {
     const token = String(req.body?.access_token || "").trim();
-    const tokenPayload = verifyStudentPortalAccessToken(token);
-    if (!tokenPayload) return res.status(401).json({ ok: false, status: "invalid_portal_access" });
+    if (!/^[A-Za-z0-9_-]{20,64}$/.test(token)) return res.status(401).json({ ok: false, status: "invalid_portal_access" });
+
+    const access = await query(
+      `UPDATE student_portal_access_tokens
+       SET used_at = NOW()
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()
+       RETURNING student_id`,
+      [hashStudentPortalAccessToken(token)]
+    );
+    if (!access.rowCount) return res.status(401).json({ ok: false, status: "invalid_or_expired_portal_access" });
 
     const result = await query(
       `SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
@@ -36,7 +44,7 @@ studentRouter.post("/portal-access", studentPortalAccessRateLimit, async (req, r
        WHERE s.id = $1 AND s.is_active = TRUE AND s.deleted_at IS NULL
          AND g.is_active = TRUE AND g.deleted_at IS NULL
        LIMIT 1`,
-      [tokenPayload.sub]
+      [access.rows[0].student_id]
     );
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "student_not_found" });
 

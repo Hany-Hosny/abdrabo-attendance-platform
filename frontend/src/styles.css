@@ -1640,10 +1640,47 @@ input:disabled {
 .whatsapp-receipt-switch input:checked + i { background: #10b981; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 0 2px rgba(16, 185, 129, 0.12); }
 .whatsapp-receipt-switch input:checked + i::after { inset-inline-start: 23px; }
 .whatsapp-receipt-switch input:focus-visible + i { outline: 2px solid rgba(105, 173, 255, 0.85); outline-offset: 3px; }
+.whatsapp-panel-tabs { display: flex; flex-wrap: wrap; gap: 8px; padding-bottom: 2px; border-bottom: 1px solid rgba(128, 170, 211, 0.14); }
+.whatsapp-panel-tabs button { padding: 9px 14px; border: 1px solid transparent; border-radius: 8px 8px 0 0; color: var(--muted); background: transparent; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer; }
+.whatsapp-panel-tabs button:hover { color: var(--text); background: rgba(105, 173, 255, 0.06); }
+.whatsapp-panel-tabs button.active { border-color: rgba(77, 208, 225, 0.28); color: #8de8eb; background: rgba(77, 208, 225, 0.1); }
+.whatsapp-history-panel { display: grid; gap: 14px; }
+.whatsapp-history-filters { display: grid; grid-template-columns: repeat(5, minmax(110px, 1fr)); gap: 9px; }
+.whatsapp-history-filters label { display: grid; gap: 5px; min-width: 0; }
+.whatsapp-history-filters label > span { color: var(--muted); font-size: 10px; font-weight: 700; }
+.whatsapp-history-filters input,
+.whatsapp-history-filters select { width: 100%; min-width: 0; padding: 9px 10px; border: 1px solid rgba(128, 170, 211, 0.2); border-radius: 7px; color: var(--text); background: rgba(4, 16, 29, 0.5); font: inherit; font-size: 11px; }
+.whatsapp-history-search { grid-column: span 2; }
+.whatsapp-history-list { display: grid; gap: 8px; }
+.whatsapp-history-item { overflow: hidden; border: 1px solid rgba(128, 170, 211, 0.17); border-radius: 10px; background: rgba(4, 16, 29, 0.32); }
+.whatsapp-history-item.is-open { border-color: rgba(77, 208, 225, 0.35); }
+.whatsapp-history-toggle { display: grid; width: 100%; grid-template-columns: minmax(0, 1.7fr) auto minmax(130px, auto) auto; align-items: center; gap: 12px; padding: 13px 14px; border: 0; color: var(--text); background: transparent; font: inherit; text-align: start; cursor: pointer; }
+.whatsapp-history-toggle:hover { background: rgba(105, 173, 255, 0.05); }
+.whatsapp-history-toggle:focus-visible { outline: 2px solid rgba(105, 173, 255, 0.8); outline-offset: -2px; }
+.whatsapp-history-main { display: grid; min-width: 0; gap: 3px; }
+.whatsapp-history-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.whatsapp-history-main small,
+.whatsapp-history-date { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.whatsapp-history-status { padding: 4px 7px; border-radius: 999px; color: #cbd5e1; background: rgba(71, 85, 105, 0.35); font-size: 10px; font-weight: 800; white-space: nowrap; }
+.whatsapp-history-status.sent { color: #86efac; background: rgba(34, 197, 94, 0.12); }
+.whatsapp-history-status.failed { color: #fda4af; background: rgba(244, 63, 94, 0.12); }
+.whatsapp-history-status.pending,
+.whatsapp-history-status.processing { color: #fcd34d; background: rgba(245, 158, 11, 0.12); }
+.whatsapp-history-details { display: grid; gap: 14px; padding: 0 14px 14px; }
+.whatsapp-history-details dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding-top: 12px; border-top: 1px solid rgba(128, 170, 211, 0.13); }
+.whatsapp-history-details dl > div { display: grid; gap: 3px; min-width: 0; }
+.whatsapp-history-details dt,
+.whatsapp-history-label { color: var(--muted); font-size: 10px; font-weight: 700; }
+.whatsapp-history-details dd { margin: 0; overflow-wrap: anywhere; font-size: 11px; }
+.whatsapp-history-message { max-height: 280px; margin: 6px 0 0; padding: 12px; overflow: auto; border: 1px solid rgba(128, 170, 211, 0.14); border-radius: 8px; color: var(--text); background: rgba(2, 9, 18, 0.55); font: inherit; font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.whatsapp-history-error { padding: 10px 12px; border: 1px solid rgba(244, 63, 94, 0.2); border-radius: 8px; background: rgba(244, 63, 94, 0.08); }
+.whatsapp-history-error p { margin: 5px 0 0; color: #fda4af; font-size: 11px; overflow-wrap: anywhere; }
 
 @media (max-width: 900px) {
   .whatsapp-automation-grid,
   .whatsapp-template-list { grid-template-columns: 1fr; }
+  .whatsapp-history-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .whatsapp-history-search { grid-column: span 2; }
 }
 
 @media (max-width: 620px) {
@@ -1660,6 +1697,12 @@ input:disabled {
   .whatsapp-delay-card { align-items: flex-start; flex-direction: column; }
   .whatsapp-delay-control { width: 100%; justify-items: stretch; }
   .whatsapp-delay-presets { justify-content: flex-start; }
+  .whatsapp-history-filters,
+  .whatsapp-history-details dl { grid-template-columns: 1fr; }
+  .whatsapp-history-search { grid-column: auto; }
+  .whatsapp-history-toggle { grid-template-columns: minmax(0, 1fr) auto; }
+  .whatsapp-history-status,
+  .whatsapp-history-date { display: none; }
 }
 
 .section-heading h2 {
@@ -4088,6 +4131,15 @@ h1 {
     width: auto;
   }
 
+  .student-dashboard-header-actions .refresh-control {
+    min-width: 0;
+  }
+
+  .student-refresh-button {
+    width: 100%;
+    min-height: 52px;
+  }
+
   .student-vitals-strip {
     grid-template-columns: 1fr 1fr;
     gap: 8px;
@@ -4125,23 +4177,34 @@ h1 {
   }
 
   .student-sidebar-links {
-    display: flex;
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
     gap: 8px;
-    padding: 0 1px 3px;
-    scrollbar-width: thin;
-    -webkit-overflow-scrolling: touch;
+    padding: 0 1px 1px;
   }
 
   .student-sidebar-tab {
-    width: auto;
-    min-width: max-content;
-    min-height: 44px;
-    flex: 0 0 auto;
-    padding: 8px 11px;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    padding: 8px 7px;
     border: 1px solid rgba(128, 170, 211, 0.18);
-    border-radius: 999px;
+    border-radius: 10px;
     text-align: center;
+  }
+
+  .student-sidebar-tab > span:not(.student-nav-icon) {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    line-height: 1.3;
+  }
+
+  .student-sidebar-tab .student-nav-icon {
+    width: 19px;
+    height: 19px;
+    flex-basis: 19px;
   }
 
   .student-sidebar-tab.active {
@@ -5359,6 +5422,25 @@ textarea:focus-visible {
 .refresh-control .refresh-success {
   border-color: rgba(33, 199, 122, 0.6);
   color: #7ce6b5;
+}
+
+.student-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding-inline: 16px;
+  border-color: rgba(242, 140, 40, 0.58);
+  background: linear-gradient(135deg, rgba(242, 140, 40, 0.14), rgba(242, 140, 40, 0.04));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 8px 20px rgba(242, 140, 40, 0.08);
+  color: #ffd08c;
+}
+
+.student-refresh-button:hover,
+.student-refresh-button:focus-visible {
+  border-color: rgba(255, 173, 79, 0.92);
+  background: linear-gradient(135deg, rgba(242, 140, 40, 0.23), rgba(242, 140, 40, 0.08));
+  box-shadow: 0 0 0 4px rgba(242, 140, 40, 0.08), 0 10px 24px rgba(242, 140, 40, 0.12);
 }
 
 .refresh-icon {

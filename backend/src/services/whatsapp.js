@@ -3,7 +3,7 @@ import path from "node:path";
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import { pool, query } from "../db/pool.js";
-import { createStudentPortalAccessToken } from "./auth.js";
+import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "./auth.js";
 import { recordWhatsAppConnectionNotification } from "./notifications.js";
 
 const DEFAULT_TEMPLATES = Object.freeze([
@@ -56,9 +56,6 @@ const state = {
   workerRunning: false,
   lastSentAt: 0,
   connectionEstablished: false,
-  templateQueue: new Map(),
-  lastTemplateByType: new Map(),
-  lastTemplateText: null
 };
 
 function normalizeDigits(value) {
@@ -312,36 +309,23 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function shuffled(values) {
-  const result = [...values];
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
-  }
-  return result;
-}
-
-function chooseTemplate(type, templates) {
-  const signature = templates.join("\u0000");
-  const current = state.templateQueue.get(type);
-  if (!current || current.signature !== signature || !current.queue.length) {
-    const lastTemplate = state.lastTemplateByType.get(type) || state.lastTemplateText;
-    const queue = shuffled(templates.map((_template, index) => index));
-    if (queue.length > 1 && templates[queue[0]] === lastTemplate) [queue[0], queue[1]] = [queue[1], queue[0]];
-    state.templateQueue.set(type, { signature, queue });
-  }
-  const entry = state.templateQueue.get(type);
-  let nextIndex = entry.queue.shift();
-  if (templates.length > 1 && templates[nextIndex] === state.lastTemplateText) {
-    const alternativePosition = entry.queue.findIndex((index) => templates[index] !== state.lastTemplateText);
-    if (alternativePosition >= 0) {
-      [nextIndex, entry.queue[alternativePosition]] = [entry.queue[alternativePosition], nextIndex];
-    }
-  }
-  const template = templates[nextIndex];
-  state.lastTemplateByType.set(type, template);
-  state.lastTemplateText = template;
-  return template;
+async function chooseTemplate(type, templates) {
+  await query(
+    `INSERT INTO whatsapp_template_rotation (notification_type, next_index)
+     VALUES ($1, 0)
+     ON CONFLICT (notification_type) DO NOTHING`,
+    [type]
+  );
+  const result = await query(
+    `UPDATE whatsapp_template_rotation
+     SET next_index = (next_index + 1) % $2, updated_at = NOW()
+     WHERE notification_type = $1
+     RETURNING next_index`,
+    [type, templates.length]
+  );
+  const nextIndex = Number(result.rows[0]?.next_index || 0);
+  const index = (nextIndex + templates.length - 1) % templates.length;
+  return { index, template: templates[index] };
 }
 
 function normalizeNotificationType(value) {
@@ -400,12 +384,39 @@ function compileWhatsAppMessage(_type, template, values) {
   return applyTemplate(template, values);
 }
 
-export function buildStudentPortalLink(studentId, studentCode) {
+export function buildStudentPortalLink(studentId, _studentCode, accessToken) {
   const numericStudentId = Number(studentId);
-  if (!Number.isSafeInteger(numericStudentId) || numericStudentId <= 0) return "";
-  const accessToken = createStudentPortalAccessToken({ id: numericStudentId });
-  const pathSegment = String(studentCode || numericStudentId).trim();
-  return `${publicAppUrl}/student/${encodeURIComponent(pathSegment)}?access_token=${encodeURIComponent(accessToken)}`;
+  if (!Number.isSafeInteger(numericStudentId) || numericStudentId <= 0 || !/^[A-Za-z0-9_-]{20,64}$/.test(String(accessToken || ""))) return "";
+  return `${publicAppUrl}/p/${encodeURIComponent(accessToken)}`;
+}
+
+function formatMonthLabel(value, locale) {
+  const month = String(value || "").trim().slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(month)) return "";
+  const date = new Date(`${month}-01T12:00:00Z`);
+  return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "Africa/Cairo" }).format(date);
+}
+
+function formatMonthList(value, locale) {
+  return String(value || "")
+    .split(",")
+    .map((month) => formatMonthLabel(month, locale))
+    .filter(Boolean)
+    .join(locale === "ar-EG" ? "، " : ", ");
+}
+
+function redactPortalLink(value) {
+  return String(value || "")
+    .replace(/\/p\/[A-Za-z0-9_-]{20,64}/g, "/p/[secure-link]")
+    .replace(/([?&]access_token=)[A-Za-z0-9._-]+/g, "$1[redacted]");
+}
+
+async function createPortalAccessRecord(studentId, accessToken) {
+  await query(
+    `INSERT INTO student_portal_access_tokens (token_hash, student_id, expires_at)
+     VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
+    [hashStudentPortalAccessToken(accessToken), studentId]
+  );
 }
 
 function notificationRefCode(prefix, dateValue, id, unique = false) {
@@ -418,7 +429,7 @@ async function enqueueJob({ notificationType, sourceId, studentId, phone, payloa
   await query(`
     INSERT INTO whatsapp_notification_jobs (notification_type, source_id, attendance_record_id, student_id, phone_number, payload, ref_code)
     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
-    ON CONFLICT (attendance_record_id) DO NOTHING`, [
+    ON CONFLICT DO NOTHING`, [
     notificationType, sourceId, attendanceRecordId, studentId, phone, JSON.stringify(queuedPayload), refCode
   ]);
   wakeWhatsAppWorker();
@@ -435,7 +446,7 @@ export async function enqueueAttendanceNotification({ attendanceRecordId, studen
     JOIN students st ON st.id = ar.student_id
     JOIN attendance_sessions ats ON ats.id = ar.session_id
     JOIN groups g ON g.id = ats.group_id
-    WHERE ar.id = $1 AND st.id = $2 AND ar.status IN ('present','late')`, [attendanceRecordId, studentId]);
+      WHERE ar.id = $1 AND st.id = $2 AND st.whatsapp_opted_out = FALSE AND ar.status IN ('present','late')`, [attendanceRecordId, studentId]);
   const row = result.rows[0];
   if (!row) return { queued: false, reason: "not_eligible" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
@@ -460,7 +471,7 @@ export async function enqueueGradeNotification({ resultId }) {
     FROM exam_results er
     JOIN exams e ON e.id = er.exam_id
     JOIN students s ON s.id = er.student_id
-    WHERE er.id = $1 AND s.is_active = TRUE AND s.deleted_at IS NULL`, [resultId]);
+    WHERE er.id = $1 AND s.is_active = TRUE AND s.deleted_at IS NULL AND s.whatsapp_opted_out = FALSE`, [resultId]);
   const row = result.rows[0];
   if (!row) return { queued: false, reason: "not_found" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
@@ -483,7 +494,7 @@ export async function enqueueReceiptNotification({ paymentId }) {
       p.payment_date, s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
     FROM payments p
     JOIN students s ON s.id = p.student_id
-    WHERE p.id = $1 AND p.payment_type = 'normal' AND s.is_active = TRUE AND s.deleted_at IS NULL`, [paymentId]);
+    WHERE p.id = $1 AND p.payment_type = 'normal' AND s.is_active = TRUE AND s.deleted_at IS NULL AND s.whatsapp_opted_out = FALSE`, [paymentId]);
   const row = result.rows[0];
   if (!row) return { queued: false, reason: "not_found" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
@@ -504,7 +515,7 @@ export async function enqueueAdvancePaymentNotification({ paymentId }) {
       p.payment_date, s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
     FROM payments p
     JOIN students s ON s.id = p.student_id
-    WHERE p.id = $1 AND p.payment_type = 'advance' AND s.is_active = TRUE AND s.deleted_at IS NULL`, [paymentId]);
+    WHERE p.id = $1 AND p.payment_type = 'advance' AND s.is_active = TRUE AND s.deleted_at IS NULL AND s.whatsapp_opted_out = FALSE`, [paymentId]);
   const row = result.rows[0];
   if (!row) return { queued: false, reason: "not_found" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
@@ -576,11 +587,22 @@ async function processWhatsAppJob() {
       await updateJob(job.id, "failed", { error: "no_whatsapp_templates" });
       return;
     }
-    const template = chooseTemplate(type, templates);
+    const phone = normalizeEgyptianPhone(job.phone_number);
+    if (!phone) { await updateJob(job.id, "skipped", { error: "invalid_phone" }); return; }
+    const { index: templateIndex, template } = await chooseTemplate(type, templates);
     const studentCode = String(payload.student_code || "").trim();
-    const portalLink = buildStudentPortalLink(job.student_id, studentCode);
-    const templateValues = {
+    const accessToken = createStudentPortalAccessToken();
+    const portalLink = buildStudentPortalLink(job.student_id, studentCode, accessToken);
+    if (portalLink) await createPortalAccessRecord(job.student_id, accessToken);
+    const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
+    const formattedPayload = {
       ...payload,
+      amount_paid: payload.amount_paid == null ? payload.amount_paid : Number(payload.amount_paid).toFixed(2),
+      month: payload.month ? formatMonthList(payload.month, locale) : payload.month,
+      months: payload.months ? formatMonthList(payload.months, locale) : payload.months
+    };
+    const templateValues = {
+      ...formattedPayload,
       ...parts,
       ref_code: job.ref_code,
       student_code: studentCode,
@@ -590,10 +612,16 @@ async function processWhatsAppJob() {
     const body = portalLink && !templateHasPlaceholder(template, "portal_link")
       ? `${renderedBody}\n${portalLink}`
       : renderedBody;
-    const phone = normalizeEgyptianPhone(job.phone_number);
-    if (!phone) { await updateJob(job.id, "skipped", { error: "invalid_phone" }); return; }
-    const messagePayload = { text: body };
-    console.log(`[WhatsApp] Sending TYPE: ${type}, TEXT: ${body}`);
+    const footer = locale === "ar-EG" ? "— منصة مستر أحمد عبدربه" : "— Abdrabo Attendance Platform";
+    const finalBody = body.includes(footer) ? body : `${body}\n\n${footer}`;
+    await query(
+      `UPDATE whatsapp_notification_jobs
+       SET template_index = $2, template_text = $3, rendered_message = $4, updated_at = NOW()
+       WHERE id = $1`,
+      [job.id, templateIndex, template, redactPortalLink(finalBody)]
+    );
+    const messagePayload = { text: finalBody };
+    console.log(`[WhatsApp] Sending TYPE: ${type}, TEMPLATE: ${templateIndex + 1}, TEXT: ${redactPortalLink(finalBody)}`);
     await state.socket.sendMessage(`${phone.slice(1)}@s.whatsapp.net`, messagePayload);
     state.lastSentAt = Date.now();
     await updateJob(job.id, "sent");
@@ -602,9 +630,10 @@ async function processWhatsAppJob() {
     if (job?.id) {
       const attempts = Number(job.attempts || 0);
       const retry = attempts < 3;
+      const retryDelayMs = Math.min(15 * 60_000, 15_000 * (2 ** Math.max(0, attempts - 1)));
       await updateJob(job.id, retry ? "pending" : "failed", {
         error: String(error.message || error),
-        nextAttemptAt: retry ? new Date(Date.now() + 60_000) : null
+        nextAttemptAt: retry ? new Date(Date.now() + retryDelayMs) : null
       });
     }
   } finally { state.workerRunning = false; }

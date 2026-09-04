@@ -128,6 +128,7 @@ type AdminStudent = {
   full_name: string;
   phone?: string | null;
   guardian_phone: string;
+  whatsapp_opted_out?: boolean;
   gender?: "male" | "female" | "unknown";
   group_name: string;
   is_active: boolean;
@@ -360,7 +361,41 @@ const translations = {
     "whatsapp.presetBalanced": "متوازن: 5–12 ثانية",
     "whatsapp.presetSafe": "فائق الأمان: 10–30 ثانية",
     "whatsapp.templatesTitle": "قوالب الرسائل",
-    "whatsapp.templatesDescription": "اختر النظام قالباً عشوائياً لكل إشعار واستبدل المتغيرات تلقائياً.",
+    "whatsapp.templatesDescription": "يدور النظام بين القوالب المحفوظة لكل نوع إشعار ويستبدل المتغيرات تلقائياً.",
+    "whatsapp.panelTabsLabel": "أقسام واتساب",
+    "whatsapp.templatesTab": "القوالب",
+    "whatsapp.historyTab": "سجل الرسائل",
+    "whatsapp.messageHistoryTitle": "سجل رسائل واتساب",
+    "whatsapp.messageHistoryDescription": "راجع الرسائل بالترتيب واعرض النص النهائي والقالب المستخدم بأمان.",
+    "whatsapp.historyTypeLabel": "نوع الرسالة",
+    "whatsapp.historyStatusLabel": "الحالة",
+    "whatsapp.historyAllTypes": "كل الأنواع",
+    "whatsapp.historyAllStatuses": "كل الحالات",
+    "whatsapp.historyStudentFilter": "الطالب أو المرجع",
+    "whatsapp.historyStudentPlaceholder": "ابحث بالاسم أو الكود أو المرجع",
+    "whatsapp.historyFrom": "من تاريخ",
+    "whatsapp.historyTo": "إلى تاريخ",
+    "whatsapp.historyLoading": "جاري تحميل سجل الرسائل...",
+    "whatsapp.historyLoadFailed": "تعذر تحميل سجل الرسائل.",
+    "whatsapp.historyEmpty": "لا توجد رسائل مطابقة للبحث.",
+    "whatsapp.historyUnknownStudent": "طالب غير معروف",
+    "whatsapp.historyStudent": "الطالب",
+    "whatsapp.historyRecipient": "المستلم",
+    "whatsapp.historyReference": "المرجع",
+    "whatsapp.historyTemplate": "القالب المستخدم",
+    "whatsapp.historyCreated": "وقت الإنشاء",
+    "whatsapp.historySent": "وقت الإرسال",
+    "whatsapp.historyMessage": "نص الرسالة (تم إخفاء رابط الدخول الآمن)",
+    "whatsapp.historyError": "تفاصيل الخطأ",
+    "whatsapp.historyType.attendance": "حضور",
+    "whatsapp.historyType.grade": "نتيجة امتحان",
+    "whatsapp.historyType.receipt": "إيصال مصروفات",
+    "whatsapp.historyType.advance_payment": "دفع مقدم",
+    "whatsapp.historyStatus.sent": "تم الإرسال",
+    "whatsapp.historyStatus.pending": "قيد الانتظار",
+    "whatsapp.historyStatus.processing": "قيد التنفيذ",
+    "whatsapp.historyStatus.failed": "فشل",
+    "whatsapp.historyStatus.skipped": "تم التخطي",
     "whatsapp.attendanceTemplatesTitle": "قوالب إشعارات الحضور",
     "whatsapp.attendanceTemplatesDescription": "رسائل الحضور التي تصل إلى ولي الأمر بعد تسجيل حضور الطالب.",
     "whatsapp.gradeTemplatesTitle": "قوالب نتائج الامتحانات والتقييمات",
@@ -896,6 +931,7 @@ const translations = {
     "admin.password": "كلمة المرور",
     "admin.role": "الدور",
     "admin.active": "نشط",
+    "admin.whatsappOptedOut": "إيقاف رسائل واتساب لولي الأمر",
     "admin.groupActive": "المجموعة نشطة",
     "admin.disabled": "معطل",
     "admin.deleted": "محذوف",
@@ -1484,7 +1520,41 @@ const translations = {
     "whatsapp.presetBalanced": "Balanced: 5–12 seconds",
     "whatsapp.presetSafe": "Extra safe: 10–30 seconds",
     "whatsapp.templatesTitle": "Message templates",
-    "whatsapp.templatesDescription": "A random template is selected for each notification and placeholders are replaced automatically.",
+    "whatsapp.templatesDescription": "The system cycles through saved templates per notification type and replaces placeholders automatically.",
+    "whatsapp.panelTabsLabel": "WhatsApp sections",
+    "whatsapp.templatesTab": "Templates",
+    "whatsapp.historyTab": "Message history",
+    "whatsapp.messageHistoryTitle": "WhatsApp message history",
+    "whatsapp.messageHistoryDescription": "Review messages in order and safely inspect the final text and selected template.",
+    "whatsapp.historyTypeLabel": "Message type",
+    "whatsapp.historyStatusLabel": "Status",
+    "whatsapp.historyAllTypes": "All types",
+    "whatsapp.historyAllStatuses": "All statuses",
+    "whatsapp.historyStudentFilter": "Student or reference",
+    "whatsapp.historyStudentPlaceholder": "Search name, code, or reference",
+    "whatsapp.historyFrom": "From date",
+    "whatsapp.historyTo": "To date",
+    "whatsapp.historyLoading": "Loading message history...",
+    "whatsapp.historyLoadFailed": "Could not load message history.",
+    "whatsapp.historyEmpty": "No matching messages were found.",
+    "whatsapp.historyUnknownStudent": "Unknown student",
+    "whatsapp.historyStudent": "Student",
+    "whatsapp.historyRecipient": "Recipient",
+    "whatsapp.historyReference": "Reference",
+    "whatsapp.historyTemplate": "Selected template",
+    "whatsapp.historyCreated": "Created",
+    "whatsapp.historySent": "Sent",
+    "whatsapp.historyMessage": "Message text (secure portal link redacted)",
+    "whatsapp.historyError": "Error details",
+    "whatsapp.historyType.attendance": "Attendance",
+    "whatsapp.historyType.grade": "Exam result",
+    "whatsapp.historyType.receipt": "Fee receipt",
+    "whatsapp.historyType.advance_payment": "Advance payment",
+    "whatsapp.historyStatus.sent": "Sent",
+    "whatsapp.historyStatus.pending": "Pending",
+    "whatsapp.historyStatus.processing": "Processing",
+    "whatsapp.historyStatus.failed": "Failed",
+    "whatsapp.historyStatus.skipped": "Skipped",
     "whatsapp.attendanceTemplatesTitle": "Attendance notification templates",
     "whatsapp.attendanceTemplatesDescription": "Attendance messages sent to the guardian after a student is marked present.",
     "whatsapp.gradeTemplatesTitle": "Exam and grade result templates",
@@ -2020,6 +2090,7 @@ const translations = {
     "admin.password": "Password",
     "admin.role": "Role",
     "admin.active": "Active",
+    "admin.whatsappOptedOut": "Opt out of WhatsApp guardian messages",
     "admin.groupActive": "Group active",
     "admin.disabled": "Disabled",
     "admin.deleted": "Deleted",
@@ -3088,6 +3159,11 @@ function DigitalCardIcon() {
   return <svg className="digital-card-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18M7 13h4M7 16h6" /><path d="m16 13 1.5 1.5L20 12" /></svg>;
 }
 
+function getPortalAccessTokenFromLocation() {
+  const shortLinkMatch = window.location.pathname.match(/^\/p\/([A-Za-z0-9_-]{20,64})$/);
+  return shortLinkMatch?.[1] || new URLSearchParams(window.location.search).get("access_token") || "";
+}
+
 function App() {
   const [path, setPath] = useState(() => window.location.pathname);
   const [language, setLanguageState] = useState<Language>(() => {
@@ -3108,7 +3184,7 @@ function App() {
   const [teacherSession, setTeacherSession] = useState<TeacherSession | null>(() =>
     loadStoredTeacherSession()
   );
-  const [portalAccessLoading, setPortalAccessLoading] = useState(() => new URLSearchParams(window.location.search).has("access_token"));
+  const [portalAccessLoading, setPortalAccessLoading] = useState(() => Boolean(getPortalAccessTokenFromLocation()));
   const t = useMemo(() => createTranslator(language), [language]);
 
   useEffect(() => {
@@ -3133,7 +3209,7 @@ function App() {
   }, [teacherSession?.token]);
 
   useEffect(() => {
-    const accessToken = new URLSearchParams(window.location.search).get("access_token");
+    const accessToken = getPortalAccessTokenFromLocation();
     if (!accessToken) return undefined;
     let cancelled = false;
     setPortalAccessLoading(true);
@@ -3154,7 +3230,11 @@ function App() {
         setPath("/student/dashboard");
       })
       .catch(() => {
-        if (!cancelled) setError(t("errors.loginFailed"));
+        if (!cancelled) {
+          setError(t("errors.loginFailed"));
+          window.history.replaceState({}, "", "/student/login");
+          setPath("/student/login");
+        }
       })
       .finally(() => {
         if (!cancelled) setPortalAccessLoading(false);
@@ -5101,6 +5181,7 @@ const emptyStudentForm: {
   scan_serial: string;
   phone: string;
   guardian_phone: string;
+  whatsapp_opted_out: boolean;
   gender: "male" | "female" | "unknown";
   national_id: string;
   group_id: string;
@@ -5111,6 +5192,7 @@ const emptyStudentForm: {
   scan_serial: "",
   phone: "",
   guardian_phone: "",
+  whatsapp_opted_out: false,
   gender: "unknown" as const,
   national_id: "",
   group_id: "",
@@ -5661,6 +5743,7 @@ function AcademicManager({
       scan_serial: student.scan_serial || student.student_serial || "",
       phone: student.phone || "",
       guardian_phone: student.guardian_phone || "",
+      whatsapp_opted_out: student.whatsapp_opted_out === true,
       gender: student.gender || "unknown",
       national_id: "",
       group_id: String(student.group_id),
@@ -6054,6 +6137,7 @@ function AcademicManager({
             <label>{t("admin.nationalId")}<input type="text" inputMode="numeric" value={studentForm.national_id} onChange={(e) => updateStudentField("national_id", normalizeDigits(e.target.value))} />{fieldErrors.national_id ? <small className="field-error">{fieldErrors.national_id}</small> : null}</label>
             <label>{t("admin.selectGroup")}<select required value={studentForm.group_id} onChange={(e) => updateStudentField("group_id", e.target.value)}><option value="">{t("admin.selectGroup")}</option>{groups.filter((group) => group.is_active).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select>{fieldErrors.group_id ? <small className="field-error">{fieldErrors.group_id}</small> : null}</label>
             <label className="checkbox-label"><input type="checkbox" checked={studentForm.is_active} onChange={(e) => setStudentForm({ ...studentForm, is_active: e.target.checked })} />{t("admin.active")}</label>
+            <label className="checkbox-label"><input type="checkbox" checked={studentForm.whatsapp_opted_out} onChange={(e) => setStudentForm({ ...studentForm, whatsapp_opted_out: e.target.checked })} />{t("admin.whatsappOptedOut")}</label>
           </div>
           <section className="student-label-details" aria-label={t("admin.labelDetails")}>
             <div className="section-heading"><h3>{t("admin.labelDetails")}</h3></div>
@@ -8695,7 +8779,7 @@ function StudentDashboard({
               <span>{t("dashboard.digitalCard")}</span>
             </button>
             <div className="refresh-control">
-              <button className={`secondary-button compact-button ${refreshStatus === t("dashboard.refreshed") ? "refresh-success" : ""}`} type="button" onClick={() => refreshDashboard()} disabled={refreshing}>
+              <button className={`secondary-button compact-button student-refresh-button ${refreshStatus === t("dashboard.refreshed") ? "refresh-success" : ""}`} type="button" onClick={() => refreshDashboard()} disabled={refreshing}>
                 {refreshing ? <span className="refresh-icon is-spinning" aria-hidden="true">↻</span> : null}
                 {refreshing ? t("dashboard.refreshing") : refreshStatus || t("dashboard.refresh")}
               </button>

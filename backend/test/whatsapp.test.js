@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { applyTemplate, buildStudentPortalLink, normalizeEgyptianPhone, validateWhatsAppSettings } from "../src/services/whatsapp.js";
 import { hasPermission } from "../src/services/rbac.js";
-import { createStudentPortalAccessToken, createStudentToken, verifyStudentPortalAccessToken } from "../src/services/auth.js";
+import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "../src/services/auth.js";
 
 test("normalizes common Egyptian guardian phone formats", () => {
   assert.equal(normalizeEgyptianPhone("01012345678"), "+201012345678");
@@ -29,17 +29,15 @@ test("renders both placeholder formats and normalizes camelCase keys", () => {
   }), "Ahmed / A-4260 / https://example.com/student/A-4260 / https://example.com/student/A-4260");
 });
 
-test("creates a one-hour passwordless portal link scoped to a student", () => {
-  const link = buildStudentPortalLink(101, "A-0101");
+test("creates a short opaque portal link with a hashed one-hour access token", () => {
+  const accessToken = createStudentPortalAccessToken();
+  const link = buildStudentPortalLink(101, "A-0101", accessToken);
   const parsed = new URL(link);
-  const token = parsed.searchParams.get("access_token");
-  assert.equal(parsed.pathname, "/student/A-0101");
-  assert.ok(token);
-  const payload = verifyStudentPortalAccessToken(token);
-  assert.equal(payload?.sub, 101);
-  assert.equal(payload?.purpose, "whatsapp_portal");
-  assert.equal(verifyStudentPortalAccessToken(createStudentToken({ id: 101 })), null);
-  assert.equal(verifyStudentPortalAccessToken(createStudentPortalAccessToken({ id: 0 })), null);
+  assert.match(accessToken, /^[A-Za-z0-9_-]{20,64}$/);
+  assert.equal(parsed.pathname, `/p/${accessToken}`);
+  assert.equal(parsed.search, "");
+  assert.match(hashStudentPortalAccessToken(accessToken), /^[a-f0-9]{64}$/);
+  assert.equal(buildStudentPortalLink(0, "A-0101", accessToken), "");
 });
 
 test("preserves editable bilingual templates and supports flexible placeholder spelling", () => {
