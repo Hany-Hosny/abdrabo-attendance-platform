@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import express from "express";
+import XLSX from "xlsx";
 import { pool, query } from "../db/pool.js";
 import { requireAnyPermission, requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
 import { createAuditAccessToken, hashPassword, verifyAuditAccessToken, verifyPassword } from "../services/auth.js";
@@ -84,6 +85,175 @@ function auditDateRange(fromValue, toValue) {
   };
   if (!isValidDate(dateFrom) || !isValidDate(dateTo)) return null;
   return dateFrom <= dateTo ? { dateFrom, dateTo } : { dateFrom: dateTo, dateTo: dateFrom };
+}
+
+const auditTargetTypes = new Set(["students", "groups", "attendance", "fees", "exams", "whatsapp", "settings", "login"]);
+const auditOutcomes = new Set(["success", "failure"]);
+
+function validAuditFilterDate(value) {
+  const normalized = normalizeDigits(String(value || "")).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return null;
+  const parsed = new Date(`${normalized}T00:00:00Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === normalized ? normalized : null;
+}
+
+function auditEntityTypeSql() {
+  return `COALESCE(NULLIF(a.details->>'entity_type', ''), CASE
+    WHEN a.action LIKE 'student%' OR a.action LIKE 'students%' THEN 'students'
+    WHEN a.action LIKE 'group%' THEN 'groups'
+    WHEN a.action LIKE 'attendance%' OR a.action = 'suspicious_scan' THEN 'attendance'
+    WHEN a.action LIKE 'payment%' OR a.action LIKE 'advance_payment%' THEN 'fees'
+    WHEN a.action LIKE 'exam%' OR a.action LIKE 'homework%' THEN 'exams'
+    WHEN a.action LIKE 'whatsapp%' OR a.action LIKE 'message%' OR a.action LIKE 'inbox%' THEN 'whatsapp'
+    WHEN a.action LIKE 'login%' OR a.action = 'logout' THEN 'login'
+    WHEN a.action LIKE 'user%' OR a.action LIKE '%permission%' OR a.action LIKE '%role%' OR a.action LIKE 'ownership%' OR a.action LIKE 'audit_%' OR a.action LIKE 'system_%' THEN 'settings'
+    WHEN COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/students%' THEN 'students'
+    WHEN COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/groups%' THEN 'groups'
+    WHEN COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/attendance%' OR COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/scanner%' THEN 'attendance'
+    WHEN COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/fees%' OR COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/payments%' THEN 'fees'
+    WHEN COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/exams%' OR COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/homework%' THEN 'exams'
+    WHEN COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/whatsapp%' OR COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/inbox%' THEN 'whatsapp'
+    WHEN COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/login%' OR COALESCE(a.details->>'path', a.details->'request'->>'path') LIKE '%/logout%' THEN 'login'
+    ELSE 'settings'
+  END)`;
+}
+
+function auditOutcomeSql() {
+  return `CASE
+    WHEN a.details->>'outcome' IN ('success', 'failure') THEN a.details->>'outcome'
+    WHEN a.details->>'status_code' ~ '^([45][0-9]{2})$' THEN 'failure'
+    WHEN a.action LIKE '%failed%' OR a.action = 'audit_pin_failed' THEN 'failure'
+    ELSE 'success'
+  END`;
+}
+
+function auditGroupIdSql() {
+  return `CASE WHEN COALESCE(s.group_id::text, a.details->>'group_id') ~ '^[0-9]+$'
+    THEN COALESCE(s.group_id::text, a.details->>'group_id')::bigint END`;
+}
+
+function buildAuditLogQuery(queryParams = {}, { includePagination = true } = {}) {
+  const values = [];
+  const filters = ["TRUE"];
+  const add = (sql, value) => {
+    values.push(value);
+    filters.push(sql.replaceAll("?", `$${values.length}`));
+  };
+  const addRepeated = (sql, repeatedValues) => {
+    const placeholders = repeatedValues.map((value) => {
+      values.push(value);
+      return `$${values.length}`;
+    });
+    let placeholderIndex = 0;
+    filters.push(sql.replaceAll("?", () => placeholders[placeholderIndex++]));
+  };
+  const search = normalizedSearch(queryParams.q || queryParams.search);
+  if (search) {
+    const searchParam = `%${search}%`;
+    addRepeated(`(
+      LOWER(a.action) ILIKE ? OR LOWER(COALESCE(t.name,'')) ILIKE ? OR LOWER(COALESCE(t.username,'')) ILIKE ? OR
+      LOWER(COALESCE(t.email,'')) ILIKE ? OR LOWER(COALESCE(s.full_name,'')) ILIKE ? OR
+      LOWER(COALESCE(s.student_code,'')) ILIKE ? OR LOWER(COALESCE(s.student_serial,'')) ILIKE ? OR
+      LOWER(COALESCE(s.scan_serial,'')) ILIKE ? OR LOWER(COALESCE(g.display_name,g.name,'')) ILIKE ? OR
+      a.id::text ILIKE ? OR a.details::text ILIKE ?
+    )`, Array(11).fill(searchParam));
+  }
+  if (queryParams.action) add("a.action = ?", String(queryParams.action).trim());
+  if (queryParams.actor_id || queryParams.user_id) {
+    const actorId = Number(normalizeDigits(queryParams.actor_id || queryParams.user_id));
+    if (Number.isSafeInteger(actorId) && actorId > 0) add("a.actor_id = ?", actorId);
+  }
+  if (queryParams.actor_role) add("t.role = ?", String(queryParams.actor_role).trim());
+  if (queryParams.student_id) {
+    const studentId = Number(normalizeDigits(queryParams.student_id));
+    if (Number.isSafeInteger(studentId) && studentId > 0) add("a.student_id = ?", studentId);
+  }
+  const studentQuery = normalizedSearch(queryParams.student || queryParams.student_query);
+  if (studentQuery) {
+    const studentParam = `%${studentQuery}%`;
+    addRepeated(`(LOWER(COALESCE(s.full_name,'')) ILIKE ? OR LOWER(COALESCE(s.student_code,'')) ILIKE ? OR LOWER(COALESCE(s.student_serial,'')) ILIKE ? OR LOWER(COALESCE(s.scan_serial,'')) ILIKE ? OR LOWER(COALESCE(s.phone,'')) ILIKE ? OR LOWER(COALESCE(s.guardian_phone,'')) ILIKE ?)`, Array(6).fill(studentParam));
+  }
+  if (queryParams.group_id) {
+    const groupId = Number(normalizeDigits(queryParams.group_id));
+    if (Number.isSafeInteger(groupId) && groupId > 0) add(`${auditGroupIdSql()} = ?`, groupId);
+  }
+  if (queryParams.entity_type && auditTargetTypes.has(String(queryParams.entity_type))) add(`${auditEntityTypeSql()} = ?`, String(queryParams.entity_type));
+  if (queryParams.outcome && auditOutcomes.has(String(queryParams.outcome))) add(`${auditOutcomeSql()} = ?`, String(queryParams.outcome));
+  const dateFrom = validAuditFilterDate(queryParams.date_from);
+  const dateTo = validAuditFilterDate(queryParams.date_to);
+  if (dateFrom) add("a.created_at >= (CAST(CAST(? AS date) AS timestamp) AT TIME ZONE 'Africa/Cairo')", dateFrom);
+  if (dateTo) add("a.created_at < (CAST(CAST(? AS date) + INTERVAL '1 day' AS timestamp) AT TIME ZONE 'Africa/Cairo')", dateTo);
+  if (queryParams.payment_id) {
+    const paymentId = Number(normalizeDigits(queryParams.payment_id));
+    if (Number.isSafeInteger(paymentId) && paymentId > 0) add("a.payment_id = ?", paymentId);
+  }
+  if (queryParams.log_id) {
+    const logId = Number(normalizeDigits(queryParams.log_id));
+    if (Number.isSafeInteger(logId) && logId > 0) add("a.id = ?", logId);
+  }
+
+  let page = Math.max(1, Number(queryParams.page || 1));
+  let limit = Math.min(200, Math.max(1, Number(queryParams.limit || queryParams.page_size || 50)));
+  if (!Number.isSafeInteger(page)) page = 1;
+  if (!Number.isSafeInteger(limit)) limit = 50;
+  const pagination = includePagination ? (() => {
+    values.push(limit, (page - 1) * limit);
+    return `LIMIT $${values.length - 1} OFFSET $${values.length}`;
+  })() : "";
+  return { filters, values, page, limit, pagination };
+}
+
+const auditActionLabels = {
+  ar: {
+    payment_created: "تم تسجيل دفع المصروفات", advance_payment_created: "تم تسجيل دفع مقدم", payment_reversed: "تم عكس دفعة",
+    student_created: "تم إنشاء طالب", student_updated: "تم تعديل بيانات طالب", student_changed: "تم تعديل الطالب", student_status_changed: "تم تغيير حالة طالب", student_restored: "تم استرجاع طالب", student_archived: "تمت أرشفة طالب", students_bulk_archived: "تمت أرشفة طلاب محددون", students_bulk_permanently_deleted: "تم حذف طلاب نهائيًا", student_label_printed: "تمت طباعة ليبل الطالب", student_scan_serial_regenerated: "تم تجديد سريال مسح الطالب",
+    attendance_recorded: "تم تسجيل الحضور", attendance_changed: "تم تغيير الحضور", attendance_scanned: "تم تنفيذ مسح الحضور", attendance_session_created: "تم إنشاء جلسة حضور", suspicious_scan: "تم تسجيل محاولة مسح مشبوهة",
+    group_created: "تم إنشاء مجموعة", group_updated: "تم تعديل المجموعة", group_changed: "تم تعديل المجموعة", group_status_changed: "تم تغيير حالة المجموعة", group_archived: "تمت أرشفة المجموعة",
+    exam_result_created: "تم تسجيل نتيجة امتحان", exam_result_updated: "تم تعديل نتيجة امتحان", exam_result_changed: "تم تعديل نتيجة امتحان", exam_result_deleted: "تم حذف نتيجة امتحان", homework_created: "تم إنشاء واجب", homework_updated: "تم تعديل واجب", homework_deleted: "تم حذف واجب",
+    message_sent: "تم إرسال رسالة", message_deleted: "تم حذف رسالة", message_action: "تم تنفيذ إجراء على رسالة", message_read_status_changed: "تم تحديث حالة قراءة الرسالة", note_created: "تمت إضافة ملاحظة", note_updated: "تم تعديل ملاحظة", note_deleted: "تم حذف ملاحظة",
+    user_created: "تم إنشاء مستخدم", user_updated: "تم تعديل مستخدم", user_changed: "تم تعديل مستخدم", permissions_changed: "تم تعديل صلاحيات مستخدم", role_changed: "تم تغيير دور مستخدم", ownership_transferred: "تم نقل ملكية النظام", user_password_reset: "تم تغيير كلمة مرور مستخدم", user_status_changed: "تم تغيير حالة مستخدم", user_archived: "تمت أرشفة مستخدم", user_restored: "تم استرجاع مستخدم", user_permanently_deleted: "تم حذف مستخدم نهائيًا", login_succeeded: "تم تسجيل الدخول", login_failed: "فشلت محاولة تسجيل الدخول", logout: "تم تسجيل الخروج", audit_logs_unlocked: "تم فتح سجل النشاط", audit_pin_changed: "تم تغيير رقم سجل النشاط", audit_pin_failed: "فشلت محاولة فتح سجل النشاط", audit_logs_exported: "تم تصدير سجل النشاط", system_settings_changed: "تم تعديل إعدادات النظام", whatsapp_settings_changed: "تم تعديل إعدادات واتساب", system_action: "إجراء إداري بالنظام", system_request: "إجراء بالنظام"
+  },
+  en: {
+    payment_created: "Payment recorded", advance_payment_created: "Advance payment recorded", payment_reversed: "Payment reversed",
+    student_created: "Student created", student_updated: "Student updated", student_changed: "Student changed", student_status_changed: "Student status changed", student_restored: "Student restored", student_archived: "Student archived", students_bulk_archived: "Students archived in bulk", students_bulk_permanently_deleted: "Students permanently deleted in bulk", student_label_printed: "Student label printed", student_scan_serial_regenerated: "Student scan serial regenerated",
+    attendance_recorded: "Attendance recorded", attendance_changed: "Attendance changed", attendance_scanned: "Attendance scan processed", attendance_session_created: "Attendance session created", suspicious_scan: "Suspicious scan recorded",
+    group_created: "Group created", group_updated: "Group updated", group_changed: "Group updated", group_status_changed: "Group status changed", group_archived: "Group archived",
+    exam_result_created: "Exam result recorded", exam_result_updated: "Exam result updated", exam_result_changed: "Exam result updated", exam_result_deleted: "Exam result deleted", homework_created: "Homework created", homework_updated: "Homework updated", homework_deleted: "Homework deleted",
+    message_sent: "Message sent", message_deleted: "Message deleted", message_action: "Message action", message_read_status_changed: "Message read status updated", note_created: "Note added", note_updated: "Note updated", note_deleted: "Note deleted",
+    user_created: "User created", user_updated: "User updated", user_changed: "User updated", permissions_changed: "User permissions changed", role_changed: "User role changed", ownership_transferred: "System ownership transferred", user_password_reset: "User password changed", user_status_changed: "User status changed", user_archived: "User archived", user_restored: "User restored", user_permanently_deleted: "User permanently deleted", login_succeeded: "Login successful", login_failed: "Login attempt failed", logout: "Logged out", audit_logs_unlocked: "Audit logs unlocked", audit_pin_changed: "Audit PIN changed", audit_pin_failed: "Audit PIN attempt failed", audit_logs_exported: "Audit log exported", system_settings_changed: "System settings changed", whatsapp_settings_changed: "WhatsApp settings changed", system_action: "Administrative system action", system_request: "System action"
+  }
+};
+
+function auditActionLabel(action, language) {
+  return auditActionLabels[language][action] || auditActionLabels[language].system_action;
+}
+
+function auditExportRows(logs, language) {
+  return logs.map((log) => {
+    const details = log.details && typeof log.details === "object" ? log.details : {};
+    const action = String(log.action || "system_action");
+    const outcome = String(log.outcome || "success");
+    const target = String(log.entity_type || "settings");
+    const student = log.student_name ? `${log.student_name}${log.student_code ? ` (${log.student_code})` : ""}` : "—";
+    const group = log.group_name || "—";
+    const actor = log.actor_name || log.actor_username || log.actor_email || "System";
+    const date = new Date(log.created_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short" });
+    const summary = details.summary || details.message || `${auditActionLabel(action, language)}${log.student_name ? ` — ${log.student_name}` : ""}`;
+    return {
+      "Activity ID": String(log.id),
+      "Date / التاريخ": date,
+      "User / المستخدم": actor,
+      "Role / الدور": log.actor_role || "—",
+      "Action / الإجراء": auditActionLabel(action, language),
+      "Target / القسم": target,
+      "Student / الطالب": student,
+      "Group / المجموعة": group,
+      "Payment ID / رقم الدفع": log.payment_id || "—",
+      "Amount / المبلغ": log.payment_amount || "—",
+      "Result / النتيجة": outcome === "failure" ? (language === "ar" ? "فشل" : "Failed") : (language === "ar" ? "نجاح" : "Success"),
+      "Summary / الوصف": summary
+    };
+  });
 }
 
 operationsRouter.get("/payments/report", requirePermission("payments.view"), requirePermission("payments.reports.view"), async (req, res, next) => {
@@ -307,59 +477,139 @@ operationsRouter.post("/audit-logs/maintenance/delete", requirePermission("activ
   } catch (error) { next(error); }
 });
 
+const auditLogJoins = `
+  FROM audit_logs a
+  LEFT JOIN teachers t ON t.id = a.actor_id
+  LEFT JOIN students s ON s.id = a.student_id
+  LEFT JOIN payments p ON p.id = a.payment_id
+  LEFT JOIN payment_reversals pr ON pr.payment_id = a.payment_id
+  LEFT JOIN groups g ON g.id = ${auditGroupIdSql()}
+`;
+
+function auditLogSelectSql(builder) {
+  return `
+    SELECT a.id, a.action, a.actor_id, a.student_id, a.payment_id, a.session_id, a.details, a.created_at,
+      t.name AS actor_name, t.username AS actor_username, t.email AS actor_email, t.role AS actor_role,
+      COALESCE(s.full_name, p.student_name_snapshot) AS student_name,
+      COALESCE(s.student_code, p.student_code_snapshot) AS student_code,
+      COALESCE(s.student_serial, p.student_serial_snapshot) AS student_serial,
+      COALESCE(s.scan_serial, p.scan_serial_snapshot) AS scan_serial,
+      ${auditGroupIdSql()} AS group_id,
+      COALESCE(g.display_name, g.name, p.group_name_snapshot) AS group_name,
+      p.amount AS payment_amount, p.payment_type, pr.id AS reversal_id, pr.reason AS reversal_reason,
+      ${auditEntityTypeSql()} AS entity_type,
+      ${auditOutcomeSql()} AS outcome
+    ${auditLogJoins}
+    WHERE ${builder.filters.join(" AND ")}
+    ORDER BY a.created_at DESC, a.id DESC
+    ${builder.pagination}
+  `;
+}
+
+function resolveAuditLogRow(row) {
+  let action = row.action;
+  if (action === "system_request") {
+    const request = row.details?.request && typeof row.details.request === "object" ? row.details.request : {};
+    const path = String(row.details?.path || request.path || "");
+    const method = row.details?.method || request.method;
+    if (path.includes("/reset-password")) action = "user_password_reset";
+    else if (path.endsWith("/users") && method === "POST") action = "user_created";
+    else if (path.includes("/users/") && method === "PUT") action = "user_updated";
+    else if (path.includes("/users/") && method === "DELETE") action = "user_archived";
+    else if (path.includes("/audit-logs/unlock")) action = "audit_logs_unlocked";
+    else if (path.includes("/audit-logs/pin")) action = "audit_pin_changed";
+  }
+  return {
+    ...row,
+    action,
+    details: {
+      ...(row.details || {}),
+      _audit_action: action,
+      _payment_id: row.payment_id,
+      _payment_amount: row.payment_amount,
+      _student_name: row.student_name,
+      _student_code: row.student_code,
+      _group_name: row.group_name
+    }
+  };
+}
+
+operationsRouter.get("/audit-logs/filters", requirePermission("activity_log.view"), requireAuditAccess, async (req, res, next) => {
+  try {
+    const studentSearch = normalizedSearch(req.query.student_search);
+    const studentValues = studentSearch ? [`%${studentSearch}%`] : [];
+    const studentWhere = studentSearch ? `WHERE LOWER(s.full_name) ILIKE $1 OR LOWER(s.student_code) ILIKE $1 OR LOWER(s.student_serial) ILIKE $1 OR LOWER(s.scan_serial) ILIKE $1 OR LOWER(s.phone) ILIKE $1 OR LOWER(s.guardian_phone) ILIKE $1` : "";
+    const [users, groups, students] = await Promise.all([
+      query("SELECT id, name, username, email, role FROM teachers WHERE deleted_at IS NULL ORDER BY name, username LIMIT 500"),
+      query("SELECT id, COALESCE(display_name, name) AS name, COALESCE(grade_level, grade) AS grade_level FROM groups ORDER BY COALESCE(display_name, name) LIMIT 500"),
+      query(`SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial, s.phone, s.guardian_phone, s.group_id, COALESCE(g.display_name, g.name) AS group_name FROM students s LEFT JOIN groups g ON g.id=s.group_id ${studentWhere} ORDER BY s.full_name LIMIT 500`, studentValues)
+    ]);
+    res.json({ ok: true, users: users.rows, groups: groups.rows, students: students.rows });
+  } catch (error) { next(error); }
+});
+
 operationsRouter.get("/audit-logs", requirePermission("activity_log.view"), requireAuditAccess, async (req, res, next) => {
   try {
-    const values = [];
-    const filters = ["TRUE"];
-    const add = (sql, value) => { values.push(value); filters.push(sql.replaceAll("?", `$${values.length}`)); };
-    const search = normalizedSearch(req.query.q || req.query.search);
-    if (search) add(`(a.action ILIKE ? OR COALESCE(t.name,'') ILIKE ? OR COALESCE(t.username,'') ILIKE ? OR COALESCE(t.email,'') ILIKE ? OR COALESCE(s.full_name,'') ILIKE ? OR COALESCE(s.student_code,'') ILIKE ? OR a.details::text ILIKE ?)`, `%${search}%`);
-    if (req.query.action) add("a.action = ?", String(req.query.action).trim());
-    if (req.query.actor_id || req.query.user_id) add("a.actor_id = ?", Number(req.query.actor_id || req.query.user_id));
-    if (req.query.student_id) add("a.student_id = ?", Number(req.query.student_id));
-    if (req.query.payment_id) add("a.payment_id = ?", Number(req.query.payment_id));
-    if (req.query.date_from) add("a.created_at >= (CAST(CAST(? AS date) AS timestamp) AT TIME ZONE 'Africa/Cairo')", String(req.query.date_from).trim());
-    if (req.query.date_to) add("a.created_at < (CAST(CAST(? AS date) + INTERVAL '1 day' AS timestamp) AT TIME ZONE 'Africa/Cairo')", String(req.query.date_to).trim());
-    const page = Math.max(1, Number(req.query.page || 1));
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
-    values.push(limit, (page - 1) * limit);
-    const result = await query(`
-      SELECT a.id, a.action, a.actor_id, a.student_id, a.payment_id, a.session_id, a.details, a.created_at,
-        t.name AS actor_name, t.username AS actor_username, t.email AS actor_email, t.role AS actor_role,
-        COALESCE(s.full_name, p.student_name_snapshot) AS student_name,
-        COALESCE(s.student_code, p.student_code_snapshot) AS student_code,
-        p.amount AS payment_amount, p.payment_type, pr.id AS reversal_id, pr.reason AS reversal_reason
-      FROM audit_logs a
-      LEFT JOIN teachers t ON t.id = a.actor_id
-      LEFT JOIN students s ON s.id = a.student_id
-      LEFT JOIN payments p ON p.id = a.payment_id
-      LEFT JOIN payment_reversals pr ON pr.payment_id = a.payment_id
-      WHERE ${filters.join(" AND ")}
-      ORDER BY a.created_at DESC, a.id DESC
-      LIMIT $${values.length - 1} OFFSET $${values.length}
-    `, values);
-    const countResult = await query(`
-      SELECT COUNT(*)::int AS total
-      FROM audit_logs a
-      LEFT JOIN teachers t ON t.id = a.actor_id
-      LEFT JOIN students s ON s.id = a.student_id
-      WHERE ${filters.join(" AND ")}
-    `, values.slice(0, -2));
-    const logs = result.rows.map((row) => {
-      let action = row.action;
-      if (action !== "system_request") return { ...row, details: { ...(row.details || {}), _audit_action: action, _payment_id: row.payment_id, _payment_amount: row.payment_amount, _student_name: row.student_name, _student_code: row.student_code } };
-      const request = row.details?.request && typeof row.details.request === "object" ? row.details.request : {};
-      const path = String(row.details?.path || request.path || "");
-      const method = row.details?.method || request.method;
-      if (path.includes("/reset-password")) action = "user_password_reset";
-      else if (path.endsWith("/users") && method === "POST") action = "user_created";
-      else if (path.includes("/users/") && method === "PUT") action = "user_updated";
-      else if (path.includes("/users/") && method === "DELETE") action = "user_archived";
-      else if (path.includes("/audit-logs/unlock")) action = "audit_logs_unlocked";
-      else if (path.includes("/audit-logs/pin")) action = "audit_pin_changed";
-      return { ...row, action, details: { ...(row.details || {}), _audit_action: action, _payment_id: row.payment_id, _payment_amount: row.payment_amount, _student_name: row.student_name, _student_code: row.student_code } };
+    const builder = buildAuditLogQuery(req.query);
+    const countBuilder = buildAuditLogQuery(req.query, { includePagination: false });
+    const result = await query(auditLogSelectSql(builder), builder.values);
+    const countResult = await query(`SELECT COUNT(*)::int AS total ${auditLogJoins} WHERE ${countBuilder.filters.join(" AND ")}`, countBuilder.values);
+    const statsResult = await query(`
+      SELECT COUNT(*) FILTER (WHERE ${auditOutcomeSql()} = 'success')::int AS success_count,
+        COUNT(*) FILTER (WHERE ${auditOutcomeSql()} = 'failure')::int AS failure_count,
+        COUNT(DISTINCT a.actor_id)::int AS user_count
+      ${auditLogJoins}
+      WHERE ${countBuilder.filters.join(" AND ")}
+    `, countBuilder.values);
+    const logs = result.rows.map(resolveAuditLogRow);
+    const stats = statsResult.rows[0] || {};
+    res.json({
+      ok: true,
+      logs,
+      page: builder.page,
+      limit: builder.limit,
+      total: Number(countResult.rows[0]?.total || 0),
+      stats: { success_count: Number(stats.success_count || 0), failure_count: Number(stats.failure_count || 0), user_count: Number(stats.user_count || 0) }
     });
-    res.json({ ok: true, logs, page, limit, total: countResult.rows[0]?.total || 0 });
+  } catch (error) { next(error); }
+});
+
+operationsRouter.get("/audit-logs/export", requirePermission("activity_log.export"), requireRoles("owner", "admin"), requireAuditAccess, async (req, res, next) => {
+  try {
+    const format = String(req.query.format || "csv").toLowerCase();
+    if (!["csv", "xlsx"].includes(format)) return res.status(400).json({ ok: false, status: "invalid_export_format" });
+    const scope = String(req.query.scope || "all").toLowerCase();
+    const builder = buildAuditLogQuery(req.query, { includePagination: scope !== "all" });
+    if (scope === "all") {
+      builder.values.push(50_000);
+      builder.pagination = `LIMIT $${builder.values.length}`;
+    }
+    const result = await query(auditLogSelectSql(builder), builder.values);
+    const logs = result.rows.map(resolveAuditLogRow);
+    const language = req.query.language === "ar" ? "ar" : "en";
+    const exportRows = auditExportRows(logs, language);
+    await auditLog({
+      action: "audit_logs_exported",
+      actorId: req.teacher.id,
+      details: { format, scope, result_count: exportRows.length, filters: { search: req.query.search || req.query.q || "", action: req.query.action || "", entity_type: req.query.entity_type || "", outcome: req.query.outcome || "", date_from: req.query.date_from || "", date_to: req.query.date_to || "" } },
+      request: req
+    });
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (format === "xlsx") {
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Activity Center");
+      const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="activity-center-${stamp}.xlsx"`);
+      return res.send(buffer);
+    }
+    const columns = Object.keys(exportRows[0] || { "Activity ID": "" });
+    const escapeCsv = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const csv = `\uFEFF${columns.map(escapeCsv).join(",")}\r\n${exportRows.map((row) => columns.map((column) => escapeCsv(row[column])).join(",")).join("\r\n")}`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="activity-center-${stamp}.csv"`);
+    return res.send(csv);
   } catch (error) { next(error); }
 });
 

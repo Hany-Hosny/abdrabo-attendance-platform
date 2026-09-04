@@ -47,8 +47,9 @@ const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000")
 app.use(cors({
   origin(origin, callback) {
     if (!origin) return callback(null, true);
+    const isCapacitorApp = origin === "capacitor://localhost" || origin === "ionic://localhost";
     const isLocalNetwork = /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin);
-    if (isLocalNetwork || allowedOrigins.includes(origin) || process.env.NODE_ENV !== "production") {
+    if (isCapacitorApp || isLocalNetwork || allowedOrigins.includes(origin) || process.env.NODE_ENV !== "production") {
       return callback(null, true);
     }
     return callback(new Error("cors_origin_not_allowed"));

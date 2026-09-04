@@ -132,6 +132,53 @@
 
 .audit-filter-heading {
   align-items: center;
+  position: relative;
+  min-height: 28px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.audit-filter-heading > div {
+  display: none;
+}
+
+.audit-filter-heading::before {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(242, 140, 40, 0.45);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  content: "⌄";
+  font-size: 22px;
+  line-height: 1;
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+.audit-filter-heading:hover::before,
+.audit-filter-heading:focus-visible::before {
+  background: rgba(242, 140, 40, 0.12);
+}
+
+.audit-filter-heading:focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 4px;
+}
+
+.audit-filter-heading[aria-expanded="true"]::before {
+  transform: rotate(180deg);
+}
+
+.audit-filter-panel.is-collapsed {
+  gap: 0;
+}
+
+.audit-filter-panel.is-collapsed .audit-filter-grid,
+.audit-filter-panel.is-collapsed .audit-filter-chips,
+.audit-filter-panel.is-collapsed .audit-filter-actions {
+  display: none;
 }
 
 .audit-filter-heading h3 {
@@ -606,6 +653,182 @@
   .audit-change-row b {
     display: none;
   }
+}
+
+/* Last-mile Light Mode overrides for legacy view-specific selectors. */
+[data-theme="light"] .site-header,
+[data-theme="light"] .admin-header,
+[data-theme="light"] .teacher-auth-header {
+  border-bottom-color: var(--line) !important;
+  background: var(--header-gradient) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+[data-theme="light"] .header-date-time,
+[data-theme="light"] .date-time-widget,
+[data-theme="light"] .compact-date-time {
+  border-color: var(--line) !important;
+  background: var(--surface-raised) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+[data-theme="light"] .header-date-time .date-time-date,
+[data-theme="light"] .header-date-time .clock-dayPeriod {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="light"] .logout-button,
+[data-theme="light"] .admin-header .admin-logout-tab {
+  border-color: rgba(154, 61, 50, 0.28) !important;
+  background: rgba(154, 61, 50, 0.06) !important;
+  color: #9a3d32 !important;
+}
+
+[data-theme="light"] .site-header nav a,
+[data-theme="light"] .admin-nav button,
+[data-theme="light"] .admin-account-button,
+[data-theme="light"] .admin-tool-button,
+[data-theme="light"] .global-search .admin-tool-button,
+[data-theme="light"] .gear-dropdown button,
+[data-theme="light"] .account-dropdown button {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea,
+[data-theme="light"] .search-popover input,
+[data-theme="light"] .users-form-card input,
+[data-theme="light"] .users-form-card select,
+[data-theme="light"] .admin-dashboard-inbox .inbox-search-control input {
+  border-color: var(--line) !important;
+  background: var(--surface-input) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: var(--text-placeholder) !important;
+  opacity: 1 !important;
+}
+
+[data-theme="light"] label,
+[data-theme="light"] .user-settings-grid .setting-toggle,
+[data-theme="light"] .content-panel,
+[data-theme="light"] .admin-editor,
+[data-theme="light"] .login-card,
+[data-theme="light"] .modal,
+[data-theme="light"] .modal-card,
+[data-theme="light"] .tabs-surface,
+[data-theme="light"] .status-panel,
+[data-theme="light"] .metric,
+[data-theme="light"] .dashboard-panel,
+[data-theme="light"] .executive-kpi,
+[data-theme="light"] .finance-reports-toolbar,
+[data-theme="light"] .whatsapp-connection-card,
+[data-theme="light"] .whatsapp-automation-section,
+[data-theme="light"] .whatsapp-templates-section,
+[data-theme="light"] .homework-card,
+[data-theme="light"] .inbox-compose,
+[data-theme="light"] .inbox-conversation {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .content-panel,
+[data-theme="light"] .admin-editor,
+[data-theme="light"] .login-card,
+[data-theme="light"] .modal,
+[data-theme="light"] .modal-card,
+[data-theme="light"] .tabs-surface,
+[data-theme="light"] .status-panel,
+[data-theme="light"] .metric,
+[data-theme="light"] .dashboard-panel,
+[data-theme="light"] .executive-kpi,
+[data-theme="light"] .finance-reports-toolbar,
+[data-theme="light"] .whatsapp-connection-card,
+[data-theme="light"] .whatsapp-automation-section,
+[data-theme="light"] .whatsapp-templates-section,
+[data-theme="light"] .homework-card,
+[data-theme="light"] .inbox-compose,
+[data-theme="light"] .inbox-conversation {
+  border-color: var(--line) !important;
+  background: var(--surface-base) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+[data-theme="light"] .student-card,
+[data-theme="light"] .user-row,
+[data-theme="light"] .academic-row,
+[data-theme="light"] .student-bulk-toolbar,
+[data-theme="light"] .student-retention-options,
+[data-theme="light"] .student-label-details,
+[data-theme="light"] .permissions-editor,
+[data-theme="light"] .student-note-card,
+[data-theme="light"] .student-overview-card,
+[data-theme="light"] .student360-summary article,
+[data-theme="light"] .quick-action-button,
+[data-theme="light"] .profile-info-grid span,
+[data-theme="light"] .profile-stat-grid span,
+[data-theme="light"] .profile-record-list > div,
+[data-theme="light"] .analytics-summary-card,
+[data-theme="light"] .schedule-row,
+[data-theme="light"] .admin-dashboard-inbox .inbox-list-panel,
+[data-theme="light"] .admin-dashboard-inbox .inbox-conversation {
+  border-color: var(--line) !important;
+  background: var(--surface-raised) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+[data-theme="light"] .student-card:hover,
+[data-theme="light"] .student-card:focus-visible,
+[data-theme="light"] .quick-action-button:hover {
+  background: var(--surface-inset) !important;
+}
+
+[data-theme="light"] .internal-tabs button,
+[data-theme="light"] .tabs button,
+[data-theme="light"] .status-filter-buttons button,
+[data-theme="light"] .report-summary span,
+[data-theme="light"] .label-detail-grid div,
+[data-theme="light"] .detail-stats span,
+[data-theme="light"] .schedule-detail-list span,
+[data-theme="light"] .admin-dashboard-inbox .inbox-status-filters,
+[data-theme="light"] .admin-dashboard-inbox .inbox-thread-row,
+[data-theme="light"] .admin-dashboard-inbox .inbox-thread,
+[data-theme="light"] .admin-dashboard-inbox .inbox-thread-checkbox,
+[data-theme="light"] .user-settings-section,
+[data-theme="light"] .permission-group {
+  border-color: var(--line) !important;
+  background: var(--surface-inset) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .header-popover,
+[data-theme="light"] .gear-dropdown,
+[data-theme="light"] .account-dropdown,
+[data-theme="light"] .mobile-more-sheet {
+  border-color: var(--line) !important;
+  background: var(--surface-base) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-elevated) !important;
+}
+
+[data-theme="light"] .content-hero p,
+[data-theme="light"] .content-panel p,
+[data-theme="light"] .content-panel li,
+[data-theme="light"] .subtitle,
+[data-theme="light"] .placeholder-panel p,
+[data-theme="light"] .student-card-meta span,
+[data-theme="light"] .user-row > div > span,
+[data-theme="light"] .student-note-meta,
+[data-theme="light"] .student-note-card small,
+[data-theme="light"] .header-popover-state,
+[data-theme="light"] .detail-stats span,
+[data-theme="light"] .schedule-detail-list span {
+  color: var(--text-secondary) !important;
 }
 
 /* Theme toggle and the light-mode surface map. */
@@ -1159,9 +1382,22 @@ body {
   min-width: 320px;
   min-height: 100vh;
   overflow-x: hidden;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
   background: var(--page-gradient);
   color: var(--text);
   transition: all 0.3s ease;
+}
+
+html {
+  min-height: 100%;
+  background: var(--page-gradient);
+}
+
+#root {
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
 button,
@@ -1193,7 +1429,8 @@ a {
 }
 
 .app-shell {
-  min-height: 100vh;
+  min-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  min-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   padding: 22px clamp(16px, 4vw, 56px) 48px;
   width: 100%;
 }
@@ -10609,6 +10846,8 @@ th {
 /* Unified top navigation: every shell uses the same edge-to-edge, sticky
    header surface while its existing controls and navigation remain intact. */
 .app-shell {
+  /* body owns the page inset; the header uses a negative flow margin below
+     so its background can still paint behind the status bar. */
   padding-top: 0 !important;
 }
 
@@ -10616,7 +10855,7 @@ th {
 .admin-header,
 .teacher-auth-header {
   position: sticky !important;
-  top: 0 !important;
+  top: env(safe-area-inset-top, 0px) !important;
   z-index: 100 !important;
   display: flex !important;
   width: 100vw !important;
@@ -10626,8 +10865,8 @@ th {
   justify-content: space-between !important;
   flex-wrap: nowrap !important;
   gap: clamp(10px, 1.5vw, 22px) !important;
-  margin: 0 calc(50% - 50vw) 18px !important;
-  padding: 10px clamp(16px, 3vw, 44px) !important;
+  margin: calc(-1 * env(safe-area-inset-top, 0px)) calc(50% - 50vw) 18px !important;
+  padding: max(12px, calc(12px + env(safe-area-inset-top, 0px))) clamp(16px, 3vw, 44px) 10px !important;
   border: 0 !important;
   border-bottom: 1px solid rgba(93, 139, 190, 0.34) !important;
   border-radius: 0 !important;
@@ -11061,4 +11300,330 @@ th {
     border-radius: 18px;
     padding: 0;
   }
+}
+
+/* Theme overrides must remain last so legacy view rules cannot darken the
+   light palette again. */
+[data-theme="light"] body,
+[data-theme="light"] .app-shell {
+  background: var(--page-gradient) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .site-header,
+[data-theme="light"] .admin-header,
+[data-theme="light"] .teacher-auth-header {
+  border-bottom-color: var(--line) !important;
+  background: var(--header-gradient) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+[data-theme="light"] nav a,
+[data-theme="light"] .admin-nav button,
+[data-theme="light"] .admin-account-button,
+[data-theme="light"] .admin-tool-button,
+[data-theme="light"] .gear-dropdown button,
+[data-theme="light"] .account-dropdown button {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] input,
+[data-theme="light"] select,
+[data-theme="light"] textarea {
+  border-color: var(--line) !important;
+  background: var(--surface-input) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
+  color: var(--text-placeholder) !important;
+  opacity: 1 !important;
+}
+
+[data-theme="light"] label {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .content-panel,
+[data-theme="light"] .admin-editor,
+[data-theme="light"] .login-card,
+[data-theme="light"] .modal,
+[data-theme="light"] .modal-card,
+[data-theme="light"] .tabs-surface,
+[data-theme="light"] .status-panel,
+[data-theme="light"] .metric,
+[data-theme="light"] .dashboard-panel,
+[data-theme="light"] .executive-kpi,
+[data-theme="light"] .finance-reports-toolbar,
+[data-theme="light"] .whatsapp-connection-card,
+[data-theme="light"] .whatsapp-automation-section,
+[data-theme="light"] .whatsapp-templates-section,
+[data-theme="light"] .homework-card,
+[data-theme="light"] .inbox-compose,
+[data-theme="light"] .inbox-conversation {
+  border-color: var(--line) !important;
+  background: var(--surface-base) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+[data-theme="light"] .student-card,
+[data-theme="light"] .user-row,
+[data-theme="light"] .academic-row,
+[data-theme="light"] .student-bulk-toolbar,
+[data-theme="light"] .student-retention-options,
+[data-theme="light"] .student-label-details,
+[data-theme="light"] .permissions-editor,
+[data-theme="light"] .student-note-card,
+[data-theme="light"] .student-overview-card,
+[data-theme="light"] .student360-summary article,
+[data-theme="light"] .quick-action-button,
+[data-theme="light"] .profile-info-grid span,
+[data-theme="light"] .profile-stat-grid span,
+[data-theme="light"] .profile-record-list > div,
+[data-theme="light"] .analytics-summary-card,
+[data-theme="light"] .schedule-row,
+[data-theme="light"] .admin-dashboard-inbox .inbox-list-panel,
+[data-theme="light"] .admin-dashboard-inbox .inbox-conversation {
+  border-color: var(--line) !important;
+  background: var(--surface-raised) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+[data-theme="light"] .internal-tabs button,
+[data-theme="light"] .tabs button,
+[data-theme="light"] .status-filter-buttons button,
+[data-theme="light"] .report-summary span,
+[data-theme="light"] .label-detail-grid div,
+[data-theme="light"] .detail-stats span,
+[data-theme="light"] .schedule-detail-list span,
+[data-theme="light"] .user-settings-section,
+[data-theme="light"] .user-settings-grid .setting-toggle,
+[data-theme="light"] .permission-group,
+[data-theme="light"] .admin-dashboard-inbox .inbox-status-filters,
+[data-theme="light"] .admin-dashboard-inbox .inbox-thread-row,
+[data-theme="light"] .admin-dashboard-inbox .inbox-thread,
+[data-theme="light"] .admin-dashboard-inbox .inbox-thread-checkbox {
+  border-color: var(--line) !important;
+  background: var(--surface-inset) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .header-popover,
+[data-theme="light"] .gear-dropdown,
+[data-theme="light"] .account-dropdown,
+[data-theme="light"] .mobile-more-sheet {
+  border-color: var(--line) !important;
+  background: var(--surface-base) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-elevated) !important;
+}
+
+[data-theme="light"] .content-hero p,
+[data-theme="light"] .content-panel p,
+[data-theme="light"] .content-panel li,
+[data-theme="light"] .subtitle,
+[data-theme="light"] .placeholder-panel p,
+[data-theme="light"] .student-card-meta span,
+[data-theme="light"] .user-row > div > span,
+[data-theme="light"] .student-note-meta,
+[data-theme="light"] .student-note-card small,
+[data-theme="light"] .header-popover-state {
+  color: var(--text-secondary) !important;
+}
+
+/* Final light-mode pass for the student monitoring workspace and the few
+   legacy status controls that do not inherit a shared surface class. */
+[data-theme="light"] .student-shell .student-sidebar-nav,
+[data-theme="light"] .student-shell .student-tab-content,
+[data-theme="light"] .student-shell .student-vital-card,
+[data-theme="light"] .student-shell .student-overview-card,
+[data-theme="light"] .student-shell .analytics-panel,
+[data-theme="light"] .student-shell .student-fees-panel,
+[data-theme="light"] .student-shell .student-notes-panel {
+  border-color: var(--line) !important;
+  background: var(--surface-base) !important;
+  color: var(--text-primary) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card {
+  border-color: var(--line) !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card.is-success {
+  border-color: rgba(17, 132, 82, 0.38) !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card.is-warning {
+  border-color: rgba(169, 109, 0, 0.42) !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card.is-accent {
+  border-color: rgba(8, 145, 178, 0.36) !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card > div > span,
+[data-theme="light"] .student-shell .student-vital-card > div > small,
+[data-theme="light"] .student-shell .student-content-heading p,
+[data-theme="light"] .student-shell .student-overview-card > span,
+[data-theme="light"] .student-shell .student-overview-card > small,
+[data-theme="light"] .student-shell .student-overview-card > p,
+[data-theme="light"] .student-shell .student-overview-card-heading {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card strong,
+[data-theme="light"] .student-shell .student-content-heading h2,
+[data-theme="light"] .student-shell .student-overview-card > strong,
+[data-theme="light"] .student-shell .student-sidebar-heading strong,
+[data-theme="light"] .student-shell .student-fees-panel h3,
+[data-theme="light"] .student-shell .notes-toolbar h3 {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-icon,
+[data-theme="light"] .student-shell .student-content-heading-icon {
+  border-color: rgba(8, 145, 178, 0.3) !important;
+  background: rgba(8, 145, 178, 0.1) !important;
+  color: #087f9b !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card.is-success .student-vital-icon {
+  border-color: rgba(17, 132, 82, 0.32) !important;
+  background: rgba(17, 132, 82, 0.1) !important;
+  color: #0b8052 !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card.is-warning .student-vital-icon {
+  border-color: rgba(169, 109, 0, 0.34) !important;
+  background: rgba(169, 109, 0, 0.11) !important;
+  color: #946000 !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card.is-success strong {
+  color: #087648 !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card.is-warning strong {
+  color: #8d5b00 !important;
+}
+
+[data-theme="light"] .student-shell .student-vital-card.is-accent strong {
+  color: #087f9b !important;
+}
+
+[data-theme="light"] .student-shell .student-sidebar-heading {
+  border-bottom-color: var(--line) !important;
+}
+
+[data-theme="light"] .student-shell .student-section-kicker {
+  border-color: rgba(8, 145, 178, 0.32) !important;
+  background: rgba(8, 145, 178, 0.08) !important;
+  color: #087f9b !important;
+}
+
+[data-theme="light"] .student-shell .student-sidebar-tab {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="light"] .student-shell .student-sidebar-tab:hover,
+[data-theme="light"] .student-shell .student-sidebar-tab:focus-visible {
+  border-color: rgba(8, 145, 178, 0.3) !important;
+  background: rgba(8, 145, 178, 0.08) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .student-shell .student-sidebar-tab.active {
+  border-color: rgba(8, 145, 178, 0.34) !important;
+  border-inline-start-color: #087f9b !important;
+  background: rgba(8, 145, 178, 0.12) !important;
+  color: #075f76 !important;
+  box-shadow: inset 0 0 18px rgba(8, 145, 178, 0.06), 0 5px 14px rgba(41, 64, 91, 0.08) !important;
+}
+
+[data-theme="light"] .student-shell .student-sidebar-tab.active .student-nav-icon,
+[data-theme="light"] .student-shell .student-overview-card-heading .student-nav-icon {
+  color: #087f9b !important;
+}
+
+[data-theme="light"] .student-shell .digital-card-launch-button {
+  border-color: rgba(8, 145, 178, 0.38) !important;
+  background: rgba(8, 145, 178, 0.1) !important;
+  color: #075f76 !important;
+}
+
+[data-theme="light"] .student-shell .digital-card-launch-button:hover,
+[data-theme="light"] .student-shell .digital-card-launch-button:focus-visible {
+  border-color: rgba(8, 145, 178, 0.62) !important;
+  background: rgba(8, 145, 178, 0.17) !important;
+}
+
+[data-theme="light"] .student-shell .student-refresh-button {
+  border-color: rgba(185, 87, 8, 0.38) !important;
+  background: rgba(217, 111, 18, 0.1) !important;
+  color: #9a4a0b !important;
+  box-shadow: 0 6px 16px rgba(185, 87, 8, 0.08) !important;
+}
+
+[data-theme="light"] .student-shell .student-refresh-button:hover,
+[data-theme="light"] .student-shell .student-refresh-button:focus-visible {
+  border-color: rgba(185, 87, 8, 0.62) !important;
+  background: rgba(217, 111, 18, 0.16) !important;
+}
+
+[data-theme="light"] .finance-report-tabs button.active,
+[data-theme="light"] .internal-tabs button.active {
+  border-color: rgba(185, 87, 8, 0.56) !important;
+  background: rgba(217, 111, 18, 0.14) !important;
+  color: var(--accent-strong) !important;
+  box-shadow: 0 0 0 3px rgba(217, 111, 18, 0.1) !important;
+}
+
+[data-theme="light"] .finance-report-tabs button:not(.active),
+[data-theme="light"] .internal-tabs button:not(.active) {
+  color: var(--text-secondary) !important;
+  background: var(--surface-inset) !important;
+}
+
+[data-theme="light"] .whatsapp-not-sent-badge {
+  border-color: rgba(180, 83, 9, 0.36) !important;
+  background: rgba(180, 83, 9, 0.1) !important;
+  color: #8f470d !important;
+}
+
+/* Preserve the five KPI accents in light mode while keeping their glyphs
+   readable against the colored icon tiles. */
+[data-theme="light"] .executive-kpi-income { --kpi-icon-color: #b7791f; }
+[data-theme="light"] .executive-kpi-period { --kpi-icon-color: #3176c7; }
+[data-theme="light"] .executive-kpi-paid { --kpi-icon-color: #118452; }
+[data-theme="light"] .executive-kpi-overdue { --kpi-icon-color: #b66a0a; }
+[data-theme="light"] .executive-kpi-rate { --kpi-icon-color: #8052b4; }
+
+[data-theme="light"] .executive-kpi-icon {
+  background: var(--kpi-icon-color, #334155) !important;
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* RTL overflow containers otherwise open one glyph into the clipped edge.
+   The nav remains horizontally scrollable when all tabs cannot fit. */
+[dir="rtl"] .admin-header .admin-desktop-nav,
+[dir="rtl"] .site-header > .header-actions > nav {
+  direction: rtl;
+  justify-content: flex-start !important;
+  padding-inline: 4px;
+  scroll-padding-inline: 4px;
+}
+
+[dir="ltr"] .admin-header .admin-desktop-nav,
+[dir="ltr"] .site-header > .header-actions > nav {
+  direction: ltr;
+  padding-inline: 4px;
+  scroll-padding-inline: 4px;
 }

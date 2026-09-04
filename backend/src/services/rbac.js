@@ -30,6 +30,7 @@ export const PERMISSIONS = Object.freeze([
   "users.disable",
   "users.delete",
   "activity_log.view",
+  "activity_log.export",
   "whatsapp.view",
   "whatsapp.manage",
   "whatsapp.send_attendance",

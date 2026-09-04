@@ -691,6 +691,8 @@ const translations = {
     "audit.failedActivities": "عمليات فاشلة",
     "audit.activeUsers": "مستخدمون نشطون",
     "audit.filters": "تصفية السجل",
+    "audit.expandFilters": "فتح خيارات التصفية",
+    "audit.collapseFilters": "طي خيارات التصفية",
     "audit.systemUser": "مستخدم النظام",
     "audit.allUsers": "كل المستخدمين",
     "audit.role": "الدور",
@@ -1927,6 +1929,8 @@ const translations = {
     "audit.failedActivities": "Failed actions",
     "audit.activeUsers": "Active users",
     "audit.filters": "Filter activity",
+    "audit.expandFilters": "Expand filter options",
+    "audit.collapseFilters": "Collapse filter options",
     "audit.systemUser": "System user",
     "audit.allUsers": "All users",
     "audit.role": "Role",
@@ -7742,6 +7746,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   const [showChangePin, setShowChangePin] = useState(false);
   const [filters, setFilters] = useState<AuditFilters>(emptyFilters);
   const [appliedFilters, setAppliedFilters] = useState<AuditFilters>(emptyFilters);
+  const [filtersOpen, setFiltersOpen] = useState(true);
   const [filterOptions, setFilterOptions] = useState<{ users: any[]; groups: any[]; students: any[] }>({ users: [], groups: [], students: [] });
   // Kept for the legacy JSX below while the new Activity Center is returned above it.
   const [search, setSearch] = useState("");
@@ -7772,6 +7777,34 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   const [maintenanceStatus, setMaintenanceStatus] = useState("");
   const [maintenanceStatusTone, setMaintenanceStatusTone] = useState<"idle" | "success" | "error">("idle");
   const auth = { Authorization: `Bearer ${session.token}` };
+
+  useEffect(() => {
+    const heading = document.querySelector(".audit-center .audit-filter-heading");
+    const panel = heading?.closest(".audit-filter-panel");
+    if (!(heading instanceof HTMLElement) || !(panel instanceof HTMLElement)) return undefined;
+
+    const toggleFilters = () => setFiltersOpen((current) => !current);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      toggleFilters();
+    };
+
+    heading.setAttribute("role", "button");
+    heading.setAttribute("tabindex", "0");
+    heading.setAttribute("aria-expanded", String(filtersOpen));
+    heading.setAttribute("aria-controls", "audit-filter-controls");
+    heading.setAttribute("aria-label", filtersOpen ? t("audit.collapseFilters") : t("audit.expandFilters"));
+    panel.id = "audit-filter-controls";
+    panel.classList.toggle("is-collapsed", !filtersOpen);
+    heading.addEventListener("click", toggleFilters);
+    heading.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      heading.removeEventListener("click", toggleFilters);
+      heading.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [filtersOpen, t]);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/admin/audit-logs/status`, { headers: auth })

@@ -427,6 +427,12 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at DESC);
     CREATE INDEX IF NOT EXISTS audit_logs_actor_idx ON audit_logs(actor_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action, created_at DESC);
+    CREATE INDEX IF NOT EXISTS audit_logs_student_idx ON audit_logs(student_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS audit_logs_payment_idx ON audit_logs(payment_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS audit_logs_entity_type_idx ON audit_logs((details->>'entity_type'), created_at DESC);
+    CREATE INDEX IF NOT EXISTS audit_logs_group_id_idx ON audit_logs(
+      (CASE WHEN (details->>'group_id') ~ '^[0-9]+$' THEN (details->>'group_id')::bigint END), created_at DESC
+    ) WHERE (details->>'group_id') ~ '^[0-9]+$';
     CREATE TABLE IF NOT EXISTS audit_log_deletions (
       id BIGSERIAL PRIMARY KEY,
       actor_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
@@ -899,6 +905,14 @@ export async function migrate() {
     [JSON.stringify(DEFAULT_ADMIN_PERMISSIONS), JSON.stringify(DEFAULT_STAFF_PERMISSIONS)]
   );
   await query("CREATE UNIQUE INDEX IF NOT EXISTS teachers_single_owner_idx ON teachers ((role)) WHERE role = 'owner'");
+  await query(`
+    UPDATE teachers
+    SET permissions = (
+      SELECT jsonb_agg(DISTINCT permission ORDER BY permission)
+      FROM jsonb_array_elements_text(COALESCE(permissions, '[]'::jsonb) || '["activity_log.export"]'::jsonb) AS permission
+    )
+    WHERE role = 'admin' AND permissions ? 'activity_log.view' AND NOT (permissions ? 'activity_log.export')
+  `);
   console.log("Admin user ensured");
 
   const sitePages = [
