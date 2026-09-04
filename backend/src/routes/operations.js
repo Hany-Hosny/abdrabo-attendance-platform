@@ -6,12 +6,13 @@ import { createAuditAccessToken, hashPassword, verifyAuditAccessToken, verifyPas
 import { ensureMonthlyFees, getAdvanceOptions, getFeeSummary, recordAdvancePayment, recordFullPayment } from "../services/fees.js";
 import { finalizeExpiredAttendanceSessions } from "../services/attendanceFinalizer.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
+import { cairoDateString } from "../utils/time.js";
 import { auditLog } from "../services/audit.js";
 import { getAttendanceTimingDefaults } from "../services/systemSettings.js";
 import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue, scanLookupValues } from "../utils/scan.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { hasPermission } from "../services/rbac.js";
-import { enqueueAttendanceNotification } from "../services/whatsapp.js";
+import { enqueueAdvancePaymentNotification, enqueueAttendanceNotification, enqueueReceiptNotification } from "../services/whatsapp.js";
 
 export const operationsRouter = express.Router();
 operationsRouter.use(requireTeacher);
@@ -21,6 +22,22 @@ operationsRouter.use("/fees/payments", requirePermission("payments.view"));
 operationsRouter.use("/fees/overdue", requirePermission("payments.view"));
 const scannerRateLimit = createRateLimiter({ windowMs: 60_000, max: 180, key: (req) => `scanner:${req.teacher?.id || req.ip}` });
 const paymentRateLimit = createRateLimiter({ windowMs: 60_000, max: 30, key: (req) => `payment:${req.teacher?.id || req.ip}` });
+
+function cairoSessionTimeSql(dateExpression, timeExpression) {
+  return `((${dateExpression}::date + ${timeExpression}) AT TIME ZONE 'Africa/Cairo')`;
+}
+
+function cairoSessionCloseSql(dateExpression, fallbackCloseParam) {
+  const startsAt = cairoSessionTimeSql(dateExpression, "cs.start_time");
+  const endsAt = cairoSessionTimeSql(dateExpression, "cs.end_time");
+  const groupOverride = `(${startsAt} + (cs.closes_after_minutes::text || ' minutes')::interval)`;
+  const systemFallback = `(${startsAt} + (${fallbackCloseParam}::text || ' minutes')::interval)`;
+  return `CASE
+    WHEN cs.closes_after_minutes IS NOT NULL AND cs.closes_after_minutes <> 20 THEN LEAST(${endsAt}, ${groupOverride})
+    WHEN ${fallbackCloseParam} <> 20 THEN LEAST(${endsAt}, ${systemFallback})
+    ELSE ${endsAt}
+  END`;
+}
 
 const studentDetails = `SELECT s.id, s.full_name, s.student_serial, s.scan_serial, s.student_code, s.qr_token, s.group_id,
   s.phone, s.guardian_phone, s.is_active, g.name AS group_name, COALESCE(g.grade_level,g.grade) AS grade_level,
@@ -91,7 +108,7 @@ operationsRouter.get("/payments/report", requirePermission("payments.view"), req
       else add("COALESCE(g.display_name,g.name) ILIKE ?", `%${groupValue}%`);
     }
     if (req.query.grade_level) add("COALESCE(g.grade_level,g.grade) ILIKE ?", `%${normalizeDigits(req.query.grade_level).trim()}%`);
-    const result = await query(`SELECT p.id, ${paymentTimestamp} AS paid_at, p.amount, p.payment_months, p.payment_type,
+    const result = await query(`SELECT p.id, ${paymentTimestamp} AS paid_at, p.amount, p.payment_months, p.payment_type, p.whatsapp_notified,
         COALESCE(p.student_name_snapshot,s.full_name) AS full_name,
         COALESCE(p.student_code_snapshot,s.student_code) AS student_code,
         COALESCE(p.student_serial_snapshot,s.student_serial) AS student_serial,
@@ -399,7 +416,7 @@ operationsRouter.get("/payments/late", requirePermission("payments.view"), requi
 operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"), async (req, res, next) => {
   try {
     await finalizeExpiredAttendanceSessions();
-    const date = normalizeDigits(req.query.date || new Date().toISOString().slice(0, 10)).trim();
+    const date = normalizeDigits(req.query.date || cairoDateString()).trim();
     const timing = await getAttendanceTimingDefaults();
     const groupId = req.query.group_id ? Number(normalizeDigits(req.query.group_id)) : null;
     let groupFilter = "";
@@ -407,10 +424,10 @@ operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"
     await query(`
       INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, ends_at, status)
       SELECT cs.group_id, cs.id, $1::date,
-        (($1::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
+        ${cairoSessionTimeSql("$1", "cs.start_time")},
         (($1::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-        (($1::date + cs.start_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-        (($1::date + cs.end_time) AT TIME ZONE 'Africa/Cairo'),
+        ${cairoSessionCloseSql("$1", "$3")},
+        ${cairoSessionTimeSql("$1", "cs.end_time")},
         'open'
       FROM class_schedules cs
       JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
@@ -434,13 +451,13 @@ operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"
 operationsRouter.post("/attendance/sessions", requirePermission("attendance.manage"), async (req, res, next) => {
   try {
     const groupId = Number(normalizeDigits(req.body?.group_id)), scheduleId = Number(normalizeDigits(req.body?.schedule_id));
-    const date = String(req.body?.session_date || new Date().toISOString().slice(0, 10));
+    const date = String(req.body?.session_date || cairoDateString());
     if (!groupId || !scheduleId) return res.status(400).json({ ok:false, status:"invalid_session_payload" });
     const timing = await getAttendanceTimingDefaults();
     const result = await query(`INSERT INTO attendance_sessions (group_id,schedule_id,session_date,starts_at,opens_at,closes_at,ends_at,status)
-      SELECT $1, cs.id, $3::date, (($3::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'), (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-      (($3::date + cs.start_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $5 ELSE cs.closes_after_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-      (($3::date + cs.end_time) AT TIME ZONE 'Africa/Cairo'), 'open'
+      SELECT $1, cs.id, $3::date, ${cairoSessionTimeSql("$3", "cs.start_time")}, (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+      ${cairoSessionCloseSql("$3", "$5")},
+      ${cairoSessionTimeSql("$3", "cs.end_time")}, 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.id=$2 AND cs.group_id=$1 AND cs.is_active=TRUE
         AND cs.day_of_week=EXTRACT(DOW FROM $3::date)::INTEGER
@@ -525,9 +542,9 @@ operationsRouter.post("/fees/scan-lookup", requirePermission("payments.view"), a
   } catch (error) { next(error); }
 });
 
-async function recordAttendance({ sessionId, studentId, actorId, method = "scanner", status = "present", ip, deviceId, idempotencyKey = null, request }) {
-  const result = await query(`INSERT INTO attendance_records (session_id,student_id,status,method,ip_address,device_id,idempotency_key)
-    VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING *`, [sessionId, studentId, status, method, ip, deviceId, idempotencyKey]);
+async function recordAttendance({ sessionId, studentId, actorId, method = "scanner", status = "present", ip, deviceId, idempotencyKey = null, whatsappNotified = false, request }) {
+  const result = await query(`INSERT INTO attendance_records (session_id,student_id,status,method,ip_address,device_id,idempotency_key,whatsapp_notified)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING *`, [sessionId, studentId, status, method, ip, deviceId, idempotencyKey, Boolean(whatsappNotified)]);
   if (!result.rowCount) {
     const existing = await query("SELECT * FROM attendance_records WHERE (session_id=$1 AND student_id=$2) OR ($3 IS NOT NULL AND idempotency_key=$3) ORDER BY id LIMIT 1", [sessionId, studentId, idempotencyKey]);
     if (idempotencyKey && existing.rows[0] && (Number(existing.rows[0].session_id) !== Number(sessionId) || Number(existing.rows[0].student_id) !== Number(studentId))) {
@@ -537,7 +554,7 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
   }
   await auditLog({ action: "attendance_recorded", actorId, studentId, sessionId, details: { method, status_after: status, record_id: result.rows[0].id, checkin_time: result.rows[0].checkin_time }, request });
   if (status === "present" || status === "late") {
-    void enqueueAttendanceNotification({ attendanceRecordId: result.rows[0].id, studentId })
+    if (whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: result.rows[0].id, studentId })
       .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
   }
   return { record: result.rows[0] };
@@ -546,23 +563,24 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
 operationsRouter.post("/attendance/manual", requirePermission("attendance.manage"), async (req, res, next) => {
   try {
     const sessionId=Number(normalizeDigits(req.body?.session_id)), studentId=Number(normalizeDigits(req.body?.student_id)), status=String(req.body?.status||"present");
+    const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
     if (!sessionId || !studentId || !["present","absent","late","pending_review"].includes(status)) return res.status(400).json({ok:false,status:"invalid_attendance_payload"});
     const check = await query("SELECT 1 FROM attendance_sessions s JOIN students st ON st.group_id=s.group_id WHERE s.id=$1 AND st.id=$2", [sessionId,studentId]);
     if (!check.rowCount) return res.status(400).json({ok:false,status:"wrong_group"});
     const existing = await query("SELECT id, status, method FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1", [sessionId, studentId]);
     if (existing.rowCount && existing.rows[0].method === "system" && existing.rows[0].status === "absent") {
       const updated = await query(`UPDATE attendance_records
-        SET status=$1, method='manual', checkin_time=NOW()
+        SET status=$1, method='manual', checkin_time=NOW(), whatsapp_notified=$3
         WHERE id=$2
-        RETURNING *`, [status, existing.rows[0].id]);
+        RETURNING *`, [status, existing.rows[0].id, status === "present" || status === "late" ? whatsappNotified : false]);
       await auditLog({ action: "attendance_recorded", actorId: req.teacher.id, studentId, sessionId, details: { method: "manual", status_before: "absent", status_after: status, record_id: updated.rows[0].id }, request: req });
       if (status === "present" || status === "late") {
-        void enqueueAttendanceNotification({ attendanceRecordId: updated.rows[0].id, studentId })
+        if (whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: updated.rows[0].id, studentId })
           .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
       }
       return res.status(200).json({ok:true,record:updated.rows[0],corrected:true});
     }
-    const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,request:req});
+    const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,whatsappNotified,request:req});
     if (saved.duplicate) return res.status(409).json({ok:false,status:"duplicate_attendance"});
     res.status(201).json({ok:true,record:saved.record});
   } catch (error) { next(error); }
@@ -611,17 +629,18 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     const timing = await getAttendanceTimingDefaults();
     await query(`INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, ends_at, status)
       SELECT cs.group_id, cs.id, (NOW() AT TIME ZONE 'Africa/Cairo')::date,
-        (((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
+        ${cairoSessionTimeSql("(NOW() AT TIME ZONE 'Africa/Cairo')", "cs.start_time")},
         ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.end_time)) AT TIME ZONE 'Africa/Cairo'), 'open'
+        ${cairoSessionCloseSql("(NOW() AT TIME ZONE 'Africa/Cairo')", "$3")},
+        ${cairoSessionTimeSql("(NOW() AT TIME ZONE 'Africa/Cairo')", "cs.end_time")}, 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Africa/Cairo'))::INTEGER
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
     await finalizeExpiredAttendanceSessions();
-    const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(NOW() AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND NOW() BETWEEN s.opens_at AND s.closes_at ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
+    const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN (s.opens_at AT TIME ZONE 'Africa/Cairo') AND (LEAST(s.closes_at, s.ends_at) AT TIME ZONE 'Africa/Cairo') ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
     if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"closed_session",student: publicStudent});
-    const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,request:req});
+    const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
+    const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,whatsappNotified,request:req});
     if (saved.duplicate) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, studentId: student.id, sessionId: sessionResult.rows[0].id, details: { reason: saved.idempotencyConflict ? "idempotency_key_conflict" : "duplicate_student_scan", student_name: student.full_name, student_code: student.student_code }, request: req }); return res.status(409).json({ok:false,status:saved.idempotencyConflict ? "idempotency_conflict" : "duplicate_attendance",student: publicStudent,record:saved.record}); }
     res.json({ok:true,status:"attendance_recorded",student: publicStudent,record:saved.record});
   } catch (error) { next(error); }
@@ -692,10 +711,13 @@ operationsRouter.post("/fees/advance-payments", paymentRateLimit, requirePermiss
     const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
     const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
     if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
+    const sendWhatsApp = req.body?.send_whatsapp === true;
+    if (sendWhatsApp && !hasPermission(req.teacher, "whatsapp.send_receipts")) return res.status(403).json({ ok: false, status: "permission_required", permission: "whatsapp.send_receipts" });
     const result = await recordAdvancePayment({
       studentId,
       actorId: req.teacher.id,
       months: req.body?.months,
+      whatsappNotified: sendWhatsApp,
       paymentMethod,
       notes: req.body?.notes || null,
       idempotencyKey,
@@ -706,7 +728,12 @@ operationsRouter.post("/fees/advance-payments", paymentRateLimit, requirePermiss
     if (result.error === "current_month_unpaid") return res.status(409).json({ ok: false, status: result.error, message: "The current month must be paid before making an advance payment. / يجب سداد الشهر الحالي أولاً قبل الدفع مقدماً." });
     if (result.error === "invalid_months") return res.status(400).json({ ok: false, status: result.error, message: "Invalid advance months. / أشهر الدفع المقدم غير صحيحة." });
     if (result.error === "month_already_paid") return res.status(409).json({ ok: false, status: result.error, month: result.month, message: "This month is already paid. / هذا الشهر مدفوع بالفعل." });
-    res.status(201).json({ ok: true, payment: result.payment, months: result.months });
+    let whatsapp = null;
+    if (sendWhatsApp && result.payment?.id) {
+      try { whatsapp = await enqueueAdvancePaymentNotification({ paymentId: result.payment.id }); }
+      catch (error) { console.error("Failed to queue WhatsApp advance-payment notification", error); whatsapp = { queued: false, reason: "queue_failed" }; }
+    }
+    res.status(201).json({ ok: true, payment: result.payment, months: result.months, whatsapp });
   } catch (error) { next(error); }
 });
 operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("payments.view"), requirePermission("payments.collect"), async (req, res, next) => {
@@ -718,6 +745,8 @@ operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("pay
     const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
     const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
     if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
+    const sendWhatsApp = req.body?.send_whatsapp === true;
+    if (sendWhatsApp && !hasPermission(req.teacher, "whatsapp.send_receipts")) return res.status(403).json({ ok: false, status: "permission_required", permission: "whatsapp.send_receipts" });
     if (idempotencyKey) {
       const replay = await query("SELECT * FROM payments WHERE idempotency_key = $1 LIMIT 1", [idempotencyKey]);
       if (replay.rowCount) {
@@ -732,9 +761,14 @@ operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("pay
       const message = status === "already_paid" ? "تم سداد المصروفات بالفعل. / Fees already paid." : "لا توجد مصروفات مستحقة لهذا الطالب. / No outstanding fees for this student.";
       return res.status(409).json({ ok: false, status, message });
     }
-    const payment = await recordFullPayment({ studentId, actorId: req.teacher.id, paymentMethod, notes: req.body?.notes || null, idempotencyKey, request: req });
+    const payment = await recordFullPayment({ studentId, actorId: req.teacher.id, paymentMethod, notes: req.body?.notes || null, idempotencyKey, whatsappNotified: sendWhatsApp, request: req });
     if (payment?.idempotency_conflict) return res.status(409).json({ ok: false, status: "idempotency_conflict" });
     if (!payment) return res.status(409).json({ ok: false, status: "already_paid", message: "تم سداد المصروفات بالفعل. / Fees already paid." });
-    return res.status(201).json({ ok: true, payment, paid_amount: payment.amount });
+    let whatsapp = null;
+    if (sendWhatsApp && payment?.id) {
+      try { whatsapp = await enqueueReceiptNotification({ paymentId: payment.id }); }
+      catch (error) { console.error("Failed to queue WhatsApp receipt notification", error); whatsapp = { queued: false, reason: "queue_failed" }; }
+    }
+    return res.status(201).json({ ok: true, payment, paid_amount: payment.amount, whatsapp });
   } catch (error) { next(error); }
 });

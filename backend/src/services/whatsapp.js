@@ -5,19 +5,41 @@ import QRCode from "qrcode";
 import { pool, query } from "../db/pool.js";
 
 const DEFAULT_TEMPLATES = Object.freeze([
-  "مرحباً، تم تسجيل حضور الطالب {student_name} ({student_code}) اليوم {date} الساعة {time} في {group_name}.\nرابط البوابة: {portal_link}\nكود المتابعة: {ref_code}",
-  "تنبيه حضور: حضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام {time}.\nيمكنك متابعة البوابة من هنا: {portal_link}\nالمرجع: {ref_code}",
-  "تم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}. التاريخ: {date}، الوقت: {time}.\nكود الطالب: {student_code}\nرابط الطالب: {portal_link}\nرقم المرجع: {ref_code}"
+  "مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}",
+  "تنبيه حضور - مستر أحمد عبدربه:\nحضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام الساعة {time}.\nرابط ملف المتابعة: {portal_link}\nالمرجع: {ref_code}",
+  "إشعار حضور | مستر أحمد عبدربه\nتم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}.\nالتاريخ: {date} - الوقت: {time}.\nكود الطالب: {student_code}\nتقرير فوري: {portal_link}\nرقم المرجع: {ref_code}"
+]);
+const DEFAULT_GRADE_TEMPLATES = Object.freeze([
+  "نتيجة تقييم - مستر أحمد عبدربه 📝\nمرحباً بحضرتك، تم رصد نتيجة امتحان {exam_title} للطالب: {student_name}.\nالدرجة: {score} من {max_score} (النسبة: {percentage}%).\nكود الطالب: {student_code}\nتقرير الإجابات والتقييم: {portal_link}\nالمرجع: {ref_code}",
+  "إشعار درجات | منصة مستر أحمد عبدربه\nحصل الطالب {student_name} في {exam_title} على نتيجة {score}/{max_score} بمعدل {percentage}%.\nتفاصيل التقييم: {portal_link}\nمع تحيات مستر أحمد عبدربه وإدارة المنصة.\nالمرجع: {ref_code}",
+  "تقييم دراسي - مستر أحمد عبدربه:\nتم تصحيح {exam_title} للطالب {student_name}.\nالنتيجة المحققة: {score} من أصل {max_score}.\nرابط التقرير الكامل: {portal_link}\nكود: {ref_code}"
+]);
+const DEFAULT_RECEIPT_TEMPLATES = Object.freeze([
+  "إيصال سداد مصروفات - مستر أحمد عبدربه 🧾\nالسلام عليكم يا فندم، تم استلام مبلغ {amount_paid} ج.م سداداً لمصروفات شهر {month} للطالب: {student_name}.\nرقم الإيصال: {receipt_number}\nكود الطالب: {student_code}\nعرض الإيصال: {portal_link}\nشكراً لتعاونكم الدائم.",
+  "سند قبض إلكتروني | مستر أحمد عبدربه\nتم بنجاح تسجيل دفعة مالية بقيمة {amount_paid} ج.م لحساب الطالب: {student_name} (سداد {month}).\nرقم السند: {receipt_number}\nالسجل المالي: {portal_link}\nالمرجع: {ref_code}",
+  "إشعار تحصيل نقدية - مكتب مستر أحمد عبدربه:\nتم استلام مبلغ {amount_paid} جنيه لمصروفات {month} الخاصة بالطالب {student_name}.\nإيصال رقم: #{receipt_number}.\nمتابعة الحساب: {portal_link}"
+]);
+const DEFAULT_ADVANCE_PAYMENT_TEMPLATES = Object.freeze([
+  "إشعار دفع مقدم - مستر أحمد عبدربه 💳\nتم استلام مبلغ {amount_paid} ج.م كدفعة مقدمة للطالب: {student_name} عن شهور: {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}",
+  "تم بنجاح تسجيل دفعة مالية مقدمة بقيمة {amount_paid} ج.م لحساب الطالب: {student_name}.\nالشهور المسددة: {months}\nسند رقم: {receipt_number}\nالمرجع: {ref_code}",
+  "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"
 ]);
 
 const DEFAULT_SETTINGS = Object.freeze({
   auto_send: false,
   templates: [...DEFAULT_TEMPLATES],
+  grade_templates: [...DEFAULT_GRADE_TEMPLATES],
+  receipt_templates: [...DEFAULT_RECEIPT_TEMPLATES],
+  advance_payment_templates: [...DEFAULT_ADVANCE_PAYMENT_TEMPLATES],
   min_delay_seconds: 4,
   max_delay_seconds: 8
 });
 
-const publicAppUrl = String(process.env.PUBLIC_APP_URL || "https://abdrabo.up.railway.app").replace(/\/+$/, "");
+const publicAppUrl = String(
+  process.env.FRONTEND_URL ||
+  process.env.PUBLIC_APP_URL ||
+  (process.env.NODE_ENV === "production" ? "https://abdrabo.up.railway.app" : "http://localhost:3000")
+).replace(/\/+$/, "");
 
 const authDirectory = path.resolve(process.env.WHATSAPP_AUTH_DIR || path.resolve(process.cwd(), "whatsapp_auth"));
 const state = {
@@ -30,7 +52,10 @@ const state = {
   manuallyDisconnected: false,
   workerTimer: null,
   workerRunning: false,
-  lastSentAt: 0
+  lastSentAt: 0,
+  templateQueue: new Map(),
+  lastTemplateByType: new Map(),
+  lastTemplateText: null
 };
 
 function normalizeDigits(value) {
@@ -52,16 +77,24 @@ export function normalizeEgyptianPhone(value) {
 }
 
 function normalizeSettings(row) {
-  const templates = Array.isArray(row?.templates)
-    ? row.templates.map((template) => String(template ?? "").trim()).filter(Boolean).slice(0, 4)
-    : [];
+  const normalizeTemplates = (value, fallback, requiredPlaceholder) => {
+    const templates = Array.isArray(value) ? value.map((template) => String(template ?? "").trim()).filter(Boolean).slice(0, 4) : [];
+    return templates.length >= 3 && templates.every((template) => templateHasPlaceholder(template, requiredPlaceholder)) ? templates : [...fallback];
+  };
+  const templates = normalizeTemplates(row?.templates, DEFAULT_TEMPLATES, "{student_name}");
+  const gradeTemplates = normalizeTemplates(row?.grade_templates, DEFAULT_GRADE_TEMPLATES, "{exam_title}");
+  const receiptTemplates = normalizeTemplates(row?.receipt_templates, DEFAULT_RECEIPT_TEMPLATES, "{amount_paid}");
+  const advancePaymentTemplates = normalizeTemplates(row?.advance_payment_templates, DEFAULT_ADVANCE_PAYMENT_TEMPLATES, "{months}");
   const min = Number(row?.min_delay_seconds);
   const max = Number(row?.max_delay_seconds);
   return {
     auto_send: row?.auto_send === true,
-    templates: templates.length ? templates : [...DEFAULT_TEMPLATES],
-    min_delay_seconds: Number.isInteger(min) && min >= 4 && min <= 8 ? min : DEFAULT_SETTINGS.min_delay_seconds,
-    max_delay_seconds: Number.isInteger(max) && max >= 4 && max <= 8 ? max : DEFAULT_SETTINGS.max_delay_seconds,
+    templates,
+    grade_templates: gradeTemplates,
+    receipt_templates: receiptTemplates,
+    advance_payment_templates: advancePaymentTemplates,
+    min_delay_seconds: Number.isInteger(min) && min >= 2 && min <= 60 ? min : DEFAULT_SETTINGS.min_delay_seconds,
+    max_delay_seconds: Number.isInteger(max) && max >= 2 && max <= 60 ? max : DEFAULT_SETTINGS.max_delay_seconds,
     portal_base_url: publicAppUrl
   };
 }
@@ -70,16 +103,27 @@ export function validateWhatsAppSettings(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("invalid_whatsapp_settings");
   if (typeof input.auto_send !== "boolean") throw new Error("invalid_auto_send");
   if (!Array.isArray(input.templates) || input.templates.length < 3 || input.templates.length > 4) throw new Error("invalid_templates");
-  const templates = input.templates.map((template) => String(template ?? "").trim());
-  if (templates.some((template) => template.length < 5 || template.length > 2000)) throw new Error("invalid_template_length");
+  const rawTemplates = input.templates.map((template) => String(template ?? "").trim());
+  if (rawTemplates.some((template) => template.length < 5 || template.length > 2000)) throw new Error("invalid_template_length");
+  const templates = rawTemplates.some((template) => !templateHasPlaceholder(template, "student_name")) ? [...DEFAULT_TEMPLATES] : rawTemplates;
+  const normalizeOptionalTemplates = (value, fallback, requiredPlaceholder) => {
+    if (value === undefined) return [...fallback];
+    if (!Array.isArray(value) || value.length < 3 || value.length > 4) throw new Error("invalid_templates");
+    const rawTemplates = value.map((template) => String(template ?? "").trim());
+    if (rawTemplates.some((template) => template.length < 5 || template.length > 2000)) throw new Error("invalid_template_length");
+    return rawTemplates.some((template) => !templateHasPlaceholder(template, requiredPlaceholder)) ? [...fallback] : rawTemplates;
+  };
+  const gradeTemplates = normalizeOptionalTemplates(input.grade_templates, DEFAULT_GRADE_TEMPLATES, "{exam_title}");
+  const receiptTemplates = normalizeOptionalTemplates(input.receipt_templates, DEFAULT_RECEIPT_TEMPLATES, "{amount_paid}");
+  const advancePaymentTemplates = normalizeOptionalTemplates(input.advance_payment_templates, DEFAULT_ADVANCE_PAYMENT_TEMPLATES, "{months}");
   const min = Number(input.min_delay_seconds);
   const max = Number(input.max_delay_seconds);
-  if (!Number.isInteger(min) || !Number.isInteger(max) || min < 4 || max > 8 || min > max) throw new Error("invalid_delay_range");
-  return { auto_send: input.auto_send, templates, min_delay_seconds: min, max_delay_seconds: max };
+  if (!Number.isInteger(min) || !Number.isInteger(max) || min < 2 || max > 60 || min > max) throw new Error("invalid_delay_range");
+  return { auto_send: input.auto_send, templates, grade_templates: gradeTemplates, receipt_templates: receiptTemplates, advance_payment_templates: advancePaymentTemplates, min_delay_seconds: min, max_delay_seconds: max };
 }
 
 export async function getWhatsAppSettings(db = query) {
-  const result = await db("SELECT auto_send, templates, min_delay_seconds, max_delay_seconds FROM whatsapp_settings WHERE id = 1");
+  const result = await db("SELECT auto_send, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds FROM whatsapp_settings WHERE id = 1");
   return normalizeSettings(result.rows[0]);
 }
 
@@ -90,12 +134,14 @@ export async function updateWhatsAppSettings(input, { actorId, request = null, d
     await client.query("BEGIN");
     const before = await getWhatsAppSettings(client.query.bind(client));
     await client.query(
-      `INSERT INTO whatsapp_settings (id, auto_send, templates, min_delay_seconds, max_delay_seconds, updated_by, updated_at)
-       VALUES (1, $1, $2::jsonb, $3, $4, $5, NOW())
+      `INSERT INTO whatsapp_settings (id, auto_send, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds, updated_by, updated_at)
+       VALUES (1, $1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, NOW())
        ON CONFLICT (id) DO UPDATE SET auto_send = EXCLUDED.auto_send, templates = EXCLUDED.templates,
+         grade_templates = EXCLUDED.grade_templates, receipt_templates = EXCLUDED.receipt_templates,
+         advance_payment_templates = EXCLUDED.advance_payment_templates,
          min_delay_seconds = EXCLUDED.min_delay_seconds, max_delay_seconds = EXCLUDED.max_delay_seconds,
          updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
-      [settings.auto_send, JSON.stringify(settings.templates), settings.min_delay_seconds, settings.max_delay_seconds, actorId || null]
+      [settings.auto_send, JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates), settings.min_delay_seconds, settings.max_delay_seconds, actorId || null]
     );
     if (audit && JSON.stringify(before) !== JSON.stringify(settings)) {
       await audit({ db: client, action: "whatsapp_settings_changed", actorId, details: { previous: before, next: settings }, request });
@@ -204,8 +250,31 @@ function cairoParts(value) {
   };
 }
 
-function applyTemplate(template, values) {
-  return template.replace(/\{(student_name|date|time|group_name|ref_code)\}/g, (_match, key) => values[key] ?? "");
+function normalizeTemplateKey(key) {
+  return String(key || "")
+    .trim()
+    .replace(/^\{+|\}+$/g, "")
+    .replace(/([a-z\d])([A-Z])/g, "$1_$2")
+    .toLowerCase();
+}
+
+function templateHasPlaceholder(template, key) {
+  const normalizedKey = normalizeTemplateKey(key).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\{\\{?\\s*${normalizedKey}\\s*\\}\\}?`, "i").test(String(template ?? ""));
+}
+
+export function applyTemplate(template, values) {
+  const normalizedValues = Object.fromEntries(
+    Object.entries(values || {}).map(([key, value]) => [normalizeTemplateKey(key), value])
+  );
+  return String(template ?? "").replace(
+    /\{\{\s*([a-z][a-z\d_]*)\s*\}\}|\{\s*([a-z][a-z\d_]*)\s*\}/gi,
+    (_match, doubleKey, singleKey) => {
+      const key = normalizeTemplateKey(doubleKey || singleKey);
+      const value = normalizedValues[key];
+      return value == null ? "" : String(value);
+    }
+  );
 }
 
 function randomInteger(min, max) {
@@ -216,12 +285,117 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function shuffled(values) {
+  const result = [...values];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
+function chooseTemplate(type, templates) {
+  const signature = templates.join("\u0000");
+  const current = state.templateQueue.get(type);
+  if (!current || current.signature !== signature || !current.queue.length) {
+    const lastTemplate = state.lastTemplateByType.get(type) || state.lastTemplateText;
+    const queue = shuffled(templates.map((_template, index) => index));
+    if (queue.length > 1 && templates[queue[0]] === lastTemplate) [queue[0], queue[1]] = [queue[1], queue[0]];
+    state.templateQueue.set(type, { signature, queue });
+  }
+  const entry = state.templateQueue.get(type);
+  let nextIndex = entry.queue.shift();
+  if (templates.length > 1 && templates[nextIndex] === state.lastTemplateText) {
+    const alternativePosition = entry.queue.findIndex((index) => templates[index] !== state.lastTemplateText);
+    if (alternativePosition >= 0) {
+      [nextIndex, entry.queue[alternativePosition]] = [entry.queue[alternativePosition], nextIndex];
+    }
+  }
+  const template = templates[nextIndex];
+  state.lastTemplateByType.set(type, template);
+  state.lastTemplateText = template;
+  return template;
+}
+
+function normalizeNotificationType(value) {
+  const type = String(value || "").trim().toLowerCase();
+  if (type === "grade" || type === "exam") return "grade";
+  if (type === "receipt" || type === "fee") return "receipt";
+  if (["advance_payment", "advance-payment", "advance"].includes(type)) return "advance_payment";
+  if (type === "attendance") return "attendance";
+  return null;
+}
+
+function notificationTypeFromReference(value) {
+  const reference = String(value || "").trim().toUpperCase();
+  if (reference.startsWith("GRD-")) return "grade";
+  if (reference.startsWith("RCT-")) return "receipt";
+  if (reference.startsWith("ADV-")) return "advance_payment";
+  if (reference.startsWith("ATT-")) return "attendance";
+  return null;
+}
+
+function notificationTypeForJob(job) {
+  // The reference prefix is generated by the source operation and is authoritative.
+  // This also repairs legacy rows that were stored with the old attendance type.
+  const referenceType = notificationTypeFromReference(job.ref_code);
+  if (referenceType && referenceType !== "attendance") return referenceType;
+  return normalizeNotificationType(job.payload?.type || job.type || job.notification_type) || referenceType;
+}
+
+function notificationTemplates(settings, type) {
+  switch (normalizeNotificationType(type)) {
+    case "grade": {
+      const configured = settings.grade_templates;
+      const templates = Array.isArray(configured) ? configured.filter((template) => templateHasPlaceholder(template, "exam_title")) : [];
+      return templates.length ? templates : [...DEFAULT_GRADE_TEMPLATES];
+    }
+    case "receipt": {
+      const configured = settings.receipt_templates;
+      const templates = Array.isArray(configured) ? configured.filter((template) => templateHasPlaceholder(template, "amount_paid")) : [];
+      return templates.length ? templates : [...DEFAULT_RECEIPT_TEMPLATES];
+    }
+    case "advance_payment": {
+      const configured = settings.advance_payment_templates;
+      const templates = Array.isArray(configured)
+        ? configured.filter((template) => templateHasPlaceholder(template, "amount_paid") && templateHasPlaceholder(template, "months"))
+        : [];
+      return templates.length ? templates : [...DEFAULT_ADVANCE_PAYMENT_TEMPLATES];
+    }
+    case "attendance":
+      return Array.isArray(settings.templates) ? settings.templates : [...DEFAULT_TEMPLATES];
+    default:
+      throw new Error("unsupported_whatsapp_notification_type");
+  }
+}
+
+function compileWhatsAppMessage(_type, template, values) {
+  return applyTemplate(template, values);
+}
+
+function notificationRefCode(prefix, dateValue, id, unique = false) {
+  const date = new Date(dateValue || Date.now()).toISOString().slice(0, 10).replaceAll("-", "");
+  return `${prefix}-${date}-${id}${unique ? `-${Date.now()}-${randomInteger(100, 999)}` : ""}`;
+}
+
+async function enqueueJob({ notificationType, sourceId, studentId, phone, payload, refCode, attendanceRecordId = null }) {
+  const queuedPayload = { ...(payload || {}), type: notificationType };
+  await query(`
+    INSERT INTO whatsapp_notification_jobs (notification_type, source_id, attendance_record_id, student_id, phone_number, payload, ref_code)
+    VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
+    ON CONFLICT (attendance_record_id) DO NOTHING`, [
+    notificationType, sourceId, attendanceRecordId, studentId, phone, JSON.stringify(queuedPayload), refCode
+  ]);
+  wakeWhatsAppWorker();
+}
+
 export async function enqueueAttendanceNotification({ attendanceRecordId, studentId }) {
   const settings = await getWhatsAppSettings();
   if (!settings.auto_send) return { queued: false, reason: "disabled" };
   const result = await query(`
     SELECT ar.id AS attendance_record_id, ar.status, ar.checkin_time, st.id AS student_id,
-      st.full_name AS student_name, st.student_code, st.guardian_phone, COALESCE(g.display_name, g.name) AS group_name
+      st.full_name AS student_name, st.student_code, st.guardian_phone,
+      COALESCE(NULLIF(TRIM(g.display_name), ''), NULLIF(TRIM(g.name), ''), '') AS group_name
     FROM attendance_records ar
     JOIN students st ON st.id = ar.student_id
     JOIN attendance_sessions ats ON ats.id = ar.session_id
@@ -231,18 +405,83 @@ export async function enqueueAttendanceNotification({ attendanceRecordId, studen
   if (!row) return { queued: false, reason: "not_eligible" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
   if (!phone) return { queued: false, reason: "invalid_phone" };
-  const refCode = `ATT-${new Date(row.checkin_time).toISOString().slice(0, 10).replaceAll("-", "")}-${row.attendance_record_id}`;
-  await query(`
-    INSERT INTO whatsapp_notification_jobs (attendance_record_id, student_id, phone_number, payload, ref_code)
-    VALUES ($1, $2, $3, $4::jsonb, $5)
-    ON CONFLICT (attendance_record_id) DO NOTHING`, [
-    row.attendance_record_id,
-    row.student_id,
+  const refCode = notificationRefCode("ATT", row.checkin_time, row.attendance_record_id);
+  await enqueueJob({
+    notificationType: "attendance",
+    sourceId: row.attendance_record_id,
+    attendanceRecordId: row.attendance_record_id,
+    studentId: row.student_id,
     phone,
-    JSON.stringify({ student_name: row.student_name, student_code: row.student_code, group_name: row.group_name, checkin_time: row.checkin_time }),
+    payload: { student_name: row.student_name, student_code: row.student_code, group_name: row.group_name, checkin_time: row.checkin_time },
     refCode
-  ]);
-  wakeWhatsAppWorker();
+  });
+  return { queued: true, ref_code: refCode };
+}
+
+export async function enqueueGradeNotification({ resultId }) {
+  const result = await query(`
+    SELECT er.id AS result_id, er.score, e.title AS exam_title, e.max_score, e.exam_date,
+      s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
+    FROM exam_results er
+    JOIN exams e ON e.id = er.exam_id
+    JOIN students s ON s.id = er.student_id
+    WHERE er.id = $1 AND s.is_active = TRUE AND s.deleted_at IS NULL`, [resultId]);
+  const row = result.rows[0];
+  if (!row) return { queued: false, reason: "not_found" };
+  const phone = normalizeEgyptianPhone(row.guardian_phone);
+  if (!phone) return { queued: false, reason: "invalid_phone" };
+  const maxScore = Number(row.max_score);
+  const score = Number(row.score);
+  const percentage = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1).replace(/\.0$/, "") : "0";
+  const refCode = notificationRefCode("GRD", row.exam_date, row.result_id, true);
+  await enqueueJob({ notificationType: "grade", sourceId: row.result_id, studentId: row.student_id, phone, refCode, payload: {
+    student_name: row.student_name, student_code: row.student_code, exam_title: row.exam_title,
+    score, max_score: maxScore, percentage, event_time: row.exam_date
+  } });
+  await query("UPDATE exam_results SET whatsapp_notified = TRUE WHERE id = $1", [row.result_id]);
+  return { queued: true, ref_code: refCode };
+}
+
+export async function enqueueReceiptNotification({ paymentId }) {
+  const result = await query(`
+    SELECT p.id AS payment_id, p.amount, p.payment_reference, p.payment_months,
+      p.payment_date, s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
+    FROM payments p
+    JOIN students s ON s.id = p.student_id
+    WHERE p.id = $1 AND p.payment_type = 'normal' AND s.is_active = TRUE AND s.deleted_at IS NULL`, [paymentId]);
+  const row = result.rows[0];
+  if (!row) return { queued: false, reason: "not_found" };
+  const phone = normalizeEgyptianPhone(row.guardian_phone);
+  if (!phone) return { queued: false, reason: "invalid_phone" };
+  const months = Array.isArray(row.payment_months) ? row.payment_months.map((item) => String(item.month || "").slice(0, 7)).filter(Boolean) : [];
+  const month = months.join(", ");
+  const refCode = notificationRefCode("RCT", row.payment_date, row.payment_id, true);
+  await enqueueJob({ notificationType: "receipt", sourceId: row.payment_id, studentId: row.student_id, phone, refCode, payload: {
+    student_name: row.student_name, student_code: row.student_code, amount_paid: Number(row.amount).toFixed(2),
+    month, receipt_number: row.payment_reference || refCode, event_time: row.payment_date
+  } });
+  return { queued: true, ref_code: refCode };
+}
+
+export async function enqueueAdvancePaymentNotification({ paymentId }) {
+  const result = await query(`
+    SELECT p.id AS payment_id, p.amount, p.payment_reference, p.payment_months,
+      p.payment_date, s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
+    FROM payments p
+    JOIN students s ON s.id = p.student_id
+    WHERE p.id = $1 AND p.payment_type = 'advance' AND s.is_active = TRUE AND s.deleted_at IS NULL`, [paymentId]);
+  const row = result.rows[0];
+  if (!row) return { queued: false, reason: "not_found" };
+  const phone = normalizeEgyptianPhone(row.guardian_phone);
+  if (!phone) return { queued: false, reason: "invalid_phone" };
+  const months = Array.isArray(row.payment_months)
+    ? row.payment_months.map((item) => String(item?.month || "").slice(0, 7)).filter(Boolean).join(", ")
+    : "";
+  const refCode = notificationRefCode("ADV", row.payment_date, row.payment_id, true);
+  await enqueueJob({ notificationType: "advance_payment", sourceId: row.payment_id, studentId: row.student_id, phone, refCode, payload: {
+    student_name: row.student_name, student_code: row.student_code, amount_paid: Number(row.amount).toFixed(2),
+    months, receipt_number: row.payment_reference || refCode, event_time: row.payment_date
+  } });
   return { queued: true, ref_code: refCode };
 }
 
@@ -279,7 +518,15 @@ async function processWhatsAppJob() {
     job = await claimNextJob();
     if (!job) return;
     const settings = await getWhatsAppSettings();
-    if (!settings.auto_send) { await updateJob(job.id, "skipped", { error: "auto_send_disabled" }); return; }
+    const type = notificationTypeForJob(job);
+    if (!type) {
+      await updateJob(job.id, "skipped", { error: "unsupported_whatsapp_notification_type" });
+      return;
+    }
+    if (!settings.auto_send && type === "attendance") {
+      await updateJob(job.id, "skipped", { error: "auto_send_disabled" });
+      return;
+    }
     if (state.status !== "connected" || !state.socket) {
       await updateJob(job.id, "pending", { error: "whatsapp_disconnected", nextAttemptAt: new Date(Date.now() + 10_000) });
       return;
@@ -287,18 +534,28 @@ async function processWhatsAppJob() {
     const elapsed = Date.now() - state.lastSentAt;
     const delay = randomInteger(settings.min_delay_seconds, settings.max_delay_seconds) * 1000;
     if (state.lastSentAt && elapsed < delay) await sleep(delay - elapsed);
-    const parts = cairoParts(job.payload?.checkin_time);
-    const templates = settings.templates.filter(Boolean);
-    const template = templates[randomInteger(0, templates.length - 1)];
-    const body = applyTemplate(template, {
+    const parts = cairoParts(job.payload?.event_time || job.payload?.checkin_time);
+    const templates = notificationTemplates(settings, type).filter(Boolean);
+    if (!templates.length) {
+      await updateJob(job.id, "failed", { error: "no_whatsapp_templates" });
+      return;
+    }
+    const template = chooseTemplate(type, templates);
+    const studentCode = String(job.payload?.student_code || "").trim();
+    const portalStudentId = studentCode || String(job.payload?.student_id || job.student_id || "").trim();
+    const templateValues = {
       ...job.payload,
       ...parts,
       ref_code: job.ref_code,
-      portal_link: `${publicAppUrl}/student/${encodeURIComponent(String(job.payload?.student_code || ""))}`
-    });
+      student_code: studentCode,
+      portal_link: `${publicAppUrl}/student/${encodeURIComponent(portalStudentId)}`
+    };
+    const body = compileWhatsAppMessage(type, template, templateValues);
     const phone = normalizeEgyptianPhone(job.phone_number);
     if (!phone) { await updateJob(job.id, "skipped", { error: "invalid_phone" }); return; }
-    await state.socket.sendMessage(`${phone.slice(1)}@s.whatsapp.net`, { text: body });
+    const messagePayload = { text: body };
+    console.log(`[WhatsApp] Sending TYPE: ${type}, TEXT: ${body}`);
+    await state.socket.sendMessage(`${phone.slice(1)}@s.whatsapp.net`, messagePayload);
     state.lastSentAt = Date.now();
     await updateJob(job.id, "sent");
   } catch (error) {

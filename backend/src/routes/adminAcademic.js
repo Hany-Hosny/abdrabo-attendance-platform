@@ -379,14 +379,14 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
     const canViewAttention = hasPermission(req.teacher, "dashboard.alerts.view");
     const [attendance, exams, notes, payments, threads, feeSummary] = await Promise.all([
       canViewAttendance ? query(`SELECT s.id AS session_id, s.session_date, s.starts_at, s.closes_at, cs.start_time, cs.end_time,
-          g.name AS group_name, COALESCE(NULLIF(TRIM(g.subject), ''), g.name) AS session_name, ar.status, ar.checkin_time
+          g.name AS group_name, COALESCE(NULLIF(TRIM(g.subject), ''), g.name) AS session_name, ar.status, ar.checkin_time, ar.whatsapp_notified
         FROM attendance_sessions s
         JOIN groups g ON g.id = s.group_id
         JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
         LEFT JOIN attendance_records ar ON ar.session_id = s.id AND ar.student_id = $1
         WHERE s.group_id = $2 AND s.schedule_id IS NOT NULL
         ORDER BY s.session_date DESC, cs.start_time DESC`, [studentId, student.group_id]) : Promise.resolve({ rows: [] }),
-      canViewEvaluations ? query(`SELECT e.id, e.title, e.exam_date, e.max_score, er.score, er.note
+      canViewEvaluations ? query(`SELECT e.id, e.title, e.exam_date, e.max_score, er.score, er.note, er.whatsapp_notified
         FROM exams e JOIN exam_results er ON er.exam_id = e.id AND er.student_id = $1
         WHERE e.group_id = $2 ORDER BY e.exam_date DESC, e.id DESC`, [studentId, student.group_id]) : Promise.resolve({ rows: [] }),
       canViewNotes ? query(`SELECT n.id, n.student_id, n.body, n.created_at, n.updated_at, n.is_read, n.author_id,
@@ -394,7 +394,7 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
         FROM student_notes n LEFT JOIN teachers t ON t.id = n.author_id
         WHERE n.student_id = $1 ORDER BY n.created_at DESC`, [studentId]) : Promise.resolve({ rows: [] }),
       canViewPaymentReports ? query(`SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes,
-          p.payment_months, COALESCE(t.username, t.name, t.email, 'Staff') AS paid_by
+          p.payment_months, p.whatsapp_notified, COALESCE(t.username, t.name, t.email, 'Staff') AS paid_by
         FROM payments p LEFT JOIN teachers t ON t.id = COALESCE(p.paid_by, p.recorded_by)
         WHERE p.student_id = $1 AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
         ORDER BY COALESCE(p.paid_at, p.payment_date) DESC`, [studentId]) : Promise.resolve({ rows: [] }),
@@ -471,7 +471,7 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
     }
     const result = await query(
       `SELECT er.id, er.student_id, s.full_name, s.student_code, s.group_id, g.name AS group_name,
-              e.id AS exam_id, e.title, e.exam_date, e.max_score, er.score, er.note, er.note AS assessment
+              e.id AS exam_id, e.title, e.exam_date, e.max_score, er.score, er.note, er.note AS assessment, er.whatsapp_notified
        FROM exam_results er
        JOIN exams e ON e.id = er.exam_id
        JOIN students s ON s.id = er.student_id
@@ -515,10 +515,10 @@ adminAcademicRouter.post("/exams/results", requirePermission("exams.manage"), as
 
     const existingResult = await query("SELECT id, exam_id, student_id, score, note FROM exam_results WHERE exam_id = $1 AND student_id = $2", [examId, studentId]);
     const result = await query(
-      `INSERT INTO exam_results (exam_id, student_id, score, note)
-       VALUES ($1, $2, $3, $4)
+       `INSERT INTO exam_results (exam_id, student_id, score, note, whatsapp_notified)
+       VALUES ($1, $2, $3, $4, FALSE)
        ON CONFLICT (exam_id, student_id)
-       DO UPDATE SET score = EXCLUDED.score, note = EXCLUDED.note
+       DO UPDATE SET score = EXCLUDED.score, note = EXCLUDED.note, whatsapp_notified = FALSE
        RETURNING id, exam_id, student_id, score, note AS assessment`,
       [examId, studentId, score, assessment || null]
     );

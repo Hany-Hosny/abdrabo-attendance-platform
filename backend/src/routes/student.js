@@ -165,7 +165,7 @@ studentRouter.get("/me/fees", async (req, res, next) => {
     }
     const summary = await getFeeSummary(student.id);
     const payments = await query(
-      `SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes, p.payment_months,
+      `SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes, p.payment_months, p.whatsapp_notified,
         COALESCE(t.name, t.username, t.email, 'Staff') AS paid_by
        FROM payments p LEFT JOIN teachers t ON t.id = COALESCE(p.paid_by, p.recorded_by)
        WHERE p.student_id=$1 ORDER BY COALESCE(p.paid_at, p.payment_date) DESC`,
@@ -215,7 +215,7 @@ studentRouter.get("/me/exams", async (req, res, next) => {
     const student = await authenticatedStudent(req);
     if (!student) return res.status(401).json({ ok: false, status: "unauthorized", exams: [] });
     const result = await query(
-      `SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment
+      `SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment, er.whatsapp_notified
        FROM exam_results er JOIN exams e ON e.id = er.exam_id
        WHERE er.student_id = $1 ORDER BY e.exam_date DESC, e.id DESC`,
       [student.id]
@@ -253,7 +253,7 @@ studentRouter.get("/:id/exams", async (req, res, next) => {
     if (!student || Number(student.id) !== Number(req.params.id)) return res.status(401).json({ ok: false, status: "unauthorized" });
     const result = await query(
       `
-        SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment
+        SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment, er.whatsapp_notified
         FROM exam_results er
         JOIN exams e ON e.id = er.exam_id
         WHERE er.student_id = $1

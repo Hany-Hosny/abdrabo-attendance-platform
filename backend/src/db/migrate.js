@@ -94,6 +94,7 @@ export async function migrate() {
       ip_address TEXT,
       is_suspicious BOOLEAN NOT NULL DEFAULT FALSE,
       suspicious_reason TEXT,
+      whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (session_id, student_id)
     );
@@ -115,6 +116,7 @@ export async function migrate() {
       student_code_snapshot TEXT,
       score NUMERIC(6,2) NOT NULL,
       note TEXT,
+      whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (exam_id, student_id)
     );
@@ -294,9 +296,11 @@ export async function migrate() {
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
+    ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
+    ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE homework_submissions ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
     UPDATE groups SET grade_level = COALESCE(grade_level, grade), display_name = COALESCE(display_name, name);
@@ -342,7 +346,11 @@ export async function migrate() {
     UPDATE attendance_sessions s
     SET starts_at = ((s.session_date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
         opens_at = ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-        closes_at = ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+        closes_at = CASE
+          WHEN cs.closes_after_minutes IS NOT NULL AND cs.closes_after_minutes <> 20
+            THEN LEAST(((s.session_date + cs.end_time) AT TIME ZONE 'Africa/Cairo'), ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'))
+          ELSE ((s.session_date + cs.end_time) AT TIME ZONE 'Africa/Cairo')
+        END,
         ends_at = ((s.session_date + cs.end_time) AT TIME ZONE 'Africa/Cairo')
     FROM class_schedules cs
     WHERE cs.id = s.schedule_id AND cs.group_id = s.group_id;
@@ -443,6 +451,7 @@ export async function migrate() {
       paid_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       payment_months JSONB NOT NULL DEFAULT '[]'::jsonb,
       payment_type TEXT NOT NULL DEFAULT 'normal',
+      whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE,
       student_name_snapshot TEXT,
       student_code_snapshot TEXT,
       student_serial_snapshot TEXT,
@@ -452,6 +461,7 @@ export async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_type TEXT NOT NULL DEFAULT 'normal';
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_serial_snapshot TEXT;
@@ -532,8 +542,11 @@ export async function migrate() {
       id INTEGER PRIMARY KEY CHECK (id = 1),
       auto_send BOOLEAN NOT NULL DEFAULT FALSE,
       templates JSONB NOT NULL DEFAULT '[]'::jsonb,
-      min_delay_seconds INTEGER NOT NULL DEFAULT 4 CHECK (min_delay_seconds BETWEEN 4 AND 8),
-      max_delay_seconds INTEGER NOT NULL DEFAULT 8 CHECK (max_delay_seconds BETWEEN 4 AND 8),
+      grade_templates JSONB NOT NULL DEFAULT '[]'::jsonb,
+      receipt_templates JSONB NOT NULL DEFAULT '[]'::jsonb,
+      advance_payment_templates JSONB NOT NULL DEFAULT '[]'::jsonb,
+      min_delay_seconds INTEGER NOT NULL DEFAULT 4 CHECK (min_delay_seconds BETWEEN 2 AND 60),
+      max_delay_seconds INTEGER NOT NULL DEFAULT 8 CHECK (max_delay_seconds BETWEEN 2 AND 60),
       updated_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -541,7 +554,9 @@ export async function migrate() {
     );
     CREATE TABLE IF NOT EXISTS whatsapp_notification_jobs (
       id BIGSERIAL PRIMARY KEY,
-      attendance_record_id BIGINT NOT NULL UNIQUE REFERENCES attendance_records(id) ON DELETE CASCADE,
+      notification_type TEXT NOT NULL DEFAULT 'attendance' CHECK (notification_type IN ('attendance', 'grade', 'receipt', 'advance_payment')),
+      source_id BIGINT,
+      attendance_record_id BIGINT UNIQUE REFERENCES attendance_records(id) ON DELETE CASCADE,
       student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
       phone_number TEXT NOT NULL,
       payload JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -557,14 +572,87 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS whatsapp_notification_jobs_queue_idx
       ON whatsapp_notification_jobs(status, next_attempt_at, id);
   `);
+  // Keep every DDL/DML command separate when no transaction client is used.
+  // node-postgres rejects a multi-command query whenever parameters are passed
+  // ("cannot insert multiple commands into a prepared statement").
+  await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS grade_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS receipt_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS advance_payment_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_min_delay_seconds_check");
+  await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_max_delay_seconds_check");
+  await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_min_delay_seconds_check CHECK (min_delay_seconds BETWEEN 2 AND 60)");
+  await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_max_delay_seconds_check CHECK (max_delay_seconds BETWEEN 2 AND 60)");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS notification_type TEXT NOT NULL DEFAULT 'attendance'");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS source_id BIGINT");
+  await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN attendance_record_id DROP NOT NULL");
+  await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_notification_type_check");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'grade', 'receipt', 'advance_payment'))");
+  await query("UPDATE whatsapp_notification_jobs SET source_id = attendance_record_id WHERE source_id IS NULL");
   await query(
-    `INSERT INTO whatsapp_settings (id, templates)
-     VALUES (1, $1::jsonb)
+    `INSERT INTO whatsapp_settings (id, templates, grade_templates, receipt_templates, advance_payment_templates)
+     VALUES (1, $1::jsonb, $2::jsonb, $3::jsonb, $4::jsonb)
      ON CONFLICT (id) DO NOTHING`,
     [JSON.stringify([
-    "مرحباً، تم تسجيل حضور الطالب {student_name} ({student_code}) اليوم {date} الساعة {time} في {group_name}.\nرابط البوابة: {portal_link}\nكود المتابعة: {ref_code}",
-    "تنبيه حضور: حضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام {time}.\nيمكنك متابعة البوابة من هنا: {portal_link}\nالمرجع: {ref_code}",
-    "تم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}. التاريخ: {date}، الوقت: {time}.\nكود الطالب: {student_code}\nرابط الطالب: {portal_link}\nرقم المرجع: {ref_code}"
+    "مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}",
+    "تنبيه حضور - مستر أحمد عبدربه:\nحضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام الساعة {time}.\nرابط ملف المتابعة: {portal_link}\nالمرجع: {ref_code}",
+    "إشعار حضور | مستر أحمد عبدربه\nتم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}.\nالتاريخ: {date} - الوقت: {time}.\nكود الطالب: {student_code}\nتقرير فوري: {portal_link}\nرقم المرجع: {ref_code}"
+    ]), JSON.stringify([
+      "نتيجة تقييم - مستر أحمد عبدربه 📝\nمرحباً بحضرتك، تم رصد نتيجة امتحان {exam_title} للطالب: {student_name}.\nالدرجة: {score} من {max_score} (النسبة: {percentage}%).\nكود الطالب: {student_code}\nتقرير الإجابات والتقييم: {portal_link}\nالمرجع: {ref_code}",
+      "إشعار درجات | منصة مستر أحمد عبدربه\nحصل الطالب {student_name} في {exam_title} على نتيجة {score}/{max_score} بمعدل {percentage}%.\nتفاصيل التقييم: {portal_link}\nمع تحيات مستر أحمد عبدربه وإدارة المنصة.\nالمرجع: {ref_code}",
+      "تقييم دراسي - مستر أحمد عبدربه:\nتم تصحيح {exam_title} للطالب {student_name}.\nالنتيجة المحققة: {score} من أصل {max_score}.\nرابط التقرير الكامل: {portal_link}\nكود: {ref_code}"
+    ]), JSON.stringify([
+      "إيصال سداد مصروفات - مستر أحمد عبدربه 🧾\nالسلام عليكم يا فندم، تم استلام مبلغ {amount_paid} ج.م سداداً لمصروفات شهر {month} للطالب: {student_name}.\nرقم الإيصال: {receipt_number}\nكود الطالب: {student_code}\nعرض الإيصال: {portal_link}\nشكراً لتعاونكم الدائم.",
+      "سند قبض إلكتروني | مستر أحمد عبدربه\nتم بنجاح تسجيل دفعة مالية بقيمة {amount_paid} ج.م لحساب الطالب: {student_name} (سداد {month}).\nرقم السند: {receipt_number}\nالسجل المالي: {portal_link}\nالمرجع: {ref_code}",
+      "إشعار تحصيل نقدية - مكتب مستر أحمد عبدربه:\nتم استلام مبلغ {amount_paid} جنيه لمصروفات {month} الخاصة بالطالب {student_name}.\nإيصال رقم: #{receipt_number}.\nمتابعة الحساب: {portal_link}"
+    ]), JSON.stringify([
+      "إشعار دفع مقدم - مستر أحمد عبدربه 💳\nتم استلام مبلغ {amount_paid} ج.م كدفعة مقدمة للطالب: {student_name} عن شهور: {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}",
+      "تم بنجاح تسجيل دفعة مالية مقدمة بقيمة {amount_paid} ج.م لحساب الطالب: {student_name}.\nالشهور المسددة: {months}\nسند رقم: {receipt_number}\nالمرجع: {ref_code}",
+      "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"
+    ])]
+  );
+
+  // Replace structurally invalid legacy arrays while preserving user customizations.
+  await query(
+    `UPDATE whatsapp_settings
+     SET templates = CASE
+         WHEN jsonb_typeof(templates) <> 'array'
+           OR CASE WHEN jsonb_typeof(templates) = 'array' THEN jsonb_array_length(templates) ELSE 0 END < 3
+           OR NOT (templates::text ~ '\\{student_name\\}')
+         THEN $1::jsonb ELSE templates END,
+       grade_templates = CASE
+           WHEN jsonb_typeof(grade_templates) <> 'array'
+             OR CASE WHEN jsonb_typeof(grade_templates) = 'array' THEN jsonb_array_length(grade_templates) ELSE 0 END < 3
+             OR NOT (grade_templates::text ~ '\\{exam_title\\}')
+           THEN $2::jsonb ELSE grade_templates END,
+       receipt_templates = CASE
+           WHEN jsonb_typeof(receipt_templates) <> 'array'
+             OR CASE WHEN jsonb_typeof(receipt_templates) = 'array' THEN jsonb_array_length(receipt_templates) ELSE 0 END < 3
+             OR NOT (receipt_templates::text ~ '\\{amount_paid\\}')
+           THEN $3::jsonb ELSE receipt_templates END,
+       advance_payment_templates = CASE
+           WHEN jsonb_typeof(advance_payment_templates) <> 'array'
+             OR CASE WHEN jsonb_typeof(advance_payment_templates) = 'array' THEN jsonb_array_length(advance_payment_templates) ELSE 0 END < 3
+             OR NOT (advance_payment_templates::text ~ '\\{amount_paid\\}')
+             OR NOT (advance_payment_templates::text ~ '\\{months\\}')
+           THEN $4::jsonb ELSE advance_payment_templates END,
+       updated_at = NOW()
+     WHERE id = 1`,
+    [JSON.stringify([
+      "مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}",
+      "تنبيه حضور - مستر أحمد عبدربه:\nحضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام الساعة {time}.\nرابط ملف المتابعة: {portal_link}\nالمرجع: {ref_code}",
+      "إشعار حضور | مستر أحمد عبدربه\nتم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}.\nالتاريخ: {date} - الوقت: {time}.\nكود الطالب: {student_code}\nتقرير فوري: {portal_link}\nرقم المرجع: {ref_code}"
+    ]), JSON.stringify([
+      "نتيجة تقييم - مستر أحمد عبدربه 📝\nمرحباً بحضرتك، تم رصد نتيجة امتحان {exam_title} للطالب: {student_name}.\nالدرجة: {score} من {max_score} (النسبة: {percentage}%).\nكود الطالب: {student_code}\nتقرير الإجابات والتقييم: {portal_link}\nالمرجع: {ref_code}",
+      "إشعار درجات | منصة مستر أحمد عبدربه\nحصل الطالب {student_name} في {exam_title} على نتيجة {score}/{max_score} بمعدل {percentage}%.\nتفاصيل التقييم: {portal_link}\nمع تحيات مستر أحمد عبدربه وإدارة المنصة.\nالمرجع: {ref_code}",
+      "تقييم دراسي - مستر أحمد عبدربه:\nتم تصحيح {exam_title} للطالب {student_name}.\nالنتيجة المحققة: {score} من أصل {max_score}.\nرابط التقرير الكامل: {portal_link}\nكود: {ref_code}"
+    ]), JSON.stringify([
+      "إيصال سداد مصروفات - مستر أحمد عبدربه 🧾\nالسلام عليكم يا فندم، تم استلام مبلغ {amount_paid} ج.م سداداً لمصروفات شهر {month} للطالب: {student_name}.\nرقم الإيصال: {receipt_number}\nكود الطالب: {student_code}\nعرض الإيصال: {portal_link}\nشكراً لتعاونكم الدائم.",
+      "سند قبض إلكتروني | مستر أحمد عبدربه\nتم بنجاح تسجيل دفعة مالية بقيمة {amount_paid} ج.م لحساب الطالب: {student_name} (سداد {month}).\nرقم السند: {receipt_number}\nالسجل المالي: {portal_link}\nالمرجع: {ref_code}",
+      "إشعار تحصيل نقدية - مكتب مستر أحمد عبدربه:\nتم استلام مبلغ {amount_paid} جنيه لمصروفات {month} الخاصة بالطالب {student_name}.\nإيصال رقم: #{receipt_number}.\nمتابعة الحساب: {portal_link}"
+    ]), JSON.stringify([
+      "إشعار دفع مقدم - مستر أحمد عبدربه 💳\nتم استلام مبلغ {amount_paid} ج.م كدفعة مقدمة للطالب: {student_name} عن شهور: {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}",
+      "تم بنجاح تسجيل دفعة مالية مقدمة بقيمة {amount_paid} ج.م لحساب الطالب: {student_name}.\nالشهور المسددة: {months}\nسند رقم: {receipt_number}\nالمرجع: {ref_code}",
+      "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"
     ])]
   );
 

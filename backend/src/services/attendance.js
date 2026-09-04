@@ -52,9 +52,11 @@ export async function loginAndRecordAttendance({ student_code, device_id, ip }) 
       JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
         AND cs.is_active = TRUE AND cs.day_of_week = EXTRACT(DOW FROM s.session_date)::INTEGER
       WHERE s.group_id = $1
-        AND s.session_date = (NOW() AT TIME ZONE 'Africa/Cairo')::date
+        AND s.session_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
         AND s.status = 'open'
-        AND NOW() BETWEEN s.opens_at AND s.closes_at
+        AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN
+          (s.opens_at AT TIME ZONE 'Africa/Cairo') AND
+          (LEAST(s.closes_at, s.ends_at) AT TIME ZONE 'Africa/Cairo')
       ORDER BY s.starts_at ASC
       LIMIT 1
     `,
@@ -102,9 +104,10 @@ export async function loginAndRecordAttendance({ student_code, device_id, ip }) 
         device_id,
         ip_address,
         is_suspicious,
-        suspicious_reason
+        suspicious_reason,
+        whatsapp_notified
       )
-      VALUES ($1, $2, $3, 'student_login', NOW(), NULL, NULL, NULL, $4, $5, $6, $7)
+      VALUES ($1, $2, $3, 'student_login', NOW(), NULL, NULL, NULL, $4, $5, $6, $7, $8)
       ON CONFLICT (session_id, student_id) DO UPDATE SET
         checkin_time = attendance_records.checkin_time
       RETURNING *
@@ -116,7 +119,8 @@ export async function loginAndRecordAttendance({ student_code, device_id, ip }) 
       device_id,
       ip,
       isSuspicious,
-      suspiciousReason
+      suspiciousReason,
+      !isSuspicious
     ]
   );
 

@@ -92,7 +92,7 @@ export async function getFeeSummary(studentId, { ensure = true } = {}) {
   return result.rows[0] || null;
 }
 
-export async function recordFullPayment({ studentId, actorId, paymentMethod = "cash", notes = null, idempotencyKey = null, request = null }) {
+export async function recordFullPayment({ studentId, actorId, paymentMethod = "cash", notes = null, idempotencyKey = null, whatsappNotified = false, request = null }) {
   await ensureMonthlyFees(Number(studentId));
   const client = await pool.connect();
   try {
@@ -139,14 +139,14 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
     const payment = await client.query(`
       INSERT INTO payments (
         student_id, group_id, amount, payment_date, paid_at, payment_method,
-        notes, recorded_by, paid_by, payment_months, idempotency_key,
+        notes, recorded_by, paid_by, payment_months, whatsapp_notified, idempotency_key,
         student_name_snapshot, student_code_snapshot, student_serial_snapshot,
         scan_serial_snapshot, group_name_snapshot, grade_level_snapshot
-      ) VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14)
+      ) VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15)
       ON CONFLICT DO NOTHING
       RETURNING *
     `, [
-      studentId, groupId, remaining, paymentMethod, notes, actorId, JSON.stringify(coveredMonths), idempotencyKey,
+      studentId, groupId, remaining, paymentMethod, notes, actorId, JSON.stringify(coveredMonths), Boolean(whatsappNotified), idempotencyKey,
       dues.rows[0].full_name, dues.rows[0].student_code, dues.rows[0].student_serial,
       dues.rows[0].scan_serial, dues.rows[0].group_name, dues.rows[0].grade_level
     ]);
@@ -248,7 +248,7 @@ export async function getAdvanceOptions(studentId) {
   };
 }
 
-export async function recordAdvancePayment({ studentId, actorId, months, paymentMethod = "cash", notes = null, idempotencyKey = null, request = null }) {
+export async function recordAdvancePayment({ studentId, actorId, months, paymentMethod = "cash", notes = null, idempotencyKey = null, whatsappNotified = false, request = null }) {
   await ensureMonthlyFees(Number(studentId));
   const client = await pool.connect();
   try {
@@ -324,14 +324,14 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
     const amount = coveredMonths.reduce((sum, item) => sum + Number(item.amount), 0);
     const payment = await client.query(`
       INSERT INTO payments (student_id, group_id, amount, payment_date, paid_at, payment_method,
-        notes, recorded_by, paid_by, payment_months, payment_type, idempotency_key,
+        notes, recorded_by, paid_by, payment_months, payment_type, whatsapp_notified, idempotency_key,
         student_name_snapshot, student_code_snapshot, student_serial_snapshot,
         scan_serial_snapshot, group_name_snapshot, grade_level_snapshot)
-      VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, 'advance', $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, 'advance', $8, $9, $10, $11, $12, $13, $14, $15)
       ON CONFLICT DO NOTHING
       RETURNING *
     `, [
-      student.id, student.group_id, amount, paymentMethod, notes, actorId, JSON.stringify(coveredMonths), idempotencyKey,
+      student.id, student.group_id, amount, paymentMethod, notes, actorId, JSON.stringify(coveredMonths), Boolean(whatsappNotified), idempotencyKey,
       student.full_name, student.student_code, student.student_serial,
       student.scan_serial, student.group_name, student.grade_level
     ]);
