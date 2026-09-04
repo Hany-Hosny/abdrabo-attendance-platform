@@ -691,9 +691,9 @@ textarea:focus-visible {
 .language-switcher {
   display: inline-flex;
   gap: 4px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(242, 140, 40, 0.42);
   border-radius: 8px;
-  background: rgba(13, 27, 46, 0.72);
+  background: transparent;
   padding: 4px;
   flex-shrink: 0;
 }
@@ -701,7 +701,7 @@ textarea:focus-visible {
 .language-switcher button {
   min-width: 38px;
   min-height: 32px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
@@ -710,13 +710,16 @@ textarea:focus-visible {
 }
 
 .language-switcher button:hover {
-  color: var(--text);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 173, 79, 0.55);
+  color: var(--accent-strong);
+  background: rgba(242, 140, 40, 0.08);
 }
 
 .language-switcher button.active {
-  background: var(--accent);
-  color: #1a0e03;
+  border-color: rgba(242, 140, 40, 0.55);
+  background: rgba(242, 140, 40, 0.12);
+  color: var(--accent-strong);
+  box-shadow: 0 0 0 3px rgba(242, 140, 40, 0.08);
 }
 
 .language-switcher button:active {
@@ -8301,17 +8304,17 @@ th {
   .mobile-language-switcher {
     display: inline-flex;
     gap: 4px;
-    padding: 3px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: rgba(7, 19, 33, 0.55);
+    padding: 4px;
+    border: 1px solid rgba(242, 140, 40, 0.42);
+    border-radius: 8px;
+    background: transparent;
   }
 
   .mobile-language-switcher button {
     min-width: 40px;
     min-height: 32px;
-    border: 0;
-    border-radius: 7px;
+    border: 1px solid transparent;
+    border-radius: 6px;
     background: transparent;
     color: var(--muted);
     cursor: pointer;
@@ -8320,8 +8323,10 @@ th {
   }
 
   .mobile-language-switcher button.active {
-    background: rgba(242, 140, 40, 0.16);
+    border-color: rgba(242, 140, 40, 0.55);
+    background: rgba(242, 140, 40, 0.12);
     color: var(--accent-strong);
+    box-shadow: 0 0 0 3px rgba(242, 140, 40, 0.08);
   }
 
   .mobile-more-logout {
@@ -8604,24 +8609,32 @@ th {
     display: inline-flex;
     gap: 2px;
     min-height: 40px;
-    padding: 3px;
-    border: 1px solid rgba(105, 145, 194, 0.24);
-    border-radius: 12px;
-    background: rgba(6, 18, 37, 0.42);
+    padding: 4px;
+    border: 1px solid rgba(242, 140, 40, 0.42);
+    border-radius: 8px;
+    background: transparent;
   }
 
   .admin-header .language-switcher button {
     min-width: 34px;
     min-height: 32px;
-    border-radius: 8px;
-    color: #9aabc2;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--muted);
     font-size: 12px;
   }
 
+  .admin-header .language-switcher button:hover {
+    border-color: rgba(255, 173, 79, 0.55);
+    background: rgba(242, 140, 40, 0.08);
+    color: var(--accent-strong);
+  }
+
   .admin-header .language-switcher button.active {
-    background: var(--accent);
-    color: #1a0e03;
-    box-shadow: 0 4px 12px rgba(242, 140, 40, 0.2);
+    border-color: rgba(242, 140, 40, 0.55);
+    background: rgba(242, 140, 40, 0.12);
+    color: var(--accent-strong);
+    box-shadow: 0 0 0 3px rgba(242, 140, 40, 0.08);
   }
 
   .admin-header .header-unread-badge {
@@ -9133,24 +9146,32 @@ th {
     flex: 0 0 auto;
     gap: 2px;
     min-height: 40px;
-    padding: 3px;
-    border: 1px solid rgba(105, 145, 194, 0.24);
-    border-radius: 12px;
-    background: rgba(6, 18, 37, 0.42);
+    padding: 4px;
+    border: 1px solid rgba(242, 140, 40, 0.42);
+    border-radius: 8px;
+    background: transparent;
   }
 
   .teacher-auth-header .language-switcher button {
     min-width: 34px;
     min-height: 32px;
-    border-radius: 8px;
-    color: #9aabc2;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    color: var(--muted);
     font-size: 12px;
   }
 
+  .teacher-auth-header .language-switcher button:hover {
+    border-color: rgba(255, 173, 79, 0.55);
+    background: rgba(242, 140, 40, 0.08);
+    color: var(--accent-strong);
+  }
+
   .teacher-auth-header .language-switcher button.active {
-    background: var(--accent);
-    color: #1a0e03;
-    box-shadow: 0 4px 12px rgba(242, 140, 40, 0.2);
+    border-color: rgba(242, 140, 40, 0.55);
+    background: rgba(242, 140, 40, 0.12);
+    color: var(--accent-strong);
+    box-shadow: 0 0 0 3px rgba(242, 140, 40, 0.08);
   }
 
   .teacher-auth-shell > .teacher-auth {
@@ -9564,6 +9585,47 @@ th {
     color: #f0f4fa;
     font-size: 10px;
     font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Keep the logged-in student header clock readable at every viewport width. */
+.student-shell .compact-date-time {
+  display: flex;
+  width: clamp(180px, 28vw, 250px);
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+.student-shell .compact-date-time .date-time-date {
+  min-width: 0;
+  overflow: hidden;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-shell .compact-date-time .date-time-clock {
+  display: inline-flex;
+  min-width: max-content;
+  align-items: baseline;
+  flex: 0 0 auto;
+  line-height: 1.2;
+}
+
+@media (max-width: 768px) {
+  .student-shell .brand-cluster {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .student-shell .compact-date-time {
+    width: 100%;
+    flex: 1 1 100%;
+    padding: 8px 10px;
   }
 }
 
