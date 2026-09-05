@@ -254,6 +254,9 @@ const translations = {
     "nav.aboutCenter": "عن السنتر",
     "nav.contact": "التواصل",
     "nav.tips": "نصائح",
+    "nav.mobileNavigation": "التنقل",
+    "nav.mobileMenu": "فتح القائمة",
+    "nav.closeMobileMenu": "إغلاق القائمة",
     "theme.switchToLight": "التبديل إلى الوضع الفاتح",
     "theme.switchToDark": "التبديل إلى الوضع الداكن",
     "public.statExperience": "سنوات الخبرة",
@@ -680,6 +683,7 @@ const translations = {
     "fees.reportLoadFailed": "تعذر تحميل التقرير.",
     "fees.reversePayment": "عكس الدفعة",
     "fees.confirmReversal": "تأكيد عكس الدفعة",
+    "fees.reversing": "جاري عكس الدفعة...",
     "fees.reversalSaved": "تم عكس الدفعة وتسجيل العملية.",
     "fees.reversalFailed": "تعذر عكس الدفعة.",
     "fees.showDeleted": "إظهار الطلاب المحذوفين",
@@ -1492,6 +1496,9 @@ const translations = {
     "nav.aboutCenter": "About Center",
     "nav.contact": "Contact",
     "nav.tips": "Tips",
+    "nav.mobileNavigation": "Navigation",
+    "nav.mobileMenu": "Open menu",
+    "nav.closeMobileMenu": "Close menu",
     "theme.switchToLight": "Switch to light mode",
     "theme.switchToDark": "Switch to dark mode",
     "public.statExperience": "Experience",
@@ -1918,6 +1925,7 @@ const translations = {
     "fees.reportLoadFailed": "Could not load the report.",
     "fees.reversePayment": "Reverse payment",
     "fees.confirmReversal": "Confirm reversal",
+    "fees.reversing": "Reversing payment...",
     "fees.reversalSaved": "Payment reversed and recorded.",
     "fees.reversalFailed": "Could not reverse the payment.",
     "fees.showDeleted": "Show deleted students",
@@ -7779,34 +7787,6 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   const auth = { Authorization: `Bearer ${session.token}` };
 
   useEffect(() => {
-    const heading = document.querySelector(".audit-center .audit-filter-heading");
-    const panel = heading?.closest(".audit-filter-panel");
-    if (!(heading instanceof HTMLElement) || !(panel instanceof HTMLElement)) return undefined;
-
-    const toggleFilters = () => setFiltersOpen((current) => !current);
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      event.preventDefault();
-      toggleFilters();
-    };
-
-    heading.setAttribute("role", "button");
-    heading.setAttribute("tabindex", "0");
-    heading.setAttribute("aria-expanded", String(filtersOpen));
-    heading.setAttribute("aria-controls", "audit-filter-controls");
-    heading.setAttribute("aria-label", filtersOpen ? t("audit.collapseFilters") : t("audit.expandFilters"));
-    panel.id = "audit-filter-controls";
-    panel.classList.toggle("is-collapsed", !filtersOpen);
-    heading.addEventListener("click", toggleFilters);
-    heading.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      heading.removeEventListener("click", toggleFilters);
-      heading.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [filtersOpen, t]);
-
-  useEffect(() => {
     fetch(`${API_BASE_URL}/admin/audit-logs/status`, { headers: auth })
       .then((response) => response.json())
       .then((data) => { setConfigured(Boolean(data.configured)); if (!data.configured) setStatus(""); })
@@ -8066,7 +8046,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   return <section className="admin-editor audit-logs-panel audit-center">
     <div className="audit-center-hero"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.activityCenter")}</h2><p>{t("audit.activityCenterDescription")}</p></div><div className="audit-center-hero-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); setSelectedLog(null); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div></div>
     <div className="audit-summary-grid"><article className="audit-summary-card audit-summary-total"><span>{t("audit.totalActivities")}</span><strong>{total.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.title")}</small></article><article className="audit-summary-card audit-summary-success"><span>{t("audit.successfulActivities")}</span><strong>{stats.success_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.success")}</small></article><article className="audit-summary-card audit-summary-failure"><span>{t("audit.failedActivities")}</span><strong>{stats.failure_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.failure")}</small></article><article className="audit-summary-card audit-summary-users"><span>{t("audit.activeUsers")}</span><strong>{stats.user_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.systemUser")}</small></article></div>
-    <form className="audit-filter-panel" onSubmit={applyFilters}><div className="audit-filter-heading"><div><span className="audit-section-kicker">{t("audit.filters")}</span><h3>{t("audit.filters")}</h3></div><span className="audit-filter-hint">{loading ? t("audit.refreshing") : total.toLocaleString(language === "ar" ? "ar-EG" : "en-US") + " · " + t("audit.title")}</span></div><div className="audit-filter-grid"><label className="audit-filter-search">{t("audit.search")}<input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder={t("audit.studentSearchPlaceholder")} /></label><label>{t("audit.systemUser")}<select value={filters.userId} onChange={(event) => updateFilter("userId", event.target.value)}><option value="">{t("audit.allUsers")}</option>{filterOptions.users.map((user) => <option key={user.id} value={user.id}>{user.name || user.username || user.email}</option>)}</select></label><label>{t("audit.role")}<select value={filters.actorRole} onChange={(event) => updateFilter("actorRole", event.target.value)}><option value="">{t("audit.allRoles")}</option><option value="owner">{t("audit.role.owner")}</option><option value="admin">{t("audit.role.admin")}</option><option value="staff">{t("audit.role.staff")}</option></select></label><label>{t("audit.targetType")}<select value={filters.entityType} onChange={(event) => updateFilter("entityType", event.target.value)}><option value="">{t("audit.allTargetTypes")}</option>{["students", "groups", "attendance", "fees", "exams", "whatsapp", "settings", "login"].map((target) => <option key={target} value={target}>{targetLabel(target)}</option>)}</select></label><label>{t("audit.action")}<select value={filters.action} onChange={(event) => updateFilter("action", event.target.value)}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.outcome")}<select value={filters.outcome} onChange={(event) => updateFilter("outcome", event.target.value)}><option value="">{t("audit.allOutcomes")}</option><option value="success">{t("audit.success")}</option><option value="failure">{t("audit.failure")}</option></select></label><label>{t("audit.studentSearch")}<input list="audit-student-options" value={filters.student} onChange={(event) => { updateFilter("student", event.target.value); if (event.target.value.length >= 3) void loadFilterOptions(accessToken, event.target.value); }} placeholder={t("audit.studentSearchPlaceholder")} /></label><datalist id="audit-student-options">{filterOptions.students.map((student) => <option key={student.id} value={student.student_code || student.student_serial || student.full_name}>{student.full_name}{student.student_code ? " · " + student.student_code : ""}</option>)}</datalist><label>{t("audit.group")}<select value={filters.groupId} onChange={(event) => updateFilter("groupId", event.target.value)}><option value="">{t("audit.allGroups")}</option>{filterOptions.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>{t("audit.dateFrom")}<input type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} /></label></div>{filterChipItems.length ? <div className="audit-filter-chips"><span>{t("audit.activeFilters")}</span>{filterChipItems.map((chip) => <button key={String(chip.key)} type="button" onClick={() => { const next = { ...appliedFilters, [chip.key]: "" }; setFilters(next); setAppliedFilters(next); void loadLogs(1, accessToken, next); }} title={t("audit.removeFilter")}>{chip.label}: {chip.value} <b aria-hidden="true">×</b></button>)}</div> : null}<div className="audit-filter-actions"><button className="primary-button compact-button" type="submit" disabled={loading}>{loading ? t("audit.refreshing") : t("audit.applyFilters")}</button><button className="secondary-button compact-button" type="button" onClick={clearFilters} disabled={loading}>{t("audit.clearFilters")}</button></div></form>
+    <form className="audit-filter-panel" onSubmit={applyFilters}><div className="audit-filter-heading"><button className="audit-filter-collapse-button" type="button" aria-expanded={filtersOpen} aria-controls="audit-filter-controls" aria-label={filtersOpen ? t("audit.collapseFilters") : t("audit.expandFilters")} onClick={() => setFiltersOpen((current) => !current)}><span aria-hidden="true">⌄</span></button><span className="audit-filter-hint">{loading ? t("audit.refreshing") : total.toLocaleString(language === "ar" ? "ar-EG" : "en-US") + " · " + t("audit.title")}</span></div><div id="audit-filter-controls" className={"audit-filter-collapse-content " + (filtersOpen ? "is-open" : "is-collapsed")}><div className="audit-filter-collapse-inner"><div className="audit-filter-grid"><label className="audit-filter-search">{t("audit.search")}<input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder={t("audit.studentSearchPlaceholder")} /></label><label>{t("audit.systemUser")}<select value={filters.userId} onChange={(event) => updateFilter("userId", event.target.value)}><option value="">{t("audit.allUsers")}</option>{filterOptions.users.map((user) => <option key={user.id} value={user.id}>{user.name || user.username || user.email}</option>)}</select></label><label>{t("audit.role")}<select value={filters.actorRole} onChange={(event) => updateFilter("actorRole", event.target.value)}><option value="">{t("audit.allRoles")}</option><option value="owner">{t("audit.role.owner")}</option><option value="admin">{t("audit.role.admin")}</option><option value="staff">{t("audit.role.staff")}</option></select></label><label>{t("audit.targetType")}<select value={filters.entityType} onChange={(event) => updateFilter("entityType", event.target.value)}><option value="">{t("audit.allTargetTypes")}</option>{["students", "groups", "attendance", "fees", "exams", "whatsapp", "settings", "login"].map((target) => <option key={target} value={target}>{targetLabel(target)}</option>)}</select></label><label>{t("audit.action")}<select value={filters.action} onChange={(event) => updateFilter("action", event.target.value)}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.outcome")}<select value={filters.outcome} onChange={(event) => updateFilter("outcome", event.target.value)}><option value="">{t("audit.allOutcomes")}</option><option value="success">{t("audit.success")}</option><option value="failure">{t("audit.failure")}</option></select></label><label>{t("audit.studentSearch")}<input list="audit-student-options" value={filters.student} onChange={(event) => { updateFilter("student", event.target.value); if (event.target.value.length >= 3) void loadFilterOptions(accessToken, event.target.value); }} placeholder={t("audit.studentSearchPlaceholder")} /></label><datalist id="audit-student-options">{filterOptions.students.map((student) => <option key={student.id} value={student.student_code || student.student_serial || student.full_name}>{student.full_name}{student.student_code ? " · " + student.student_code : ""}</option>)}</datalist><label>{t("audit.group")}<select value={filters.groupId} onChange={(event) => updateFilter("groupId", event.target.value)}><option value="">{t("audit.allGroups")}</option>{filterOptions.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>{t("audit.dateFrom")}<input type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} /></label></div>{filterChipItems.length ? <div className="audit-filter-chips"><span>{t("audit.activeFilters")}</span>{filterChipItems.map((chip) => <button key={String(chip.key)} type="button" onClick={() => { const next = { ...appliedFilters, [chip.key]: "" }; setFilters(next); setAppliedFilters(next); void loadLogs(1, accessToken, next); }} title={t("audit.removeFilter")}>{chip.label}: {chip.value} <b aria-hidden="true">×</b></button>)}</div> : null}<div className="audit-filter-actions"><button className="primary-button compact-button" type="submit" disabled={loading}>{loading ? t("audit.refreshing") : t("audit.applyFilters")}</button><button className="secondary-button compact-button" type="button" onClick={clearFilters} disabled={loading}>{t("audit.clearFilters")}</button></div></div></div></form>
     <div className="audit-toolbar"><div><strong>{t("audit.title")}</strong><span>{t("audit.activityCenterDescription")}</span></div>{canExport ? <div className="audit-export-actions"><span>{t("audit.exportCurrent")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "current")}>{exportButtonLabel("csv", "current")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "current")}>{exportButtonLabel("xlsx", "current")}</button><span>{t("audit.exportAll")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "all")}>{exportButtonLabel("csv", "all")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "all")}>{exportButtonLabel("xlsx", "all")}</button></div> : null}</div>
     {logs.length ? <div className="audit-table-wrap"><table className="audit-activity-table"><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.target")}</th><th>{t("audit.outcome")}</th><th><span className="sr-only">{t("audit.viewDetails")}</span></th></tr></thead><tbody>{logs.map((log) => { const tone = eventTone(log); return <tr key={log.id} className={"audit-event-row audit-event-" + tone}><td data-label={t("audit.date")}><time dateTime={String(log.created_at)}>{formatAuditDate(log.created_at)}</time></td><td data-label={t("audit.user")}><strong>{log.actor_name || log.actor_username || t("audit.role.system")}</strong><small>{roleLabelForAudit(log.actor_role)}</small></td><td data-label={t("audit.action")}><span className={"audit-event-badge audit-event-badge-" + tone}>{actionLabel(log)}</span></td><td data-label={t("audit.target")}><strong>{log.student_name || log.group_name || log.payment_id ? (log.student_name || log.group_name || t("audit.payment") + " #" + log.payment_id) : t("audit.noTarget")}</strong><small>{targetLabel(log.entity_type)}{log.student_code ? " · " + log.student_code : ""}{log.group_name && log.student_name ? " · " + log.group_name : ""}</small></td><td data-label={t("audit.outcome")}><span className={"audit-outcome audit-outcome-" + tone}>{String(log.outcome) === "failure" ? t("audit.failure") : t("audit.success")}</span></td><td data-label=""><button className="secondary-button compact-button audit-view-button" type="button" onClick={() => setSelectedLog(log)}>{t("audit.viewDetails")}</button></td></tr>; })}</tbody></table></div> : <p className="empty-state audit-empty-state">{t("audit.noLogs")}</p>}
     <div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => void loadLogs(page - 1)}>{"‹"}</button><span>{page} / {pageCount}</span><button className="secondary-button compact-button" type="button" disabled={page >= pageCount || loading} onClick={() => void loadLogs(page + 1)}>{"›"}</button></div>
@@ -8127,6 +8107,7 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
   const [reverseTarget, setReverseTarget] = useState<any>(null);
   const [reverseReason, setReverseReason] = useState("");
   const [reversing, setReversing] = useState(false);
+  const [reverseError, setReverseError] = useState(false);
   const searchFeedback = useActionFeedback();
   const exportFeedback = useActionFeedback();
   const auth = { Authorization: `Bearer ${session.token}` };
@@ -8190,16 +8171,41 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     }).catch(() => undefined);
   }
 
-  async function reversePayment() {
-    if (!canReverse || !reverseTarget || reverseReason.trim().length < 3) return;
-    setReversing(true); setStatus("");
+  function openReverseDialog(row: any) {
+    setReverseTarget(row);
+    setReverseReason("");
+    setReverseError(false);
+    setStatus("");
+  }
+
+  async function reversePayment(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    const paymentId = Number(reverseTarget?.id);
+    const reason = reverseReason.trim();
+    if (!canReverse || !reverseTarget || !Number.isSafeInteger(paymentId) || paymentId <= 0 || reason.length < 3 || reversing) return;
+    setReversing(true);
+    setReverseError(false);
+    setStatus("");
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/fees/payments/${reverseTarget.id}/reverse`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ reason: reverseReason.trim() }) });
-      const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.status || "reverse_failed");
-      setReverseTarget(null); setReverseReason(""); setStatus(t("fees.reversalSaved")); await searchReport(); window.dispatchEvent(new Event("fees-updated"));
-    } catch { setStatus(t("fees.reversalFailed")); }
+      const response = await fetch(`${API_BASE_URL}/admin/fees/payments/${paymentId}/reverse`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ reason }) });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.ok) throw new Error(data?.status || "reverse_failed");
+
+      setReverseTarget(null);
+      setReverseReason("");
+      setStatus(t("fees.reversalSaved"));
+      // The reversal is already committed. A failed refresh must not turn a
+      // successful financial action into a misleading failure message.
+      await searchReport().catch(() => undefined);
+      window.dispatchEvent(new Event("fees-updated"));
+    } catch {
+      setReverseError(true);
+      setStatus(t("fees.reversalFailed"));
+    }
     finally { setReversing(false); }
   }
+
+  const reverseButtonLabel = reversing ? t("fees.reversing") : t("fees.confirmReversal");
 
   const searchButtonLabel = actionButtonText(searchFeedback.state, { idle: t("fees.find"), loading: t("fees.searching"), success: t("fees.searchComplete"), error: t("fees.reportLoadFailed") });
   const exportButtonLabel = actionButtonText(exportFeedback.state, { idle: t("fees.exportExcel"), loading: t("fees.exporting"), success: t("fees.exported"), error: t("fees.reportLoadFailed") });
@@ -8217,9 +8223,9 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     </div>
     <div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setToday}>{t("fees.today")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setThisMonth}>{t("fees.thisMonth")}</button><button className={`primary-button compact-button action-feedback-${searchFeedback.state} ${searchFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={loading || searchFeedback.state === "loading"} onClick={() => searchReport().catch(() => undefined)}>{searchButtonLabel}</button><button className={`secondary-button compact-button action-feedback-${exportFeedback.state} ${exportFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={!rows.length || exportFeedback.state === "loading"} onClick={exportCsv}>{exportButtonLabel}</button></div>
     <p className="report-total">{t("fees.totalPaid")}: {totalPaid.toFixed(2)} EGP · {t("fees.paymentCount")}: {paymentCount}</p>
-    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td>{row.amount} EGP</td><td><span className="payment-type-cell">{formatPaymentType(row)}</span></td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td>{canReverse ? <td><button className="secondary-button compact-button" type="button" onClick={() => { setReverseTarget(row); setReverseReason(""); }}>{t("fees.reversePayment")}</button></td> : null}</tr>)}</tbody></table></div> : null}
+    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td>{row.amount} EGP</td><td><span className="payment-type-cell">{formatPaymentType(row)}</span></td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td>{canReverse ? <td><button className="secondary-button compact-button" type="button" disabled={reversing} onClick={() => openReverseDialog(row)}>{t("fees.reversePayment")}</button></td> : null}</tr>)}</tbody></table></div> : null}
     {status ? <p className="form-error">{status}</p> : null}
-    {reverseTarget ? <div className="modal-backdrop"><div className="modal-card" role="dialog" aria-modal="true"><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => setReverseReason(event.target.value)} rows={4} autoFocus /></label><div className="report-actions"><button className="primary-button" type="button" disabled={reversing || reverseReason.trim().length < 3} onClick={reversePayment}>{t("fees.confirmReversal")}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></div></div> : null}
+    {reverseTarget ? <div className="modal-backdrop"><form className="modal-card" role="dialog" aria-modal="true" onSubmit={reversePayment}><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(false); }} rows={4} autoFocus required /></label>{reverseError ? <p className="form-error" role="alert">{status || t("fees.reversalFailed")}</p> : null}<div className="report-actions"><button className="primary-button" type="submit" disabled={reversing || reverseReason.trim().length < 3}>{reverseButtonLabel}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></form></div> : null}
     </section>
   </div>;
 }
@@ -8989,6 +8995,7 @@ function Shell({
   };
 }) {
   const [activeNav, setActiveNav] = useState(() => getActiveNavKey());
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const updateActiveNav = () => setActiveNav(getActiveNavKey());
@@ -9000,8 +9007,23 @@ function Shell({
     };
   }, []);
 
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileMenuOpen]);
+
   function handleNavClick(nextActiveNav: string) {
     setActiveNav(nextActiveNav);
+    setMobileMenuOpen(false);
   }
 
   return (
@@ -9049,6 +9071,16 @@ function Shell({
             flex: "1 1 auto"
           }}
         >
+          <button
+            className="mobile-header-menu-toggle"
+            type="button"
+            aria-label={mobileMenuOpen ? t("nav.closeMobileMenu") : t("nav.mobileMenu")}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-site-menu"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
           <nav
             aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}
             style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px" }}
@@ -9119,6 +9151,91 @@ function Shell({
           ) : null}
         </div>
       </header>
+      {mobileMenuOpen ? (
+        <div className="mobile-site-menu-backdrop" role="presentation" onClick={() => setMobileMenuOpen(false)}>
+          <section
+            id="mobile-site-menu"
+            className="mobile-site-menu"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mobile-site-menu-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mobile-site-menu-heading">
+              <div>
+                <span className="panel-kicker">{t("site.name")}</span>
+                <h2 id="mobile-site-menu-title">{t("nav.mobileNavigation")}</h2>
+              </div>
+              <button
+                className="mobile-site-menu-close"
+                type="button"
+                aria-label={t("nav.closeMobileMenu")}
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+            <nav
+              className="mobile-site-menu-links"
+              aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}
+            >
+              <a
+                className={`primary-nav-link ${activeNav === "student-login" ? "active" : ""}`}
+                href="/#student-login"
+                onClick={() => handleNavClick("student-login")}
+              >
+                {t("nav.studentLogin")}
+              </a>
+              <a
+                className={activeNav === "about-teacher" ? "active" : ""}
+                href="/about-teacher"
+                onClick={() => handleNavClick("about-teacher")}
+              >
+                {t("nav.aboutTeacher")}
+              </a>
+              <a
+                className={activeNav === "contact" ? "active" : ""}
+                href="/contact"
+                onClick={() => handleNavClick("contact")}
+              >
+                {t("nav.contact")}
+              </a>
+              <a
+                className={activeNav === "tips" ? "active" : ""}
+                href="/tips"
+                onClick={() => handleNavClick("tips")}
+              >
+                {t("nav.tips")}
+              </a>
+              <a
+                className={activeNav === "teacher-login" ? "active" : ""}
+                href="/teacher/login"
+                onClick={() => handleNavClick("teacher-login")}
+              >
+                {t("nav.teacherLogin")}
+              </a>
+            </nav>
+            <div className="mobile-site-menu-actions">
+              <div className="mobile-site-menu-action-row">
+                <span>{language === "ar" ? "اللغة" : "Language"}</span>
+                <div className="language-switcher" aria-label={language === "ar" ? "اختيار اللغة" : "Language selector"}>
+                  <button className={language === "ar" ? "active" : ""} type="button" onClick={() => setLanguage("ar")} aria-pressed={language === "ar"}>AR</button>
+                  <button className={language === "en" ? "active" : ""} type="button" onClick={() => setLanguage("en")} aria-pressed={language === "en"}>EN</button>
+                </div>
+              </div>
+              <div className="mobile-site-menu-action-row">
+                <span>{language === "ar" ? "المظهر" : "Theme"}</span>
+                <ThemeToggle t={t} />
+              </div>
+              {onLogout ? (
+                <button className="logout-button mobile-site-menu-logout" type="button" onClick={onLogout}>
+                  {logoutLabel || t("student.logout")}
+                </button>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
       {children}
       <footer className="site-footer" dir="ltr" lang="en">
         © 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny

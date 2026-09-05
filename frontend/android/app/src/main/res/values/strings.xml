@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Abdrabo Edu</string>
+    <string name="title_activity_main">Abdrabo Edu</string>
+    <string name="package_name">com.abdrabo.app</string>
+    <string name="custom_url_scheme">com.abdrabo.app</string>
+</resources>
