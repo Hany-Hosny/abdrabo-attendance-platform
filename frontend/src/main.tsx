@@ -7,6 +7,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import "./styles.css";
 import { normalizeDigits } from "./utils/normalizeDigits";
 import { createIdempotencyKey, normalizeScanValue, playScannerFeedback, type ScannerState } from "./utils/scanner";
+import { useAttendanceScanner } from "./utils/attendanceScanner";
 import { AdminExecutiveDashboard } from "./AdminExecutiveDashboard";
 import { SystemSettingsPanel } from "./SystemSettingsPanel";
 import { WhatsAppSettingsPanel } from "./WhatsAppSettingsPanel";
@@ -371,6 +372,7 @@ const translations = {
     "scanner.closedSession": "لا توجد حصة مفتوحة لهذه المجموعة الآن.",
     "scanner.duplicate": "تم تسجيل حضور هذا الطالب بالفعل.",
     "scanner.networkError": "تعذر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.",
+    "scanner.savedLocally": "تم حفظ الحضور محلياً وسيتم مزامنته تلقائياً عند عودة الاتصال",
     "scanner.serverError": "حدث خطأ أثناء تسجيل الحضور. حاول مرة أخرى.",
     "scanner.openCamera": "فتح ماسح الكاميرا",
     "scanner.cameraTitle": "ماسح الكاميرا",
@@ -382,6 +384,7 @@ const translations = {
     "scanner.cameraDenied": "يرجى السماح للتطبيق بالوصول للكاميرا لإتمام المسح",
     "scanner.cameraSecureContext": "لتمكين الكاميرا على الهاتف، افتح الموقع عبر HTTPS ثم اسمح بالوصول للكاميرا",
     "scanner.cameraUnavailable": "تعذر تشغيل الكاميرا. استخدم الإدخال اليدوي أدناه.",
+    "scanner.cameraPermissionHint": "إذا لم تظهر نافذة الصلاحية، فعّل الكاميرا من إعدادات الموقع ثم اضغط إعادة المحاولة.",
     "scanner.cameraClose": "إغلاق ماسح الكاميرا",
     "scanner.cameraRetry": "إعادة المحاولة",
     "scanner.manualCodeLabel": "إدخال الكود يدوياً",
@@ -1641,6 +1644,7 @@ const translations = {
     "scanner.closedSession": "There is no open class for this group right now.",
     "scanner.duplicate": "This student’s attendance was already recorded.",
     "scanner.networkError": "Could not connect to the server. Check the internet and try again.",
+    "scanner.savedLocally": "Attendance saved locally and will sync automatically when the connection returns",
     "scanner.serverError": "An error occurred while recording attendance. Try again.",
     "scanner.openCamera": "Open camera scanner",
     "scanner.cameraTitle": "Camera scanner",
@@ -1652,6 +1656,7 @@ const translations = {
     "scanner.cameraDenied": "Please allow camera access to complete the scan",
     "scanner.cameraSecureContext": "To use the camera on your phone, open the site over HTTPS and allow camera access",
     "scanner.cameraUnavailable": "The camera could not be started. Use the manual input below.",
+    "scanner.cameraPermissionHint": "If no permission prompt appears, enable the camera in the site settings and try again.",
     "scanner.cameraClose": "Close camera scanner",
     "scanner.cameraRetry": "Try again",
     "scanner.manualCodeLabel": "Enter code manually",
@@ -3206,7 +3211,8 @@ function scannerStatusMessage(status: string, t: Translator) {
     student_not_found: "scanner.invalidCode",
     invalid_scan_value: "scanner.invalidScan",
     closed_session: "scanner.closedSession",
-    duplicate_attendance: "scanner.duplicate"
+    duplicate_attendance: "scanner.duplicate",
+    duplicate_scan_window: "scanner.duplicate"
   };
   return t(statusKey[status] || "scanner.serverError");
 }
@@ -4433,6 +4439,7 @@ function NotificationCenter({ session, language, t, onSelect, onOpenAll }: { ses
 }
 
 type NotificationFilter = "all" | "unread" | "whatsapp" | "attendance" | "exams";
+type NotificationActionState = "idle" | "marking" | "marked" | "marking-all" | "marked-all" | "deleting" | "deleted";
 
 function notificationCategory(type: string): "whatsapp" | "attendance" | "exams" | "system" {
   if (type === "whatsapp_disconnected") return "whatsapp";
@@ -4462,7 +4469,7 @@ function NotificationsManagementCenter({ session, language, t, onBack }: { sessi
   const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [actionState, setActionState] = useState<"idle" | "marking" | "marked" | "marking-all" | "marked-all" | "deleting" | "deleted">("idle");
+  const [actionState, setActionState] = useState<NotificationActionState>("idle");
   const actionResetRef = useRef<number | null>(null);
 
   async function loadNotifications(signal?: AbortSignal) {
@@ -4511,7 +4518,7 @@ function NotificationsManagementCenter({ session, language, t, onBack }: { sessi
     setSelectedIds((current) => current.filter((id) => filteredIds.includes(id)));
   }, [activeFilter, notifications]);
 
-  function setTransientAction(nextState: Exclude<typeof actionState, "idle">) {
+  function setTransientAction(nextState: "marked" | "marked-all" | "deleted") {
     if (actionResetRef.current !== null) window.clearTimeout(actionResetRef.current);
     setActionState(nextState);
     actionResetRef.current = window.setTimeout(() => setActionState("idle"), 1800);
@@ -4586,6 +4593,10 @@ function NotificationsManagementCenter({ session, language, t, onBack }: { sessi
   }
 
   const actionBusy = actionState !== "idle";
+  const actionStateValue = String(actionState);
+  const markAllSuccess = actionStateValue === "marked-all";
+  const selectedMarkSuccess = actionStateValue === "marked";
+  const selectedDeleteSuccess = actionStateValue === "deleted";
   const actionLabel = actionState === "marking" ? t("dashboard.loading") : actionState === "marked" ? t("dashboard.notificationsMarkedRead") : t("dashboard.markRead");
   const markAllLabel = actionState === "marking-all" ? t("dashboard.loading") : actionState === "marked-all" ? t("dashboard.notificationsMarkedRead") : t("dashboard.markAllRead");
   const deleteLabel = actionState === "deleting" ? t("dashboard.loading") : actionState === "deleted" ? t("dashboard.notificationsDeleted") : t("dashboard.notificationsDeleteSelected");
@@ -4609,7 +4620,7 @@ function NotificationsManagementCenter({ session, language, t, onBack }: { sessi
           </div>
           <span className="notifications-unread-badge">{t("dashboard.notificationsUnreadCount", { count: unreadCount.toLocaleString(language === "ar" ? "ar-EG" : "en-US") })}</span>
         </div>
-        {unreadCount > 0 ? <button className={`primary-button notifications-mark-all-button ${actionState === "marked-all" ? "is-success" : ""}`} type="button" onClick={() => void markAllAsRead()} disabled={actionBusy || actionState === "marked-all"}>{markAllLabel}<span aria-hidden="true">✓✓</span></button> : null}
+        {unreadCount > 0 ? <button className={`primary-button notifications-mark-all-button ${markAllSuccess ? "is-success" : ""}`} type="button" onClick={() => void markAllAsRead()} disabled={actionBusy || markAllSuccess}>{markAllLabel}<span aria-hidden="true">✓✓</span></button> : null}
       </header>
 
       <section className="notifications-toolbar" aria-label={t("dashboard.notificationsCenterTitle")}>
@@ -4621,7 +4632,7 @@ function NotificationsManagementCenter({ session, language, t, onBack }: { sessi
 
       {selectedIds.length > 0 ? <section className="notifications-selection-bar" aria-live="polite">
         <strong>{t("dashboard.notificationsSelectedCount", { count: selectedIds.length.toLocaleString(language === "ar" ? "ar-EG" : "en-US") })}</strong>
-        <div><button className="secondary-button" type="button" onClick={() => void markAsRead(selectedIds)} disabled={actionBusy || actionState === "marked"}>{actionLabel}</button><button className="danger-button" type="button" onClick={() => void deleteNotifications(selectedIds)} disabled={actionBusy || actionState === "deleted"}>{deleteLabel}</button></div>
+        <div><button className="secondary-button" type="button" onClick={() => void markAsRead(selectedIds)} disabled={actionBusy || selectedMarkSuccess}>{actionLabel}</button><button className="danger-button" type="button" onClick={() => void deleteNotifications(selectedIds)} disabled={actionBusy || selectedDeleteSuccess}>{deleteLabel}</button></div>
       </section> : null}
 
       {error ? <p className="notifications-error form-error" role="alert">{error} <button className="notifications-retry-button" type="button" onClick={() => void loadNotifications()} disabled={actionBusy}>{t("dashboard.notificationsRetry")}</button></p> : null}
@@ -7300,6 +7311,7 @@ function MobileScannerModal({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
   const lastScanRef = useRef({ value: "", at: 0 });
   const cameraBusyRef = useRef(false);
   const toastTimerRef = useRef<number | null>(null);
@@ -7406,30 +7418,50 @@ function MobileScannerModal({
         setCameraError(t("scanner.cameraUnavailable"));
         return;
       }
-      try {
-        const controls = await reader.decodeFromConstraints(
-          {
-            audio: false,
-            video: {
-              facingMode: { ideal: "environment" },
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
-            }
-          },
-          video,
-          (result) => {
-            if (!cancelled && result) void submitCameraScan(result.getText(), true);
+      const constraints: MediaStreamConstraints[] = [
+        {
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
           }
-        );
+        },
+        { audio: false, video: { facingMode: { ideal: "environment" } } },
+        { audio: false, video: true }
+      ];
+      let stream: MediaStream | null = null;
+      let lastError: unknown = null;
+      try {
+        for (const candidate of constraints) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(candidate);
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        if (!stream) throw lastError || new Error("Camera stream was not created");
+        cameraStreamRef.current = stream;
+        video.muted = true;
+        video.playsInline = true;
+        const controls = await reader.decodeFromStream(stream, video, (result) => {
+          if (!cancelled && result) void submitCameraScan(result.getText(), true);
+        });
         if (cancelled) {
           controls.stop();
+          stream.getTracks().forEach((track) => track.stop());
           return;
         }
         scannerControlsRef.current = controls;
         setCameraStatus("ready");
       } catch (error) {
+        stream?.getTracks().forEach((track) => track.stop());
+        if (cameraStreamRef.current === stream) cameraStreamRef.current = null;
+        if (video.srcObject === stream) video.srcObject = null;
         if (cancelled) return;
-        const denied = error instanceof DOMException && ["NotAllowedError", "PermissionDeniedError"].includes(error.name);
+        const errorName = error instanceof DOMException ? error.name : error && typeof error === "object" && "name" in error ? String(error.name) : "";
+        const denied = ["NotAllowedError", "PermissionDeniedError", "SecurityError"].includes(errorName);
         setCameraStatus("error");
         setCameraError(denied ? t("scanner.cameraDenied") : t("scanner.cameraUnavailable"));
       }
@@ -7440,6 +7472,8 @@ function MobileScannerModal({
       cancelled = true;
       scannerControlsRef.current?.stop();
       scannerControlsRef.current = null;
+      cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
       const stream = video?.srcObject;
       if (stream instanceof MediaStream) stream.getTracks().forEach((track) => track.stop());
       if (video) video.srcObject = null;
@@ -7471,6 +7505,7 @@ function MobileScannerModal({
           <span className="camera-scanner-status-dot" aria-hidden="true" />
           {cameraStatus === "starting" ? t("scanner.cameraStarting") : cameraStatus === "ready" ? t("scanner.cameraReady") : cameraError}
         </div>
+        {cameraStatus === "error" ? <p className="camera-scanner-permission-hint">{t("scanner.cameraPermissionHint")}</p> : null}
         {cameraStatus === "error" ? <button className="secondary-button camera-scanner-retry" type="button" onClick={() => setRetryKey((value) => value + 1)}>{t("scanner.cameraRetry")}</button> : null}
         {toast ? <p className={`camera-scanner-toast camera-scanner-toast-${toast.tone}`} role="status">{toast.message}</p> : null}
         <form className="camera-scanner-manual" onSubmit={(event) => { event.preventDefault(); void submitCameraScan(manualCode); }}>
@@ -7486,7 +7521,7 @@ function MobileScannerModal({
   );
 }
 
-function ScannerPanel({ session, language, t, onOpenCamera }: { session: TeacherSession; language: Language; t: Translator; onOpenCamera: () => void }) {
+function LegacyScannerPanel({ session, language, t, onOpenCamera }: { session: TeacherSession; language: Language; t: Translator; onOpenCamera: () => void }) {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
   const [student, setStudent] = useState<any>(null);
@@ -7496,7 +7531,6 @@ function ScannerPanel({ session, language, t, onOpenCamera }: { session: Teacher
   const codeRef = React.useRef("");
   const scanBusyRef = React.useRef(false);
   const lastScanRef = React.useRef({ value: "", at: 0 });
-  const lastInputRef = React.useRef({ at: 0, rapidCharacters: 0 });
   const autoSubmitTimerRef = React.useRef<number | null>(null);
   const scanAbortRef = React.useRef<AbortController | null>(null);
   const successMessageTimerRef = React.useRef<number | null>(null);
@@ -7510,12 +7544,16 @@ function ScannerPanel({ session, language, t, onOpenCamera }: { session: Teacher
   async function scan(value = codeRef.current, event?: React.FormEvent) {
     event?.preventDefault();
     if (scanBusyRef.current) return;
+    if (autoSubmitTimerRef.current !== null) {
+      window.clearTimeout(autoSubmitTimerRef.current);
+      autoSubmitTimerRef.current = null;
+    }
     if (successMessageTimerRef.current !== null) {
       window.clearTimeout(successMessageTimerRef.current);
       successMessageTimerRef.current = null;
     }
 
-    const token = normalizeScanValue(code);
+    const token = normalizeScanValue(value);
     const now = Date.now();
     if (!token || (lastScanRef.current.value === token && now - lastScanRef.current.at < 300)) {
       if (!token) {
@@ -7570,7 +7608,8 @@ function ScannerPanel({ session, language, t, onOpenCamera }: { session: Teacher
         }, 1800);
       } else {
         setScanState("error");
-        setMessage(`${data.student?.full_name ? `${data.student.full_name} — ` : ""}${scannerStatusMessage(String(data.status || ""), t)}`);
+        const status = response.status === 404 ? "student_not_found" : String(data.status || "");
+        setMessage(`${data.student?.full_name ? `${data.student.full_name} — ` : ""}${scannerStatusMessage(status, t)}`);
         playScannerFeedback("error");
       }
     } catch (_error) {
@@ -7587,30 +7626,28 @@ function ScannerPanel({ session, language, t, onOpenCamera }: { session: Teacher
   }
 
   function handleCodeChange(nextValue: string) {
-    codeRef.current = nextValue;
-    setCode(nextValue);
+    const bufferedValue = nextValue.replace(/[\r\n]/g, "");
+    codeRef.current = bufferedValue;
+    setCode(bufferedValue);
     if (autoSubmitTimerRef.current !== null) window.clearTimeout(autoSubmitTimerRef.current);
-    const now = Date.now();
-    const elapsed = now - lastInputRef.current.at;
-    const rapidCharacters = elapsed > 0 && elapsed <= 80 ? lastInputRef.current.rapidCharacters + 1 : 1;
-    lastInputRef.current = { at: now, rapidCharacters };
+    autoSubmitTimerRef.current = null;
 
-    // Many USB/Bluetooth scanners are configured without an Enter suffix.
-    // A short rapid input burst is safe to submit automatically, while normal
-    // human typing remains manual and can still use the button.
-    if (rapidCharacters >= 3 && nextValue.trim().length >= 2) {
+    // Many scanners do not append Enter. Wait until the rapid keystroke burst
+    // ends, while still allowing an explicit Enter to submit immediately.
+    if (bufferedValue.trim()) {
       autoSubmitTimerRef.current = window.setTimeout(() => {
         autoSubmitTimerRef.current = null;
-        if (!scanBusyRef.current && codeRef.current.trim()) void scan();
-      }, 140);
+        if (!scanBusyRef.current && codeRef.current.trim()) void scan(codeRef.current);
+      }, 90);
     }
   }
 
   function handleCodeKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if ((event.key === "Enter" || event.key === "Tab") && codeRef.current.trim()) {
+    if (event.key === "Enter") {
       event.preventDefault();
       if (autoSubmitTimerRef.current !== null) window.clearTimeout(autoSubmitTimerRef.current);
-      void scan();
+      autoSubmitTimerRef.current = null;
+      if (codeRef.current.trim()) void scan(codeRef.current);
     }
   }
   return (
@@ -7651,6 +7688,63 @@ function ScannerPanel({ session, language, t, onOpenCamera }: { session: Teacher
         </div>
       ) : null}
       {message ? <p className={scanState === "success" ? "lookup-result" : "form-error"} role="status">{message}</p> : null}
+    </section>
+  );
+}
+
+function ScannerPanel({ session, language, t, onOpenCamera }: { session: TeacherSession; language: Language; t: Translator; onOpenCamera: () => void }) {
+  const scanner = useAttendanceScanner({
+    apiBaseUrl: API_BASE_URL,
+    authToken: session.token,
+    messages: {
+      scanRequired: t("scanner.scanRequired"),
+      recorded: t("scanner.recorded"),
+      duplicate: t("scanner.duplicate"),
+      studentNotFound: t("scanner.invalidCode"),
+      networkError: t("scanner.networkError"),
+      savedLocally: t("scanner.savedLocally"),
+      serverError: t("scanner.serverError"),
+      resolveStatus: (status) => scannerStatusMessage(status, t)
+    }
+  });
+
+  return (
+    <section className="admin-editor scanner-panel">
+      <div className="section-heading scanner-panel-heading">
+        <div>
+          <h2>{t("admin.tabs.scanner")}</h2>
+          <p>{t("scanner.inputLabel")}</p>
+        </div>
+        <button className="secondary-button compact-button scanner-camera-button" type="button" onClick={onOpenCamera}>
+          <span aria-hidden="true">▥</span>{t("scanner.openCamera")}
+        </button>
+      </div>
+      <form onSubmit={scanner.handleSubmit}>
+        <label>
+          {t("scanner.inputLabel")}
+          <input
+            ref={scanner.inputRef}
+            dir="ltr"
+            autoFocus
+            type="text"
+            value={scanner.inputValue}
+            onChange={(event) => scanner.setInputValue(event.target.value)}
+            onKeyDown={scanner.handleInputKeyDown}
+            placeholder={t("scanner.inputPlaceholder")}
+            autoComplete="off"
+          />
+        </label>
+        <button className="primary-button" type="submit" disabled={!scanner.inputValue.trim()}>
+          {scanner.pendingCount ? `${t("dashboard.refreshing")} · ${scanner.pendingCount}` : t("scanner.submit")}
+        </button>
+      </form>
+      {scanner.student ? (
+        <div className={`status-panel ${scanner.scanState === "success" ? "success" : "warning"}`}>
+          <strong>{scanner.student.full_name}</strong>
+          <span>{scanner.student.student_serial || scanner.student.scan_serial || scanner.student.student_code} · {scanner.student.group_name} · {scanner.student.grade_level}</span>
+        </div>
+      ) : null}
+      {scanner.message ? <p className={scanner.scanState === "success" ? "lookup-result" : scanner.scanState === "loading" ? "scanner-queued-message" : "form-error"} role="status">{scanner.message}</p> : null}
     </section>
   );
 }
@@ -8401,7 +8495,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   if (!configured || showChangePin) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{configured ? t("audit.changePin") : t("audit.setup")}</h2></div><form onSubmit={savePin} className="audit-pin-form"><label>{t("audit.pin")}<input value={newPin} onChange={(event) => setNewPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="new-password" /></label><label>{t("audit.adminPassword")}<input value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} type="password" autoComplete="current-password" /></label><div className="report-actions"><button className="primary-button" type="submit">{t("audit.setup")}</button>{configured ? <button className="secondary-button" type="button" onClick={() => setShowChangePin(false)}>{t("admin.cancel")}</button> : null}</div>{status ? <p className="form-error">{status}</p> : null}</form></section>;
   if (!unlocked) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><form onSubmit={unlock} className="audit-pin-form"><label>{t("audit.pin")}<input value={pin} onChange={(event) => setPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><button className="primary-button" type="submit">{t("audit.unlock")}</button>{status ? <p className="form-error">{status}</p> : null}</form></section>;
   const selectedDetailRows = selectedLog ? detailRowsFor(selectedLog).filter((item) => item.key !== t("audit.detail.summary") && item.key !== t("audit.detail.actor")) : [];
-  const selectedChangeRows = selectedLog ? changeRowsFor(selectedLog) : [];
+  const selectedChangeRows: Array<{ field: string; before: string; after: string }> = selectedLog ? changeRowsFor(selectedLog) : [];
   const maintenancePanelForCenter = <details className="audit-maintenance audit-maintenance-center"><summary>{t("audit.maintenance")}</summary><form className="audit-maintenance-form" onSubmit={deleteMaintenance}><p className="audit-maintenance-warning">{t("audit.maintenanceWarning")}</p><div className="audit-maintenance-fields"><label>{t("audit.maintenanceFrom")}<input type="date" value={maintenanceFrom} onChange={(event) => { setMaintenanceFrom(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenanceTo")}<input type="date" value={maintenanceTo} onChange={(event) => { setMaintenanceTo(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenancePin")}<input value={maintenancePin} onChange={(event) => setMaintenancePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><label>{t("audit.maintenancePassword")}<input value={maintenancePassword} onChange={(event) => setMaintenancePassword(event.target.value)} type="password" autoComplete="current-password" /></label></div><label>{t("audit.maintenanceReason")}<textarea value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} placeholder={t("audit.maintenanceReasonPlaceholder")} rows={3} maxLength={500} /></label><label>{t("audit.maintenanceConfirmation")}<input value={maintenanceConfirmation} onChange={(event) => setMaintenanceConfirmation(event.target.value)} placeholder={t("audit.maintenanceConfirmationHint")} autoComplete="off" /></label><div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={maintenanceOperation !== "idle"} onClick={previewMaintenance}>{maintenanceOperation === "preview" ? t("audit.maintenancePreviewing") : t("audit.maintenancePreview")}</button><button className="danger-button compact-button" type="submit" disabled={maintenanceOperation !== "idle" || maintenanceCount === null}>{maintenanceOperation === "delete" ? t("audit.maintenanceDeleting") : t("audit.maintenanceDelete")}</button></div>{maintenanceCount !== null ? <p className="audit-maintenance-count">{t("audit.maintenanceCount", { count: String(maintenanceCount) })}</p> : null}{maintenanceStatus ? <p className={"audit-maintenance-status " + maintenanceStatusTone}>{maintenanceStatus}</p> : null}</form></details>;
   return <section className="admin-editor audit-logs-panel audit-center">
     <div className="audit-center-hero"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.activityCenter")}</h2><p>{t("audit.activityCenterDescription")}</p></div><div className="audit-center-hero-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); setSelectedLog(null); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div></div>

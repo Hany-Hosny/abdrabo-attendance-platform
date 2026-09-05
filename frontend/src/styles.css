@@ -12986,3 +12986,135 @@ header a {
     padding: calc(66px + var(--safe-top)) 8px 8px;
   }
 }
+
+/* Final scanner overrides: the scanner must keep its own layout contract
+   after the shared admin responsive rules have been applied. */
+.admin-shell .scanner-panel {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.admin-shell .scanner-panel .scanner-panel-heading {
+  display: flex !important;
+  width: 100% !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.admin-shell .scanner-panel .scanner-panel-heading > div {
+  display: grid !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+.admin-shell .scanner-panel > form {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 190px !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+}
+
+.admin-shell .scanner-panel > form > label,
+.admin-shell .scanner-panel > form > label > input {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.admin-shell .scanner-panel > form > button {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.camera-scanner-modal {
+  width: min(960px, calc(100vw - 32px)) !important;
+  max-height: min(92dvh, 900px) !important;
+}
+
+.camera-scanner-stage {
+  min-height: 340px;
+  aspect-ratio: 16 / 9;
+}
+
+.camera-scanner-stage video {
+  min-height: 340px;
+  background: #020811;
+}
+
+@media (max-width: 767px) {
+  .admin-shell .scanner-panel .scanner-panel-heading {
+    align-items: stretch !important;
+    flex-direction: column !important;
+  }
+
+  .admin-shell .scanner-panel .scanner-camera-button {
+    width: 100% !important;
+  }
+
+  .admin-shell .scanner-panel > form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .camera-scanner-modal {
+    width: 100% !important;
+    max-height: 100dvh !important;
+    overflow-y: auto !important;
+  }
+
+  .camera-scanner-stage {
+    min-height: 0;
+    height: min(58dvh, calc((100vw - 24px) * 0.75));
+    aspect-ratio: 4 / 3;
+  }
+
+  .camera-scanner-stage video {
+    min-height: 0;
+  }
+}
+
+html::after {
+  position: fixed;
+  z-index: 9999;
+  inset: 0;
+  border: 0 solid transparent;
+  pointer-events: none;
+  content: "";
+  opacity: 0;
+  transition: opacity 80ms ease, border-width 80ms ease;
+}
+
+html[data-scanner-feedback="success"]::after {
+  border-width: 9px;
+  border-color: rgba(38, 218, 139, 0.92);
+  box-shadow: inset 0 0 24px rgba(38, 218, 139, 0.4);
+  opacity: 1;
+}
+
+html[data-scanner-feedback="duplicate"]::after,
+html[data-scanner-feedback="offline"]::after {
+  border-width: 9px;
+  border-color: rgba(255, 190, 65, 0.92);
+  box-shadow: inset 0 0 24px rgba(255, 190, 65, 0.34);
+  opacity: 1;
+}
+
+html[data-scanner-feedback="error"]::after {
+  border-width: 9px;
+  border-color: rgba(255, 102, 95, 0.92);
+  box-shadow: inset 0 0 24px rgba(255, 102, 95, 0.38);
+  opacity: 1;
+}
+
+.scanner-queued-message {
+  margin: 0;
+  color: #ffd27b;
+  font-weight: 800;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html::after {
+    transition: none;
+  }
+}

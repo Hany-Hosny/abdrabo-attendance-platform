@@ -748,8 +748,14 @@ export async function migrate() {
     CREATE UNIQUE INDEX IF NOT EXISTS payments_reference_idx ON payments(payment_reference) WHERE payment_reference IS NOT NULL;
     CREATE INDEX IF NOT EXISTS attendance_records_student_idx ON attendance_records(student_id, checkin_time DESC);
     CREATE INDEX IF NOT EXISTS attendance_records_session_idx ON attendance_records(session_id, student_id);
+    CREATE INDEX IF NOT EXISTS attendance_records_student_session_created_idx ON attendance_records(student_id, session_id, created_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS attendance_records_idempotency_key_idx ON attendance_records(idempotency_key) WHERE idempotency_key IS NOT NULL;
     CREATE INDEX IF NOT EXISTS attendance_sessions_group_date_idx ON attendance_sessions(group_id, session_date DESC);
+    CREATE INDEX IF NOT EXISTS attendance_sessions_group_date_status_idx ON attendance_sessions(group_id, session_date, status, closes_at);
+    CREATE INDEX IF NOT EXISTS students_qr_token_lower_active_idx ON students (LOWER(COALESCE(qr_token, ''))) WHERE deleted_at IS NULL AND is_active = TRUE;
+    CREATE INDEX IF NOT EXISTS students_scan_serial_lower_active_idx ON students (LOWER(COALESCE(scan_serial, ''))) WHERE deleted_at IS NULL AND is_active = TRUE;
+    CREATE INDEX IF NOT EXISTS students_student_serial_lower_active_idx ON students (LOWER(COALESCE(student_serial, ''))) WHERE deleted_at IS NULL AND is_active = TRUE;
+    CREATE INDEX IF NOT EXISTS students_student_code_lower_active_idx ON students (LOWER(COALESCE(student_code, ''))) WHERE deleted_at IS NULL AND is_active = TRUE;
     CREATE INDEX IF NOT EXISTS exam_results_exam_student_idx ON exam_results(exam_id, student_id);
   `);
 

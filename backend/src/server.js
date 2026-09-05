@@ -133,8 +133,9 @@ migrate()
       console.log(`Abdrabo API listening on port ${port}`);
     });
     server.requestTimeout = 30_000;
-    server.headersTimeout = 15_000;
-    server.keepAliveTimeout = 5_000;
+    const keepAliveTimeout = Number(process.env.HTTP_KEEP_ALIVE_TIMEOUT_MS || 65_000);
+    server.keepAliveTimeout = Number.isFinite(keepAliveTimeout) ? Math.max(5_000, keepAliveTimeout) : 65_000;
+    server.headersTimeout = server.keepAliveTimeout + 5_000;
     server.maxHeadersCount = 100;
   })
   .catch((error) => {

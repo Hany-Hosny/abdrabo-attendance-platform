@@ -22,8 +22,23 @@ operationsRouter.use(requireTeacher);
 // report middleware below then apply the narrower capability for that route.
 operationsRouter.use("/fees/payments", requirePermission("payments.view"));
 operationsRouter.use("/fees/overdue", requirePermission("payments.view"));
-const scannerRateLimit = createRateLimiter({ windowMs: 60_000, max: 180, key: (req) => `scanner:${req.teacher?.id || ipKeyGenerator(req.ip || "unknown")}` });
+const scannerRateLimit = createRateLimiter({ windowMs: 60_000, max: 600, key: (req) => `scanner:${req.teacher?.id || ipKeyGenerator(req.ip || "unknown")}` });
 const paymentRateLimit = createRateLimiter({ windowMs: 60_000, max: 30, key: (req) => `payment:${req.teacher?.id || ipKeyGenerator(req.ip || "unknown")}` });
+const recentScannerRequests = new Map();
+
+function isRecentScannerDuplicate(teacherId, token, idempotencyKey = null) {
+  const now = Date.now();
+  const key = `${teacherId}:${token}`;
+  const previous = recentScannerRequests.get(key);
+  if (idempotencyKey && previous?.idempotencyKey === idempotencyKey) return false;
+  recentScannerRequests.set(key, { at: now, idempotencyKey });
+  if (recentScannerRequests.size > 10_000) {
+    for (const [candidate, entry] of recentScannerRequests) {
+      if (now - entry.at > 2_000) recentScannerRequests.delete(candidate);
+    }
+  }
+  return Boolean(previous && now - previous.at < 2_000);
+}
 
 function cairoSessionTimeSql(dateExpression, timeExpression) {
   return `((${dateExpression}::date + ${timeExpression}) AT TIME ZONE 'Africa/Cairo')`;
@@ -724,6 +739,23 @@ operationsRouter.get("/attendance/sessions/:id/records", requirePermission("atte
   catch (error) { next(error); }
 });
 
+operationsRouter.get("/scanner/students", requirePermission("attendance.manage"), async (req, res, next) => {
+  try {
+    const result = await query(`
+      SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial, s.qr_token,
+        s.group_id, COALESCE(g.display_name, g.name) AS group_name,
+        COALESCE(g.grade_level, g.grade) AS grade_level, s.is_active
+      FROM students s
+      JOIN groups g ON g.id = s.group_id
+      WHERE s.deleted_at IS NULL AND s.is_active = TRUE
+        AND g.deleted_at IS NULL AND g.is_active = TRUE
+      ORDER BY s.id
+    `);
+    res.set("Cache-Control", "no-store");
+    res.json({ ok: true, students: result.rows });
+  } catch (error) { next(error); }
+});
+
 operationsRouter.post("/scanner/student-lookup", requireAnyPermission("students.view", "attendance.view", "payments.view"), async (req, res, next) => {
   try {
     const value = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
@@ -810,6 +842,35 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
   return { record: result.rows[0] };
 }
 
+const scannerMaintenanceAt = new Map();
+
+async function maintainScannerSessions(groupId) {
+  const key = String(groupId);
+  const now = Date.now();
+  const lastRun = scannerMaintenanceAt.get(key) || 0;
+  if (now - lastRun < 30_000) return;
+  scannerMaintenanceAt.set(key, now);
+  await finalizeExpiredAttendanceSessions();
+  // Repair only sessions finalized by the legacy ends_at rule. The short
+  // per-group cooldown keeps this compatibility path out of every scan.
+  await query(`DELETE FROM attendance_records ar
+    USING attendance_sessions s JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
+    WHERE ar.session_id=s.id AND s.group_id=$1 AND s.status='closed' AND ar.method='system'
+      AND cs.closes_after_minutes>20
+      AND NOT EXISTS (SELECT 1 FROM attendance_records existing WHERE existing.session_id=s.id AND existing.method <> 'system')
+      AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
+        (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
+        AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [groupId]);
+  await query(`UPDATE attendance_sessions s SET status='open'
+    FROM class_schedules cs
+    WHERE s.group_id=$1 AND s.schedule_id=cs.id AND cs.group_id=s.group_id AND s.status='closed'
+      AND cs.closes_after_minutes>20
+      AND NOT EXISTS (SELECT 1 FROM attendance_records ar WHERE ar.session_id=s.id AND ar.method <> 'system')
+      AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
+        (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
+        AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [groupId]);
+}
+
 operationsRouter.post("/attendance/manual", requirePermission("attendance.manage"), async (req, res, next) => {
   try {
     const sessionId=Number(normalizeDigits(req.body?.session_id)), studentId=Number(normalizeDigits(req.body?.student_id)), status=String(req.body?.status||"present");
@@ -838,7 +899,6 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
 
 operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission("attendance.manage"), async (req, res, next) => {
   try {
-    await finalizeExpiredAttendanceSessions();
     const token = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
     const lookupValues = scanLookupValues(token).map((candidate) => candidate.toLowerCase());
     if (!isValidScanValue(token) || !lookupValues.length) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
@@ -847,6 +907,9 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
     const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
     if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
+    // A retry with the same idempotency key must reach the database. Only
+    // suppress separate, duplicate hardware events at the API boundary.
+    if (isRecentScannerDuplicate(req.teacher.id, token, idempotencyKey)) return res.status(409).json({ ok: false, status: "duplicate_scan_window" });
     const studentResult = await query(
       `SELECT s.id, s.full_name, s.student_serial, s.scan_serial, s.student_code, s.qr_token, s.group_id,
         s.phone, s.guardian_phone, s.is_active, s.deleted_at, g.name AS group_name,
@@ -886,26 +949,7 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Africa/Cairo'))::INTEGER
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
-    await finalizeExpiredAttendanceSessions();
-    // Recover sessions finalized by the old ends_at rule when the configured
-    // attendance window is still open. Never reopen a session with real
-    // manual or scanned attendance activity.
-    await query(`DELETE FROM attendance_records ar
-      USING attendance_sessions s JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
-      WHERE ar.session_id=s.id AND s.group_id=$1 AND s.status='closed' AND ar.method='system'
-        AND cs.closes_after_minutes>20
-        AND NOT EXISTS (SELECT 1 FROM attendance_records existing WHERE existing.session_id=s.id AND existing.method <> 'system')
-        AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
-          (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
-          AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [student.group_id]);
-    await query(`UPDATE attendance_sessions s SET status='open'
-      FROM class_schedules cs
-      WHERE s.group_id=$1 AND s.schedule_id=cs.id AND cs.group_id=s.group_id AND s.status='closed'
-        AND cs.closes_after_minutes>20
-        AND NOT EXISTS (SELECT 1 FROM attendance_records ar WHERE ar.session_id=s.id AND ar.method <> 'system')
-        AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
-          (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
-          AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [student.group_id]);
+    await maintainScannerSessions(student.group_id);
     const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN (s.opens_at AT TIME ZONE 'Africa/Cairo') AND (s.closes_at AT TIME ZONE 'Africa/Cairo') ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
     if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"closed_session",student: publicStudent});
     const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
