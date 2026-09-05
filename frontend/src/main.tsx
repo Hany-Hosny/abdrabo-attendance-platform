@@ -254,6 +254,13 @@ const translations = {
     "nav.aboutCenter": "عن السنتر",
     "nav.contact": "التواصل",
     "nav.tips": "نصائح",
+    "nav.home": "الرئيسية",
+    "nav.exams": "الامتحانات",
+    "nav.grades": "الدرجات",
+    "nav.studentAccount": "بيانات الحساب",
+    "nav.language": "اللغة",
+    "nav.theme": "المظهر",
+    "nav.notifications": "الإشعارات",
     "nav.mobileNavigation": "التنقل",
     "nav.mobileMenu": "فتح القائمة",
     "nav.closeMobileMenu": "إغلاق القائمة",
@@ -1010,6 +1017,27 @@ const translations = {
     "dashboard.noNotifications": "لا توجد إشعارات جديدة",
     "dashboard.viewAllNotifications": "عرض كل الإشعارات",
     "dashboard.markAllRead": "تحديد الكل كمقروء",
+    "dashboard.notificationsCenterTitle": "مركز الإشعارات",
+    "dashboard.notificationsCenterSubtitle": "تابع كل التنبيهات والتحديثات في مكان واحد.",
+    "dashboard.notificationsUnreadCount": "{{count}} غير مقروء",
+    "dashboard.notificationsSelectedCount": "تم تحديد {{count}} إشعارات",
+    "dashboard.notificationsSelectAll": "تحديد الكل",
+    "dashboard.notificationsClearSelection": "إلغاء التحديد",
+    "dashboard.notificationsFilterAll": "الكل",
+    "dashboard.notificationsFilterUnread": "غير مقروء",
+    "dashboard.notificationsFilterWhatsApp": "واتساب",
+    "dashboard.notificationsFilterAttendance": "حضور",
+    "dashboard.notificationsFilterExams": "امتحانات",
+    "dashboard.notificationsDeleteSelected": "حذف المحدد",
+    "dashboard.notificationsDeleted": "تم حذف الإشعارات",
+    "dashboard.notificationsMarkedRead": "تم تحديد الإشعارات كمقروءة",
+    "dashboard.notificationsBack": "العودة",
+    "dashboard.notificationsEmpty": "لا توجد إشعارات حالياً",
+    "dashboard.notificationsEmptyHint": "جرّب تغيير الفلتر أو عد لاحقاً.",
+    "dashboard.notificationsRetry": "إعادة المحاولة",
+    "dashboard.notificationsDeleteConfirm": "هل تريد حذف الإشعارات المحددة؟",
+    "dashboard.notificationsReadStatus": "مقروء",
+    "dashboard.notificationsUnreadStatus": "غير مقروء",
     "dashboard.markRead": "تحديد كمقروء",
     "dashboard.newMessageNotification": "رسالة جديدة",
     "dashboard.attendanceNotification": "تنبيه حضور",
@@ -1496,6 +1524,13 @@ const translations = {
     "nav.aboutCenter": "About Center",
     "nav.contact": "Contact",
     "nav.tips": "Tips",
+    "nav.home": "Home",
+    "nav.exams": "Exams",
+    "nav.grades": "Grades",
+    "nav.studentAccount": "Account",
+    "nav.language": "Language",
+    "nav.theme": "Theme",
+    "nav.notifications": "Notifications",
     "nav.mobileNavigation": "Navigation",
     "nav.mobileMenu": "Open menu",
     "nav.closeMobileMenu": "Close menu",
@@ -2252,6 +2287,27 @@ const translations = {
     "dashboard.noNotifications": "No new notifications",
     "dashboard.viewAllNotifications": "View all notifications",
     "dashboard.markAllRead": "Mark all as read",
+    "dashboard.notificationsCenterTitle": "Notifications center",
+    "dashboard.notificationsCenterSubtitle": "Keep every alert and update in one place.",
+    "dashboard.notificationsUnreadCount": "{{count}} unread",
+    "dashboard.notificationsSelectedCount": "{{count}} notifications selected",
+    "dashboard.notificationsSelectAll": "Select all",
+    "dashboard.notificationsClearSelection": "Clear selection",
+    "dashboard.notificationsFilterAll": "All",
+    "dashboard.notificationsFilterUnread": "Unread",
+    "dashboard.notificationsFilterWhatsApp": "WhatsApp",
+    "dashboard.notificationsFilterAttendance": "Attendance",
+    "dashboard.notificationsFilterExams": "Exams",
+    "dashboard.notificationsDeleteSelected": "Delete selected",
+    "dashboard.notificationsDeleted": "Notifications deleted",
+    "dashboard.notificationsMarkedRead": "Notifications marked as read",
+    "dashboard.notificationsBack": "Back",
+    "dashboard.notificationsEmpty": "No notifications right now",
+    "dashboard.notificationsEmptyHint": "Try another filter or check back later.",
+    "dashboard.notificationsRetry": "Retry",
+    "dashboard.notificationsDeleteConfirm": "Delete the selected notifications?",
+    "dashboard.notificationsReadStatus": "Read",
+    "dashboard.notificationsUnreadStatus": "Unread",
     "dashboard.markRead": "Mark as read",
     "dashboard.newMessageNotification": "New message",
     "dashboard.attendanceNotification": "Attendance alert",
@@ -3367,6 +3423,30 @@ function BellIcon() {
   return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9.8a6 6 0 0 0-12 0c0 6.2-2.4 6.2-2.4 7.4h16.8C20.4 16 18 16 18 9.8Z" /><path d="M10 20h4" /></svg>;
 }
 
+function MenuIcon() {
+  return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>;
+}
+
+function HomeIcon() {
+  return <svg className="header-tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" /></svg>;
+}
+
+function ExamsIcon() {
+  return <svg className="header-tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h9l3 3V20.5H6z" /><path d="M15 3.5v4h3M9 12h6M9 16h4" /></svg>;
+}
+
+function GradesIcon() {
+  return <svg className="header-tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16" /><path d="m7 15 3-4 3 2 5-7" /></svg>;
+}
+
+function GuestNotificationButton({ t }: { t: Translator }) {
+  return (
+    <button className="student-notification-trigger" type="button" aria-label={t("nav.notifications")} title={t("nav.notifications")}>
+      <BellIcon />
+    </button>
+  );
+}
+
 function SettingsIcon() {
   return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9.7 3.6.5-1h3.6l.5 1a8.5 8.5 0 0 1 1.7.8l1.1-.2 2.5 2.5-.2 1.1c.3.5.6 1.1.8 1.7l1 .5v3.6l-1 .5a8.5 8.5 0 0 1-.8 1.7l.2 1.1-2.5 2.5-1.1-.2a8.5 8.5 0 0 1-1.7.8l-.5 1h-3.6l-.5-1a8.5 8.5 0 0 1-1.7-.8l-1.1.2-2.5-2.5.2-1.1a8.5 8.5 0 0 1-.8-1.7l-1-.5v-3.6l1-.5c.2-.6.5-1.2.8-1.7l-.2-1.1 2.5-2.5 1.1.2c.5-.3 1.1-.6 1.7-.8Z" /><circle cx="12" cy="11.8" r="3.1" /></svg>;
 }
@@ -3739,6 +3819,28 @@ function App() {
         t={t}
       />
     );
+  }
+
+  if (path === "/notifications") {
+    if (!teacherSession) {
+      window.history.replaceState({}, "", "/teacher/login");
+      return (
+        <TeacherLogin
+          language={language}
+          setLanguage={setLanguage}
+          onLogin={(session) => {
+            saveTeacherSession(session);
+            setTeacherSession(session);
+            navigate("/teacher/dashboard");
+          }}
+          t={t}
+        />
+      );
+    }
+    return <NotificationsManagementCenter session={teacherSession} language={language} t={t} onBack={() => {
+      if (window.history.length > 1) window.history.back();
+      else navigate("/teacher/dashboard");
+    }} />;
   }
 
   const publicSlug = getCurrentSiteSlug(path);
@@ -4258,7 +4360,7 @@ function notificationDescription(notification: HeaderNotification, t: Translator
   return t("dashboard.notificationDescriptionPayment", { name });
 }
 
-function NotificationCenter({ session, language, t, onSelect }: { session: TeacherSession; language: Language; t: Translator; onSelect: (notification: HeaderNotification) => void }) {
+function NotificationCenter({ session, language, t, onSelect, onOpenAll }: { session: TeacherSession; language: Language; t: Translator; onSelect: (notification: HeaderNotification) => void; onOpenAll: () => void }) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<HeaderNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -4324,9 +4426,224 @@ function NotificationCenter({ session, language, t, onSelect }: { session: Teach
     finally { markAllBusyRef.current = false; }
   }
   const badge = unreadCount > 99 ? "99+" : String(unreadCount);
-  return <div className="admin-header-tool notification-center" ref={containerRef}>
+  return <div className="admin-header-tool notification-center" ref={containerRef} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
     <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={t("dashboard.notificationCenter")} title={t("dashboard.notificationCenter")} aria-expanded={open} onClick={() => setOpen((value) => !value)}><BellIcon />{unreadCount > 0 ? <span className="header-unread-badge" aria-label={badge}>{badge}</span> : null}</button>
-    {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button type="button" onClick={markAllRead} disabled={!unreadCount}>{t("dashboard.markAllRead")}</button></div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : notifications.length ? <div className="notification-list">{notifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.type}`}>{notification.type === "new_message" ? "✉" : notification.type === "payment_overdue" ? "₤" : notification.type === "whatsapp_disconnected" ? "⚠" : "!"}</span><span><strong>{notificationTitle(notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setExpanded(true); void load(20); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
+    {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button type="button" onClick={markAllRead} disabled={!unreadCount}>{t("dashboard.markAllRead")}</button></div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : notifications.length ? <div className="notification-list">{notifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.type}`}>{notification.type === "new_message" ? "✉" : notification.type === "payment_overdue" ? "₤" : notification.type === "whatsapp_disconnected" ? "⚠" : "!"}</span><span><strong>{notificationTitle(notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setOpen(false); onOpenAll(); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
+  </div>;
+}
+
+type NotificationFilter = "all" | "unread" | "whatsapp" | "attendance" | "exams";
+
+function notificationCategory(type: string): "whatsapp" | "attendance" | "exams" | "system" {
+  if (type === "whatsapp_disconnected") return "whatsapp";
+  if (type === "attendance_low" || type === "payment_overdue") return "attendance";
+  if (type === "evaluation_low") return "exams";
+  return "system";
+}
+
+function NotificationCategoryIcon({ category }: { category: ReturnType<typeof notificationCategory> }) {
+  const icon = category === "whatsapp" ? "⚠" : category === "attendance" ? "!" : category === "exams" ? "✦" : "✉";
+  return <span className={`notifications-category-icon notifications-category-icon-${category}`} aria-hidden="true">{icon}</span>;
+}
+
+function formatNotificationTimestamp(value: string, language: Language) {
+  return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", {
+    day: "numeric",
+    month: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Africa/Cairo"
+  }).format(new Date(value));
+}
+
+function NotificationsManagementCenter({ session, language, t, onBack }: { session: TeacherSession; language: Language; t: Translator; onBack: () => void }) {
+  const [notifications, setNotifications] = useState<HeaderNotification[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>("all");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [actionState, setActionState] = useState<"idle" | "marking" | "marked" | "marking-all" | "marked-all" | "deleting" | "deleted">("idle");
+  const actionResetRef = useRef<number | null>(null);
+
+  async function loadNotifications(signal?: AbortSignal) {
+    setLoading(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/notifications?limit=100`, { headers: { Authorization: `Bearer ${session.token}` }, signal });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error("notifications_failed");
+      if (signal?.aborted) return;
+      setNotifications(Array.isArray(payload.notifications) ? payload.notifications : []);
+      setSelectedIds([]);
+      setError("");
+    } catch (reason: unknown) {
+      if (reason && typeof reason === "object" && "name" in reason && reason.name === "AbortError") return;
+      setError(t("dashboard.notificationsLoadFailed"));
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadNotifications(controller.signal);
+    return () => controller.abort();
+  }, [session.token]);
+
+  useEffect(() => {
+    return () => {
+      if (actionResetRef.current !== null) window.clearTimeout(actionResetRef.current);
+    };
+  }, []);
+
+  const unreadCount = notifications.filter((notification) => !notification.is_read).length;
+  const filteredNotifications = notifications.filter((notification) => {
+    const category = notificationCategory(notification.type);
+    if (activeFilter === "unread") return !notification.is_read;
+    if (activeFilter === "whatsapp") return category === "whatsapp";
+    if (activeFilter === "attendance") return category === "attendance";
+    if (activeFilter === "exams") return category === "exams";
+    return true;
+  });
+  const filteredIds = filteredNotifications.map((notification) => String(notification.id));
+  const allVisibleSelected = filteredIds.length > 0 && selectedIds.length === filteredIds.length;
+
+  useEffect(() => {
+    setSelectedIds((current) => current.filter((id) => filteredIds.includes(id)));
+  }, [activeFilter, notifications]);
+
+  function setTransientAction(nextState: Exclude<typeof actionState, "idle">) {
+    if (actionResetRef.current !== null) window.clearTimeout(actionResetRef.current);
+    setActionState(nextState);
+    actionResetRef.current = window.setTimeout(() => setActionState("idle"), 1800);
+  }
+
+  function toggleSelection(id: string) {
+    setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds(allVisibleSelected ? [] : filteredIds);
+  }
+
+  async function markAsRead(ids: string[]) {
+    if (!ids.length || actionState !== "idle") return;
+    const previous = notifications;
+    const numericIds = ids.map(Number).filter(Number.isSafeInteger);
+    setActionState("marking");
+    setNotifications((current) => current.map((notification) => ids.includes(String(notification.id)) ? { ...notification, is_read: true } : notification));
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/notifications/read`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ ids: numericIds })
+      });
+      if (!response.ok) throw new Error("mark_read_failed");
+      setTransientAction("marked");
+    } catch (_error) {
+      setNotifications(previous);
+      setError(t("dashboard.notificationsLoadFailed"));
+      setActionState("idle");
+    }
+  }
+
+  async function markAllAsRead() {
+    if (!unreadCount || actionState !== "idle") return;
+    const previous = notifications;
+    setActionState("marking-all");
+    setNotifications((current) => current.map((notification) => ({ ...notification, is_read: true })));
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/notifications/read-all`, { method: "POST", headers: { Authorization: `Bearer ${session.token}` } });
+      if (!response.ok) throw new Error("mark_all_failed");
+      setTransientAction("marked-all");
+    } catch (_error) {
+      setNotifications(previous);
+      setError(t("dashboard.notificationsLoadFailed"));
+      setActionState("idle");
+    }
+  }
+
+  async function deleteNotifications(ids: string[]) {
+    if (!ids.length || actionState !== "idle") return;
+    if (!window.confirm(t("dashboard.notificationsDeleteConfirm"))) return;
+    const previous = notifications;
+    const numericIds = ids.map(Number).filter(Number.isSafeInteger);
+    setActionState("deleting");
+    setNotifications((current) => current.filter((notification) => !ids.includes(String(notification.id))));
+    setSelectedIds([]);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/notifications`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ ids: numericIds })
+      });
+      if (!response.ok) throw new Error("delete_notifications_failed");
+      setTransientAction("deleted");
+    } catch (_error) {
+      setNotifications(previous);
+      setError(t("dashboard.notificationsLoadFailed"));
+      setActionState("idle");
+    }
+  }
+
+  const actionBusy = actionState !== "idle";
+  const actionLabel = actionState === "marking" ? t("dashboard.loading") : actionState === "marked" ? t("dashboard.notificationsMarkedRead") : t("dashboard.markRead");
+  const markAllLabel = actionState === "marking-all" ? t("dashboard.loading") : actionState === "marked-all" ? t("dashboard.notificationsMarkedRead") : t("dashboard.markAllRead");
+  const deleteLabel = actionState === "deleting" ? t("dashboard.loading") : actionState === "deleted" ? t("dashboard.notificationsDeleted") : t("dashboard.notificationsDeleteSelected");
+  const filters: Array<{ id: NotificationFilter; label: string; count?: number }> = [
+    { id: "all", label: t("dashboard.notificationsFilterAll") },
+    { id: "unread", label: t("dashboard.notificationsFilterUnread"), count: unreadCount },
+    { id: "whatsapp", label: t("dashboard.notificationsFilterWhatsApp") },
+    { id: "attendance", label: t("dashboard.notificationsFilterAttendance") },
+    { id: "exams", label: t("dashboard.notificationsFilterExams") }
+  ];
+
+  return <div className="notifications-page-shell" dir={language === "ar" ? "rtl" : "ltr"} lang={language}>
+    <main className="notifications-center-page">
+      <header className="notifications-page-header">
+        <div className="notifications-page-heading">
+          <button className="notifications-back-button" type="button" onClick={onBack}><span aria-hidden="true">←</span><span>{t("dashboard.notificationsBack")}</span></button>
+          <div>
+            <p className="eyebrow">{t("dashboard.notificationCenter")}</p>
+            <h1>{t("dashboard.notificationsCenterTitle")}</h1>
+            <p>{t("dashboard.notificationsCenterSubtitle")}</p>
+          </div>
+          <span className="notifications-unread-badge">{t("dashboard.notificationsUnreadCount", { count: unreadCount.toLocaleString(language === "ar" ? "ar-EG" : "en-US") })}</span>
+        </div>
+        {unreadCount > 0 ? <button className={`primary-button notifications-mark-all-button ${actionState === "marked-all" ? "is-success" : ""}`} type="button" onClick={() => void markAllAsRead()} disabled={actionBusy || actionState === "marked-all"}>{markAllLabel}<span aria-hidden="true">✓✓</span></button> : null}
+      </header>
+
+      <section className="notifications-toolbar" aria-label={t("dashboard.notificationsCenterTitle")}>
+        <label className="notifications-select-all"><input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectAll} disabled={!filteredNotifications.length || actionBusy} /><span>{allVisibleSelected ? t("dashboard.notificationsClearSelection") : t("dashboard.notificationsSelectAll")}</span></label>
+        <div className="notifications-filter-pills" role="tablist" aria-label={t("dashboard.notificationsCenterTitle")}>
+          {filters.map((filter) => <button key={filter.id} className={activeFilter === filter.id ? "active" : ""} type="button" role="tab" aria-selected={activeFilter === filter.id} onClick={() => { setActiveFilter(filter.id); setSelectedIds([]); }}>{filter.label}{filter.count ? <span>{filter.count}</span> : null}</button>)}
+        </div>
+      </section>
+
+      {selectedIds.length > 0 ? <section className="notifications-selection-bar" aria-live="polite">
+        <strong>{t("dashboard.notificationsSelectedCount", { count: selectedIds.length.toLocaleString(language === "ar" ? "ar-EG" : "en-US") })}</strong>
+        <div><button className="secondary-button" type="button" onClick={() => void markAsRead(selectedIds)} disabled={actionBusy || actionState === "marked"}>{actionLabel}</button><button className="danger-button" type="button" onClick={() => void deleteNotifications(selectedIds)} disabled={actionBusy || actionState === "deleted"}>{deleteLabel}</button></div>
+      </section> : null}
+
+      {error ? <p className="notifications-error form-error" role="alert">{error} <button className="notifications-retry-button" type="button" onClick={() => void loadNotifications()} disabled={actionBusy}>{t("dashboard.notificationsRetry")}</button></p> : null}
+      {actionState === "marked" || actionState === "marked-all" || actionState === "deleted" ? <p className="notifications-feedback" role="status">{actionState === "deleted" ? deleteLabel : t("dashboard.notificationsMarkedRead")}</p> : null}
+      <section className="notifications-list" aria-live="polite">
+        {loading ? Array.from({ length: 4 }, (_, index) => <div className="notifications-skeleton-row" key={`skeleton-${index}`}><span /><div><span /><span /><span /></div></div>) : filteredNotifications.length ? filteredNotifications.map((notification) => {
+          const id = String(notification.id);
+          const category = notificationCategory(notification.type);
+          const selected = selectedIds.includes(id);
+          return <article className={`notifications-card notifications-card-${category} ${notification.is_read ? "is-read" : "is-unread"} ${selected ? "is-selected" : ""}`} key={notification.id}>
+            <label className="notifications-card-checkbox" htmlFor={`notification-${id}`}><input id={`notification-${id}`} type="checkbox" checked={selected} onChange={() => toggleSelection(id)} disabled={actionBusy} /><span className="visually-hidden">{notificationTitle(notification.type, t)}</span></label>
+            <NotificationCategoryIcon category={category} />
+            <div className="notifications-card-content">
+              <div className="notifications-card-title-row"><h2>{notificationTitle(notification.type, t)}</h2><time dateTime={notification.created_at}>{formatNotificationTimestamp(notification.created_at, language)}</time></div>
+              <p>{notificationDescription(notification, t, language)}</p>
+              <span className={`notifications-status ${notification.is_read ? "is-read" : "is-unread"}`}><span aria-hidden="true">{notification.is_read ? "○" : "●"}</span>{notification.is_read ? t("dashboard.notificationsReadStatus") : t("dashboard.notificationsUnreadStatus")}</span>
+            </div>
+          </article>;
+        }) : <div className="notifications-empty"><span className="notifications-empty-icon" aria-hidden="true">✓</span><h2>{t("dashboard.notificationsEmpty")}</h2><p>{t("dashboard.notificationsEmptyHint")}</p></div>}
+      </section>
+    </main>
+    <footer className="site-footer" dir="ltr" lang="en">© 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny</footer>
   </div>;
 }
 
@@ -4764,7 +5081,7 @@ function TeacherDashboard({
                   className={`${activeTab === tab.id ? "active" : ""} ${isInboxTab ? "messages-nav-item" : ""}`}
                   type="button"
                   aria-label={isInboxTab && inboxUnread > 0 ? inboxNavLabel : tab.label}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => navigateAdmin(tab.id)}
                 >
                   {tab.label}
                   {isInboxTab && inboxUnread > 0 ? <span key={inboxBadgeAnimationKey} className="nav-unread-badge" aria-hidden="true">{inboxBadgeText}</span> : null}
@@ -4775,7 +5092,10 @@ function TeacherDashboard({
           <div className="admin-header-tools">
             {can("attendance.manage") ? <button className="admin-tool-button mobile-camera-scanner-button" type="button" onClick={() => setCameraScannerOpen(true)} aria-label={t("scanner.openCamera")} title={t("scanner.openCamera")}><span aria-hidden="true">▥</span></button> : null}
             {can("students.view") ? <GlobalSearch session={session} language={language} t={t} onSelect={(studentId) => navigateAdmin("students", studentId)} /> : null}
-            {can("dashboard.alerts.view") || can("messages.view") || can("whatsapp.view") ? <NotificationCenter session={session} language={language} t={t} onSelect={(notification) => {
+            {can("dashboard.alerts.view") || can("messages.view") || can("whatsapp.view") ? <NotificationCenter session={session} language={language} t={t} onOpenAll={() => {
+              window.history.pushState({}, "", "/notifications");
+              window.dispatchEvent(new Event("popstate"));
+            }} onSelect={(notification) => {
               if (notification.entity_type === "student" && notification.entity_id && adminTabs.some((item) => item.id === "students")) navigateAdmin("students", Number(notification.entity_id), notification.target_section || undefined);
               else if (notification.type === "whatsapp_disconnected" && adminTabs.some((item) => item.id === "whatsapp")) navigateAdmin("whatsapp");
               else if (can("messages.view")) navigateAdmin("inbox");
@@ -4832,7 +5152,7 @@ function TeacherDashboard({
                   className={`${activeTab === tab.id ? "active" : ""} ${isInboxTab ? "messages-nav-item" : ""}`}
                   type="button"
                   aria-label={isInboxTab && inboxUnread > 0 ? inboxNavLabel : tab.label}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => navigateAdmin(tab.id)}
                 >
                   {tab.label}
                   {isInboxTab && inboxUnread > 0 ? <span key={inboxBadgeAnimationKey} className="nav-unread-badge" aria-hidden="true">{inboxBadgeText}</span> : null}
@@ -4887,7 +5207,7 @@ function TeacherDashboard({
             {activeTab === "whatsapp" && can("whatsapp.view") ? <WhatsAppSettingsPanel token={session.token} language={language} canManage={can("whatsapp.manage")} canControlConnection={can("whatsapp.manage") && (session.teacher.role === "owner" || session.teacher.role === "admin")} t={(key, values) => t(key as TranslationKey, values)} /> : null}
             {activeTab === "groups" && can("schedule.view") ? <AcademicManager kind="groups" session={session} t={t} /> : null}
             {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
-            {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} t={t} /> : null}
+            {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} language={language} t={t} onOpenCamera={() => setCameraScannerOpen(true)} /> : null}
             {activeTab === "fees" && can("payments.view") ? <FeesPanel session={session} t={t} /> : null}
             {activeTab === "reports" && can("payments.view") && can("payments.reports.view") ? <FinanceReportsPanel session={session} language={language} t={t} canReverse={can("payments.reverse")} /> : null}
             {activeTab === "attendance" && can("attendance.view") ? <AttendancePanel session={session} language={language} t={t} /> : null}
@@ -7166,25 +7486,29 @@ function MobileScannerModal({
   );
 }
 
-function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }) {
+function ScannerPanel({ session, language, t, onOpenCamera }: { session: TeacherSession; language: Language; t: Translator; onOpenCamera: () => void }) {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
   const [student, setStudent] = useState<any>(null);
   const [scanState, setScanState] = useState<ScannerState>("idle");
   const [scanning, setScanning] = useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
+  const codeRef = React.useRef("");
   const scanBusyRef = React.useRef(false);
   const lastScanRef = React.useRef({ value: "", at: 0 });
+  const lastInputRef = React.useRef({ at: 0, rapidCharacters: 0 });
+  const autoSubmitTimerRef = React.useRef<number | null>(null);
   const scanAbortRef = React.useRef<AbortController | null>(null);
   const successMessageTimerRef = React.useRef<number | null>(null);
   useEffect(() => { inputRef.current?.focus(); }, [message, scanning]);
   useEffect(() => () => {
     if (successMessageTimerRef.current !== null) window.clearTimeout(successMessageTimerRef.current);
+    if (autoSubmitTimerRef.current !== null) window.clearTimeout(autoSubmitTimerRef.current);
     scanAbortRef.current?.abort();
   }, []);
 
-  async function scan(event: React.FormEvent) {
-    event.preventDefault();
+  async function scan(value = codeRef.current, event?: React.FormEvent) {
+    event?.preventDefault();
     if (scanBusyRef.current) return;
     if (successMessageTimerRef.current !== null) {
       window.clearTimeout(successMessageTimerRef.current);
@@ -7203,6 +7527,7 @@ function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }
       return;
     }
     lastScanRef.current = { value: token, at: now };
+    codeRef.current = "";
     setCode("");
     setMessage("");
     setStudent(null);
@@ -7260,12 +7585,46 @@ function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }
       window.setTimeout(() => inputRef.current?.focus(), 0);
     }
   }
+
+  function handleCodeChange(nextValue: string) {
+    codeRef.current = nextValue;
+    setCode(nextValue);
+    if (autoSubmitTimerRef.current !== null) window.clearTimeout(autoSubmitTimerRef.current);
+    const now = Date.now();
+    const elapsed = now - lastInputRef.current.at;
+    const rapidCharacters = elapsed > 0 && elapsed <= 80 ? lastInputRef.current.rapidCharacters + 1 : 1;
+    lastInputRef.current = { at: now, rapidCharacters };
+
+    // Many USB/Bluetooth scanners are configured without an Enter suffix.
+    // A short rapid input burst is safe to submit automatically, while normal
+    // human typing remains manual and can still use the button.
+    if (rapidCharacters >= 3 && nextValue.trim().length >= 2) {
+      autoSubmitTimerRef.current = window.setTimeout(() => {
+        autoSubmitTimerRef.current = null;
+        if (!scanBusyRef.current && codeRef.current.trim()) void scan();
+      }, 140);
+    }
+  }
+
+  function handleCodeKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if ((event.key === "Enter" || event.key === "Tab") && codeRef.current.trim()) {
+      event.preventDefault();
+      if (autoSubmitTimerRef.current !== null) window.clearTimeout(autoSubmitTimerRef.current);
+      void scan();
+    }
+  }
   return (
     <section className="admin-editor scanner-panel">
-      <div className="section-heading">
-        <h2>{t("admin.tabs.scanner")}</h2>
+      <div className="section-heading scanner-panel-heading">
+        <div>
+          <h2>{t("admin.tabs.scanner")}</h2>
+          <p>{t("scanner.inputLabel")}</p>
+        </div>
+        <button className="secondary-button compact-button scanner-camera-button" type="button" onClick={onOpenCamera}>
+          <span aria-hidden="true">▥</span>{t("scanner.openCamera")}
+        </button>
       </div>
-      <form onSubmit={scan}>
+      <form onSubmit={(event) => void scan(codeRef.current, event)}>
         <label>
           {t("scanner.inputLabel")}
           <input
@@ -7274,7 +7633,8 @@ function ScannerPanel({ session, t }: { session: TeacherSession; t: Translator }
             autoFocus
             type="text"
             value={code}
-            onChange={(event) => setCode(event.target.value)}
+            onChange={(event) => handleCodeChange(event.target.value)}
+            onKeyDown={handleCodeKeyDown}
             placeholder={t("scanner.inputPlaceholder")}
             autoComplete="off"
             disabled={scanning}
@@ -8977,7 +9337,8 @@ function Shell({
   onLogout,
   logoutLabel,
   headerVariant,
-  studentNotifications
+  studentNotifications,
+  studentNavigation
 }: {
   children: React.ReactNode;
   language: Language;
@@ -8993,9 +9354,14 @@ function Shell({
     onOpenNotes: () => void;
     onOpenInbox: () => void;
   };
+  studentNavigation?: {
+    activeTab: StudentDashboardTab;
+    onSelect: (tab: StudentDashboardTab) => void;
+  };
 }) {
   const [activeNav, setActiveNav] = useState(() => getActiveNavKey());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isStudentAuthenticated = Boolean(onLogout && studentNotifications && studentNavigation);
 
   useEffect(() => {
     const updateActiveNav = () => setActiveNav(getActiveNavKey());
@@ -9026,51 +9392,57 @@ function Shell({
     setMobileMenuOpen(false);
   }
 
+  const guestNavigation = [
+    { id: "student-login", label: t("nav.studentLogin"), href: "/#student-login" },
+    { id: "about-teacher", label: t("nav.aboutTeacher"), href: "/about-teacher" },
+    { id: "contact", label: t("nav.contact"), href: "/contact" }
+  ];
+  const studentNavigationItems = [
+    { id: "overview" as StudentDashboardTab, label: t("nav.home"), icon: <HomeIcon /> },
+    { id: "exams" as StudentDashboardTab, label: t("nav.exams"), icon: <ExamsIcon /> },
+    { id: "analytics" as StudentDashboardTab, label: t("nav.grades"), icon: <GradesIcon /> }
+  ];
+
   return (
     <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell` : ""}`}>
       <header
-        className={`site-header ${headerVariant ? `${headerVariant}-header` : ""}`}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "16px",
-          width: "100%"
-        }}
+        className={`site-header mobile-first-header ${isStudentAuthenticated ? "is-authenticated" : "is-guest"} ${language === "ar" ? "is-ar" : "is-en"} ${headerVariant ? `${headerVariant}-header` : ""}`}
+        dir={language}
       >
-        <div
-          className="brand-cluster"
-          style={{
-            flexShrink: 0,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "12px",
-            minWidth: "fit-content"
-          }}
-        >
-          <a className="brand" href="/" style={{ flexShrink: 0 }}>
-            <img className="brand-icon teacher-avatar" src="/assets/teacher-profile.png" alt="" aria-hidden="true" />
+        <div className="header-identity" dir={language}>
+          <a className="brand" href="/">
+            <img className="brand-icon teacher-avatar" src="/assets/teacher-profile.png" alt={t("site.name")} />
             <span>
               <strong>{t("site.name")}</strong>
               <small>{t("site.description")}</small>
             </span>
           </a>
-          {studentNotifications ? <StudentNotificationBell {...studentNotifications} language={language} t={t} /> : null}
-          {headerVariant === "teacher-auth" ? <span className="site-header-divider" aria-hidden="true" /> : null}
-          <DateTimeWidget language={language} compact header />
         </div>
-        <div
-          className="header-actions"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "12px",
-            justifyContent: "flex-end",
-            flex: "1 1 auto"
-          }}
-        >
+        <nav className="header-center-nav" aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}>
+          {isStudentAuthenticated ? studentNavigationItems.map((item) => (
+            <button
+              className={studentNavigation?.activeTab === item.id ? "active" : ""}
+              type="button"
+              key={item.id}
+              onClick={() => { studentNavigation?.onSelect(item.id); setMobileMenuOpen(false); }}
+              aria-current={studentNavigation?.activeTab === item.id ? "page" : undefined}
+            >
+              {item.icon}<span>{item.label}</span>
+            </button>
+          )) : guestNavigation.map((item) => (
+            <a
+              className={activeNav === item.id ? "active" : ""}
+              href={item.href}
+              key={item.id}
+              onClick={() => handleNavClick(item.id)}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+        <div className="header-controls" aria-label={language === "ar" ? "إجراءات الرأس" : "Header actions"}>
+          {studentNotifications ? <StudentNotificationBell {...studentNotifications} language={language} t={t} /> : <GuestNotificationButton t={t} />}
+          <ThemeToggle t={t} />
           <button
             className="mobile-header-menu-toggle"
             type="button"
@@ -9079,76 +9451,8 @@ function Shell({
             aria-controls="mobile-site-menu"
             onClick={() => setMobileMenuOpen((open) => !open)}
           >
-            <span aria-hidden="true">☰</span>
+            <MenuIcon />
           </button>
-          <nav
-            aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}
-            style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px" }}
-          >
-            <a
-              className={`primary-nav-link ${activeNav === "student-login" ? "active" : ""}`}
-              href="/#student-login"
-              onClick={() => handleNavClick("student-login")}
-            >
-              {t("nav.studentLogin")}
-            </a>
-            <a
-              className={activeNav === "about-teacher" ? "active" : ""}
-              href="/about-teacher"
-              onClick={() => handleNavClick("about-teacher")}
-            >
-              {t("nav.aboutTeacher")}
-            </a>
-            <a
-              className={activeNav === "contact" ? "active" : ""}
-              href="/contact"
-              onClick={() => handleNavClick("contact")}
-            >
-              {t("nav.contact")}
-            </a>
-            <a
-              className={activeNav === "tips" ? "active" : ""}
-              href="/tips"
-              onClick={() => handleNavClick("tips")}
-            >
-              {t("nav.tips")}
-            </a>
-            <a
-              className={activeNav === "teacher-login" ? "active" : ""}
-              href="/teacher/login"
-              onClick={() => handleNavClick("teacher-login")}
-            >
-              {t("nav.teacherLogin")}
-            </a>
-          </nav>
-          <ThemeToggle t={t} />
-          <div
-            className="language-switcher"
-            aria-label={language === "ar" ? "اختيار اللغة" : "Language selector"}
-            style={{ flexShrink: 0 }}
-          >
-            <button
-              className={language === "ar" ? "active" : ""}
-              type="button"
-              onClick={() => setLanguage("ar")}
-              aria-pressed={language === "ar"}
-            >
-              AR
-            </button>
-            <button
-              className={language === "en" ? "active" : ""}
-              type="button"
-              onClick={() => setLanguage("en")}
-              aria-pressed={language === "en"}
-            >
-              EN
-            </button>
-          </div>
-          {onLogout ? (
-            <button className="logout-button" type="button" onClick={onLogout} style={{ flexShrink: 0 }}>
-              {logoutLabel || t("student.logout")}
-            </button>
-          ) : null}
         </div>
       </header>
       {mobileMenuOpen ? (
@@ -9179,55 +9483,31 @@ function Shell({
               className="mobile-site-menu-links"
               aria-label={language === "ar" ? "التنقل الرئيسي" : "Main navigation"}
             >
-              <a
-                className={`primary-nav-link ${activeNav === "student-login" ? "active" : ""}`}
-                href="/#student-login"
-                onClick={() => handleNavClick("student-login")}
-              >
-                {t("nav.studentLogin")}
-              </a>
-              <a
-                className={activeNav === "about-teacher" ? "active" : ""}
-                href="/about-teacher"
-                onClick={() => handleNavClick("about-teacher")}
-              >
-                {t("nav.aboutTeacher")}
-              </a>
-              <a
-                className={activeNav === "contact" ? "active" : ""}
-                href="/contact"
-                onClick={() => handleNavClick("contact")}
-              >
-                {t("nav.contact")}
-              </a>
-              <a
-                className={activeNav === "tips" ? "active" : ""}
-                href="/tips"
-                onClick={() => handleNavClick("tips")}
-              >
-                {t("nav.tips")}
-              </a>
-              <a
-                className={activeNav === "teacher-login" ? "active" : ""}
-                href="/teacher/login"
-                onClick={() => handleNavClick("teacher-login")}
-              >
-                {t("nav.teacherLogin")}
-              </a>
+              {isStudentAuthenticated ? (
+                <>
+                  <a href="/student/dashboard#student-account" onClick={() => handleNavClick("student-account")}>{t("nav.studentAccount")}</a>
+                  <a href="/tips" onClick={() => handleNavClick("tips")}>{t("nav.tips")}</a>
+                </>
+              ) : (
+                <>
+                  <a href="/tips" onClick={() => handleNavClick("tips")}>{t("nav.tips")}</a>
+                  <a href="/teacher/login" onClick={() => handleNavClick("teacher-login")}>{t("nav.teacherLogin")}</a>
+                </>
+              )}
             </nav>
             <div className="mobile-site-menu-actions">
               <div className="mobile-site-menu-action-row">
-                <span>{language === "ar" ? "اللغة" : "Language"}</span>
+                <span>{t("nav.language")}</span>
                 <div className="language-switcher" aria-label={language === "ar" ? "اختيار اللغة" : "Language selector"}>
                   <button className={language === "ar" ? "active" : ""} type="button" onClick={() => setLanguage("ar")} aria-pressed={language === "ar"}>AR</button>
                   <button className={language === "en" ? "active" : ""} type="button" onClick={() => setLanguage("en")} aria-pressed={language === "en"}>EN</button>
                 </div>
               </div>
               <div className="mobile-site-menu-action-row">
-                <span>{language === "ar" ? "المظهر" : "Theme"}</span>
+                <span>{t("nav.theme")}</span>
                 <ThemeToggle t={t} />
               </div>
-              {onLogout ? (
+              {isStudentAuthenticated && onLogout ? (
                 <button className="logout-button mobile-site-menu-logout" type="button" onClick={onLogout}>
                   {logoutLabel || t("student.logout")}
                 </button>
@@ -9566,10 +9846,14 @@ function StudentDashboard({
         onOpenNotes: () => setActiveTab("notes"),
         onOpenInbox: () => setActiveTab("inbox")
       }}
+      studentNavigation={{
+        activeTab,
+        onSelect: (tab) => setActiveTab(tab)
+      }}
     >
       <main className="dashboard">
         {digitalCardOpen ? <DigitalStudentCardModal student={student} language={language} t={t} onClose={() => setDigitalCardOpen(false)} /> : null}
-        <section className="dashboard-hero student-dashboard-header">
+        <section className="dashboard-hero student-dashboard-header" id="student-account">
           <div className="student-dashboard-intro">
             <p className="eyebrow">{t("dashboard.eyebrow")}</p>
             <h1>{t("dashboard.welcome", { name: student.full_name })}</h1>
