@@ -909,7 +909,9 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
     // A retry with the same idempotency key must reach the database. Only
     // suppress separate, duplicate hardware events at the API boundary.
-    if (isRecentScannerDuplicate(req.teacher.id, token, idempotencyKey)) return res.status(409).json({ ok: false, status: "duplicate_scan_window" });
+    if (isRecentScannerDuplicate(req.teacher.id, token, idempotencyKey)) {
+      return res.status(200).json({ ok: true, status: "ignored_hardware_bounce" });
+    }
     const studentResult = await query(
       `SELECT s.id, s.full_name, s.student_serial, s.scan_serial, s.student_code, s.qr_token, s.group_id,
         s.phone, s.guardian_phone, s.is_active, s.deleted_at, g.name AS group_name,
@@ -951,7 +953,7 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
     await maintainScannerSessions(student.group_id);
     const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN (s.opens_at AT TIME ZONE 'Africa/Cairo') AND (s.closes_at AT TIME ZONE 'Africa/Cairo') ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
-    if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"closed_session",student: publicStudent});
+    if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"session_not_found",student: publicStudent});
     const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
     const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,whatsappNotified,request:req});
     if (saved.duplicate) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, studentId: student.id, sessionId: sessionResult.rows[0].id, details: { reason: saved.idempotencyConflict ? "idempotency_key_conflict" : "duplicate_student_scan", student_name: student.full_name, student_code: student.student_code }, request: req }); return res.status(409).json({ok:false,status:saved.idempotencyConflict ? "idempotency_conflict" : "duplicate_attendance",student: publicStudent,record:saved.record}); }
@@ -1047,7 +1049,10 @@ operationsRouter.post("/fees/advance-payments", paymentRateLimit, requirePermiss
       catch (error) { console.error("Failed to queue WhatsApp advance-payment notification", error); whatsapp = { queued: false, reason: "queue_failed" }; }
     }
     res.status(201).json({ ok: true, payment: result.payment, months: result.months, whatsapp });
-  } catch (error) { next(error); }
+  } catch (error) {
+    console.error("Failed to record advance payment", error);
+    return res.status(500).json({ ok: false, status: "payment_failed" });
+  }
 });
 operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("payments.view"), requirePermission("payments.collect"), async (req, res, next) => {
   try {
@@ -1083,5 +1088,8 @@ operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("pay
       catch (error) { console.error("Failed to queue WhatsApp receipt notification", error); whatsapp = { queued: false, reason: "queue_failed" }; }
     }
     return res.status(201).json({ ok: true, payment, paid_amount: payment.amount, whatsapp });
-  } catch (error) { next(error); }
+  } catch (error) {
+    console.error("Failed to record payment", error);
+    return res.status(500).json({ ok: false, status: "payment_failed" });
+  }
 });

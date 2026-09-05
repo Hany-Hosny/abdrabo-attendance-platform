@@ -3210,9 +3210,9 @@ function scannerStatusMessage(status: string, t: Translator) {
     deleted_student: "scanner.deletedStudent",
     student_not_found: "scanner.invalidCode",
     invalid_scan_value: "scanner.invalidScan",
+    session_not_found: "scanner.closedSession",
     closed_session: "scanner.closedSession",
-    duplicate_attendance: "scanner.duplicate",
-    duplicate_scan_window: "scanner.duplicate"
+    duplicate_attendance: "scanner.duplicate"
   };
   return t(statusKey[status] || "scanner.serverError");
 }
@@ -7331,12 +7331,8 @@ function MobileScannerModal({
       return;
     }
     const now = Date.now();
-    if (lastScanRef.current.value === token && now - lastScanRef.current.at < 2000) return;
+    if (lastScanRef.current.value === token && now - lastScanRef.current.at < 1500) return;
     lastScanRef.current = { value: token, at: now };
-    if (fromCamera) {
-      playScannerFeedback("success");
-      if (typeof navigator.vibrate === "function") navigator.vibrate(100);
-    }
     cameraBusyRef.current = true;
     setProcessing(true);
     setManualCode("");
@@ -7358,9 +7354,14 @@ function MobileScannerModal({
       } catch (_error) {
         data = {};
       }
+      if (data.status === "ignored_hardware_bounce") return;
       if (response.ok && data.ok) {
         const studentName = data.student?.full_name || token;
         setToast({ tone: "success", message: `${studentName} — ${t("scanner.recorded")}` });
+        if (fromCamera) {
+          playScannerFeedback("success");
+          if (typeof navigator.vibrate === "function") navigator.vibrate(100);
+        }
         if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
         toastTimerRef.current = window.setTimeout(() => {
           setToast(null);
@@ -7555,7 +7556,7 @@ function LegacyScannerPanel({ session, language, t, onOpenCamera }: { session: T
 
     const token = normalizeScanValue(value);
     const now = Date.now();
-    if (!token || (lastScanRef.current.value === token && now - lastScanRef.current.at < 300)) {
+    if (!token || (lastScanRef.current.value === token && now - lastScanRef.current.at < 1500)) {
       if (!token) {
         setScanState("error");
         setMessage(t("scanner.scanRequired"));
@@ -7594,6 +7595,7 @@ function LegacyScannerPanel({ session, language, t, onOpenCamera }: { session: T
         data = {};
       }
 
+      if (data.status === "ignored_hardware_bounce") return;
       setStudent(data.student || null);
       if (response.ok && data.ok) {
         setScanState("success");
@@ -7833,10 +7835,6 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
 
   async function pay() {
     if (!summary) return;
-    if (Number(summary.remaining_balance) <= 0) {
-      setStatus(Number(summary.required_amount) > 0 ? t("fees.alreadyPaid") : t("fees.noOutstanding"));
-      return;
-    }
     if (paymentLoading) return;
     setPaymentLoading(true);
     try {
@@ -7844,7 +7842,7 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
         method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey(), ...auth }, body: JSON.stringify({ student_id: summary.id, send_whatsapp: canSendReceipts && sendReceipt })
       });
       const data = await response.json();
-      if (!data.ok) { setStatus(paymentErrorMessage(data.status, data.message, t)); return; }
+      if (!response.ok || !data.ok) { setStatus(paymentErrorMessage(data.status, data.message, t)); return; }
       setStatus(data.whatsapp?.reason === "invalid_phone" ? `${t("fees.paymentRecorded")} — ${t("whatsapp.invalidPhone")}` : data.whatsapp?.queued ? `${t("fees.paymentRecorded")} — ${t("whatsapp.receiptQueued")}` : t("fees.paymentRecorded"));
       setSummary({ ...summary, paid_amount: summary.required_amount, remaining_balance: 0, current_cycle_paid: summary.current_cycle_fee, current_cycle_outstanding: 0 });
       setSendReceipt(canSendReceipts);
