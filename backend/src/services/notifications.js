@@ -262,7 +262,7 @@ export async function recordWhatsAppConnectionNotification({
 
 export async function listNotificationsForUser(teacher, { limit = 10, db = query } = {}) {
   await syncNotificationsForUser(teacher, db);
-  const safeLimit = Math.min(20, Math.max(1, Number(limit) || 10));
+  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 10));
   const result = await db(
     `SELECT id, type, entity_type, entity_id, target_section, payload, is_read, created_at
      FROM notifications

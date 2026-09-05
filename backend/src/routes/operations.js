@@ -31,13 +31,12 @@ function cairoSessionTimeSql(dateExpression, timeExpression) {
 
 function cairoSessionCloseSql(dateExpression, fallbackCloseParam) {
   const startsAt = cairoSessionTimeSql(dateExpression, "cs.start_time");
-  const endsAt = cairoSessionTimeSql(dateExpression, "cs.end_time");
   const groupOverride = `(${startsAt} + (cs.closes_after_minutes::text || ' minutes')::interval)`;
   const systemFallback = `(${startsAt} + (${fallbackCloseParam}::text || ' minutes')::interval)`;
   return `CASE
-    WHEN cs.closes_after_minutes IS NOT NULL AND cs.closes_after_minutes <> 20 THEN LEAST(${endsAt}, ${groupOverride})
-    WHEN ${fallbackCloseParam} <> 20 THEN LEAST(${endsAt}, ${systemFallback})
-    ELSE ${endsAt}
+    WHEN cs.closes_after_minutes IS NOT NULL AND cs.closes_after_minutes <> 20 THEN ${groupOverride}
+    WHEN ${fallbackCloseParam} <> 20 THEN ${systemFallback}
+    ELSE ${startsAt} + INTERVAL '20 minutes'
   END`;
 }
 
@@ -888,7 +887,26 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
       WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Africa/Cairo'))::INTEGER
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
     await finalizeExpiredAttendanceSessions();
-    const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN (s.opens_at AT TIME ZONE 'Africa/Cairo') AND (LEAST(s.closes_at, s.ends_at) AT TIME ZONE 'Africa/Cairo') ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
+    // Recover sessions finalized by the old ends_at rule when the configured
+    // attendance window is still open. Never reopen a session with real
+    // manual or scanned attendance activity.
+    await query(`DELETE FROM attendance_records ar
+      USING attendance_sessions s JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
+      WHERE ar.session_id=s.id AND s.group_id=$1 AND s.status='closed' AND ar.method='system'
+        AND cs.closes_after_minutes>20
+        AND NOT EXISTS (SELECT 1 FROM attendance_records existing WHERE existing.session_id=s.id AND existing.method <> 'system')
+        AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
+          (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
+          AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [student.group_id]);
+    await query(`UPDATE attendance_sessions s SET status='open'
+      FROM class_schedules cs
+      WHERE s.group_id=$1 AND s.schedule_id=cs.id AND cs.group_id=s.group_id AND s.status='closed'
+        AND cs.closes_after_minutes>20
+        AND NOT EXISTS (SELECT 1 FROM attendance_records ar WHERE ar.session_id=s.id AND ar.method <> 'system')
+        AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
+          (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
+          AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [student.group_id]);
+    const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN (s.opens_at AT TIME ZONE 'Africa/Cairo') AND (s.closes_at AT TIME ZONE 'Africa/Cairo') ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
     if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"closed_session",student: publicStudent});
     const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
     const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,whatsappNotified,request:req});

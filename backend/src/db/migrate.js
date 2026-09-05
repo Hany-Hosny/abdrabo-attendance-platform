@@ -344,13 +344,47 @@ export async function migrate() {
     CREATE UNIQUE INDEX IF NOT EXISTS class_schedules_group_day_time_unique ON class_schedules(group_id, day_of_week, start_time, end_time);
 
     DELETE FROM attendance_sessions WHERE schedule_id IS NULL;
+    -- Older releases capped custom attendance windows at the class end and
+    -- finalized sessions using ends_at. Repair only sessions that were closed
+    -- by that rule and had no real attendance activity, so the new window can
+    -- be used without changing manual or scanned records.
+    DELETE FROM attendance_records ar
+    USING attendance_sessions s
+    JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
+    WHERE ar.session_id = s.id
+      AND s.status = 'closed'
+      AND ar.method = 'system'
+      AND cs.closes_after_minutes > 20
+      AND NOT EXISTS (
+        SELECT 1 FROM attendance_records existing
+        WHERE existing.session_id = s.id AND existing.method <> 'system'
+      )
+      AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
+        (s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)
+        AND (s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval);
+
+    UPDATE attendance_sessions s
+    SET status = 'open'
+    FROM class_schedules cs
+    WHERE cs.id = s.schedule_id
+      AND cs.group_id = s.group_id
+      AND s.status = 'closed'
+      AND cs.closes_after_minutes > 20
+      AND NOT EXISTS (
+        SELECT 1 FROM attendance_records ar
+        WHERE ar.session_id = s.id AND ar.method <> 'system'
+      )
+      AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
+        (s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)
+        AND (s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval);
+
     UPDATE attendance_sessions s
     SET starts_at = ((s.session_date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
         opens_at = ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
         closes_at = CASE
           WHEN cs.closes_after_minutes IS NOT NULL AND cs.closes_after_minutes <> 20
-            THEN LEAST(((s.session_date + cs.end_time) AT TIME ZONE 'Africa/Cairo'), ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'))
-          ELSE ((s.session_date + cs.end_time) AT TIME ZONE 'Africa/Cairo')
+            THEN ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+          ELSE ((s.session_date + cs.start_time + INTERVAL '20 minutes') AT TIME ZONE 'Africa/Cairo')
         END,
         ends_at = ((s.session_date + cs.end_time) AT TIME ZONE 'Africa/Cairo')
     FROM class_schedules cs

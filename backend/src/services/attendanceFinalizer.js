@@ -22,8 +22,8 @@ export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
       JOIN groups g ON g.id = s.group_id AND g.deleted_at IS NULL
       JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
       WHERE s.status = 'open'
-        AND s.ends_at <= COALESCE($1::timestamptz, NOW())
-      ORDER BY s.ends_at, s.id
+        AND s.closes_at <= COALESCE($1::timestamptz, NOW())
+      ORDER BY s.closes_at, s.id
       FOR UPDATE OF s
     `, [now]);
 
@@ -47,7 +47,7 @@ export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
           )
         ON CONFLICT (session_id, student_id) DO NOTHING
         RETURNING id, student_id
-      `, [session.id, session.group_id, session.ends_at]);
+        `, [session.id, session.group_id, session.closes_at]);
 
       const closed = await client.query(`
         UPDATE attendance_sessions

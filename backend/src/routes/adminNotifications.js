@@ -22,6 +22,43 @@ adminNotificationsRouter.get("/", async (req, res, next) => {
   }
 });
 
+function notificationIds(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => Number(normalizeDigits(item))).filter((item) => Number.isSafeInteger(item) && item > 0))].slice(0, 100);
+}
+
+adminNotificationsRouter.patch("/read", async (req, res, next) => {
+  try {
+    const ids = notificationIds(req.body?.ids);
+    if (!ids.length) return res.status(400).json({ ok: false, status: "invalid_notifications" });
+    const result = await query(
+      `UPDATE notifications SET is_read = TRUE, read_at = NOW(), updated_at = NOW()
+       WHERE id = ANY($1::bigint[]) AND recipient_user_id = $2 AND resolved_at IS NULL AND is_read = FALSE
+       RETURNING id`,
+      [ids, req.teacher.id]
+    );
+    return res.json({ ok: true, markedCount: result.rowCount, ids: result.rows.map((row) => Number(row.id)) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+adminNotificationsRouter.delete("/", async (req, res, next) => {
+  try {
+    const ids = notificationIds(req.body?.ids);
+    if (!ids.length) return res.status(400).json({ ok: false, status: "invalid_notifications" });
+    const result = await query(
+      `DELETE FROM notifications
+       WHERE id = ANY($1::bigint[]) AND recipient_user_id = $2 AND resolved_at IS NULL
+       RETURNING id`,
+      [ids, req.teacher.id]
+    );
+    return res.json({ ok: true, deletedCount: result.rowCount, ids: result.rows.map((row) => Number(row.id)) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 adminNotificationsRouter.patch("/:id/read", async (req, res, next) => {
   try {
     const notificationId = Number(normalizeDigits(req.params.id));
