@@ -5,11 +5,48 @@ export const EMAIL_PROVIDERS = Object.freeze({
   RESEND: "resend"
 });
 
+export const EMAIL_MAX_RETRIES = 3;
+export const EMAIL_RETRY_INITIAL_DELAY_MS = 1_000;
+
 export class EmailDeliveryError extends Error {
-  constructor(message = "Email delivery failed") {
-    super(message);
+  constructor(message = "Email delivery failed", options = {}) {
+    super(message, options);
     this.name = "EmailDeliveryError";
   }
+}
+
+function emailErrorDetails(error) {
+  const cause = error?.cause || error;
+  return {
+    name: cause?.name || "Error",
+    message: cause?.message || String(cause),
+    code: cause?.code,
+    responseCode: cause?.responseCode,
+    command: cause?.command
+  };
+}
+
+function logEmailFailure(operation, context, error) {
+  console.error(`[email] ${operation} failed`, { ...context, error: emailErrorDetails(error) });
+}
+
+const sleep = (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs));
+
+async function withEmailRetries(operation, task, { context = {}, maxRetries = EMAIL_MAX_RETRIES, sleepImpl = sleep } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+      logEmailFailure(`${operation} attempt ${attempt + 1}`, context, error);
+      if (attempt === maxRetries) break;
+      const delayMs = EMAIL_RETRY_INITIAL_DELAY_MS * (2 ** attempt);
+      console.warn(`[email] ${operation} retry scheduled`, { attempt: attempt + 2, delayMs, ...context });
+      await sleepImpl(delayMs);
+    }
+  }
+  throw lastError;
 }
 
 function validEmail(value) {
@@ -65,27 +102,33 @@ export function createGmailTransporter(config, { createTransportImpl = nodemaile
       auth: { user: config.user, pass: config.appPassword },
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
-      socketTimeout: 15_000
+      socketTimeout: 10_000
     });
-  } catch (_error) {
-    throw new EmailDeliveryError();
+  } catch (error) {
+    logEmailFailure("gmail transporter creation", { host: config.host, port: config.port, secure: config.secure }, error);
+    throw new EmailDeliveryError("Email delivery failed", { cause: error });
   }
 }
 
-export async function sendGmailEmail({ to, fromName, fromEmail, subject, text, html, smtpConfig = readGmailSmtpConfig(), transporter = null, createTransportImpl } = {}) {
+export async function sendGmailEmail({ to, fromName, fromEmail, subject, text, html, smtpConfig = readGmailSmtpConfig(), transporter = null, createTransportImpl, sleepImpl, maxRetries = EMAIL_MAX_RETRIES } = {}) {
   if (!validEmail(to) || !smtpConfig?.configured) throw new EmailDeliveryError();
   const mailer = transporter || createGmailTransporter(smtpConfig, { createTransportImpl });
-  try {
-    await mailer.sendMail({
+  const message = {
       from: senderAddress(fromName || smtpConfig.fromName, fromEmail || smtpConfig.fromEmail),
       to,
       subject: String(subject || ""),
       text: String(text || ""),
       html: String(html || "")
+  };
+  try {
+    await withEmailRetries("gmail sendMail", () => mailer.sendMail(message), {
+      context: { to, host: smtpConfig.host, port: smtpConfig.port, secure: smtpConfig.secure },
+      sleepImpl,
+      maxRetries
     });
     return { ok: true };
-  } catch (_error) {
-    throw new EmailDeliveryError();
+  } catch (error) {
+    throw new EmailDeliveryError("Email delivery failed", { cause: error });
   }
 }
 
@@ -95,8 +138,9 @@ export async function verifyGmailSmtp({ smtpConfig = readGmailSmtpConfig(), tran
   try {
     await mailer.verify();
     return { ok: true };
-  } catch (_error) {
-    throw new EmailDeliveryError();
+  } catch (error) {
+    logEmailFailure("gmail SMTP verify", { host: smtpConfig.host, port: smtpConfig.port, secure: smtpConfig.secure }, error);
+    throw new EmailDeliveryError("Email delivery failed", { cause: error });
   }
 }
 
@@ -109,10 +153,17 @@ export async function sendResendEmail({ to, from, subject, text, html, apiKey, f
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({ from, to: [to], subject, text, html })
     });
-  } catch (_error) {
-    throw new EmailDeliveryError();
+  } catch (error) {
+    logEmailFailure("Resend request", { to }, error);
+    throw new EmailDeliveryError("Email delivery failed", { cause: error });
   }
-  if (!response?.ok) throw new EmailDeliveryError();
+  if (!response?.ok) {
+    const error = new Error(`Resend API returned HTTP ${response?.status ?? "unknown"}${response?.statusText ? ` ${response.statusText}` : ""}`);
+    error.code = "resend_http_error";
+    error.responseCode = response?.status;
+    logEmailFailure("Resend request", { to }, error);
+    throw new EmailDeliveryError("Email delivery failed", { cause: error });
+  }
   return { ok: true };
 }
 
@@ -126,9 +177,9 @@ export function emailProviderStatus(provider, { apiKey = "", fromEmail = "", smt
   return { provider, configured: false, credentialsConfigured: false, senderEmail: fromEmail, senderName: "Mr. Ahmed Abdrabo System" };
 }
 
-export async function sendPasswordRecoveryEmail({ provider, to, subject, text, html, apiKey, fromEmail, senderName, smtpConfig, fetchImpl, transporter, createTransportImpl } = {}) {
+export async function sendPasswordRecoveryEmail({ provider, to, subject, text, html, apiKey, fromEmail, senderName, smtpConfig, fetchImpl, transporter, createTransportImpl, sleepImpl, maxRetries = EMAIL_MAX_RETRIES } = {}) {
   if (provider === EMAIL_PROVIDERS.GMAIL_SMTP) {
-    return sendGmailEmail({ to, fromName: senderName || smtpConfig?.fromName, fromEmail: fromEmail || smtpConfig?.fromEmail, subject, text, html, smtpConfig, transporter, createTransportImpl });
+    return sendGmailEmail({ to, fromName: senderName || smtpConfig?.fromName, fromEmail: fromEmail || smtpConfig?.fromEmail, subject, text, html, smtpConfig, transporter, createTransportImpl, sleepImpl, maxRetries });
   }
   if (provider === EMAIL_PROVIDERS.RESEND) {
     return sendResendEmail({ to, from: fromEmail, subject, text, html, apiKey, fetchImpl });

@@ -192,7 +192,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   const [cacheReady, setCacheReady] = useState(false);
 
   const updateInput = useCallback((value: string) => {
-    const sanitized = normalizeDigits(value).replace(/[^A-Za-z0-9-]/g, "");
+    const sanitized = normalizeDigits(value.slice(0, 128)).replace(/[^A-Za-z0-9-]/g, "");
     inputValueRef.current = sanitized;
     setInputValue(sanitized);
     if (inputDebounceRef.current !== null) window.clearTimeout(inputDebounceRef.current);

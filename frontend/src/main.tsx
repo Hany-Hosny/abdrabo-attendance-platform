@@ -7572,7 +7572,7 @@ function MobileScannerModal({
         <form className="camera-scanner-manual" onSubmit={(event) => { event.preventDefault(); void submitCameraScan(manualCode); }}>
           <label htmlFor="camera-scanner-manual-code">{t("scanner.manualCodeLabel")}</label>
           <div className="camera-scanner-manual-row">
-            <input id="camera-scanner-manual-code" dir="ltr" type="text" value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder={t("scanner.manualCodePlaceholder")} autoComplete="off" disabled={processing} />
+            <input id="camera-scanner-manual-code" dir="ltr" type="text" value={manualCode} onChange={(event) => setManualCode(event.target.value.slice(0, 128))} placeholder={t("scanner.manualCodePlaceholder")} autoComplete="off" disabled={processing} />
             <button className="primary-button" type="submit" disabled={processing || !manualCode.trim()}>{processing ? t("scanner.cameraProcessing") : t("scanner.submit")}</button>
           </div>
         </form>
@@ -7688,7 +7688,7 @@ function LegacyScannerPanel({ session, language, t, selectedSessionId = "", onOp
   }
 
   function handleCodeChange(nextValue: string) {
-    const bufferedValue = nextValue.replace(/[\r\n]/g, "");
+    const bufferedValue = nextValue.replace(/[\r\n]/g, "").slice(0, 128);
     codeRef.current = bufferedValue;
     setCode(bufferedValue);
     if (autoSubmitTimerRef.current !== null) window.clearTimeout(autoSubmitTimerRef.current);

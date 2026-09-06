@@ -192,13 +192,31 @@ export async function requestPasswordReset(identifier, { language = "en", reques
     return { accepted: true, flowId };
   }
   await audit({ action: "password_reset_requested", details: { result: "accepted" }, request });
-  try {
-    await sendEmail({ provider: config.provider, to: teacher.email, fromEmail: config.fromEmail, senderName: config.senderName, smtpConfig: config.smtp, apiKey: config.apiKey, ...resetEmail(safeLanguage(language), code) });
-    await audit({ action: "password_reset_code_sent", details: { result: "accepted", provider: config.provider }, request });
-  } catch (_error) {
-    await execute("UPDATE password_reset_requests SET consumed_at = NOW(), updated_at = NOW() WHERE id = $1 AND consumed_at IS NULL", [flowId]);
-    await audit({ action: "password_reset_code_send_failed", details: { result: "failure", provider: config.provider }, request });
-  }
+  const emailPayload = { provider: config.provider, to: teacher.email, fromEmail: config.fromEmail, senderName: config.senderName, smtpConfig: config.smtp, apiKey: config.apiKey, ...resetEmail(safeLanguage(language), code) };
+  void (async () => {
+    try {
+      await sendEmail(emailPayload);
+      await audit({ action: "password_reset_code_sent", details: { result: "accepted", provider: config.provider }, request });
+    } catch (error) {
+      const cause = error?.cause || error;
+      console.error("[password-recovery] OTP email delivery failed", {
+        provider: config.provider,
+        recipient: teacher.email,
+        flowId,
+        error: {
+          name: cause?.name || "Error",
+          message: cause?.message || String(cause),
+          code: cause?.code,
+          responseCode: cause?.responseCode,
+          command: cause?.command
+        }
+      });
+      await execute("UPDATE password_reset_requests SET consumed_at = NOW(), updated_at = NOW() WHERE id = $1 AND consumed_at IS NULL", [flowId]);
+      await audit({ action: "password_reset_code_send_failed", details: { result: "failure", provider: config.provider }, request });
+    }
+  })().catch((error) => {
+    console.error("[password-recovery] background OTP job failed", { flowId, error: error?.message || String(error) });
+  });
   return { accepted: true, flowId };
 }
 
