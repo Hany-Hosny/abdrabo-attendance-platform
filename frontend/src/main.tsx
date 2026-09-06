@@ -133,7 +133,7 @@ type AdminUser = {
   name: string;
   username: string;
   email: string;
-  role: "owner" | "admin" | "staff";
+  role: "owner" | "admin" | "manager" | "staff";
   is_active: boolean;
   created_at?: string;
   updated_at?: string;
@@ -370,6 +370,7 @@ const translations = {
     "scanner.scanProfilePlaceholder": "امسح الليبل لفتح الملف الشخصي",
     "scanner.inactiveStudent": "هذا الطالب غير مفعل.",
     "scanner.closedSession": "لا توجد حصة مفتوحة لهذه المجموعة الآن.",
+    "scanner.sessionGroupMismatch": "هذه الحصة تابعة لمجموعة أخرى ولا يمكن تسجيل حضور هذا الطالب فيها.",
     "scanner.duplicate": "تم تسجيل حضور هذا الطالب بالفعل.",
     "scanner.networkError": "تعذر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.",
     "scanner.savedLocally": "تم حفظ الحضور محلياً وسيتم مزامنته تلقائياً عند عودة الاتصال",
@@ -1159,6 +1160,7 @@ const translations = {
     "admin.primaryAdmin": "المدير الأساسي",
     "admin.role.owner": "مالك النظام",
     "admin.role.admin": "مدير",
+    "admin.role.manager": "مدير تشغيل",
     "admin.role.staff": "موظف",
     "admin.permissions": "الصلاحيات",
     "admin.permissionPreset": "قالب الصلاحيات",
@@ -1350,6 +1352,7 @@ const translations = {
     "errors.ownerOnly": "هذا الإجراء متاح لمالك النظام فقط.",
     "errors.ownerTransferRequired": "لا يمكن تعيين مالك جديد من خلال تعديل عادي. استخدم نقل الملكية.",
     "errors.permissionGrantForbidden": "لا يمكنك منح صلاحيات لا تملكها.",
+    "errors.userManagementForbidden": "لا تملك صلاحية تعديل بيانات مدير آخر.",
     "errors.invalidOwnerPassword": "كلمة مرور مالك النظام غير صحيحة.",
     "errors.invalidOwnerTarget": "المستخدم المختار غير صالح لنقل الملكية.",
     "errors.lookupRequired": "أدخل الرقم أولا.",
@@ -1642,6 +1645,7 @@ const translations = {
     "scanner.scanProfilePlaceholder": "Scan the label to open the profile",
     "scanner.inactiveStudent": "This student is inactive.",
     "scanner.closedSession": "There is no open class for this group right now.",
+    "scanner.sessionGroupMismatch": "This session belongs to another group, so this student cannot be recorded in it.",
     "scanner.duplicate": "This student’s attendance was already recorded.",
     "scanner.networkError": "Could not connect to the server. Check the internet and try again.",
     "scanner.savedLocally": "Attendance saved locally and will sync automatically when the connection returns",
@@ -2431,6 +2435,7 @@ const translations = {
     "admin.primaryAdmin": "Primary Admin",
     "admin.role.owner": "Owner",
     "admin.role.admin": "Admin",
+    "admin.role.manager": "Manager",
     "admin.role.staff": "Staff",
     "admin.permissions": "Permissions",
     "admin.permissionPreset": "Permission preset",
@@ -2622,6 +2627,7 @@ const translations = {
     "errors.ownerOnly": "This action is available only to the system owner.",
     "errors.ownerTransferRequired": "A new owner must be assigned through the secure ownership transfer action.",
     "errors.permissionGrantForbidden": "You cannot grant permissions that you do not have.",
+    "errors.userManagementForbidden": "You do not have permission to manage another manager.",
     "errors.invalidOwnerPassword": "The system owner password is incorrect.",
     "errors.invalidOwnerTarget": "The selected user cannot receive ownership.",
     "errors.lookupRequired": "Enter the number first.",
@@ -3168,7 +3174,15 @@ function formatLocalTime(value: string | undefined, language: Language) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { hour: "numeric", minute: "2-digit" }).format(date);
+  return new Intl.DateTimeFormat(
+    language === "ar" ? "ar-EG" : "en-US",
+    {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Africa/Cairo",
+    },
+  ).format(date);
 }
 
 function formatTimeOfDay(value: string | undefined, language: Language) {
@@ -3185,8 +3199,12 @@ function profileSessionTitle(row: Record<string, any>) {
 }
 
 function formatSessionWindow(session: Record<string, any>, language: Language) {
-  const start = formatLocalTime(session.starts_at || session.opens_at, language);
-  const end = formatLocalTime(session.ends_at || session.closes_at, language);
+  const start = session.start_time
+    ? formatTimeOfDay(String(session.start_time), language)
+    : formatLocalTime(session.starts_at || session.opens_at, language);
+  const end = session.end_time
+    ? formatTimeOfDay(String(session.end_time), language)
+    : formatLocalTime(session.ends_at || session.closes_at, language);
   return language === "ar" ? `من ${start} إلى ${end}` : `${start} - ${end}`;
 }
 
@@ -3211,6 +3229,8 @@ function scannerStatusMessage(status: string, t: Translator) {
     student_not_found: "scanner.invalidCode",
     invalid_scan_value: "scanner.invalidScan",
     session_not_found: "scanner.closedSession",
+    session_group_mismatch: "scanner.sessionGroupMismatch",
+    wrong_group: "scanner.sessionGroupMismatch",
     closed_session: "scanner.closedSession",
     duplicate_attendance: "scanner.duplicate"
   };
@@ -3264,6 +3284,7 @@ function adminApiErrorMessage(status: string | undefined, t: Translator) {
   if (status === "owner_only") return t("errors.ownerOnly");
   if (status === "owner_transfer_required") return t("errors.ownerTransferRequired");
   if (status === "permission_grant_forbidden") return t("errors.permissionGrantForbidden");
+  if (status === "forbidden") return t("errors.userManagementForbidden");
   if (status === "permission_required") return t("errors.permissionRequired");
   if (status === "invalid_owner_password") return t("errors.invalidOwnerPassword");
   if (status === "invalid_owner_target" || status === "invalid_transfer_payload") return t("errors.invalidOwnerTarget");
@@ -3333,44 +3354,50 @@ function labelScanSerial(student: Record<string, any>) {
   return String(student.scan_serial || student.student_serial || "").trim();
 }
 
+function labelBarcodeValue(student: Record<string, any>) {
+  return String(labelScanSerial(student) || student.student_code || "").trim();
+}
+
 function buildStudentLabelMarkup(student: Record<string, any>) {
-  const scanSerial = labelScanSerial(student);
+  const barcodeValue = labelBarcodeValue(student);
   const barcode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  if (scanSerial) {
-    JsBarcode(barcode, scanSerial, {
+  if (barcodeValue) {
+    JsBarcode(barcode, barcodeValue, {
       format: "CODE128A",
       displayValue: false,
-      height: 52,
-      width: 1.6,
+      height: 58,
+      width: 1.25,
       margin: 12,
       marginTop: 10,
       marginBottom: 10,
       marginLeft: 16,
       marginRight: 16
     });
+    barcode.setAttribute("shape-rendering", "crispEdges");
   }
   const grade = student.grade || student.grade_level || "";
   const group = student.group_name || student.group || "";
   const gradeAndGroup = [grade, group].filter(Boolean).join(" · ");
   return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>Student Label</title><style>
-    @page{size:58mm 32mm;margin:0}
+    @page{size:50mm 30mm;margin:0}
     *{box-sizing:border-box}
-    html,body{width:58mm;min-height:32mm;margin:0;padding:0}
-    body{display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1mm 2mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff}
-    .brand,.name,.code,.grade,.scan-value{max-width:54mm;white-space:nowrap;overflow:hidden;text-overflow:clip}
-    .brand{font-size:10px;line-height:1.05;font-weight:700}
-    .name{font-size:12.5px;line-height:1.05;font-weight:700;margin:.8mm 0 .35mm}
-    .code{font-size:11px;line-height:1.05;font-weight:800}
-    .grade{font-size:8.5px;line-height:1.05;margin-top:.35mm}
-    .barcode{display:flex;align-items:center;justify-content:center;width:54mm;height:8.5mm;margin:.7mm auto 0;overflow:hidden;padding:0 1.5mm}
-    .barcode svg{display:block;width:51mm;height:8.5mm;shape-rendering:crispEdges}
-    .scan-value{font-size:9.2px;line-height:1;font-weight:700;margin-top:.2mm;letter-spacing:.15px}
+    html,body{width:50mm;height:30mm;margin:0;padding:0}
+    body{display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1mm 1.5mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff}
+    .brand,.name,.code,.grade,.scan-value{max-width:47mm;white-space:nowrap;overflow:hidden;text-overflow:clip}
+    .brand{font-size:7.8px;line-height:1.05;font-weight:700}
+    .name{font-size:10.5px;line-height:1.05;font-weight:700;margin:.55mm 0 .25mm}
+    .code{font-size:8.8px;line-height:1.05;font-weight:800}
+    .grade{font-size:9.4px;line-height:1.1;margin-top:.25mm;font-weight:800}
+    .barcode{display:flex;align-items:center;justify-content:center;width:47mm;height:8.2mm;margin:.4mm auto 0;overflow:hidden;padding:0 1mm}
+    .barcode svg{display:block;width:45mm;height:8.2mm;shape-rendering:crispEdges}
+    .scan-value{font-size:7.8px;line-height:1;font-weight:800;margin-top:.15mm;letter-spacing:.1px}
+    @media print{html,body{width:50mm;height:30mm;margin:0;padding:0;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style></head><body>
     <div class="brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</div>
     <div class="name">${escapeHtml(student.full_name || "")}</div>
-    <div class="code">Student code / كود الطالب: ${escapeHtml(student.student_code || "")}</div>
+    <div class="code">${escapeHtml(student.student_code || "")}</div>
     <div class="grade">${escapeHtml(gradeAndGroup)}</div>
-    ${scanSerial ? `<div class="barcode">${barcode.outerHTML}</div><div class="scan-value">${escapeHtml(scanSerial)}</div>` : ""}
+    ${barcodeValue ? `<div class="barcode">${barcode.outerHTML}</div><div class="scan-value">${escapeHtml(barcodeValue)}</div>` : ""}
   </body></html>`;
 }
 
@@ -4910,6 +4937,7 @@ function TeacherDashboard({
   );
   const [inboxUnread, setInboxUnread] = useState(0);
   const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
+  const [selectedAttendanceSessionId, setSelectedAttendanceSessionId] = useState("");
   const previousInboxUnread = useRef(0);
   const [inboxBadgeAnimationKey, setInboxBadgeAnimationKey] = useState(0);
   useEffect(() => {
@@ -5228,10 +5256,10 @@ function TeacherDashboard({
             {activeTab === "whatsapp" && can("whatsapp.view") ? <WhatsAppSettingsPanel token={session.token} language={language} canManage={can("whatsapp.manage")} canControlConnection={can("whatsapp.manage") && (session.teacher.role === "owner" || session.teacher.role === "admin")} t={(key, values) => t(key as TranslationKey, values)} /> : null}
             {activeTab === "groups" && can("schedule.view") ? <AcademicManager kind="groups" session={session} t={t} /> : null}
             {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
-            {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} language={language} t={t} onOpenCamera={() => setCameraScannerOpen(true)} /> : null}
+            {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} onOpenCamera={() => setCameraScannerOpen(true)} /> : null}
             {activeTab === "fees" && can("payments.view") ? <FeesPanel session={session} t={t} /> : null}
             {activeTab === "reports" && can("payments.view") && can("payments.reports.view") ? <FinanceReportsPanel session={session} language={language} t={t} canReverse={can("payments.reverse")} /> : null}
-            {activeTab === "attendance" && can("attendance.view") ? <AttendancePanel session={session} language={language} t={t} /> : null}
+            {activeTab === "attendance" && can("attendance.view") ? <AttendancePanel session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} onSessionIdChange={setSelectedAttendanceSessionId} /> : null}
             {activeTab === "exams" && can("exams.view") ? <ExamResultsManager session={session} t={t} /> : null}
             {activeTab === "inbox" && can("messages.view") ? <StaffInboxControls session={session} language={language} t={t} onUnreadCountChange={setInboxUnread} /> : null}
             {activeTab !== "overview" && activeTab !== "attendance" && activeTab !== "exams" && activeTab !== "settings" && placeholderTitles[activeTab] ? (
@@ -5247,7 +5275,7 @@ function TeacherDashboard({
       <footer className="site-footer" dir="ltr" lang="en">
         © 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny
       </footer>
-      <MobileScannerModal open={cameraScannerOpen} onClose={() => setCameraScannerOpen(false)} session={session} language={language} t={t} />
+      <MobileScannerModal open={cameraScannerOpen} onClose={() => setCameraScannerOpen(false)} session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} />
       <nav className="mobile-bottom-nav" aria-label={t("admin.mobileNavigation")}>
         {mobilePrimaryTabs.map((tab) => (
           <button
@@ -5539,7 +5567,7 @@ function UsersTeamManager({
       try {
         const response = await fetch(`${API_BASE_URL}/admin/users/${user.id}`, { method: "DELETE", headers: { Authorization: `Bearer ${session.token}` } });
         const data = await response.json();
-        if (!response.ok || !data.ok) throw new Error(data.status === "self_delete_forbidden" ? "لا يمكنك حذف حسابك الحالي / You cannot delete yourself" : t("errors.loginFailed"));
+        if (!response.ok || !data.ok) throw new Error(data.status === "self_delete_forbidden" ? "لا يمكنك حذف حسابك الحالي / You cannot delete yourself" : adminApiErrorMessage(data.status, t));
       } finally {
         setLoading(false);
       }
@@ -5669,6 +5697,7 @@ function UsersTeamManager({
                 disabled={Boolean(editingId && users.find((user) => user.id === editingId)?.is_owner)}
               >
                 <option value="staff">{t("admin.role.staff")}</option>
+                <option value="manager">{t("admin.role.manager")}</option>
                 <option value="admin">{t("admin.role.admin")}</option>
               </select>
             </label>
@@ -5713,7 +5742,7 @@ function UsersTeamManager({
             </label>
           </div>
 
-          {form.role === "admin" || form.role === "staff" ? (
+          {form.role === "admin" || form.role === "manager" || form.role === "staff" ? (
             <section className="permissions-editor" aria-labelledby="user-permissions-title">
               <div className="section-heading">
                 <p className="eyebrow">{t("admin.permissions")}</p>
@@ -5789,6 +5818,11 @@ function UsersTeamManager({
           const isCurrentUser = user.id === session.teacher.id;
           const targetIsOwner = user.is_owner || user.role === "owner";
           const ownerLockedForActor = targetIsOwner && !isOwner;
+          const canManage = session.teacher.role === "owner"
+            || session.teacher.role === "admin"
+            || isCurrentUser
+            || (session.teacher.role === "manager" && user.role !== "manager");
+          const actionsLocked = !canManage || ownerLockedForActor;
           return (
             <article key={user.id} className={`user-row ${targetIsOwner ? "user-row-owner" : ""}`}>
               <div className="user-identity">
@@ -5802,14 +5836,15 @@ function UsersTeamManager({
                 <span className={user.deleted_at ? "status-deleted" : user.is_active ? "status-active" : "status-disabled"}>{recordStatusLabel(user, t)}</span>
               </div>
               {targetIsOwner ? <p className="form-hint user-owner-notice">{t("admin.ownerProtected")}</p> : null}
-              <div className="row-actions">
-                {!user.deleted_at && !ownerLockedForActor ? <button className="secondary-button compact-button user-action user-action-primary" type="button" onClick={() => startEdit(user)}>
+              {!canManage && !targetIsOwner ? <p className="form-hint user-owner-notice">{t("errors.userManagementForbidden")}</p> : null}
+              {!actionsLocked ? <div className="row-actions">
+                {!actionsLocked && !user.deleted_at ? <button className="secondary-button compact-button user-action user-action-primary" type="button" onClick={() => startEdit(user)}>
                   {t("admin.editUser")}
                 </button> : null}
-                {!user.deleted_at && !ownerLockedForActor ? <button className="secondary-button compact-button user-action user-action-secondary" type="button" onClick={() => setResetPasswordId(user.id)}>
+                {!actionsLocked && !user.deleted_at ? <button className="secondary-button compact-button user-action user-action-secondary" type="button" onClick={() => setResetPasswordId(user.id)}>
                   {t("admin.resetPassword")}
                 </button> : null}
-                {!user.deleted_at && !isCurrentUser && !ownerLockedForActor ? (
+                {!actionsLocked && !user.deleted_at && !isCurrentUser ? (
                   <button
                     className={`secondary-button compact-button user-action ${user.is_active ? "user-action-warning" : "user-action-success"} action-feedback-${userActionState(`status:${user.id}`)}`}
                     type="button"
@@ -5824,7 +5859,7 @@ function UsersTeamManager({
                     })}
                   </button>
                 ) : null}
-                {user.deleted_at && !ownerLockedForActor ? <>
+                {user.deleted_at && !actionsLocked ? <>
                   <button
                     className={`secondary-button compact-button user-action user-action-success restore-user-button action-feedback-${userActionState(`restore:${user.id}`)}`}
                     type="button"
@@ -5851,7 +5886,7 @@ function UsersTeamManager({
                       error: t("admin.actionFailedDelete")
                     })}
                   </button>
-                </> : !isCurrentUser && !ownerLockedForActor ? (
+                </> : !isCurrentUser && !actionsLocked ? (
                   <button
                     className={`secondary-button compact-button user-action danger-button action-feedback-${userActionState(`delete:${user.id}`)}`}
                     type="button"
@@ -5866,9 +5901,9 @@ function UsersTeamManager({
                     })}
                   </button>
                 ) : null}
-                {isOwner && !targetIsOwner && !user.deleted_at ? <button className="secondary-button compact-button user-action user-action-secondary" type="button" onClick={() => { setTransferTarget(user); setTransferPassword(""); setStatus(""); }} disabled={loading}>{t("admin.transferOwnership")}</button> : null}
-              </div>
-              {resetPasswordId === user.id ? (
+                {isOwner && !targetIsOwner && !user.deleted_at && !actionsLocked ? <button className="secondary-button compact-button user-action user-action-secondary" type="button" onClick={() => { setTransferTarget(user); setTransferPassword(""); setStatus(""); }} disabled={loading}>{t("admin.transferOwnership")}</button> : null}
+              </div> : null}
+              {resetPasswordId === user.id && !actionsLocked ? (
                 <div className="password-reset-row">
                   <input type="password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} placeholder={t("admin.password")} />
                   <button
@@ -5968,9 +6003,18 @@ const scheduleTimeOptions = [
 ];
 
 function scheduleTimeLabel(value: string, language: Language) {
-  const [hour, minute] = value.split(":").map(Number);
-  const date = new Date(2026, 0, 1, hour, minute);
-  return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { hour: "numeric", minute: "2-digit", hour12: true }).format(date);
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "—";
+  const hour24 = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour24) || hour24 < 0 || hour24 > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) return "—";
+  const hour12 = hour24 % 12 || 12;
+  const locale = language === "ar" ? "ar-EG" : "en-US";
+  const numberFormat = new Intl.NumberFormat(locale, { useGrouping: false, minimumIntegerDigits: 2 });
+  const hourText = new Intl.NumberFormat(locale, { useGrouping: false }).format(hour12);
+  const minuteText = numberFormat.format(minute);
+  const period = language === "ar" ? (hour24 < 12 ? "ص" : "م") : (hour24 < 12 ? "AM" : "PM");
+  return `${hourText}:${minuteText} ${period}`;
 }
 
 const gradeLevels = [
@@ -6956,7 +7000,7 @@ function AcademicManager({
               <div><span>{t("admin.loginCode")}</span><strong>{studentForm.student_code || "—"}</strong></div>
               <div><span>{t("admin.scanSerial")}</span><strong>{studentForm.scan_serial || "—"}</strong></div>
             </div>
-            {studentForm.scan_serial ? <div className="student-label-preview"><strong>{t("admin.labelPreview")}</strong><span>مستر أحمد عبدربه / Mr. Ahmed Abdrabo</span><span>{studentForm.full_name || "Student name"} · {studentForm.student_code}</span><BarcodePreview value={studentForm.scan_serial} displayValue={false} /><strong className="label-preview-serial">{studentForm.scan_serial}</strong><div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printGeneratedLabel}>{t("admin.printLabel")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={regenerateScanSerial} disabled={loading}>{t("admin.regenerateScanSerial")}</button> : null}</div></div> : <><p className="field-hint">{t("admin.generateCodeSerial")}</p>{fieldErrors.scan_serial ? <small className="field-error">{fieldErrors.scan_serial}</small> : null}</>}
+            {studentForm.scan_serial ? <div className="student-label-preview"><strong>{t("admin.labelPreview")}</strong><span>مستر أحمد عبدربه / Mr. Ahmed Abdrabo</span><span>{studentForm.full_name || "Student name"} · {studentForm.student_code}</span><BarcodePreview value={labelBarcodeValue(studentForm)} displayValue={false} /><strong className="label-preview-serial">{labelBarcodeValue(studentForm)}</strong><div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printGeneratedLabel}>{t("admin.printLabel")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={regenerateScanSerial} disabled={loading}>{t("admin.regenerateScanSerial")}</button> : null}</div></div> : <><p className="field-hint">{t("admin.generateCodeSerial")}</p>{fieldErrors.scan_serial ? <small className="field-error">{fieldErrors.scan_serial}</small> : null}</>}
           </section>
           </>
         )}
@@ -7275,18 +7319,18 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
   </section></div>, document.body);
 }
 
-function AttendancePanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
+function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdChange }: { session: TeacherSession; language: Language; t: Translator; selectedSessionId: string; onSessionIdChange: (sessionId: string) => void }) {
   const canSendAttendance = sessionHasPermission(session, "whatsapp.send_attendance");
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
   const [date, setDate] = useState(localDateInputValue());
   const [sessions, setSessions] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [records, setRecords] = useState<any[]>([]);
-  const [selected, setSelected] = useState("");
   const [status, setStatus] = useState("");
   const [rowFeedback, setRowFeedback] = useState<Record<number, string>>({});
+  const selected = selectedSessionId;
   const headers = { Authorization: `Bearer ${session.token}` };
-  async function load() { const [sr, st] = await Promise.all([fetch(`${API_BASE_URL}/admin/attendance/sessions?date=${date}`, { headers }), fetch(`${API_BASE_URL}/admin/students`, { headers })]); const sd = await sr.json(), td = await st.json(); setSessions(Array.isArray(sd.sessions) ? sd.sessions : []); setStudents(Array.isArray(td.students) ? td.students : []); setSelected(sd.sessions?.[0] ? String(sd.sessions[0].id) : ""); }
+  async function load() { const [sr, st] = await Promise.all([fetch(`${API_BASE_URL}/admin/attendance/sessions?date=${date}`, { headers }), fetch(`${API_BASE_URL}/admin/students`, { headers })]); const sd = await sr.json(), td = await st.json(); const nextSessions = Array.isArray(sd.sessions) ? sd.sessions : []; setSessions(nextSessions); setStudents(Array.isArray(td.students) ? td.students : []); const now = Date.now(); const activeSession = nextSessions.find((item: any) => { const opensAt = Date.parse(String(item.opens_at || item.starts_at || "")); const closesAt = Date.parse(String(item.closes_at || "")); const endsAt = Date.parse(String(item.ends_at || "")); const end = [closesAt, endsAt].filter(Number.isFinite).reduce((latest, value) => Math.min(latest, value), Number.POSITIVE_INFINITY); return Number.isFinite(opensAt) && Number.isFinite(end) && now >= opensAt && now <= end; }); const nextSelected = selectedSessionId && nextSessions.some((item: any) => String(item.id) === selectedSessionId) ? selectedSessionId : activeSession ? String(activeSession.id) : nextSessions[0] ? String(nextSessions[0].id) : ""; onSessionIdChange(nextSelected); }
   async function loadRecords(id: string) { const r = await fetch(`${API_BASE_URL}/admin/attendance/sessions/${id}/records`, { headers }); const d = await r.json(); setRecords(Array.isArray(d.records) ? d.records : []); }
   useEffect(() => { load().catch(() => setStatus("تعذر تحميل الحضور / Could not load attendance")); }, [date]);
   useEffect(() => { if (selected) loadRecords(selected).catch(() => undefined); else setRecords([]); }, [selected]);
@@ -7301,7 +7345,7 @@ function AttendancePanel({ session, language, t }: { session: TeacherSession; la
   }
   const selectedSession = sessions.find((item) => String(item.id) === selected);
   const groupStudents = students.filter((item) => !selectedSession || item.group_id === selectedSession.group_id);
-  return <section className="admin-editor"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => setSelected(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {item.start_time?.slice(0, 5)} إلى {item.end_time?.slice(0, 5)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}{canSendAttendance ? <label className="whatsapp-receipt-option attendance-whatsapp-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendWhatsApp} onChange={(event) => setSendWhatsApp(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendAttendance")}</span></label> : null}<div className="academic-list">{groupStudents.map((student) => { const currentRecord = records.find((record) => record.student_id === student.id); const currentStatus = currentRecord?.status || "not_marked"; const feedback = rowFeedback[student.id]; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}{currentRecord?.whatsapp_notified === false ? <span className="whatsapp-not-sent-badge" title={t("whatsapp.notSent")}>🔕 {t("whatsapp.notSent")}</span> : null}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "present")}>Present / حاضر</button><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "absent")}>Absent / غائب</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
+  return <section className="admin-editor"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => onSessionIdChange(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {formatTimeOfDay(item.start_time, language)} إلى {formatTimeOfDay(item.end_time, language)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}{canSendAttendance ? <label className="whatsapp-receipt-option attendance-whatsapp-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendWhatsApp} onChange={(event) => setSendWhatsApp(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendAttendance")}</span></label> : null}<div className="academic-list">{groupStudents.map((student) => { const currentRecord = records.find((record) => record.student_id === student.id); const currentStatus = currentRecord?.status || "not_marked"; const feedback = rowFeedback[student.id]; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}{currentRecord?.whatsapp_notified === false ? <span className="whatsapp-not-sent-badge" title={t("whatsapp.notSent")}>🔕 {t("whatsapp.notSent")}</span> : null}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "present")}>Present / حاضر</button><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "absent")}>Absent / غائب</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
 type CameraScannerToast = { tone: "success" | "error"; message: string };
@@ -7311,13 +7355,15 @@ function MobileScannerModal({
   onClose,
   session,
   language,
-  t
+  t,
+  selectedSessionId
 }: {
   open: boolean;
   onClose: () => void;
   session: TeacherSession;
   language: Language;
   t: Translator;
+  selectedSessionId?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
@@ -7331,6 +7377,10 @@ function MobileScannerModal({
   const [processing, setProcessing] = useState(false);
   const [toast, setToast] = useState<CameraScannerToast | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+  }, [selectedSessionId]);
 
   async function submitCameraScan(value: string, fromCamera = false) {
     if (cameraBusyRef.current) return;
@@ -7355,7 +7405,7 @@ function MobileScannerModal({
           Authorization: `Bearer ${session.token}`,
           "Idempotency-Key": createIdempotencyKey()
         },
-        body: JSON.stringify({ value: token, send_whatsapp: true })
+        body: JSON.stringify({ value: token, session_id: selectedSessionIdRef.current || undefined, send_whatsapp: true })
       });
       const rawBody = await response.text();
       let data: { ok?: boolean; status?: string; student?: any } = {};
@@ -7532,7 +7582,7 @@ function MobileScannerModal({
   );
 }
 
-function LegacyScannerPanel({ session, language, t, onOpenCamera }: { session: TeacherSession; language: Language; t: Translator; onOpenCamera: () => void }) {
+function LegacyScannerPanel({ session, language, t, selectedSessionId = "", onOpenCamera }: { session: TeacherSession; language: Language; t: Translator; selectedSessionId?: string; onOpenCamera: () => void }) {
   const [code, setCode] = useState("");
   const [message, setMessage] = useState("");
   const [student, setStudent] = useState<any>(null);
@@ -7594,7 +7644,7 @@ function LegacyScannerPanel({ session, language, t, onOpenCamera }: { session: T
           Authorization: `Bearer ${session.token}`,
           "Idempotency-Key": createIdempotencyKey()
         },
-        body: JSON.stringify({ value: token, send_whatsapp: true }),
+        body: JSON.stringify({ value: token, session_id: selectedSessionId || undefined, send_whatsapp: true }),
         signal: controller.signal
       });
       const rawBody = await response.text();
@@ -7704,10 +7754,11 @@ function LegacyScannerPanel({ session, language, t, onOpenCamera }: { session: T
   );
 }
 
-function ScannerPanel({ session, language, t, onOpenCamera }: { session: TeacherSession; language: Language; t: Translator; onOpenCamera: () => void }) {
+function ScannerPanel({ session, language, t, selectedSessionId = "", onOpenCamera }: { session: TeacherSession; language: Language; t: Translator; selectedSessionId?: string; onOpenCamera: () => void }) {
   const scanner = useAttendanceScanner({
     apiBaseUrl: API_BASE_URL,
     authToken: session.token,
+    sessionId: selectedSessionId,
     messages: {
       scanRequired: t("scanner.scanRequired"),
       recorded: t("scanner.recorded"),
@@ -10310,14 +10361,14 @@ function BarcodePreview({ value, displayValue = true }: { value: string; display
 }
 
 function StudentLabelPreview({ student }: { student: Record<string, any> }) {
-  const scanSerial = labelScanSerial(student);
+  const barcodeValue = labelBarcodeValue(student);
   const gradeAndGroup = [student.grade || student.grade_level, student.group_name || student.group].filter(Boolean).join(" · ");
   return <div className="profile-label-preview" dir="rtl">
     <strong className="profile-label-brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</strong>
     <strong className="profile-label-name">{student.full_name || "—"}</strong>
-    <strong className="profile-label-code">Student code / كود الطالب: {student.student_code || "—"}</strong>
+    <strong className="profile-label-code">{student.student_code || "—"}</strong>
     <span className="profile-label-grade">{gradeAndGroup || "—"}</span>
-    {scanSerial ? <><BarcodePreview value={scanSerial} displayValue={false} /><strong className="profile-label-serial">{scanSerial}</strong></> : <span className="empty-state">—</span>}
+    {barcodeValue ? <><BarcodePreview value={barcodeValue} displayValue={false} /><strong className="profile-label-serial">{barcodeValue}</strong></> : <span className="empty-state">—</span>}
   </div>;
 }
 

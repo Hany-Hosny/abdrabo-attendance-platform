@@ -1135,7 +1135,8 @@
   width: 100%;
   height: 100%;
   min-height: 280px;
-  object-fit: cover;
+  object-fit: contain;
+  background: #020811;
 }
 
 .camera-scanner-overlay {
@@ -1149,8 +1150,8 @@
 
 .camera-scanner-frame {
   position: relative;
-  width: min(76%, 430px);
-  aspect-ratio: 1.7;
+  width: min(94%, 680px);
+  aspect-ratio: 5.2 / 1;
   border: 2px solid rgba(255, 177, 79, 0.92);
   border-radius: 14px;
   box-shadow: 0 0 0 999px rgba(2, 8, 18, 0.22), 0 0 26px rgba(242, 140, 40, 0.34);
@@ -2291,13 +2292,13 @@ textarea {
   .camera-scanner-stage video {
     min-height: 0;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     object-position: center;
   }
 
   .camera-scanner-frame {
-    width: min(76%, 300px);
-    aspect-ratio: 1.7;
+    width: min(94%, 680px);
+    aspect-ratio: 5.2 / 1;
   }
 
   .camera-scanner-instruction {
@@ -3973,8 +3974,9 @@ textarea {
 }
 
 .profile-label-grade {
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.15;
+  font-weight: 800;
 }
 
 .profile-label-preview .barcode-preview {
@@ -13041,6 +13043,7 @@ header a {
 .camera-scanner-stage video {
   min-height: 340px;
   background: #020811;
+  object-fit: contain;
 }
 
 @media (max-width: 767px) {
@@ -13071,6 +13074,25 @@ header a {
 
   .camera-scanner-stage video {
     min-height: 0;
+    object-fit: contain;
+  }
+}
+
+@page {
+  size: 50mm 30mm;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    width: 50mm;
+    height: 30mm;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }
 

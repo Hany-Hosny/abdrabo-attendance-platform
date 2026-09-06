@@ -20,6 +20,7 @@ export type CachedScannerStudent = {
 type QueueItem = {
   id: string;
   token: string;
+  sessionId?: number;
   createdAt: number;
   attempts: number;
   student?: CachedScannerStudent;
@@ -47,6 +48,7 @@ type UseAttendanceScannerOptions = {
   authToken: string;
   messages: AttendanceScannerMessages;
   deviceId?: string;
+  sessionId?: number | string | null;
 };
 
 const DATABASE_NAME = "abdrabo-attendance-scanner";
@@ -167,7 +169,7 @@ function parseScannerResponse(rawBody: string) {
   }
 }
 
-export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId = "" }: UseAttendanceScannerOptions) {
+export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId = "", sessionId = null }: UseAttendanceScannerOptions) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputValueRef = useRef("");
   const inputDebounceRef = useRef<number | null>(null);
@@ -190,7 +192,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   const [cacheReady, setCacheReady] = useState(false);
 
   const updateInput = useCallback((value: string) => {
-    const sanitized = normalizeDigits(value).replace(/[^A-Za-z0-9]/g, "");
+    const sanitized = normalizeDigits(value).replace(/[^A-Za-z0-9-]/g, "");
     inputValueRef.current = sanitized;
     setInputValue(sanitized);
     if (inputDebounceRef.current !== null) window.clearTimeout(inputDebounceRef.current);
@@ -245,7 +247,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
           Authorization: `Bearer ${authToken}`,
           "Idempotency-Key": item.id
         },
-        body: JSON.stringify({ value: item.token, device_id: deviceId || undefined, send_whatsapp: true }),
+        body: JSON.stringify({ value: item.token, session_id: item.sessionId || undefined, device_id: deviceId || undefined, send_whatsapp: true }),
         signal: requestController.signal
       });
       const data = parseScannerResponse(await response.text());
@@ -306,7 +308,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
         void restoreOfflineQueueRef.current();
       }
     }
-  }, [apiBaseUrl, authToken, deviceId, messages, publishForItem, updatePendingCount]);
+  }, [apiBaseUrl, authToken, deviceId, messages, publishForItem, sessionId, updatePendingCount]);
 
   const pump = useCallback(() => {
     while (activeRequestsRef.current < MAX_CONCURRENT_REQUESTS && queueRef.current.length) {
@@ -340,20 +342,30 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
     inputValueRef.current = "";
     setInputValue("");
     const cachedStudent = studentCacheRef.current.get(token) || null;
-    const item: QueueItem = { id: createIdempotencyKey(), token, createdAt: now, attempts: 0, student: cachedStudent || undefined };
+    const selectedSessionId = Number(sessionId);
+    const item: QueueItem = {
+      id: createIdempotencyKey(),
+      token,
+      sessionId: Number.isSafeInteger(selectedSessionId) && selectedSessionId > 0 ? selectedSessionId : undefined,
+      createdAt: now,
+      attempts: 0,
+      student: cachedStudent || undefined
+    };
+    if ((queueRef.current.length + activeRequestsRef.current) >= MAX_QUEUE_SIZE) {
+      publish("error", messages.serverError, null, "error");
+      return;
+    }
     latestScanIdRef.current = item.id;
     void saveOfflineItem(item);
-    if (queueRef.current.length < MAX_QUEUE_SIZE) {
-      queueRef.current.push(item);
-      queuedIdsRef.current.add(item.id);
-    }
+    queueRef.current.push(item);
+    queuedIdsRef.current.add(item.id);
     publishForItem(item.id, "loading", queueRef.current.includes(item) ? "" : messages.savedLocally, null);
     updatePendingCount();
     if (mountedRef.current) {
       pumpRef.current();
       if (!queuedIdsRef.current.has(item.id)) void restoreOfflineQueueRef.current();
     }
-  }, [messages, publishForItem, updatePendingCount]);
+  }, [messages, publishForItem, sessionId, updatePendingCount]);
   enqueueScanRef.current = enqueueScan;
 
   const commitInput = useCallback(() => {
@@ -388,7 +400,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
         retryTimersRef.current.delete(item.id);
       }
       if (queuedIdsRef.current.has(item.id)) continue;
-      if (queueRef.current.length >= MAX_QUEUE_SIZE) break;
+      if ((queueRef.current.length + activeRequestsRef.current) >= MAX_QUEUE_SIZE) break;
       queuedIdsRef.current.add(item.id);
       queueRef.current.push(item);
     }
@@ -468,7 +480,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
         commitInput();
         return;
       }
-      if (!/^[A-Za-z0-9]$/.test(normalizedKey)) return;
+      if (!/^[A-Za-z0-9-]$/.test(normalizedKey)) return;
       event.preventDefault();
       inputRef.current?.focus({ preventScroll: true });
       updateInput(`${inputValueRef.current}${normalizedKey}`);
