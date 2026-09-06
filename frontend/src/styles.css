@@ -3915,8 +3915,6 @@ textarea {
   display: grid;
   gap: 6px;
   align-content: start;
-  width: min(100%, 60mm);
-  min-height: 40mm;
   border: 1px dashed var(--line);
   border-radius: 10px;
   background: #f7f7f5;

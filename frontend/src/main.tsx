@@ -3365,8 +3365,8 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
     JsBarcode(barcode, barcodeValue, {
       format: "CODE128A",
       displayValue: false,
-      height: 86,
-      width: 1.5,
+      height: 100,
+      width: 1.65,
       margin: 8,
       marginTop: 6,
       marginBottom: 6,
@@ -3382,15 +3382,15 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
     @page{size:60mm 40mm;margin:0}
     *{box-sizing:border-box}
     html,body{width:60mm;height:40mm;margin:0;padding:0}
-    body{display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1.5mm 2mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff}
+    body{display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1mm 2mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff}
     .brand,.name,.code,.grade,.scan-value{max-width:56mm;white-space:nowrap;overflow:hidden;text-overflow:clip}
     .brand{font-size:8.8px;line-height:1.05;font-weight:700}
     .name{font-size:11.5px;line-height:1.05;font-weight:700;margin:.65mm 0 .3mm}
     .code{font-size:9.8px;line-height:1.05;font-weight:800}
     .grade{font-size:9.2px;line-height:1.1;margin-top:.3mm;font-weight:800}
-    .barcode{display:flex;align-items:center;justify-content:center;width:56mm;height:13mm;margin:.8mm auto 0;overflow:hidden;padding:0 1mm}
-    .barcode svg{display:block;width:54mm;height:13mm;shape-rendering:crispEdges}
-    .scan-value{font-size:8.4px;line-height:1;font-weight:800;margin-top:.2mm;letter-spacing:.1px}
+    .barcode{display:flex;align-items:center;justify-content:center;width:58mm;height:14mm;margin:.7mm auto 0;overflow:hidden;padding:0 .25mm}
+    .barcode svg{display:block;width:57mm;height:14mm;shape-rendering:crispEdges}
+    .scan-value{font-size:11.5px;line-height:1;font-weight:900;margin-top:.4mm;letter-spacing:.2px}
     @media print{html,body{width:60mm;height:40mm;margin:0;padding:0;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style></head><body>
     <div class="brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</div>
