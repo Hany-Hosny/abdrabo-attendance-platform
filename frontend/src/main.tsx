@@ -3337,7 +3337,17 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
   const scanSerial = labelScanSerial(student);
   const barcode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   if (scanSerial) {
-    JsBarcode(barcode, scanSerial, { format: "CODE128", displayValue: false, height: 52, width: 1.45, margin: 0 });
+    JsBarcode(barcode, scanSerial, {
+      format: "CODE128A",
+      displayValue: false,
+      height: 52,
+      width: 1.6,
+      margin: 12,
+      marginTop: 10,
+      marginBottom: 10,
+      marginLeft: 16,
+      marginRight: 16
+    });
   }
   const grade = student.grade || student.grade_level || "";
   const group = student.group_name || student.group || "";
@@ -3352,8 +3362,8 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
     .name{font-size:12.5px;line-height:1.05;font-weight:700;margin:.8mm 0 .35mm}
     .code{font-size:11px;line-height:1.05;font-weight:800}
     .grade{font-size:8.5px;line-height:1.05;margin-top:.35mm}
-    .barcode{display:flex;align-items:center;justify-content:center;width:54mm;height:8.5mm;margin:.7mm auto 0;overflow:hidden}
-    .barcode svg{display:block;width:54mm;height:8.5mm}
+    .barcode{display:flex;align-items:center;justify-content:center;width:54mm;height:8.5mm;margin:.7mm auto 0;overflow:hidden;padding:0 1.5mm}
+    .barcode svg{display:block;width:51mm;height:8.5mm;shape-rendering:crispEdges}
     .scan-value{font-size:9.2px;line-height:1;font-weight:700;margin-top:.2mm;letter-spacing:.15px}
   </style></head><body>
     <div class="brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</div>
@@ -10280,12 +10290,23 @@ function BarcodePreview({ value, displayValue = true }: { value: string; display
   useEffect(() => {
     if (!barcodeRef.current || !value) return;
     try {
-      JsBarcode(barcodeRef.current, value, { format: "CODE128", displayValue, fontSize: 12, height: 42, width: 1.4, margin: 0 });
+      JsBarcode(barcodeRef.current, value, {
+        format: "CODE128A",
+        displayValue,
+        fontSize: 12,
+        height: 42,
+        width: 1.5,
+        margin: 10,
+        marginTop: 8,
+        marginBottom: 8,
+        marginLeft: 14,
+        marginRight: 14
+      });
     } catch (_error) {
       if (barcodeRef.current) barcodeRef.current.innerHTML = "";
     }
   }, [value, displayValue]);
-  return <svg ref={barcodeRef} className="barcode-preview" aria-label={`Barcode ${value}`} />;
+  return <svg ref={barcodeRef} className="barcode-preview" aria-label={`Barcode ${value}`} shapeRendering="crispEdges" />;
 }
 
 function StudentLabelPreview({ student }: { student: Record<string, any> }) {
