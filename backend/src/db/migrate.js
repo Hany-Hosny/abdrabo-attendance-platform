@@ -129,7 +129,7 @@ export async function migrate() {
       username TEXT UNIQUE,
       password_hash TEXT NOT NULL,
       auth_version INTEGER NOT NULL DEFAULT 0,
-      role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('owner', 'admin', 'staff')),
+      role TEXT NOT NULL DEFAULT 'staff' CHECK (role IN ('owner', 'admin', 'manager', 'staff')),
       permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
       permissions_initialized BOOLEAN NOT NULL DEFAULT FALSE,
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -271,7 +271,7 @@ export async function migrate() {
 
     ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_role_check;
     UPDATE teachers SET role = 'staff' WHERE role IN ('teacher', 'assistant');
-    ALTER TABLE teachers ADD CONSTRAINT teachers_role_check CHECK (role IN ('owner', 'admin', 'staff'));
+    ALTER TABLE teachers ADD CONSTRAINT teachers_role_check CHECK (role IN ('owner', 'admin', 'manager', 'staff'));
 
     ALTER TABLE groups ADD COLUMN IF NOT EXISTS grade_level TEXT;
     ALTER TABLE groups ADD COLUMN IF NOT EXISTS display_name TEXT;

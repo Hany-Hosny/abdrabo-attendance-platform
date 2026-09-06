@@ -31,7 +31,7 @@ export function requireRoles(...roles) {
 
 export function requireAdmin(req, res, next) {
   return requireTeacher(req, res, () => {
-    if (!['owner', 'admin'].includes(req.teacher?.role)) {
+    if (!['owner', 'admin', 'manager'].includes(req.teacher?.role)) {
       return res.status(403).json({ ok: false, status: "forbidden" });
     }
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canGrantPermissions, DASHBOARD_PERMISSIONS, DEFAULT_ADMIN_PERMISSIONS, hasPermission, normalizePermissions } from "../src/services/rbac.js";
+import { canGrantPermissions, canManageUser, DASHBOARD_PERMISSIONS, DEFAULT_ADMIN_PERMISSIONS, hasPermission, normalizePermissions } from "../src/services/rbac.js";
 import { requirePermission } from "../src/middleware/requireTeacher.js";
 
 test("Owner automatically has every permission", () => {
@@ -138,4 +138,12 @@ test("Fine-grained payment middleware denies each missing capability", () => {
 
 test("Permission normalization removes unknown and duplicate values", () => {
   assert.deepEqual(normalizePermissions(["students.view", "students.view", "not-a-permission"]), ["students.view"]);
+});
+
+test("User management RBAC lets managers manage themselves and staff only", () => {
+  const manager = { id: 10, role: "manager", permissions: [] };
+  assert.equal(canManageUser(manager, { id: 10, role: "manager" }), true);
+  assert.equal(canManageUser(manager, { id: 11, role: "staff" }), true);
+  assert.equal(canManageUser(manager, { id: 12, role: "manager" }), false);
+  assert.equal(canManageUser({ id: 13, role: "admin" }, { id: 12, role: "manager" }), true);
 });

@@ -127,5 +127,14 @@ export function requireAnyPermission(...permissions) {
 }
 
 export function roleIsAtLeastAdmin(user) {
-  return user?.role === "owner" || user?.role === "admin";
+  return user?.role === "owner" || user?.role === "admin" || user?.role === "manager";
+}
+
+export function canManageUser(actor, target) {
+  const actorId = Number(actor?.id ?? actor?.sub);
+  const targetId = Number(target?.id);
+  return actor?.role === "owner"
+    || actor?.role === "admin"
+    || actorId === targetId
+    || (actor?.role === "manager" && target?.role !== "manager");
 }

@@ -3,11 +3,25 @@ import { requireAdmin, requirePermission } from "../middleware/requireTeacher.js
 import { pool, query } from "../db/pool.js";
 import { hashPassword, verifyPassword } from "../services/auth.js";
 import { auditLog, changedFields } from "../services/audit.js";
-import { DEFAULT_ADMIN_PERMISSIONS, DEFAULT_STAFF_PERMISSIONS, canGrantPermissions, isOwner, normalizePermissions } from "../services/rbac.js";
+import { DEFAULT_ADMIN_PERMISSIONS, DEFAULT_STAFF_PERMISSIONS, canGrantPermissions, canManageUser, isOwner, normalizePermissions } from "../services/rbac.js";
 
 export const adminUsersRouter = express.Router();
 
-const allowedRoles = new Set(["owner", "admin", "staff"]);
+const allowedRoles = new Set(["owner", "admin", "manager", "staff"]);
+
+function managerTargetForbidden(req, target) {
+  if (canManageUser(req.teacher, target)) return false;
+  return req.teacher?.role === "manager" && target?.role === "manager";
+}
+
+function managerTargetForbiddenResponse(res) {
+  return res.status(403).json({
+    ok: false,
+    error: "forbidden",
+    status: "forbidden",
+    message: "لا تملك صلاحية لتعديل أو حذف مدير آخر"
+  });
+}
 
 function publicUser(row) {
   return {
@@ -185,6 +199,7 @@ adminUsersRouter.put("/:id", requirePermission("users.edit"), async (req, res, n
     const beforeResult = await query("SELECT id, name, username, email, role, permissions, is_active, print_student_labels, max_label_reprints, can_use_inbox FROM teachers WHERE id = $1 AND deleted_at IS NULL", [targetUserId]);
     if (!beforeResult.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const before = beforeResult.rows[0];
+    if (managerTargetForbidden(req, before)) return managerTargetForbiddenResponse(res);
     if (before.role === "owner" && !actorOwnsAccount(req)) return res.status(403).json({ ok: false, status: "owner_protected" });
     if (before.role === "owner" && role !== "owner") return res.status(403).json({ ok: false, status: "owner_protected" });
     if (role === "owner" && before.role !== "owner") return res.status(403).json({ ok: false, status: "owner_transfer_required" });
@@ -241,6 +256,7 @@ adminUsersRouter.post("/:id/reset-password", requirePermission("users.edit"), as
 
     const beforeResult = await query("SELECT id, name, username, email, role, permissions, is_active FROM teachers WHERE id = $1 AND deleted_at IS NULL", [Number(req.params.id)]);
     if (!beforeResult.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    if (managerTargetForbidden(req, beforeResult.rows[0])) return managerTargetForbiddenResponse(res);
     if (beforeResult.rows[0].role === "owner" && !actorOwnsAccount(req)) return res.status(403).json({ ok: false, status: "owner_protected" });
     const result = await query(
       `
@@ -280,6 +296,7 @@ adminUsersRouter.patch("/:id/status", requirePermission("users.disable"), async 
 
     const beforeResult = await query("SELECT id, name, username, email, role, permissions, is_active FROM teachers WHERE id = $1 AND deleted_at IS NULL", [targetUserId]);
     if (!beforeResult.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    if (managerTargetForbidden(req, beforeResult.rows[0])) return managerTargetForbiddenResponse(res);
     if (beforeResult.rows[0].role === "owner" && !actorOwnsAccount(req)) return res.status(403).json({ ok: false, status: "owner_protected" });
     const result = await query(
       `
@@ -309,6 +326,7 @@ adminUsersRouter.delete("/:id", requirePermission("users.delete"), async (req, r
     if (targetUserId === Number(req.teacher?.sub)) return res.status(403).json({ok:false,status:"self_delete_forbidden"});
     const before = await query("SELECT id, name, username, email, role, permissions, is_active FROM teachers WHERE id=$1 AND deleted_at IS NULL", [targetUserId]);
     if (!before.rowCount) return res.status(404).json({ok:false,status:"not_found"});
+    if (managerTargetForbidden(req, before.rows[0])) return managerTargetForbiddenResponse(res);
     if (before.rows[0].role === "owner") return res.status(403).json({ok:false,status:"owner_protected"});
     const result = await query("UPDATE teachers SET deleted_at=NOW(), is_active=FALSE, updated_at=NOW() WHERE id=$1 AND deleted_at IS NULL RETURNING id", [targetUserId]);
     if (!result.rowCount) return res.status(404).json({ok:false,status:"not_found"});
@@ -332,6 +350,10 @@ adminUsersRouter.delete("/:id/permanent", requirePermission("users.delete"), asy
     if (!beforeResult.rowCount) {
       await client.query("ROLLBACK");
       return res.status(404).json({ ok: false, status: "not_found_or_not_deleted" });
+    }
+    if (managerTargetForbidden(req, beforeResult.rows[0])) {
+      await client.query("ROLLBACK");
+      return managerTargetForbiddenResponse(res);
     }
     if (beforeResult.rows[0].role === "owner") {
       await client.query("ROLLBACK");
@@ -377,6 +399,7 @@ adminUsersRouter.patch("/:id/restore", requirePermission("users.disable"), async
   try {
     const before = await query("SELECT id, name, username, email, role, permissions, is_active, deleted_at FROM teachers WHERE id=$1", [Number(req.params.id)]);
     if (!before.rowCount) return res.status(404).json({ok:false,status:"not_found"});
+    if (managerTargetForbidden(req, before.rows[0])) return managerTargetForbiddenResponse(res);
     if (before.rows[0].role === "owner" && !actorOwnsAccount(req)) return res.status(403).json({ok:false,status:"owner_protected"});
     const result = await query("UPDATE teachers SET deleted_at=NULL, is_active=TRUE, updated_at=NOW() WHERE id=$1 RETURNING id, name, username, email, role, permissions, is_active, print_student_labels, max_label_reprints, created_at, updated_at", [Number(req.params.id)]);
     if (!result.rowCount) return res.status(404).json({ok:false,status:"not_found"});

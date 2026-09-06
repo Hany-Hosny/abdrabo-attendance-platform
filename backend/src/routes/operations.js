@@ -865,7 +865,7 @@ async function maintainScannerSessions(groupId) {
     WHERE ar.session_id=s.id AND s.group_id=$1 AND s.status='closed' AND ar.method='system'
       AND cs.closes_after_minutes>20
       AND NOT EXISTS (SELECT 1 FROM attendance_records existing WHERE existing.session_id=s.id AND existing.method <> 'system')
-      AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
+      AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN
         (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
         AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [groupId]);
   await query(`UPDATE attendance_sessions s SET status='open'
@@ -873,7 +873,7 @@ async function maintainScannerSessions(groupId) {
     WHERE s.group_id=$1 AND s.schedule_id=cs.id AND cs.group_id=s.group_id AND s.status='closed'
       AND cs.closes_after_minutes>20
       AND NOT EXISTS (SELECT 1 FROM attendance_records ar WHERE ar.session_id=s.id AND ar.method <> 'system')
-      AND (NOW() AT TIME ZONE 'Africa/Cairo') BETWEEN
+      AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN
         (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
         AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [groupId]);
 }
@@ -943,25 +943,56 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     };
     if (student.deleted_at) return res.status(409).json({ok:false,status:"deleted_student",student: publicStudent});
     if (!student.is_active || !student.group_active || student.group_deleted_at) return res.status(409).json({ok:false,status:"inactive_student",student: publicStudent});
-    const timing = await getAttendanceTimingDefaults();
-    await query(`INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, ends_at, status)
-      SELECT cs.group_id, cs.id, (NOW() AT TIME ZONE 'Africa/Cairo')::date,
-        ${cairoSessionTimeSql("(NOW() AT TIME ZONE 'Africa/Cairo')", "cs.start_time")},
-        ((((NOW() AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-        ${cairoSessionCloseSql("(NOW() AT TIME ZONE 'Africa/Cairo')", "$3")},
-        ${cairoSessionTimeSql("(NOW() AT TIME ZONE 'Africa/Cairo')", "cs.end_time")}, 'open'
+    const rawSessionId = req.body?.session_id ?? req.body?.sessionId;
+    const hasExplicitSessionId = rawSessionId !== undefined && rawSessionId !== null && String(rawSessionId).trim() !== "";
+    let sessionResult;
+    if (hasExplicitSessionId) {
+      const requestedSessionId = Number(normalizeDigits(rawSessionId).trim());
+      if (!Number.isSafeInteger(requestedSessionId) || requestedSessionId <= 0) return res.status(400).json({ ok: false, status: "invalid_session_id", student: publicStudent });
+      sessionResult = await query("SELECT s.* FROM attendance_sessions s WHERE s.id=$1 LIMIT 1", [requestedSessionId]);
+      if (!sessionResult.rowCount) return res.status(409).json({ ok: false, error: "session_not_found", status: "session_not_found", message: "الحصة غير موجودة", student: publicStudent });
+      if (Number(sessionResult.rows[0].group_id) !== Number(student.group_id)) {
+        return res.status(409).json({ ok: false, error: "wrong_group", status: "wrong_group", message: "الطالب غير مسجل في هذه المجموعة", student: publicStudent });
+      }
+    } else {
+      const timing = await getAttendanceTimingDefaults();
+      await query(`INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, ends_at, status)
+      SELECT cs.group_id, cs.id, (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date,
+        ${cairoSessionTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "cs.start_time")},
+        ((((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+        ${cairoSessionCloseSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "$3")},
+        ${cairoSessionTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "cs.end_time")}, 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
-      WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (NOW() AT TIME ZONE 'Africa/Cairo'))::INTEGER
+      WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
-    await maintainScannerSessions(student.group_id);
-    const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN (s.opens_at AT TIME ZONE 'Africa/Cairo') AND (s.closes_at AT TIME ZONE 'Africa/Cairo') ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
-    if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"session_not_found",student: publicStudent});
+      await maintainScannerSessions(student.group_id);
+      sessionResult = await query(`SELECT s.*
+      FROM attendance_sessions s
+      JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
+      JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER
+      WHERE s.group_id=$1
+        AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+        AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN (s.opens_at AT TIME ZONE 'Africa/Cairo') AND (LEAST(s.closes_at, s.ends_at) AT TIME ZONE 'Africa/Cairo')
+      ORDER BY s.starts_at
+      LIMIT 1`, [student.group_id]);
+      if (!sessionResult.rowCount) return res.status(409).json({ ok: false, error: "closed_session", status: "closed_session", message: "لا توجد حصة مفتوحة لهذه المجموعة الآن", student: publicStudent });
+    }
     // Run hardware-bounce suppression only after the student and session are
     // known to be valid, so real database/business errors are never swallowed.
     if (isRecentScannerDuplicate(req.teacher.id, token, idempotencyKey)) {
       return res.status(200).json({ ok: true, status: "ignored_hardware_bounce" });
     }
     const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
+    const corrected = await query(`UPDATE attendance_records
+      SET status='present', method='scanner', checkin_time=NOW(), whatsapp_notified=$3, idempotency_key=COALESCE(idempotency_key,$4)
+      WHERE session_id=$1 AND student_id=$2 AND method='system' AND status='absent'
+      RETURNING *`, [sessionResult.rows[0].id, student.id, whatsappNotified, idempotencyKey]);
+    if (corrected.rowCount) {
+      await auditLog({ action: "attendance_recorded", actorId: req.teacher.id, studentId: student.id, sessionId: sessionResult.rows[0].id, details: { method: "scanner", status_before: "absent", status_after: "present", record_id: corrected.rows[0].id, corrected_system_absence: true }, request: req });
+      if (whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: corrected.rows[0].id, studentId: student.id })
+        .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
+      return res.json({ ok: true, status: "attendance_recorded", student: publicStudent, record: corrected.rows[0], corrected: true });
+    }
     const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,whatsappNotified,request:req});
     if (saved.replay) return res.status(200).json({ ok: true, status: "attendance_recorded", student: publicStudent, record: saved.record, replayed: true });
     if (saved.duplicate) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, studentId: student.id, sessionId: sessionResult.rows[0].id, details: { reason: saved.idempotencyConflict ? "idempotency_key_conflict" : "duplicate_student_scan", student_name: student.full_name, student_code: student.student_code }, request: req }); return res.status(409).json({ok:false,status:saved.idempotencyConflict ? "idempotency_conflict" : "duplicate_attendance",student: publicStudent,record:saved.record}); }
