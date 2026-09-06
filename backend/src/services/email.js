@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { promises as dns } from "node:dns";
 
 export const EMAIL_PROVIDERS = Object.freeze({
   GMAIL_SMTP: "gmail-smtp",
@@ -7,6 +8,7 @@ export const EMAIL_PROVIDERS = Object.freeze({
 
 export const EMAIL_MAX_RETRIES = 3;
 export const EMAIL_RETRY_INITIAL_DELAY_MS = 1_000;
+const GMAIL_SMTP_HOST = "smtp.gmail.com";
 
 export class EmailDeliveryError extends Error {
   constructor(message = "Email delivery failed", options = {}) {
@@ -31,6 +33,19 @@ function logEmailFailure(operation, context, error) {
 }
 
 const sleep = (durationMs) => new Promise((resolve) => setTimeout(resolve, durationMs));
+
+async function resolveGmailIpv4() {
+  try {
+    const result = await dns.lookup(GMAIL_SMTP_HOST, { family: 4 });
+    return result.address;
+  } catch (error) {
+    console.warn("[email] Gmail IPv4 DNS lookup failed; using hostname fallback", {
+      host: GMAIL_SMTP_HOST,
+      error: { name: error?.name || "Error", message: error?.message || String(error), code: error?.code }
+    });
+    return GMAIL_SMTP_HOST;
+  }
+}
 
 async function withEmailRetries(operation, task, { context = {}, maxRetries = EMAIL_MAX_RETRIES, sleepImpl = sleep } = {}) {
   let lastError;
@@ -102,7 +117,8 @@ export function createGmailTransporter(config, { createTransportImpl = nodemaile
       auth: { user: config.user, pass: config.appPassword },
       connectionTimeout: 10_000,
       greetingTimeout: 10_000,
-      socketTimeout: 10_000
+      socketTimeout: 10_000,
+      tls: { servername: config.servername || GMAIL_SMTP_HOST }
     });
   } catch (error) {
     logEmailFailure("gmail transporter creation", { host: config.host, port: config.port, secure: config.secure }, error);
@@ -112,7 +128,10 @@ export function createGmailTransporter(config, { createTransportImpl = nodemaile
 
 export async function sendGmailEmail({ to, fromName, fromEmail, subject, text, html, smtpConfig = readGmailSmtpConfig(), transporter = null, createTransportImpl, sleepImpl, maxRetries = EMAIL_MAX_RETRIES } = {}) {
   if (!validEmail(to) || !smtpConfig?.configured) throw new EmailDeliveryError();
-  const mailer = transporter || createGmailTransporter(smtpConfig, { createTransportImpl });
+  const transportConfig = transporter
+    ? smtpConfig
+    : { ...smtpConfig, host: await resolveGmailIpv4(), servername: GMAIL_SMTP_HOST };
+  const mailer = transporter || createGmailTransporter(transportConfig, { createTransportImpl });
   const message = {
       from: senderAddress(fromName || smtpConfig.fromName, fromEmail || smtpConfig.fromEmail),
       to,
@@ -122,7 +141,7 @@ export async function sendGmailEmail({ to, fromName, fromEmail, subject, text, h
   };
   try {
     await withEmailRetries("gmail sendMail", () => mailer.sendMail(message), {
-      context: { to, host: smtpConfig.host, port: smtpConfig.port, secure: smtpConfig.secure },
+      context: { to, host: transportConfig.host, port: transportConfig.port, secure: transportConfig.secure },
       sleepImpl,
       maxRetries
     });
@@ -134,12 +153,15 @@ export async function sendGmailEmail({ to, fromName, fromEmail, subject, text, h
 
 export async function verifyGmailSmtp({ smtpConfig = readGmailSmtpConfig(), transporter = null, createTransportImpl } = {}) {
   if (!smtpConfig?.configured) throw new EmailDeliveryError();
-  const mailer = transporter || createGmailTransporter(smtpConfig, { createTransportImpl });
+  const transportConfig = transporter
+    ? smtpConfig
+    : { ...smtpConfig, host: await resolveGmailIpv4(), servername: GMAIL_SMTP_HOST };
+  const mailer = transporter || createGmailTransporter(transportConfig, { createTransportImpl });
   try {
     await mailer.verify();
     return { ok: true };
   } catch (error) {
-    logEmailFailure("gmail SMTP verify", { host: smtpConfig.host, port: smtpConfig.port, secure: smtpConfig.secure }, error);
+    logEmailFailure("gmail SMTP verify", { host: transportConfig.host, port: transportConfig.port, secure: transportConfig.secure }, error);
     throw new EmailDeliveryError("Email delivery failed", { cause: error });
   }
 }
