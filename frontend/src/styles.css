@@ -3915,6 +3915,8 @@ textarea {
   display: grid;
   gap: 6px;
   align-content: start;
+  width: min(100%, 60mm);
+  min-height: 40mm;
   border: 1px dashed var(--line);
   border-radius: 10px;
   background: #f7f7f5;
@@ -4045,8 +4047,8 @@ textarea {
 
 .barcode-preview {
   display: block;
-  width: min(100%, 320px);
-  height: 72px;
+  width: min(100%, 420px);
+  height: 100px;
   margin: 4px auto 0;
 }
 
@@ -13079,15 +13081,15 @@ header a {
 }
 
 @page {
-  size: 50mm 30mm;
+  size: 60mm 40mm;
   margin: 0;
 }
 
 @media print {
   html,
   body {
-    width: 50mm;
-    height: 30mm;
+    width: 60mm;
+    height: 40mm;
     margin: 0;
     padding: 0;
     overflow: hidden;
