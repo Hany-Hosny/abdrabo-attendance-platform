@@ -828,10 +828,17 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
   const result = await query(`INSERT INTO attendance_records (session_id,student_id,status,method,ip_address,device_id,idempotency_key,whatsapp_notified)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING RETURNING *`, [sessionId, studentId, status, method, ip, deviceId, idempotencyKey, Boolean(whatsappNotified)]);
   if (!result.rowCount) {
-    const existing = await query("SELECT * FROM attendance_records WHERE (session_id=$1 AND student_id=$2) OR ($3 IS NOT NULL AND idempotency_key=$3) ORDER BY id LIMIT 1", [sessionId, studentId, idempotencyKey]);
-    if (idempotencyKey && existing.rows[0] && (Number(existing.rows[0].session_id) !== Number(sessionId) || Number(existing.rows[0].student_id) !== Number(studentId))) {
-      return { duplicate: true, idempotencyConflict: true, record: null };
+    if (idempotencyKey) {
+      const replay = await query("SELECT * FROM attendance_records WHERE idempotency_key=$1 LIMIT 1", [idempotencyKey]);
+      if (replay.rowCount) {
+        const record = replay.rows[0];
+        if (Number(record.session_id) !== Number(sessionId) || Number(record.student_id) !== Number(studentId)) {
+          return { duplicate: true, idempotencyConflict: true, record: null };
+        }
+        return { replay: true, record };
+      }
     }
+    const existing = await query("SELECT * FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1", [sessionId, studentId]);
     return { duplicate: true, record: existing.rows[0] || null };
   }
   await auditLog({ action: "attendance_recorded", actorId, studentId, sessionId, details: { method, status_after: status, record_id: result.rows[0].id, checkin_time: result.rows[0].checkin_time }, request });
@@ -907,11 +914,6 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
     const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
     if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
-    // A retry with the same idempotency key must reach the database. Only
-    // suppress separate, duplicate hardware events at the API boundary.
-    if (isRecentScannerDuplicate(req.teacher.id, token, idempotencyKey)) {
-      return res.status(200).json({ ok: true, status: "ignored_hardware_bounce" });
-    }
     const studentResult = await query(
       `SELECT s.id, s.full_name, s.student_serial, s.scan_serial, s.student_code, s.qr_token, s.group_id,
         s.phone, s.guardian_phone, s.is_active, s.deleted_at, g.name AS group_name,
@@ -954,8 +956,14 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     await maintainScannerSessions(student.group_id);
     const sessionResult=await query(`SELECT s.* FROM attendance_sessions s JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER WHERE s.group_id=$1 AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date AND s.status='open' AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN (s.opens_at AT TIME ZONE 'Africa/Cairo') AND (s.closes_at AT TIME ZONE 'Africa/Cairo') ORDER BY s.starts_at LIMIT 1`,[student.group_id]);
     if (!sessionResult.rowCount) return res.status(409).json({ok:false,status:"session_not_found",student: publicStudent});
+    // Run hardware-bounce suppression only after the student and session are
+    // known to be valid, so real database/business errors are never swallowed.
+    if (isRecentScannerDuplicate(req.teacher.id, token, idempotencyKey)) {
+      return res.status(200).json({ ok: true, status: "ignored_hardware_bounce" });
+    }
     const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
     const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,whatsappNotified,request:req});
+    if (saved.replay) return res.status(200).json({ ok: true, status: "attendance_recorded", student: publicStudent, record: saved.record, replayed: true });
     if (saved.duplicate) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, studentId: student.id, sessionId: sessionResult.rows[0].id, details: { reason: saved.idempotencyConflict ? "idempotency_key_conflict" : "duplicate_student_scan", student_name: student.full_name, student_code: student.student_code }, request: req }); return res.status(409).json({ok:false,status:saved.idempotencyConflict ? "idempotency_conflict" : "duplicate_attendance",student: publicStudent,record:saved.record}); }
     res.json({ok:true,status:"attendance_recorded",student: publicStudent,record:saved.record});
   } catch (error) { next(error); }

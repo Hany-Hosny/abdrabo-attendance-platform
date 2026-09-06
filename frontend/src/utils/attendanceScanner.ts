@@ -55,6 +55,8 @@ const STUDENT_STORE = "students";
 const OFFLINE_STORE = "offline_attendance";
 const MAX_CONCURRENT_REQUESTS = 3;
 const DEDUPE_WINDOW_MS = 1_500;
+const MAX_QUEUE_SIZE = 1_000;
+const MAX_RECENT_SCANS = 2_048;
 const INPUT_DEBOUNCE_MS = 90;
 const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 15_000, 30_000];
 
@@ -104,6 +106,11 @@ async function removeOfflineItem(id: string) {
   if (!database) return;
   const transaction = database.transaction(OFFLINE_STORE, "readwrite");
   transaction.objectStore(OFFLINE_STORE).delete(id);
+  await new Promise<void>((resolve) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => resolve();
+    transaction.onabort = () => resolve();
+  });
 }
 
 async function loadOfflineItems() {
@@ -166,12 +173,15 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   const inputDebounceRef = useRef<number | null>(null);
   const queueRef = useRef<QueueItem[]>([]);
   const queuedIdsRef = useRef(new Set<string>());
-  const retryTimersRef = useRef(new Set<number>());
+  const retryTimersRef = useRef(new Map<string, number>());
+  const requestControllersRef = useRef(new Set<AbortController>());
   const recentScansRef = useRef(new Map<string, number>());
   const studentCacheRef = useRef(new Map<string, CachedScannerStudent>());
   const activeRequestsRef = useRef(0);
   const mountedRef = useRef(true);
+  const latestScanIdRef = useRef<string | null>(null);
   const pumpRef = useRef<() => void>(() => undefined);
+  const restoreOfflineQueueRef = useRef<() => Promise<void>>(async () => undefined);
   const [inputValue, setInputValue] = useState("");
   const [student, setStudent] = useState<CachedScannerStudent | null>(null);
   const [message, setMessage] = useState("");
@@ -206,14 +216,27 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
     }
   }, []);
 
+  const publishForItem = useCallback((itemId: string, state: ScannerState, nextMessage: string, nextStudent: CachedScannerStudent | null, tone?: "success" | "duplicate" | "error" | "offline") => {
+    if (latestScanIdRef.current !== itemId) return;
+    publish(state, nextMessage, nextStudent, tone);
+  }, [publish]);
+
   const updatePendingCount = useCallback(() => {
     if (mountedRef.current) setPendingCount(queueRef.current.length + activeRequestsRef.current);
   }, []);
 
   const processItem = useCallback(async (item: QueueItem) => {
+    const retryTimer = retryTimersRef.current.get(item.id);
+    if (retryTimer !== undefined) {
+      window.clearTimeout(retryTimer);
+      retryTimersRef.current.delete(item.id);
+    }
+    const requestController = new AbortController();
+    requestControllersRef.current.add(requestController);
     activeRequestsRef.current += 1;
     updatePendingCount();
     try {
+      if (!mountedRef.current) return;
       if (typeof navigator !== "undefined" && navigator.onLine === false) throw new Error("offline");
       const response = await fetch(`${apiBaseUrl}/scanner/attendance`, {
         method: "POST",
@@ -222,7 +245,8 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
           Authorization: `Bearer ${authToken}`,
           "Idempotency-Key": item.id
         },
-        body: JSON.stringify({ value: item.token, device_id: deviceId || undefined, send_whatsapp: true })
+        body: JSON.stringify({ value: item.token, device_id: deviceId || undefined, send_whatsapp: true }),
+        signal: requestController.signal
       });
       const data = parseScannerResponse(await response.text());
       const status = String(data.status || (response.status === 404 ? "student_not_found" : ""));
@@ -236,41 +260,53 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
           void saveStudentCache([data.student]);
         }
         await removeOfflineItem(item.id);
-        publish("success", `${data.student?.full_name || item.token} — ${messages.recorded}`, data.student || item.student || null, "success");
+        publishForItem(item.id, "success", `${data.student?.full_name || item.token} — ${messages.recorded}`, data.student || item.student || null, "success");
       } else if (status === "duplicate_attendance") {
         await removeOfflineItem(item.id);
-        publish("error", `${data.student?.full_name ? `${data.student.full_name} — ` : ""}${messages.duplicate}`, data.student || item.student || null, "duplicate");
+        publishForItem(item.id, "error", `${data.student?.full_name ? `${data.student.full_name} — ` : ""}${messages.duplicate}`, data.student || item.student || null, "duplicate");
       } else if (response.status >= 500 || response.status === 429) {
         throw new Error("retryable_server_error");
       } else {
         await removeOfflineItem(item.id);
         const resolvedMessage = status === "student_not_found" ? messages.studentNotFound : messages.resolveStatus?.(status) || messages.serverError;
-        publish("error", resolvedMessage, data.student || item.student || null, "error");
+        publishForItem(item.id, "error", resolvedMessage, data.student || item.student || null, "error");
       }
     } catch (_error) {
+      if (!mountedRef.current || requestController.signal.aborted) return;
       item.attempts += 1;
       await saveOfflineItem(item);
-      publish("loading", messages.savedLocally, null);
+      if (!mountedRef.current) return;
+      publishForItem(item.id, "loading", messages.savedLocally, null);
       const delay = RETRY_DELAYS_MS[Math.min(item.attempts - 1, RETRY_DELAYS_MS.length - 1)];
       if (item.attempts <= RETRY_DELAYS_MS.length) {
         const timer = window.setTimeout(() => {
-          retryTimersRef.current.delete(timer);
+          if (retryTimersRef.current.get(item.id) !== timer) return;
+          retryTimersRef.current.delete(item.id);
+          if (!mountedRef.current) return;
           if (!queuedIdsRef.current.has(item.id)) {
+            if (queueRef.current.length >= MAX_QUEUE_SIZE) {
+              void restoreOfflineQueueRef.current();
+              return;
+            }
             queuedIdsRef.current.add(item.id);
             queueRef.current.push(item);
             updatePendingCount();
-            pumpRef.current();
+            if (mountedRef.current) pumpRef.current();
           }
         }, delay);
-        retryTimersRef.current.add(timer);
+        retryTimersRef.current.set(item.id, timer);
       }
     } finally {
+      requestControllersRef.current.delete(requestController);
       activeRequestsRef.current = Math.max(0, activeRequestsRef.current - 1);
       queuedIdsRef.current.delete(item.id);
-      updatePendingCount();
-      pumpRef.current();
+      if (mountedRef.current) {
+        updatePendingCount();
+        pumpRef.current();
+        void restoreOfflineQueueRef.current();
+      }
     }
-  }, [apiBaseUrl, authToken, deviceId, messages, publish, updatePendingCount]);
+  }, [apiBaseUrl, authToken, deviceId, messages, publishForItem, updatePendingCount]);
 
   const pump = useCallback(() => {
     while (activeRequestsRef.current < MAX_CONCURRENT_REQUESTS && queueRef.current.length) {
@@ -282,6 +318,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   pumpRef.current = pump;
 
   const enqueueScan = useCallback(async (rawValue: string) => {
+    if (!mountedRef.current) return;
     const token = normalizeScanValue(rawValue);
     if (!token) {
       publish("error", messages.scanRequired, null, "error");
@@ -292,6 +329,11 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
     const previousScanAt = recentScansRef.current.get(token);
     recentScansRef.current.set(token, now);
     for (const [value, at] of recentScansRef.current) if (now - at > DEDUPE_WINDOW_MS) recentScansRef.current.delete(value);
+    if (recentScansRef.current.size > MAX_RECENT_SCANS) {
+      const overflow = recentScansRef.current.size - MAX_RECENT_SCANS;
+      const oldest = [...recentScansRef.current.entries()].sort((left, right) => left[1] - right[1]).slice(0, overflow);
+      for (const [value] of oldest) recentScansRef.current.delete(value);
+    }
     if (previousScanAt && now - previousScanAt < DEDUPE_WINDOW_MS) {
       return;
     }
@@ -299,13 +341,19 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
     setInputValue("");
     const cachedStudent = studentCacheRef.current.get(token) || null;
     const item: QueueItem = { id: createIdempotencyKey(), token, createdAt: now, attempts: 0, student: cachedStudent || undefined };
-    queueRef.current.push(item);
-    queuedIdsRef.current.add(item.id);
+    latestScanIdRef.current = item.id;
     void saveOfflineItem(item);
-    publish("loading", "", null);
+    if (queueRef.current.length < MAX_QUEUE_SIZE) {
+      queueRef.current.push(item);
+      queuedIdsRef.current.add(item.id);
+    }
+    publishForItem(item.id, "loading", queueRef.current.includes(item) ? "" : messages.savedLocally, null);
     updatePendingCount();
-    pumpRef.current();
-  }, [messages, publish, updatePendingCount]);
+    if (mountedRef.current) {
+      pumpRef.current();
+      if (!queuedIdsRef.current.has(item.id)) void restoreOfflineQueueRef.current();
+    }
+  }, [messages, publishForItem, updatePendingCount]);
   enqueueScanRef.current = enqueueScan;
 
   const commitInput = useCallback(() => {
@@ -327,20 +375,35 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   }, [commitInput]);
 
   const restoreOfflineQueue = useCallback(async () => {
+    if (!mountedRef.current) return;
     const items = await loadOfflineItems();
-    for (const item of items.sort((left, right) => left.createdAt - right.createdAt)) {
+    if (!mountedRef.current) return;
+    const orderedItems = items.sort((left, right) => left.createdAt - right.createdAt);
+    if (!latestScanIdRef.current && orderedItems.length) latestScanIdRef.current = orderedItems[orderedItems.length - 1].id;
+    for (const item of orderedItems) {
+      if (!mountedRef.current) return;
+      const retryTimer = retryTimersRef.current.get(item.id);
+      if (retryTimer !== undefined) {
+        window.clearTimeout(retryTimer);
+        retryTimersRef.current.delete(item.id);
+      }
       if (queuedIdsRef.current.has(item.id)) continue;
+      if (queueRef.current.length >= MAX_QUEUE_SIZE) break;
       queuedIdsRef.current.add(item.id);
       queueRef.current.push(item);
     }
-    updatePendingCount();
-    pumpRef.current();
+    if (mountedRef.current) {
+      updatePendingCount();
+      pumpRef.current();
+    }
   }, [updatePendingCount]);
+  restoreOfflineQueueRef.current = restoreOfflineQueue;
 
   useEffect(() => {
     mountedRef.current = true;
     inputRef.current?.focus({ preventScroll: true });
     const controller = new AbortController();
+    requestControllersRef.current.add(controller);
     async function syncCache() {
       const storedRows = await loadStudentCache();
       for (const row of storedRows) studentCacheRef.current.set(row.key, row.student);
@@ -356,6 +419,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
       } catch (_error) {
         // The persisted cache remains available when the refresh is offline.
       } finally {
+        requestControllersRef.current.delete(controller);
         if (!controller.signal.aborted && mountedRef.current) setCacheReady(true);
       }
     }
@@ -366,9 +430,11 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
     return () => {
       mountedRef.current = false;
       controller.abort();
+      for (const requestController of requestControllersRef.current) requestController.abort();
+      requestControllersRef.current.clear();
       window.removeEventListener("online", handleOnline);
       if (inputDebounceRef.current !== null) window.clearTimeout(inputDebounceRef.current);
-      for (const timer of retryTimersRef.current) window.clearTimeout(timer);
+      for (const timer of retryTimersRef.current.values()) window.clearTimeout(timer);
       retryTimersRef.current.clear();
     };
   }, [apiBaseUrl, authToken, restoreOfflineQueue]);
