@@ -3383,8 +3383,8 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
   return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>Student Label</title><style>
     @page{size:60mm 40mm;margin:0}
     *{box-sizing:border-box}
-    html,body{width:60mm;height:40mm;margin:0;padding:0}
-    body{display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1mm 2mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff}
+    html,body{width:60mm;height:40mm;min-height:0;max-height:40mm;margin:0;padding:0;overflow:hidden;break-after:avoid-page;page-break-after:avoid}
+    body{display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden;padding:1mm 2mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff;break-inside:avoid;page-break-inside:avoid}
     .brand,.name,.code,.grade,.scan-value{max-width:56mm;white-space:nowrap;overflow:hidden;text-overflow:clip}
     .brand{font-size:10.5px;line-height:1.05;font-weight:800}
     .name{font-size:11.5px;line-height:1.05;font-weight:700;margin:.65mm 0 .3mm}
@@ -3393,7 +3393,7 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
     .barcode{display:flex;align-items:center;justify-content:center;width:58mm;height:14mm;margin:.7mm auto 0;overflow:hidden;padding:0 .25mm}
     .barcode svg{display:block;width:57mm;height:14mm;shape-rendering:crispEdges}
     .scan-value{font-size:11.5px;line-height:1;font-weight:900;margin-top:.4mm;letter-spacing:.2px}
-    @media print{html,body{width:60mm;height:40mm;margin:0;padding:0;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+    @media print{html,body{width:60mm!important;height:40mm!important;min-height:0!important;max-height:40mm!important;margin:0!important;padding:0!important;overflow:hidden!important;break-after:avoid-page;page-break-after:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style></head><body>
     <div class="brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</div>
     <div class="name">${escapeHtml(student.full_name || "")}</div>
