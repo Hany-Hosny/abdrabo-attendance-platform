@@ -648,6 +648,8 @@ const translations = {
     "fees.paidPayments": "المدفوع",
     "fees.latePayments": "المتأخر",
     "fees.scanStudent": "امسح مسلسل الطالب أو رمز QR",
+    "fees.cameraProcessing": "جاري البحث عن الطالب...",
+    "fees.scanSuccess": "تم العثور على الطالب. راجع البيانات قبل الدفع.",
     "fees.find": "بحث",
     "fees.required": "المطلوب حتى الآن",
     "fees.paid": "المدفوع",
@@ -1923,6 +1925,8 @@ const translations = {
     "fees.paidPayments": "Paid Payments",
     "fees.latePayments": "Late Payments",
     "fees.scanStudent": "Scan student serial or QR code",
+    "fees.cameraProcessing": "Finding student...",
+    "fees.scanSuccess": "Student found. Review the details before payment.",
     "fees.find": "Find",
     "fees.required": "Required so far",
     "fees.paid": "Paid",
@@ -3355,7 +3359,10 @@ function labelScanSerial(student: Record<string, any>) {
 }
 
 function labelBarcodeValue(student: Record<string, any>) {
-  return String(labelScanSerial(student) || student.student_code || "").trim();
+  // The student code is unique and much shorter than the internal scan serial.
+  // On a 60 mm label this gives Code 128 sufficiently wide bars for a fast,
+  // first-pass read from handheld scanners. The scanner API accepts both values.
+  return String(student.student_code || labelScanSerial(student) || "").trim();
 }
 
 function buildStudentLabelMarkup(student: Record<string, any>) {
@@ -3376,6 +3383,9 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
       marginRight: 18
     });
     barcode.setAttribute("shape-rendering", "crispEdges");
+    // Fill the fixed physical label width instead of preserving the SVG's
+    // generated aspect ratio, which made short values print with narrow bars.
+    barcode.setAttribute("preserveAspectRatio", "none");
   }
   const grade = student.grade || student.grade_level || "";
   const group = student.group_name || student.group || "";
@@ -3385,17 +3395,19 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
     *{box-sizing:border-box}
     html,body{width:60mm;height:40mm;min-height:0;max-height:40mm;margin:0;padding:0;overflow:hidden;break-after:avoid-page;page-break-after:avoid}
     body{display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden;padding:1mm 2mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff;break-inside:avoid;page-break-inside:avoid}
-    .brand,.name,.code,.grade,.scan-value{max-width:56mm;white-space:nowrap;overflow:hidden;text-overflow:clip}
-    .brand{font-size:10.5px;line-height:1.05;font-weight:800}
-    .name{font-size:11.5px;line-height:1.05;font-weight:700;margin:.65mm 0 .3mm}
-    .code{font-size:9.8px;line-height:1.05;font-weight:800}
-    .grade{font-size:9.2px;line-height:1.1;margin-top:.3mm;font-weight:800}
-    .barcode{display:flex;align-items:center;justify-content:center;width:58mm;height:14mm;margin:.7mm auto 0;overflow:hidden;padding:0 .25mm}
-    .barcode svg{display:block;width:57mm;height:14mm;shape-rendering:crispEdges}
-    .scan-value{font-size:11.5px;line-height:1;font-weight:900;margin-top:.4mm;letter-spacing:.2px}
+    .brand,.name,.code,.grade,.scan-value{max-width:56mm;min-width:0}
+    .brand{display:grid;gap:.1mm;font-size:9.5px;line-height:1.05;font-weight:800;overflow:visible}
+    .brand-ar,.brand-en{display:block;white-space:nowrap}
+    .brand-en{direction:ltr;font-size:8.2px;font-weight:700}
+    .name{font-size:11.5px;line-height:1.05;font-weight:700;margin:.65mm 0 .3mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .code{font-size:9.8px;line-height:1.05;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .grade{font-size:9.2px;line-height:1.1;margin-top:.3mm;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .barcode{display:flex;align-items:center;justify-content:center;width:58mm;height:15.5mm;margin:.7mm auto 0;overflow:hidden;padding:0 .25mm}
+    .barcode svg{display:block;width:57mm;height:15.5mm;shape-rendering:crispEdges}
+    .scan-value{font-size:11.5px;line-height:1;font-weight:900;margin-top:.4mm;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr}
     @media print{html,body{width:60mm!important;height:40mm!important;min-height:0!important;max-height:40mm!important;margin:0!important;padding:0!important;overflow:hidden!important;break-after:avoid-page;page-break-after:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
   </style></head><body>
-    <div class="brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</div>
+    <div class="brand"><span class="brand-ar">مستر أحمد عبدربه</span><span class="brand-en">Mr. Ahmed Abdrabo</span></div>
     <div class="name">${escapeHtml(student.full_name || "")}</div>
     <div class="code">${escapeHtml(student.student_code || "")}</div>
     <div class="grade">${escapeHtml(gradeAndGroup)}</div>
@@ -5259,7 +5271,7 @@ function TeacherDashboard({
             {activeTab === "groups" && can("schedule.view") ? <AcademicManager kind="groups" session={session} t={t} /> : null}
             {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
             {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} onOpenCamera={() => setCameraScannerOpen(true)} /> : null}
-            {activeTab === "fees" && can("payments.view") ? <FeesPanel session={session} t={t} /> : null}
+            {activeTab === "fees" && can("payments.view") ? <FeesPanel session={session} language={language} t={t} /> : null}
             {activeTab === "reports" && can("payments.view") && can("payments.reports.view") ? <FinanceReportsPanel session={session} language={language} t={t} canReverse={can("payments.reverse")} /> : null}
             {activeTab === "attendance" && can("attendance.view") ? <AttendancePanel session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} onSessionIdChange={setSelectedAttendanceSessionId} /> : null}
             {activeTab === "exams" && can("exams.view") ? <ExamResultsManager session={session} t={t} /> : null}
@@ -7351,6 +7363,7 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
 }
 
 type CameraScannerToast = { tone: "success" | "error"; message: string };
+type CameraScanHandler = (value: string) => Promise<string | undefined>;
 
 function MobileScannerModal({
   open,
@@ -7358,7 +7371,8 @@ function MobileScannerModal({
   session,
   language,
   t,
-  selectedSessionId
+  selectedSessionId,
+  onScan
 }: {
   open: boolean;
   onClose: () => void;
@@ -7366,6 +7380,7 @@ function MobileScannerModal({
   language: Language;
   t: Translator;
   selectedSessionId?: string;
+  onScan?: CameraScanHandler;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
@@ -7380,9 +7395,13 @@ function MobileScannerModal({
   const [toast, setToast] = useState<CameraScannerToast | null>(null);
   const [retryKey, setRetryKey] = useState(0);
   const selectedSessionIdRef = useRef(selectedSessionId);
+  const onScanRef = useRef(onScan);
   useEffect(() => {
     selectedSessionIdRef.current = selectedSessionId;
   }, [selectedSessionId]);
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   async function submitCameraScan(value: string, fromCamera = false) {
     if (cameraBusyRef.current) return;
@@ -7400,42 +7419,52 @@ function MobileScannerModal({
     setManualCode("");
     setToast(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/scanner/attendance`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.token}`,
-          "Idempotency-Key": createIdempotencyKey()
-        },
-        body: JSON.stringify({ value: token, session_id: selectedSessionIdRef.current || undefined, send_whatsapp: true })
-      });
-      const rawBody = await response.text();
-      let data: { ok?: boolean; status?: string; student?: any } = {};
-      try {
-        data = rawBody ? JSON.parse(rawBody) : {};
-      } catch (_error) {
-        data = {};
-      }
-      if (data.status === "ignored_hardware_bounce") return;
-      if (response.ok && data.ok) {
-        const studentName = data.student?.full_name || token;
-        setToast({ tone: "success", message: `${studentName} — ${t("scanner.recorded")}` });
+      if (onScanRef.current) {
+        const successMessage = await onScanRef.current(token);
+        setToast({ tone: "success", message: successMessage || t("fees.scanSuccess") });
         if (fromCamera) {
           playScannerFeedback("success");
           if (typeof navigator.vibrate === "function") navigator.vibrate(100);
         }
-        if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
-        toastTimerRef.current = window.setTimeout(() => {
-          setToast(null);
-          toastTimerRef.current = null;
-        }, 2600);
       } else {
-        const name = data.student?.full_name ? `${data.student.full_name} — ` : "";
-        setToast({ tone: "error", message: `${name}${scannerStatusMessage(String(data.status || ""), t)}` });
-        playScannerFeedback("error");
+        const response = await fetch(`${API_BASE_URL}/scanner/attendance`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.token}`,
+            "Idempotency-Key": createIdempotencyKey()
+          },
+          body: JSON.stringify({ value: token, session_id: selectedSessionIdRef.current || undefined, send_whatsapp: true })
+        });
+        const rawBody = await response.text();
+        let data: { ok?: boolean; status?: string; student?: any } = {};
+        try {
+          data = rawBody ? JSON.parse(rawBody) : {};
+        } catch (_error) {
+          data = {};
+        }
+        if (data.status === "ignored_hardware_bounce") return;
+        if (response.ok && data.ok) {
+          const studentName = data.student?.full_name || token;
+          setToast({ tone: "success", message: `${studentName} — ${t("scanner.recorded")}` });
+          if (fromCamera) {
+            playScannerFeedback("success");
+            if (typeof navigator.vibrate === "function") navigator.vibrate(100);
+          }
+        } else {
+          const name = data.student?.full_name ? `${data.student.full_name} — ` : "";
+          setToast({ tone: "error", message: `${name}${scannerStatusMessage(String(data.status || ""), t)}` });
+          playScannerFeedback("error");
+        }
       }
-    } catch (_error) {
-      setToast({ tone: "error", message: t("scanner.networkError") });
+      if (toastTimerRef.current !== null) window.clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = window.setTimeout(() => {
+        setToast(null);
+        toastTimerRef.current = null;
+      }, 2600);
+    } catch (error) {
+      const errorMessage = error instanceof Error && error.message ? error.message : t("scanner.networkError");
+      setToast({ tone: "error", message: errorMessage });
       playScannerFeedback("error");
     } finally {
       cameraBusyRef.current = false;
@@ -7553,7 +7582,7 @@ function MobileScannerModal({
       <section className="camera-scanner-modal" dir={language === "ar" ? "rtl" : "ltr"} role="dialog" aria-modal="true" aria-labelledby="camera-scanner-title">
         <div className="camera-scanner-header">
           <div>
-            <span className="camera-scanner-kicker">{t("admin.tabs.scanner")}</span>
+            <span className="camera-scanner-kicker">{onScan ? t("admin.tabs.fees") : t("admin.tabs.scanner")}</span>
             <h2 id="camera-scanner-title">{t("scanner.cameraTitle")}</h2>
             <p>{t("scanner.cameraDescription")}</p>
           </div>
@@ -7575,7 +7604,7 @@ function MobileScannerModal({
           <label htmlFor="camera-scanner-manual-code">{t("scanner.manualCodeLabel")}</label>
           <div className="camera-scanner-manual-row">
             <input id="camera-scanner-manual-code" dir="ltr" type="text" value={manualCode} onChange={(event) => setManualCode(event.target.value.slice(0, 128))} placeholder={t("scanner.manualCodePlaceholder")} autoComplete="off" disabled={processing} />
-            <button className="primary-button" type="submit" disabled={processing || !manualCode.trim()}>{processing ? t("scanner.cameraProcessing") : t("scanner.submit")}</button>
+            <button className="primary-button" type="submit" disabled={processing || !manualCode.trim()}>{processing ? (onScan ? t("fees.cameraProcessing") : t("scanner.cameraProcessing")) : (onScan ? t("fees.find") : t("scanner.submit"))}</button>
           </div>
         </form>
       </section>
@@ -7828,7 +7857,7 @@ function normalizeSearchText(value: unknown) {
     .replace(/\s+/g, " ");
 }
 
-function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
+function FeesPanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
   const canCollect = sessionHasPermission(session, "payments.collect");
   const canAdvance = sessionHasPermission(session, "payments.advance");
   const canSendReceipts = sessionHasPermission(session, "whatsapp.send_receipts");
@@ -7841,6 +7870,7 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [advanceLoading, setAdvanceLoading] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [sendReceipt, setSendReceipt] = useState(canSendReceipts);
   const auth = { Authorization: `Bearer ${session.token}` };
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -7854,21 +7884,21 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
     setLookupLoading(false);
   }, [mode]);
 
-  async function lookup(event: React.FormEvent) {
-    event.preventDefault();
+  async function lookupValue(rawValue: string): Promise<{ ok: boolean; error?: string }> {
     setStatus("");
     setSummary(null);
     setAdvanceData(null);
     setSelectedMonths([]);
     setSendReceipt(canSendReceipts);
-    const value = normalizeScanValue(code);
+    const value = normalizeScanValue(rawValue);
     const now = Date.now();
     if (!value) {
-      setStatus(t("fees.studentNotFound"));
+      const error = t("fees.studentNotFound");
+      setStatus(error);
       inputRef.current?.focus();
-      return;
+      return { ok: false, error };
     }
-    if (lookupBusyRef.current || (lastLookupRef.current.value === value && now - lastLookupRef.current.at < 300)) return;
+    if (lookupBusyRef.current || (lastLookupRef.current.value === value && now - lastLookupRef.current.at < 300)) return { ok: false, error: t("fees.paymentFailed") };
     lookupBusyRef.current = true;
     lastLookupRef.current = { value, at: now };
     setCode("");
@@ -7879,21 +7909,37 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
       const response = await fetch(`${API_BASE_URL}/admin/fees/scan-lookup`, { method: "POST", headers: { "Content-Type": "application/json", ...auth }, body: JSON.stringify({ value, mode }), signal: controller.signal });
       const data = await response.json();
       if (!response.ok || !data.ok) {
-        setStatus(paymentErrorMessage(data.status, data.message, t));
-        return;
+        const error = paymentErrorMessage(data.status, data.message, t);
+        setStatus(error);
+        return { ok: false, error };
       }
       if (mode === "advance") setAdvanceData(data);
       else setSummary(data.summary || null);
       setStatus("");
+      return { ok: true };
     } catch {
-      if (controller.signal.aborted) return;
-      setStatus(mode === "advance" ? t("fees.advanceFailed") : t("fees.paymentFailed"));
+      if (controller.signal.aborted) return { ok: false };
+      const error = mode === "advance" ? t("fees.advanceFailed") : t("fees.paymentFailed");
+      setStatus(error);
+      return { ok: false, error };
     } finally {
       lookupBusyRef.current = false;
       requestAbortRef.current = null;
       setLookupLoading(false);
       window.setTimeout(() => inputRef.current?.focus(), 0);
     }
+  }
+
+  async function lookup(event: React.FormEvent) {
+    event.preventDefault();
+    await lookupValue(code);
+  }
+
+  async function lookupFromCamera(value: string) {
+    const result = await lookupValue(value);
+    if (!result.ok) throw new Error(result.error || t("fees.paymentFailed"));
+    setCameraOpen(false);
+    return t("fees.scanSuccess");
   }
 
   async function pay() {
@@ -7974,7 +8020,12 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
   const availableMonthsCount = advanceMonths.filter((month: any) => month.available).length;
 
   return <section className="admin-editor fees-panel">
-    <div className="section-heading"><h2>{mode === "advance" ? t("fees.advanceTitle") : t("fees.title")}</h2></div>
+    <div className="section-heading fees-panel-heading">
+      <h2>{mode === "advance" ? t("fees.advanceTitle") : t("fees.title")}</h2>
+      <button className="secondary-button compact-button scanner-camera-button" type="button" onClick={() => setCameraOpen(true)} disabled={lookupLoading}>
+        <span aria-hidden="true">▥</span>{t("scanner.openCamera")}
+      </button>
+    </div>
     <div className="internal-tabs">
       {canCollect ? <button className={mode === "new" ? "active" : ""} type="button" onClick={() => { setMode("new"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setSendReceipt(true); setStatus(""); }}>{t("fees.newPayment")}</button> : null}
       {canAdvance ? <button className={mode === "advance" ? "active" : ""} type="button" onClick={() => { setMode("advance"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setSendReceipt(true); setStatus(""); }}>{t("fees.advancePayment")}</button> : null}
@@ -7983,6 +8034,7 @@ function FeesPanel({ session, t }: { session: TeacherSession; t: Translator }) {
     {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>{canCollect ? <><small>{t("fees.fullOnly")}</small>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="secondary-button" type="button" onClick={pay} disabled={paymentLoading}>{paymentLoading ? t("dashboard.refreshing") : t("fees.payFull")}</button></> : null}</div> : null}
     {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : monthlyFee <= 0 ? <p className="empty-state">{t("fees.advanceFeeNotConfigured")}</p> : <><div className="advance-sequence-heading"><div><span className="advance-section-kicker">{t("fees.advancePayment")}</span><h3>{t("fees.advanceMonths")}</h3><p>{t("fees.advanceSequenceHint")}</p></div><div className="advance-selection-summary"><span className="advance-sequence-count"><strong>{selectedMonths.length}</strong><small>{t("fees.advanceSelected")}</small></span><span className="advance-available-count"><strong>{availableMonthsCount}</strong><small>{t("fees.advanceAvailableMonth")}</small></span></div></div><div className="advance-month-legend" aria-label={t("fees.advanceMonths")}><span className="advance-legend-item is-next"><i aria-hidden="true" />{t("fees.advanceAvailableMonth")}</span><span className="advance-legend-item is-paid"><i aria-hidden="true" />{t("fees.advancePaidMonth")}</span><span className="advance-legend-item is-locked"><i aria-hidden="true" />{t("fees.advanceLockedStatus")}</span></div><div className="advance-month-grid">{advanceMonths.map((month: any, index: number) => { const key = monthKey(month); const paid = isMonthPaid(month); const selected = selectedMonthSet.has(key); const unlocked = isMonthUnlocked(index); const locked = !paid && !unlocked; const stateLabel = paid ? t("fees.advancePaidMonth") : locked ? t("fees.advanceLockedMonth") : selected ? t("fees.advanceSelectedStatus") : t("fees.advanceAvailableMonth"); return <label className={`advance-month-option ${paid ? "is-paid" : unlocked ? "is-next" : "is-locked"} ${selected ? "is-selected" : ""}`} key={month.month} title={locked ? t("fees.advanceLockedMonth") : stateLabel}><span className="advance-month-card-top"><span className={`advance-month-state-icon ${paid ? "is-paid" : locked ? "is-locked" : "is-next"}`} aria-hidden="true">{paid ? "✓" : String(index + 1).padStart(2, "0")}</span><span className="advance-month-status">{stateLabel}</span></span><span className="advance-month-content"><strong>{monthLabel(month.month)}</strong><small>{locked ? t("fees.advanceLockedMonth") : t("fees.advancePaymentLabel")}</small></span><span className="advance-month-footer"><b>{Number(month.remaining_amount || month.amount || 0).toFixed(2)} EGP</b>{paid ? <span className="advance-month-paid-mark" aria-label={t("fees.advancePaidMonth")}>✓</span> : <input type="checkbox" checked={selected} disabled={!unlocked && !selected} aria-label={`${monthLabel(month.month)} — ${stateLabel}`} onChange={(event) => toggleAdvanceMonth(month, index, event.target.checked)} />}</span></label>; })}</div>{!advanceMonths.some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total"><span>{t("fees.advanceSelected")}: <strong>{selectedMonths.length}</strong></span><span>{t("fees.advanceTotal")}: <strong>{totalAdvance.toFixed(2)} EGP</strong></span></p>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
+    <MobileScannerModal open={cameraOpen} onClose={() => setCameraOpen(false)} session={session} language={language} t={t} onScan={lookupFromCamera} />
   </section>;
 }
 
@@ -10357,6 +10409,7 @@ function BarcodePreview({ value, displayValue = true }: { value: string; display
         marginLeft: 18,
         marginRight: 18
       });
+      barcodeRef.current.setAttribute("preserveAspectRatio", "none");
     } catch (_error) {
       if (barcodeRef.current) barcodeRef.current.innerHTML = "";
     }
