@@ -1265,6 +1265,9 @@ const translations = {
     "admin.clearDaySelection": "إلغاء تحديد الأيام",
     "admin.selectStudentCheckbox": "تحديد الطالب",
     "admin.selectedStudents": "تم تحديد {{count}} طلاب",
+    "admin.batchPrintLabels": "طباعة ليبل للمحدد ({{count}})",
+    "admin.batchPrintLabelsLoading": "جاري تجهيز {{count}} ليبل...",
+    "admin.batchPrintLabelsSuccess": "تم تجهيز {{count}} ليبل للطباعة",
     "admin.bulkDelete": "حذف المحدد ({{count}})",
     "admin.bulkDeleteLoading": "جاري حذف {{count}} طلاب...",
     "admin.bulkDeleteSuccess": "تم حذف {{count}} طلاب",
@@ -2542,6 +2545,9 @@ const translations = {
     "admin.clearDaySelection": "Clear day selection",
     "admin.selectStudentCheckbox": "Select student",
     "admin.selectedStudents": "{{count}} students selected",
+    "admin.batchPrintLabels": "Print selected labels ({{count}})",
+    "admin.batchPrintLabelsLoading": "Preparing {{count}} labels...",
+    "admin.batchPrintLabelsSuccess": "{{count}} labels ready to print",
     "admin.bulkDelete": "Delete selected ({{count}})",
     "admin.bulkDeleteLoading": "Deleting {{count}} students...",
     "admin.bulkDeleteSuccess": "Deleted {{count}} students",
@@ -3365,7 +3371,7 @@ function labelBarcodeValue(student: Record<string, any>) {
   return String(student.student_code || labelScanSerial(student) || "").trim();
 }
 
-function buildStudentLabelMarkup(student: Record<string, any>) {
+function buildStudentLabelSheetMarkup(student: Record<string, any>) {
   const barcodeValue = labelBarcodeValue(student);
   const barcode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   if (barcodeValue) {
@@ -3390,6 +3396,16 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
   const grade = student.grade || student.grade_level || "";
   const group = student.group_name || student.group || "";
   const gradeAndGroup = [grade, group].filter(Boolean).join(" · ");
+  return `<main class="label-sheet">
+      <div class="brand">Mr. Ahmed Abdrabo</div>
+      <div class="name">${escapeHtml(student.full_name || "")}</div>
+      <div class="code">${escapeHtml(student.student_code || "")}</div>
+      <div class="grade">${escapeHtml(gradeAndGroup)}</div>
+      ${barcodeValue ? `<div class="barcode">${barcode.outerHTML}</div><div class="scan-value">${escapeHtml(barcodeValue)}</div>` : ""}
+    </main>`;
+}
+
+function buildStudentLabelsMarkup(students: Array<Record<string, any>>) {
   return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>Student Label</title><style>
     @page{size:60mm 40mm;margin:0}
     *{box-sizing:border-box}
@@ -3404,16 +3420,14 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
     .barcode{display:flex;align-items:center;justify-content:center;width:58mm;height:18mm;margin:.7mm auto 0;overflow:hidden;padding:0 .25mm}
     .barcode svg{display:block;width:57mm;height:18mm;shape-rendering:crispEdges}
     .scan-value{font-size:11.5px;line-height:1;font-weight:900;margin-top:.4mm;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr}
-    @media print{html,body{width:60mm!important;height:auto!important;min-height:0!important;max-height:none!important;margin:0!important;padding:0!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.label-sheet{position:relative!important;width:60mm!important;height:39.5mm!important;min-height:0!important;max-height:39.5mm!important;margin:0!important;overflow:hidden!important}}
+    @media print{html,body{width:60mm!important;height:auto!important;min-height:0!important;max-height:none!important;margin:0!important;padding:0!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.label-sheet{position:relative!important;width:60mm!important;height:39.5mm!important;min-height:0!important;max-height:39.5mm!important;margin:0!important;overflow:hidden!important}.label-sheet:not(:last-child){break-after:page;page-break-after:always}}
   </style></head><body>
-    <main class="label-sheet">
-      <div class="brand">Mr. Ahmed Abdrabo</div>
-      <div class="name">${escapeHtml(student.full_name || "")}</div>
-      <div class="code">${escapeHtml(student.student_code || "")}</div>
-      <div class="grade">${escapeHtml(gradeAndGroup)}</div>
-      ${barcodeValue ? `<div class="barcode">${barcode.outerHTML}</div><div class="scan-value">${escapeHtml(barcodeValue)}</div>` : ""}
-    </main>
+    ${students.map(buildStudentLabelSheetMarkup).join("")}
   </body></html>`;
+}
+
+function buildStudentLabelMarkup(student: Record<string, any>) {
+  return buildStudentLabelsMarkup([student]);
 }
 
 function DateTimeWidget({
@@ -6276,7 +6290,8 @@ function AcademicManager({
   const bulkDeleteFeedback = useActionFeedback();
   const bulkRestoreFeedback = useActionFeedback();
   const permanentBulkDeleteFeedback = useActionFeedback();
-  const bulkActionsBusy = [bulkDeleteFeedback.state, bulkRestoreFeedback.state, permanentBulkDeleteFeedback.state].some((state) => state === "loading");
+  const batchPrintFeedback = useActionFeedback();
+  const bulkActionsBusy = [bulkDeleteFeedback.state, bulkRestoreFeedback.state, permanentBulkDeleteFeedback.state, batchPrintFeedback.state].some((state) => state === "loading");
   const [studentActionStates, setStudentActionStates] = useState<Record<string, ActionButtonState>>({});
   const studentActionTimers = useRef<Record<string, number>>({});
   const [studentCardNotices, setStudentCardNotices] = useState<Record<number, StudentCardNotice | undefined>>({});
@@ -6955,6 +6970,43 @@ function AcademicManager({
     }, t("admin.labelReady"));
   }
 
+  async function handleBatchPrint() {
+    const studentIds = [...selectedStudentIds];
+    if (!studentIds.length || bulkActionsBusy || !sessionHasPermission(session, "students.manage")) return;
+
+    // Open synchronously from the click handler so browsers do not block the print window
+    // while the protected label requests are being completed.
+    const printWindow = window.open("", "_blank", "width=420,height=620");
+    if (!printWindow) {
+      showStudentBulkToast({ type: "error", message: t("admin.printPopupBlocked") });
+      return;
+    }
+
+    try {
+      await batchPrintFeedback.run(async () => {
+        const labelStudents: Array<Record<string, any>> = [];
+        for (const studentId of studentIds) {
+          const response = await fetch(`${API_BASE_URL}/admin/students/${studentId}/print-label`, { method: "POST", headers });
+          const data = await response.json();
+          if (!response.ok || !data.ok || !(data.student?.scan_serial || data.student?.student_serial)) {
+            throw new Error(data.status === "label_print_limit_reached" ? t("admin.labelPrintLimitReached") : t("errors.loginFailed"));
+          }
+          labelStudents.push(data.student);
+        }
+
+        printWindow.document.open();
+        printWindow.document.write(buildStudentLabelsMarkup(labelStudents));
+        printWindow.document.close();
+        printWindow.focus();
+        window.setTimeout(() => printWindow.print(), 250);
+      });
+      showStudentBulkToast({ type: "success", message: t("admin.batchPrintLabelsSuccess", { count: String(studentIds.length) }) });
+    } catch (error) {
+      printWindow.close();
+      showStudentBulkToast({ type: "error", message: error instanceof Error ? error.message : t("errors.loginFailed") });
+    }
+  }
+
   function printGeneratedLabel() {
     if (!studentForm.full_name || !studentForm.student_code || !studentForm.scan_serial) return;
     const printWindow = window.open("", "_blank", "width=420,height=620");
@@ -7040,6 +7092,9 @@ function AcademicManager({
           <button className="secondary-button compact-button" type="button" onClick={toggleAllVisibleStudents} disabled={!students.length || !showStudents}>
             {allVisibleStudentsSelected ? t("admin.deselectAll") : t("admin.selectAll")}
           </button>
+          {sessionHasPermission(session, "students.manage") ? <button className={`secondary-button compact-button action-feedback-${batchPrintFeedback.state}`} type="button" disabled={!selectedStudentIds.length || bulkActionsBusy} onClick={() => void handleBatchPrint()}>
+            <StudentActionIcon name="printer" />{actionButtonText(batchPrintFeedback.state, { idle: t("admin.batchPrintLabels", { count: String(selectedStudentIds.length) }), loading: t("admin.batchPrintLabelsLoading", { count: String(selectedStudentIds.length) }), success: t("admin.batchPrintLabelsSuccess", { count: String(selectedStudentIds.length) }), error: t("admin.actionFailedSave") })}
+          </button> : null}
           {selectedStudentIds.length && (sessionHasPermission(session, "students.manage") || sessionHasPermission(session, "students.delete")) ? <div className="student-selection-danger-actions">
             {statusFilter === "deleted" && sessionHasPermission(session, "students.manage") ? <button className={`secondary-button compact-button bulk-restore-button action-feedback-${bulkRestoreFeedback.state}`} type="button" disabled={bulkActionsBusy} onClick={() => void restoreSelectedStudents()}>
               <StudentActionIcon name="restore" />{actionButtonText(bulkRestoreFeedback.state, { idle: t("admin.bulkRestore", { count: String(selectedStudentIds.length) }), loading: t("admin.bulkRestoreLoading", { count: String(selectedStudentIds.length) }), success: t("admin.bulkRestoreSuccess", { count: String(selectedStudentIds.length) }), error: t("admin.actionFailedSave") })}
