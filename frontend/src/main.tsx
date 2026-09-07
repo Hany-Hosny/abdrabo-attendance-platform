@@ -3363,7 +3363,7 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
   const barcode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   if (barcodeValue) {
     JsBarcode(barcode, barcodeValue, {
-      format: "CODE128A",
+      format: "CODE128",
       displayValue: false,
       height: 100,
       width: 1.65,
@@ -10342,7 +10342,7 @@ function BarcodePreview({ value, displayValue = true }: { value: string; display
     if (!barcodeRef.current || !value) return;
     try {
       JsBarcode(barcodeRef.current, value, {
-        format: "CODE128A",
+        format: "CODE128",
         displayValue,
         fontSize: 12,
         height: 42,
