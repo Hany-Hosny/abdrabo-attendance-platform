@@ -3959,8 +3959,9 @@ textarea {
 }
 
 .profile-label-brand {
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1.15;
+  font-weight: 800;
 }
 
 .profile-label-name {
@@ -3981,7 +3982,7 @@ textarea {
 
 .profile-label-preview .barcode-preview {
   width: min(100%, 540px);
-  height: 104px;
+  height: 112px;
   margin: 6px auto 0;
 }
 

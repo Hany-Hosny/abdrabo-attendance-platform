@@ -3365,13 +3365,15 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
     JsBarcode(barcode, barcodeValue, {
       format: "CODE128",
       displayValue: false,
-      height: 100,
-      width: 1.65,
-      margin: 8,
-      marginTop: 6,
-      marginBottom: 6,
-      marginLeft: 10,
-      marginRight: 10
+      lineColor: "#000000",
+      background: "#ffffff",
+      height: 108,
+      width: 1.8,
+      margin: 12,
+      marginTop: 8,
+      marginBottom: 8,
+      marginLeft: 18,
+      marginRight: 18
     });
     barcode.setAttribute("shape-rendering", "crispEdges");
   }
@@ -3384,7 +3386,7 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
     html,body{width:60mm;height:40mm;margin:0;padding:0}
     body{display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1mm 2mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff}
     .brand,.name,.code,.grade,.scan-value{max-width:56mm;white-space:nowrap;overflow:hidden;text-overflow:clip}
-    .brand{font-size:8.8px;line-height:1.05;font-weight:700}
+    .brand{font-size:10.5px;line-height:1.05;font-weight:800}
     .name{font-size:11.5px;line-height:1.05;font-weight:700;margin:.65mm 0 .3mm}
     .code{font-size:9.8px;line-height:1.05;font-weight:800}
     .grade{font-size:9.2px;line-height:1.1;margin-top:.3mm;font-weight:800}
@@ -10344,14 +10346,16 @@ function BarcodePreview({ value, displayValue = true }: { value: string; display
       JsBarcode(barcodeRef.current, value, {
         format: "CODE128",
         displayValue,
+        lineColor: "#000000",
+        background: "#ffffff",
         fontSize: 12,
-        height: 42,
-        width: 1.5,
-        margin: 10,
-        marginTop: 8,
-        marginBottom: 8,
-        marginLeft: 14,
-        marginRight: 14
+        height: 46,
+        width: 1.8,
+        margin: 12,
+        marginTop: 9,
+        marginBottom: 9,
+        marginLeft: 18,
+        marginRight: 18
       });
     } catch (_error) {
       if (barcodeRef.current) barcodeRef.current.innerHTML = "";
