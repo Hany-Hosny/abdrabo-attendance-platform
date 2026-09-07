@@ -7,7 +7,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import "./styles.css";
 import { normalizeDigits } from "./utils/normalizeDigits";
 import { createIdempotencyKey, normalizeScanValue, playScannerFeedback, type ScannerState } from "./utils/scanner";
-import { useAttendanceScanner } from "./utils/attendanceScanner";
+import { isScannerDevToolsShortcut, isScannerFunctionKey, scannerInputCharacter, useAttendanceScanner } from "./utils/attendanceScanner";
 import { AdminExecutiveDashboard } from "./AdminExecutiveDashboard";
 import { SystemSettingsPanel } from "./SystemSettingsPanel";
 import { WhatsAppSettingsPanel } from "./WhatsAppSettingsPanel";
@@ -3393,9 +3393,9 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
   return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>Student Label</title><style>
     @page{size:60mm 40mm;margin:0}
     *{box-sizing:border-box}
-    html,body{width:60mm;height:40mm;min-height:0;max-height:40mm;margin:0;padding:0;overflow:hidden;background:#fff}
+    html,body{width:60mm;margin:0;padding:0;overflow:hidden;background:#fff}
     body{display:block;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111}
-    .label-sheet{position:absolute;inset:0;width:60mm;height:40mm;max-height:40mm;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1mm 2mm;background:#fff}
+    .label-sheet{position:relative;width:60mm;height:39.5mm;max-height:39.5mm;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1mm 2mm;background:#fff}
     .brand,.name,.code,.grade,.scan-value{max-width:56mm;min-width:0}
     .brand{font-size:9.5px;line-height:1.05;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr}
     .name{font-size:11.5px;line-height:1.05;font-weight:700;margin:.65mm 0 .3mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -3404,7 +3404,7 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
     .barcode{display:flex;align-items:center;justify-content:center;width:58mm;height:18mm;margin:.7mm auto 0;overflow:hidden;padding:0 .25mm}
     .barcode svg{display:block;width:57mm;height:18mm;shape-rendering:crispEdges}
     .scan-value{font-size:11.5px;line-height:1;font-weight:900;margin-top:.4mm;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr}
-    @media print{html,body{width:60mm!important;height:40mm!important;min-height:0!important;max-height:40mm!important;margin:0!important;padding:0!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.label-sheet{position:absolute!important;inset:0!important;width:60mm!important;height:40mm!important;max-height:40mm!important;overflow:hidden!important;break-before:avoid-page!important;break-after:avoid-page!important;page-break-before:avoid!important;page-break-after:avoid!important}}
+    @media print{html,body{width:60mm!important;height:auto!important;min-height:0!important;max-height:none!important;margin:0!important;padding:0!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.label-sheet{position:relative!important;width:60mm!important;height:39.5mm!important;min-height:0!important;max-height:39.5mm!important;margin:0!important;overflow:hidden!important}}
   </style></head><body>
     <main class="label-sheet">
       <div class="brand">Mr. Ahmed Abdrabo</div>
@@ -7858,6 +7858,10 @@ function normalizeSearchText(value: unknown) {
     .replace(/\s+/g, " ");
 }
 
+const FEE_HARDWARE_SCAN_IDLE_MS = 160;
+const FEE_HARDWARE_DEDUPE_WINDOW_MS = 1_500;
+const FEE_HARDWARE_SCAN_KEY_GAP_MS = 90;
+
 function FeesPanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
   const canCollect = sessionHasPermission(session, "payments.collect");
   const canAdvance = sessionHasPermission(session, "payments.advance");
@@ -7878,10 +7882,21 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
   const lookupBusyRef = React.useRef(false);
   const requestAbortRef = React.useRef<AbortController | null>(null);
   const lastLookupRef = React.useRef({ value: "", at: 0 });
+  const hardwareScanBufferRef = React.useRef("");
+  const hardwareScanTimerRef = React.useRef<number | null>(null);
+  const hardwareScanLastKeyAtRef = React.useRef(0);
+  const hardwareScanLikelyRef = React.useRef(false);
+  const lastHardwareScanRef = React.useRef({ value: "", at: 0 });
+  const lookupValueRef = React.useRef<(value: string) => Promise<{ ok: boolean; error?: string }>>(async () => ({ ok: false }));
   useEffect(() => () => requestAbortRef.current?.abort(), []);
   useEffect(() => {
     requestAbortRef.current?.abort();
     lookupBusyRef.current = false;
+    hardwareScanBufferRef.current = "";
+    hardwareScanLastKeyAtRef.current = 0;
+    hardwareScanLikelyRef.current = false;
+    if (hardwareScanTimerRef.current !== null) window.clearTimeout(hardwareScanTimerRef.current);
+    hardwareScanTimerRef.current = null;
     setLookupLoading(false);
   }, [mode]);
 
@@ -7892,6 +7907,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     setSelectedMonths([]);
     setSendReceipt(canSendReceipts);
     const value = normalizeScanValue(rawValue);
+    hardwareScanBufferRef.current = "";
     const now = Date.now();
     if (!value) {
       const error = t("fees.studentNotFound");
@@ -7930,6 +7946,90 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
       window.setTimeout(() => inputRef.current?.focus(), 0);
     }
   }
+  lookupValueRef.current = lookupValue;
+
+  useEffect(() => {
+    const clearHardwareScanTimer = () => {
+      if (hardwareScanTimerRef.current !== null) window.clearTimeout(hardwareScanTimerRef.current);
+      hardwareScanTimerRef.current = null;
+    };
+
+    const submitHardwareScan = () => {
+      clearHardwareScanTimer();
+      const value = normalizeScanValue(hardwareScanBufferRef.current);
+      hardwareScanBufferRef.current = "";
+      hardwareScanLastKeyAtRef.current = 0;
+      hardwareScanLikelyRef.current = false;
+      if (!value) return;
+
+      const now = Date.now();
+      if (lastHardwareScanRef.current.value === value && now - lastHardwareScanRef.current.at < FEE_HARDWARE_DEDUPE_WINDOW_MS) return;
+      lastHardwareScanRef.current = { value, at: now };
+      setCode("");
+      void lookupValueRef.current(value);
+    };
+
+    const scheduleHardwareScan = () => {
+      clearHardwareScanTimer();
+      hardwareScanTimerRef.current = window.setTimeout(() => {
+        hardwareScanTimerRef.current = null;
+        if (hardwareScanLikelyRef.current && normalizeScanValue(hardwareScanBufferRef.current).length >= 4) submitHardwareScan();
+      }, FEE_HARDWARE_SCAN_IDLE_MS);
+    };
+
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      const rawKey = event.key;
+      if (isScannerDevToolsShortcut(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        // Some scanners are configured with an F-key suffix instead of Enter.
+        // Treat it as the end of a scan after blocking the browser shortcut.
+        if (isScannerFunctionKey(rawKey) && hardwareScanBufferRef.current) submitHardwareScan();
+        return;
+      }
+
+      if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+      if (rawKey === "Enter") {
+        if (!hardwareScanBufferRef.current.trim()) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        submitHardwareScan();
+        return;
+      }
+
+      const character = scannerInputCharacter(rawKey);
+      if (!character) return;
+      const target = event.target;
+      const isAnotherTextEditor =
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLInputElement && target !== inputRef.current && ["text", "search", "password", "email", "number", "tel", "url"].includes(target.type)) ||
+        (target instanceof HTMLElement && target.isContentEditable);
+      if (isAnotherTextEditor) return;
+
+      const now = Date.now();
+      if (hardwareScanLastKeyAtRef.current && now - hardwareScanLastKeyAtRef.current <= FEE_HARDWARE_SCAN_KEY_GAP_MS && hardwareScanBufferRef.current) {
+        hardwareScanLikelyRef.current = true;
+      } else {
+        hardwareScanLikelyRef.current = false;
+      }
+      hardwareScanLastKeyAtRef.current = now;
+      event.preventDefault();
+      event.stopPropagation();
+      hardwareScanBufferRef.current += character;
+      setCode(hardwareScanBufferRef.current);
+      inputRef.current?.focus({ preventScroll: true });
+      scheduleHardwareScan();
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown, true);
+    return () => {
+      clearHardwareScanTimer();
+      window.removeEventListener("keydown", handleGlobalKeyDown, true);
+    };
+  }, []);
 
   async function lookup(event: React.FormEvent) {
     event.preventDefault();
@@ -8031,7 +8131,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
       {canCollect ? <button className={mode === "new" ? "active" : ""} type="button" onClick={() => { setMode("new"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setSendReceipt(true); setStatus(""); }}>{t("fees.newPayment")}</button> : null}
       {canAdvance ? <button className={mode === "advance" ? "active" : ""} type="button" onClick={() => { setMode("advance"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setSendReceipt(true); setStatus(""); }}>{t("fees.advancePayment")}</button> : null}
     </div>
-    <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input ref={inputRef} autoFocus dir="ltr" type="text" value={code} onChange={(event) => setCode(event.target.value)} placeholder="A-2303" autoComplete="off" disabled={lookupLoading} /></label><button className="primary-button" type="submit" disabled={lookupLoading || !code.trim()}>{lookupLoading ? t("dashboard.refreshing") : t("fees.find")}</button></form>
+    <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input ref={inputRef} autoFocus dir="ltr" type="text" value={code} onChange={(event) => { hardwareScanBufferRef.current = event.target.value; setCode(event.target.value); }} placeholder="A-2303" autoComplete="off" disabled={lookupLoading} /></label><button className="primary-button" type="submit" disabled={lookupLoading || !code.trim()}>{lookupLoading ? t("dashboard.refreshing") : t("fees.find")}</button></form>
     {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>{canCollect ? <><small>{t("fees.fullOnly")}</small>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="secondary-button" type="button" onClick={pay} disabled={paymentLoading}>{paymentLoading ? t("dashboard.refreshing") : t("fees.payFull")}</button></> : null}</div> : null}
     {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : monthlyFee <= 0 ? <p className="empty-state">{t("fees.advanceFeeNotConfigured")}</p> : <><div className="advance-sequence-heading"><div><span className="advance-section-kicker">{t("fees.advancePayment")}</span><h3>{t("fees.advanceMonths")}</h3><p>{t("fees.advanceSequenceHint")}</p></div><div className="advance-selection-summary"><span className="advance-sequence-count"><strong>{selectedMonths.length}</strong><small>{t("fees.advanceSelected")}</small></span><span className="advance-available-count"><strong>{availableMonthsCount}</strong><small>{t("fees.advanceAvailableMonth")}</small></span></div></div><div className="advance-month-legend" aria-label={t("fees.advanceMonths")}><span className="advance-legend-item is-next"><i aria-hidden="true" />{t("fees.advanceAvailableMonth")}</span><span className="advance-legend-item is-paid"><i aria-hidden="true" />{t("fees.advancePaidMonth")}</span><span className="advance-legend-item is-locked"><i aria-hidden="true" />{t("fees.advanceLockedStatus")}</span></div><div className="advance-month-grid">{advanceMonths.map((month: any, index: number) => { const key = monthKey(month); const paid = isMonthPaid(month); const selected = selectedMonthSet.has(key); const unlocked = isMonthUnlocked(index); const locked = !paid && !unlocked; const stateLabel = paid ? t("fees.advancePaidMonth") : locked ? t("fees.advanceLockedMonth") : selected ? t("fees.advanceSelectedStatus") : t("fees.advanceAvailableMonth"); return <label className={`advance-month-option ${paid ? "is-paid" : unlocked ? "is-next" : "is-locked"} ${selected ? "is-selected" : ""}`} key={month.month} title={locked ? t("fees.advanceLockedMonth") : stateLabel}><span className="advance-month-card-top"><span className={`advance-month-state-icon ${paid ? "is-paid" : locked ? "is-locked" : "is-next"}`} aria-hidden="true">{paid ? "✓" : String(index + 1).padStart(2, "0")}</span><span className="advance-month-status">{stateLabel}</span></span><span className="advance-month-content"><strong>{monthLabel(month.month)}</strong><small>{locked ? t("fees.advanceLockedMonth") : t("fees.advancePaymentLabel")}</small></span><span className="advance-month-footer"><b>{Number(month.remaining_amount || month.amount || 0).toFixed(2)} EGP</b>{paid ? <span className="advance-month-paid-mark" aria-label={t("fees.advancePaidMonth")}>✓</span> : <input type="checkbox" checked={selected} disabled={!unlocked && !selected} aria-label={`${monthLabel(month.month)} — ${stateLabel}`} onChange={(event) => toggleAdvanceMonth(month, index, event.target.checked)} />}</span></label>; })}</div>{!advanceMonths.some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total"><span>{t("fees.advanceSelected")}: <strong>{selectedMonths.length}</strong></span><span>{t("fees.advanceTotal")}: <strong>{totalAdvance.toFixed(2)} EGP</strong></span></p>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}

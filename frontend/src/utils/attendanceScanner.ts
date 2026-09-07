@@ -169,6 +169,23 @@ function parseScannerResponse(rawBody: string) {
   }
 }
 
+export function isScannerFunctionKey(key: string) {
+  return /^F(?:[1-9]|1[0-2])$/.test(String(key || ""));
+}
+
+export function isScannerDevToolsShortcut(event: KeyboardEvent) {
+  const keyUpper = String(event.key || "").toUpperCase();
+  return isScannerFunctionKey(event.key) ||
+    (event.ctrlKey && event.shiftKey && ["I", "J", "C"].includes(keyUpper)) ||
+    (event.metaKey && event.altKey && keyUpper === "I") ||
+    (event.ctrlKey && keyUpper === "U");
+}
+
+export function scannerInputCharacter(rawKey: string) {
+  const normalizedKey = normalizeDigits(rawKey);
+  return /^[A-Za-z0-9-]$/.test(normalizedKey) ? normalizedKey : "";
+}
+
 export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId = "", sessionId = null }: UseAttendanceScannerOptions) {
   const inputRef = useRef<HTMLInputElement>(null);
   const inputValueRef = useRef("");
@@ -454,16 +471,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       const rawKey = event.key;
-      const normalizedKey = normalizeDigits(rawKey);
-      const keyUpper = rawKey.toUpperCase();
-      const isFunctionKey = /^F(?:[1-9]|1[0-2])$/.test(rawKey);
-      const isDevToolsShortcut =
-        isFunctionKey ||
-        (event.ctrlKey && event.shiftKey && ["I", "J", "C"].includes(keyUpper)) ||
-        (event.metaKey && event.altKey && keyUpper === "I") ||
-        (event.ctrlKey && keyUpper === "U");
-
-      if (isDevToolsShortcut) {
+      if (isScannerDevToolsShortcut(event)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -480,7 +488,8 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
         commitInput();
         return;
       }
-      if (!/^[A-Za-z0-9-]$/.test(normalizedKey)) return;
+      const normalizedKey = scannerInputCharacter(rawKey);
+      if (!normalizedKey) return;
       event.preventDefault();
       inputRef.current?.focus({ preventScroll: true });
       updateInput(`${inputValueRef.current}${normalizedKey}`);
