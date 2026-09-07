@@ -51,17 +51,25 @@ async function withEmailRetries(operation, task, { context = {}, maxRetries = EM
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
     try {
-      return await task();
+      return await task(attempt);
     } catch (error) {
       lastError = error;
-      logEmailFailure(`${operation} attempt ${attempt + 1}`, context, error);
+      const attemptContext = typeof context === "function" ? context(attempt) : context;
+      logEmailFailure(`${operation} attempt ${attempt + 1}`, attemptContext, error);
       if (attempt === maxRetries) break;
       const delayMs = EMAIL_RETRY_INITIAL_DELAY_MS * (2 ** attempt);
-      console.warn(`[email] ${operation} retry scheduled`, { attempt: attempt + 2, delayMs, ...context });
+      console.warn(`[email] ${operation} retry scheduled`, { attempt: attempt + 2, delayMs, ...attemptContext });
       await sleepImpl(delayMs);
     }
   }
   throw lastError;
+}
+
+function gmailTransportConfigForAttempt(config, attempt) {
+  const primaryPort = Number(config.port);
+  const fallbackPort = primaryPort === 465 ? 587 : primaryPort === 587 ? 465 : null;
+  if (!fallbackPort || attempt % 2 === 0) return config;
+  return { ...config, port: fallbackPort, secure: fallbackPort === 465 };
 }
 
 function validEmail(value) {
@@ -128,10 +136,9 @@ export function createGmailTransporter(config, { createTransportImpl = nodemaile
 
 export async function sendGmailEmail({ to, fromName, fromEmail, subject, text, html, smtpConfig = readGmailSmtpConfig(), transporter = null, createTransportImpl, sleepImpl, maxRetries = EMAIL_MAX_RETRIES } = {}) {
   if (!validEmail(to) || !smtpConfig?.configured) throw new EmailDeliveryError();
-  const transportConfig = transporter
+  const baseTransportConfig = transporter
     ? smtpConfig
     : { ...smtpConfig, host: await resolveGmailIpv4(), servername: GMAIL_SMTP_HOST };
-  const mailer = transporter || createGmailTransporter(transportConfig, { createTransportImpl });
   const message = {
       from: senderAddress(fromName || smtpConfig.fromName, fromEmail || smtpConfig.fromEmail),
       to,
@@ -140,8 +147,15 @@ export async function sendGmailEmail({ to, fromName, fromEmail, subject, text, h
       html: String(html || "")
   };
   try {
-    await withEmailRetries("gmail sendMail", () => mailer.sendMail(message), {
-      context: { to, host: transportConfig.host, port: transportConfig.port, secure: transportConfig.secure },
+    await withEmailRetries("gmail sendMail", (attempt) => {
+      const transportConfig = gmailTransportConfigForAttempt(baseTransportConfig, attempt);
+      const mailer = transporter || createGmailTransporter(transportConfig, { createTransportImpl });
+      return mailer.sendMail(message);
+    }, {
+      context: (attempt) => {
+        const transportConfig = gmailTransportConfigForAttempt(baseTransportConfig, attempt);
+        return { to, host: transportConfig.host, port: transportConfig.port, secure: transportConfig.secure };
+      },
       sleepImpl,
       maxRetries
     });

@@ -3393,25 +3393,26 @@ function buildStudentLabelMarkup(student: Record<string, any>) {
   return `<!doctype html><html dir="rtl"><head><meta charset="utf-8"><title>Student Label</title><style>
     @page{size:60mm 40mm;margin:0}
     *{box-sizing:border-box}
-    html,body{width:60mm;height:40mm;min-height:0;max-height:40mm;margin:0;padding:0;overflow:hidden;break-after:avoid-page;page-break-after:avoid}
-    body{display:flex;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box;overflow:hidden;padding:1mm 2mm;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111;background:#fff;break-inside:avoid;page-break-inside:avoid}
+    html,body{width:60mm;height:40mm;min-height:0;max-height:40mm;margin:0;padding:0;overflow:hidden;background:#fff}
+    body{display:block;font-family:Arial,Tahoma,sans-serif;text-align:center;color:#111}
+    .label-sheet{position:absolute;inset:0;width:60mm;height:40mm;max-height:40mm;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;padding:1mm 2mm;background:#fff}
     .brand,.name,.code,.grade,.scan-value{max-width:56mm;min-width:0}
-    .brand{display:grid;gap:.1mm;font-size:9.5px;line-height:1.05;font-weight:800;overflow:visible}
-    .brand-ar,.brand-en{display:block;white-space:nowrap}
-    .brand-en{direction:ltr;font-size:8.2px;font-weight:700}
+    .brand{font-size:9.5px;line-height:1.05;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr}
     .name{font-size:11.5px;line-height:1.05;font-weight:700;margin:.65mm 0 .3mm;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .code{font-size:9.8px;line-height:1.05;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .grade{font-size:9.2px;line-height:1.1;margin-top:.3mm;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .barcode{display:flex;align-items:center;justify-content:center;width:58mm;height:15.5mm;margin:.7mm auto 0;overflow:hidden;padding:0 .25mm}
-    .barcode svg{display:block;width:57mm;height:15.5mm;shape-rendering:crispEdges}
+    .barcode{display:flex;align-items:center;justify-content:center;width:58mm;height:18mm;margin:.7mm auto 0;overflow:hidden;padding:0 .25mm}
+    .barcode svg{display:block;width:57mm;height:18mm;shape-rendering:crispEdges}
     .scan-value{font-size:11.5px;line-height:1;font-weight:900;margin-top:.4mm;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr}
-    @media print{html,body{width:60mm!important;height:40mm!important;min-height:0!important;max-height:40mm!important;margin:0!important;padding:0!important;overflow:hidden!important;break-after:avoid-page;page-break-after:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+    @media print{html,body{width:60mm!important;height:40mm!important;min-height:0!important;max-height:40mm!important;margin:0!important;padding:0!important;overflow:hidden!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}.label-sheet{position:absolute!important;inset:0!important;width:60mm!important;height:40mm!important;max-height:40mm!important;overflow:hidden!important;break-before:avoid-page!important;break-after:avoid-page!important;page-break-before:avoid!important;page-break-after:avoid!important}}
   </style></head><body>
-    <div class="brand"><span class="brand-ar">مستر أحمد عبدربه</span><span class="brand-en">Mr. Ahmed Abdrabo</span></div>
-    <div class="name">${escapeHtml(student.full_name || "")}</div>
-    <div class="code">${escapeHtml(student.student_code || "")}</div>
-    <div class="grade">${escapeHtml(gradeAndGroup)}</div>
-    ${barcodeValue ? `<div class="barcode">${barcode.outerHTML}</div><div class="scan-value">${escapeHtml(barcodeValue)}</div>` : ""}
+    <main class="label-sheet">
+      <div class="brand">Mr. Ahmed Abdrabo</div>
+      <div class="name">${escapeHtml(student.full_name || "")}</div>
+      <div class="code">${escapeHtml(student.student_code || "")}</div>
+      <div class="grade">${escapeHtml(gradeAndGroup)}</div>
+      ${barcodeValue ? `<div class="barcode">${barcode.outerHTML}</div><div class="scan-value">${escapeHtml(barcodeValue)}</div>` : ""}
+    </main>
   </body></html>`;
 }
 
@@ -7014,7 +7015,7 @@ function AcademicManager({
               <div><span>{t("admin.loginCode")}</span><strong>{studentForm.student_code || "—"}</strong></div>
               <div><span>{t("admin.scanSerial")}</span><strong>{studentForm.scan_serial || "—"}</strong></div>
             </div>
-            {studentForm.scan_serial ? <div className="student-label-preview"><strong>{t("admin.labelPreview")}</strong><span>مستر أحمد عبدربه / Mr. Ahmed Abdrabo</span><span>{studentForm.full_name || "Student name"} · {studentForm.student_code}</span><BarcodePreview value={labelBarcodeValue(studentForm)} displayValue={false} /><strong className="label-preview-serial">{labelBarcodeValue(studentForm)}</strong><div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printGeneratedLabel}>{t("admin.printLabel")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={regenerateScanSerial} disabled={loading}>{t("admin.regenerateScanSerial")}</button> : null}</div></div> : <><p className="field-hint">{t("admin.generateCodeSerial")}</p>{fieldErrors.scan_serial ? <small className="field-error">{fieldErrors.scan_serial}</small> : null}</>}
+            {studentForm.scan_serial ? <div className="student-label-preview"><strong>{t("admin.labelPreview")}</strong><span>Mr. Ahmed Abdrabo</span><span>{studentForm.full_name || "Student name"} · {studentForm.student_code}</span><BarcodePreview value={labelBarcodeValue(studentForm)} displayValue={false} /><strong className="label-preview-serial">{labelBarcodeValue(studentForm)}</strong><div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printGeneratedLabel}>{t("admin.printLabel")}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={regenerateScanSerial} disabled={loading}>{t("admin.regenerateScanSerial")}</button> : null}</div></div> : <><p className="field-hint">{t("admin.generateCodeSerial")}</p>{fieldErrors.scan_serial ? <small className="field-error">{fieldErrors.scan_serial}</small> : null}</>}
           </section>
           </>
         )}
@@ -10421,7 +10422,7 @@ function StudentLabelPreview({ student }: { student: Record<string, any> }) {
   const barcodeValue = labelBarcodeValue(student);
   const gradeAndGroup = [student.grade || student.grade_level, student.group_name || student.group].filter(Boolean).join(" · ");
   return <div className="profile-label-preview" dir="rtl">
-    <strong className="profile-label-brand">مستر أحمد عبدربه / Mr. Ahmed Abdrabo</strong>
+    <strong className="profile-label-brand">Mr. Ahmed Abdrabo</strong>
     <strong className="profile-label-name">{student.full_name || "—"}</strong>
     <strong className="profile-label-code">{student.student_code || "—"}</strong>
     <span className="profile-label-grade">{gradeAndGroup || "—"}</span>
