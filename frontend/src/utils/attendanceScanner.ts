@@ -173,11 +173,20 @@ export function isScannerFunctionKey(key: string) {
   return /^F(?:[1-9]|1[0-2])$/.test(String(key || ""));
 }
 
+export function scannerFunctionKeyFromEvent(event: KeyboardEvent) {
+  if (isScannerFunctionKey(event.key)) return event.key.toUpperCase();
+  if (isScannerFunctionKey(event.code)) return event.code.toUpperCase();
+  const keyCode = Number(event.keyCode || event.which || 0);
+  return keyCode >= 112 && keyCode <= 123 ? `F${keyCode - 111}` : "";
+}
+
 export function isScannerDevToolsShortcut(event: KeyboardEvent) {
-  const keyUpper = String(event.key || "").toUpperCase();
-  return isScannerFunctionKey(event.key) ||
-    (event.ctrlKey && event.shiftKey && ["I", "J", "C"].includes(keyUpper)) ||
-    (event.metaKey && event.altKey && keyUpper === "I") ||
+  const keyUpper = String(event.key || event.code || "").toUpperCase();
+  const isInspectionCombo =
+    (event.ctrlKey && event.shiftKey) ||
+    (event.metaKey && event.altKey);
+  return Boolean(scannerFunctionKeyFromEvent(event)) ||
+    (isInspectionCombo && ["I", "J", "C", "K", "E", "M"].includes(keyUpper)) ||
     (event.ctrlKey && keyUpper === "U");
 }
 
@@ -471,10 +480,17 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       const rawKey = event.key;
+      const functionKey = scannerFunctionKeyFromEvent(event);
       if (isScannerDevToolsShortcut(event)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
+        // Some wired scanners are configured with an F-key suffix rather than
+        // Enter. Complete the already captured scan after consuming the shortcut.
+        if (functionKey && inputValueRef.current.trim()) {
+          inputRef.current?.focus({ preventScroll: true });
+          commitInput();
+        }
         return;
       }
 

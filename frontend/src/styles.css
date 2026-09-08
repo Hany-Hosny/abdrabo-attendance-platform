@@ -13141,3 +13141,182 @@ html[data-scanner-feedback="error"]::after {
     transition: none;
   }
 }
+
+/* Visual audit: defensive layout and interaction consistency. These rules only
+   affect presentation; they keep dense dashboard content contained at every
+   viewport without changing routes, data, or component behavior. */
+:where(
+  .content-page,
+  .content-grid,
+  .content-panel,
+  .admin-dashboard,
+  .admin-tab-panel,
+  .admin-tab-transition,
+  .admin-editor,
+  .dashboard-hero,
+  .summary-grid,
+  .dashboard-panel,
+  .student-bulk-toolbar,
+  .student-selection-actions,
+  .student-selection-danger-actions,
+  .table-wrap,
+  .modal-card
+) {
+  min-width: 0;
+}
+
+:where(
+  .content-grid,
+  .editor-grid,
+  .summary-grid,
+  .dashboard-hero,
+  .admin-tab-panel,
+  .student-selection-actions
+) > * {
+  min-width: 0;
+}
+
+:where(
+  .content-panel,
+  .admin-editor,
+  .dashboard-panel,
+  .student-card,
+  .user-row,
+  .academic-row,
+  .audit-filter-panel,
+  .modal-card
+) {
+  scroll-margin-block-start: calc(var(--safe-top) + 96px);
+}
+
+/* Keep long names, codes, and translated labels inside their panels. */
+:where(
+  .section-heading p,
+  .field-hint,
+  .field-error,
+  .student-card-meta,
+  .student-note-meta,
+  .audit-detail-item span,
+  .audit-change-row span,
+  .profile-record-list
+) {
+  overflow-wrap: anywhere;
+}
+
+/* Tables stay readable on small screens without leaking into the page width. */
+.table-wrap {
+  max-width: 100%;
+  overscroll-behavior-inline: contain;
+  scrollbar-gutter: stable both-edges;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* One accessible focus treatment for keyboard users in both themes. */
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 3px;
+}
+
+@media (max-width: 720px) {
+  .student-selection-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+
+  .student-selection-actions > .compact-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .selected-student-count,
+  .student-selection-danger-actions {
+    grid-column: 1 / -1;
+  }
+
+  .student-selection-danger-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    margin-inline-start: 0;
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
+
+  .student-selection-danger-actions .compact-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .table-wrap {
+    padding-bottom: 4px;
+  }
+}
+
+/* At narrow phone widths, split navigation into a compact second row so every
+   link remains reachable without colliding with the account identity. */
+@media (max-width: 420px) {
+  .mobile-first-header.site-header:not(.admin-header) {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "controls identity"
+      "center center";
+    row-gap: 5px !important;
+  }
+
+  .mobile-first-header .header-center-nav {
+    display: flex !important;
+    width: 100%;
+    min-height: 30px;
+    justify-content: center;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .mobile-first-header .header-center-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-first-header .header-center-nav a,
+  .mobile-first-header .header-center-nav button {
+    min-height: 30px;
+    padding: 3px 7px;
+    font-size: 10px;
+  }
+
+  .mobile-first-header .header-identity {
+    justify-self: end;
+    max-width: calc(100vw - 124px);
+  }
+
+  .mobile-first-header .header-identity .brand strong {
+    font-size: 11px;
+  }
+
+  .mobile-first-header .header-identity .brand small {
+    font-size: 9px;
+  }
+}
+
+/* Keep the mobile bottom navigation aligned with the active light theme. */
+[data-theme="light"] .mobile-bottom-nav {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 -12px 34px rgba(41, 64, 91, 0.14);
+}
+
+[data-theme="light"] .mobile-bottom-nav button {
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .mobile-bottom-nav button:hover,
+[data-theme="light"] .mobile-bottom-nav button.active {
+  border-color: rgba(217, 111, 18, 0.28);
+  background: rgba(217, 111, 18, 0.1);
+  color: var(--accent-strong);
+}
+
+[data-theme="light"] .mobile-bottom-nav button.active .mobile-bottom-nav-icon {
+  background: rgba(217, 111, 18, 0.14);
+}

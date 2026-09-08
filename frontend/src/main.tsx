@@ -7,7 +7,7 @@ import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YA
 import "./styles.css";
 import { normalizeDigits } from "./utils/normalizeDigits";
 import { createIdempotencyKey, normalizeScanValue, playScannerFeedback, type ScannerState } from "./utils/scanner";
-import { isScannerDevToolsShortcut, isScannerFunctionKey, scannerInputCharacter, useAttendanceScanner } from "./utils/attendanceScanner";
+import { isScannerDevToolsShortcut, scannerFunctionKeyFromEvent, scannerInputCharacter, useAttendanceScanner } from "./utils/attendanceScanner";
 import { AdminExecutiveDashboard } from "./AdminExecutiveDashboard";
 import { SystemSettingsPanel } from "./SystemSettingsPanel";
 import { WhatsAppSettingsPanel } from "./WhatsAppSettingsPanel";
@@ -3591,6 +3591,23 @@ function App() {
     document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
     localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   }, [language]);
+
+  // Block browser inspection shortcuts on every route before they reach a
+  // focused control or Chrome's default action. Scanner views listen on
+  // window in capture phase, so they can still treat an F-key suffix as scan
+  // completion before this document-level fallback runs.
+  useEffect(() => {
+    const blockDevToolsShortcut = (event: KeyboardEvent) => {
+      if (!isScannerDevToolsShortcut(event)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
+    document.addEventListener("keydown", blockDevToolsShortcut, true);
+    return () => document.removeEventListener("keydown", blockDevToolsShortcut, true);
+  }, []);
 
   useEffect(() => {
     if (!teacherSession?.token) return;
@@ -7942,7 +7959,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
   const hardwareScanLastKeyAtRef = React.useRef(0);
   const hardwareScanLikelyRef = React.useRef(false);
   const lastHardwareScanRef = React.useRef({ value: "", at: 0 });
-  const lookupValueRef = React.useRef<(value: string) => Promise<{ ok: boolean; error?: string }>>(async () => ({ ok: false }));
+  const lookupValueRef = React.useRef<(value: string, options?: { preserveInput?: boolean }) => Promise<{ ok: boolean; error?: string }>>(async () => ({ ok: false }));
   useEffect(() => () => requestAbortRef.current?.abort(), []);
   useEffect(() => {
     requestAbortRef.current?.abort();
@@ -7955,7 +7972,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     setLookupLoading(false);
   }, [mode]);
 
-  async function lookupValue(rawValue: string): Promise<{ ok: boolean; error?: string }> {
+  async function lookupValue(rawValue: string, options: { preserveInput?: boolean } = {}): Promise<{ ok: boolean; error?: string }> {
     setStatus("");
     setSummary(null);
     setAdvanceData(null);
@@ -7973,7 +7990,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     if (lookupBusyRef.current || (lastLookupRef.current.value === value && now - lastLookupRef.current.at < 300)) return { ok: false, error: t("fees.paymentFailed") };
     lookupBusyRef.current = true;
     lastLookupRef.current = { value, at: now };
-    setCode("");
+    if (!options.preserveInput) setCode("");
     setLookupLoading(true);
     const controller = new AbortController();
     requestAbortRef.current = controller;
@@ -8009,38 +8026,48 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
       hardwareScanTimerRef.current = null;
     };
 
-    const submitHardwareScan = () => {
-      clearHardwareScanTimer();
-      const value = normalizeScanValue(hardwareScanBufferRef.current);
+    const resetHardwareScanBuffer = () => {
       hardwareScanBufferRef.current = "";
       hardwareScanLastKeyAtRef.current = 0;
       hardwareScanLikelyRef.current = false;
+    };
+
+    const submitHardwareScan = () => {
+      clearHardwareScanTimer();
+      const value = normalizeScanValue(hardwareScanBufferRef.current);
+      resetHardwareScanBuffer();
       if (!value) return;
 
       const now = Date.now();
       if (lastHardwareScanRef.current.value === value && now - lastHardwareScanRef.current.at < FEE_HARDWARE_DEDUPE_WINDOW_MS) return;
       lastHardwareScanRef.current = { value, at: now };
-      setCode("");
-      void lookupValueRef.current(value);
+      setCode(value);
+      inputRef.current?.focus({ preventScroll: true });
+      void lookupValueRef.current(value, { preserveInput: true });
     };
 
     const scheduleHardwareScan = () => {
       clearHardwareScanTimer();
       hardwareScanTimerRef.current = window.setTimeout(() => {
         hardwareScanTimerRef.current = null;
-        if (hardwareScanLikelyRef.current && normalizeScanValue(hardwareScanBufferRef.current).length >= 4) submitHardwareScan();
+        if (hardwareScanLikelyRef.current && normalizeScanValue(hardwareScanBufferRef.current).length >= 4) {
+          submitHardwareScan();
+        } else {
+          resetHardwareScanBuffer();
+        }
       }, FEE_HARDWARE_SCAN_IDLE_MS);
     };
 
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
       const rawKey = event.key;
+      const functionKey = scannerFunctionKeyFromEvent(event);
       if (isScannerDevToolsShortcut(event)) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
         // Some scanners are configured with an F-key suffix instead of Enter.
         // Treat it as the end of a scan after blocking the browser shortcut.
-        if (isScannerFunctionKey(rawKey) && hardwareScanBufferRef.current) submitHardwareScan();
+        if (functionKey && hardwareScanBufferRef.current) submitHardwareScan();
         return;
       }
 
@@ -8065,6 +8092,10 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
       if (isAnotherTextEditor) return;
 
       const now = Date.now();
+      if (hardwareScanBufferRef.current && hardwareScanLastKeyAtRef.current && now - hardwareScanLastKeyAtRef.current > FEE_HARDWARE_SCAN_KEY_GAP_MS) {
+        clearHardwareScanTimer();
+        resetHardwareScanBuffer();
+      }
       if (hardwareScanLastKeyAtRef.current && now - hardwareScanLastKeyAtRef.current <= FEE_HARDWARE_SCAN_KEY_GAP_MS && hardwareScanBufferRef.current) {
         hardwareScanLikelyRef.current = true;
       } else {
