@@ -3977,6 +3977,7 @@ function App() {
   return (
     <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth">
       <main className="teacher-auth">
+        <ScienceBackdrop />
         <section className="login-card teacher-login-card student-login-card" id="student-login" aria-labelledby="student-login-title">
           <p className="eyebrow">{t("nav.studentLogin")}</p>
           <h1 id="student-login-title">{t("student.loginTitle")}</h1>
@@ -4302,6 +4303,7 @@ function TeacherLogin({
   return (
     <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth">
       <main className="teacher-auth">
+        <ScienceBackdrop />
         <section className="login-card teacher-login-card" aria-labelledby="teacher-login-title">
           <p className="eyebrow">{t("nav.teacherLogin")}</p>
           <h1 id="teacher-login-title">{t("teacher.loginTitle")}</h1>
@@ -9723,6 +9725,25 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
   );
 }
 
+function ScienceBackdrop() {
+  return (
+    <div className="science-backdrop" aria-hidden="true">
+      <div className="science-aurora science-aurora-cyan" />
+      <div className="science-aurora science-aurora-orange" />
+      <div className="science-aurora science-aurora-blue" />
+      <div className="science-orbital-system">
+        <span className="science-nucleus" />
+        <span className="science-orbit-ring science-orbit-ring-one"><i /></span>
+        <span className="science-orbit-ring science-orbit-ring-two"><i /></span>
+        <span className="science-orbit-ring science-orbit-ring-three"><i /></span>
+      </div>
+      <span className="science-bokeh science-bokeh-one" />
+      <span className="science-bokeh science-bokeh-two" />
+      <span className="science-bokeh science-bokeh-three" />
+    </div>
+  );
+}
+
 function Shell({
   children,
   language,
@@ -9798,7 +9819,7 @@ function Shell({
   ];
 
   return (
-    <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell` : ""}`}>
+    <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell auth-page-shell` : ""}`}>
       <header
         className={`site-header mobile-first-header ${isStudentAuthenticated ? "is-authenticated" : "is-guest"} ${language === "ar" ? "is-ar" : "is-en"} ${headerVariant ? `${headerVariant}-header` : ""}`}
         dir={language}
