@@ -13328,8 +13328,6 @@ html[data-scanner-feedback="error"]::after {
   height: 100dvh;
   min-height: 100dvh;
   flex-direction: column;
-  /* Auth is a full-bleed scene; the dashboard shell keeps its regular inset. */
-  padding: 0 !important;
   overflow: hidden;
 }
 
@@ -13359,139 +13357,71 @@ html[data-scanner-feedback="error"]::after {
   z-index: 0;
   inset: 0;
   overflow: hidden;
-  background: #061527;
   pointer-events: none;
 }
 
 .science-backdrop::before {
   position: absolute;
-  z-index: 0;
   inset: 0;
   background:
-    radial-gradient(circle at 18% 22%, rgba(242, 140, 40, 0.26), transparent 26%),
-    radial-gradient(circle at 79% 21%, rgba(66, 215, 241, 0.22), transparent 30%),
-    radial-gradient(circle at 52% 56%, rgba(58, 202, 230, 0.22), transparent 36%),
-    linear-gradient(125deg, #07182b 0%, #0b2944 48%, #061526 100%);
-  background-size: 150% 150%;
-  animation: science-aurora-drift 18s ease-in-out infinite alternate;
+    radial-gradient(circle at 50% 48%, rgba(77, 208, 225, 0.12), transparent 27%),
+    radial-gradient(circle at 50% 48%, rgba(242, 140, 40, 0.1), transparent 47%),
+    linear-gradient(180deg, rgba(9, 29, 49, 0.08), rgba(2, 11, 23, 0.22));
   content: "";
-}
-
-.science-backdrop-grid,
-.science-backdrop-stars,
-.science-backdrop-ribbon {
-  position: absolute;
-  pointer-events: none;
-}
-
-.science-backdrop-grid {
-  z-index: 1;
-  inset: -20%;
-  opacity: 0.26;
-  background-image:
-    linear-gradient(rgba(101, 224, 244, 0.1) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(101, 224, 244, 0.1) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(circle at 50% 50%, black 3%, transparent 65%);
-  -webkit-mask-image: radial-gradient(circle at 50% 50%, black 3%, transparent 65%);
-  animation: science-grid-drift 28s linear infinite;
-}
-
-.science-backdrop-stars {
-  z-index: 1;
-  inset: -10%;
-  opacity: 0.62;
-  background-image:
-    radial-gradient(circle, rgba(150, 242, 255, 0.85) 0 1px, transparent 1.5px),
-    radial-gradient(circle, rgba(255, 183, 91, 0.75) 0 1px, transparent 1.5px),
-    radial-gradient(circle, rgba(255, 255, 255, 0.58) 0 1px, transparent 1.5px);
-  background-position: 0 0, 36px 48px, 92px 18px;
-  background-size: 148px 148px, 206px 206px, 252px 252px;
-  animation: science-stars-drift 42s linear infinite;
-}
-
-.science-backdrop-ribbon {
-  z-index: 1;
-  width: min(64vw, 860px);
-  height: min(18vw, 250px);
-  border-radius: 999px;
-  filter: blur(36px);
-  opacity: 0.32;
-  transform: rotate(-22deg);
-  will-change: transform, opacity;
-}
-
-.science-backdrop-ribbon-cyan {
-  top: 15%;
-  right: -22%;
-  background: linear-gradient(90deg, transparent, rgba(48, 213, 240, 0.62), transparent);
-  animation: science-ribbon-cyan 17s ease-in-out infinite alternate;
-}
-
-.science-backdrop-ribbon-orange {
-  bottom: 8%;
-  left: -22%;
-  background: linear-gradient(90deg, transparent, rgba(242, 140, 40, 0.48), transparent);
-  animation: science-ribbon-orange 21s ease-in-out infinite alternate-reverse;
 }
 
 .science-backdrop-glow {
   position: absolute;
-  z-index: 2;
   width: min(58vw, 720px);
   aspect-ratio: 1;
   border-radius: 50%;
-  filter: blur(52px);
-  opacity: 0.55;
+  filter: blur(42px);
+  opacity: 0.42;
   transform: translate(-50%, -50%);
-  will-change: transform, opacity;
+  animation: science-glow-breathe 26s ease-in-out infinite alternate;
 }
 
 .science-backdrop-glow-cyan {
-  top: 47%;
-  left: 49%;
-  background: rgba(61, 218, 243, 0.28);
-  animation: science-glow-cyan-drift 16s ease-in-out infinite alternate;
+  top: 48%;
+  left: 50%;
+  background: rgba(77, 208, 225, 0.2);
 }
 
 .science-backdrop-glow-orange {
-  top: 55%;
-  left: 53%;
+  top: 53%;
+  left: 51%;
   width: min(38vw, 480px);
-  background: rgba(242, 140, 40, 0.24);
-  animation: science-glow-orange-drift 20s ease-in-out infinite alternate-reverse;
+  background: rgba(242, 140, 40, 0.14);
+  animation-delay: -9s;
 }
 
 .science-backdrop-art {
   position: absolute;
-  z-index: 3;
   inset: 0;
   width: 100%;
   height: 100%;
   overflow: visible;
-  will-change: transform;
-  animation: science-art-drift 18s ease-in-out infinite alternate;
 }
 
 .science-orbit {
-  color: rgba(77, 208, 225, 0.3);
+  color: rgba(77, 208, 225, 0.16);
   stroke: currentColor;
-  stroke-width: 1.35;
-  stroke-dasharray: 5 13;
+  stroke-width: 1.2;
+  stroke-dasharray: 4 14;
   transform-box: fill-box;
   transform-origin: center;
-  animation: science-orbit-drift 16s linear infinite;
+  animation: science-orbit-drift 34s linear infinite;
 }
 
 .science-orbit-secondary {
-  color: rgba(242, 140, 40, 0.25);
-  stroke-dasharray: 3 16;
-  animation-duration: 23s;
+  color: rgba(242, 140, 40, 0.12);
+  stroke-dasharray: 2 18;
+  animation-duration: 42s;
   animation-direction: reverse;
 }
 
 .science-art {
-  color: rgba(77, 208, 225, 0.38);
+  color: rgba(77, 208, 225, 0.27);
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linecap: round;
@@ -13499,66 +13429,31 @@ html[data-scanner-feedback="error"]::after {
 }
 
 .science-art-accent {
-  fill: rgba(242, 140, 40, 0.5);
-  stroke: rgba(255, 181, 89, 0.68);
+  fill: rgba(242, 140, 40, 0.33);
+  stroke: rgba(242, 140, 40, 0.48);
   stroke-width: 1.4;
 }
 
 .science-art-liquid {
-  fill: rgba(77, 208, 225, 0.31);
-  stroke: rgba(111, 231, 248, 0.48);
+  fill: rgba(77, 208, 225, 0.19);
+  stroke: rgba(77, 208, 225, 0.3);
 }
 
 .science-art-dna {
-  color: rgba(242, 140, 40, 0.34);
+  color: rgba(242, 140, 40, 0.2);
 }
 
 .science-art-molecule {
-  color: rgba(77, 208, 225, 0.34);
+  color: rgba(77, 208, 225, 0.21);
 }
 
 .science-art-tube {
-  color: rgba(242, 140, 40, 0.32);
+  color: rgba(242, 140, 40, 0.2);
 }
 
-@keyframes science-aurora-drift {
-  from { background-position: 0% 10%; }
-  to { background-position: 100% 92%; }
-}
-
-@keyframes science-grid-drift {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(-64px, -64px, 0); }
-}
-
-@keyframes science-stars-drift {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(-112px, 76px, 0); }
-}
-
-@keyframes science-ribbon-cyan {
-  from { transform: translate3d(0, 0, 0) rotate(-22deg) scaleX(0.9); }
-  to { transform: translate3d(-14vw, 9vh, 0) rotate(-14deg) scaleX(1.16); }
-}
-
-@keyframes science-ribbon-orange {
-  from { transform: translate3d(0, 0, 0) rotate(-22deg) scaleX(0.9); }
-  to { transform: translate3d(16vw, -12vh, 0) rotate(-30deg) scaleX(1.14); }
-}
-
-@keyframes science-glow-cyan-drift {
-  from { opacity: 0.42; transform: translate(-54%, -48%) scale(0.92); }
-  to { opacity: 0.76; transform: translate(-44%, -55%) scale(1.14); }
-}
-
-@keyframes science-glow-orange-drift {
-  from { opacity: 0.3; transform: translate(-46%, -48%) scale(0.86); }
-  to { opacity: 0.65; transform: translate(-58%, -56%) scale(1.16); }
-}
-
-@keyframes science-art-drift {
-  from { transform: translate3d(-10px, 8px, 0) scale(0.98); }
-  to { transform: translate3d(18px, -14px, 0) scale(1.02); }
+@keyframes science-glow-breathe {
+  0% { opacity: 0.32; transform: translate(-50%, -50%) scale(0.96); }
+  100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1.04); }
 }
 
 @keyframes science-orbit-drift {
@@ -13575,292 +13470,11 @@ html[data-scanner-feedback="error"]::after {
     width: 120vw;
     filter: blur(34px);
   }
-
-  .science-backdrop-ribbon {
-    width: 108vw;
-    height: 28vw;
-    opacity: 0.24;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .science-backdrop::before,
-  .science-backdrop-grid,
-  .science-backdrop-stars,
-  .science-backdrop-ribbon,
   .science-backdrop-glow,
-  .science-backdrop-art,
   .science-orbit {
-    animation: none;
-  }
-}
-
-/* A focused orbital-glass scene replaces the worksheet-like science icons.
-   It uses only CSS shapes, gradients, and motion—no image assets. */
-.science-backdrop {
-  background: #061628;
-}
-
-.science-backdrop::before {
-  z-index: 0;
-  background:
-    radial-gradient(circle at 18% 50%, rgba(40, 211, 239, 0.11), transparent 26%),
-    radial-gradient(circle at 82% 72%, rgba(242, 140, 40, 0.09), transparent 24%),
-    linear-gradient(135deg, #071a2f 0%, #0a2942 47%, #051426 100%);
-  background-size: 170% 170%;
-  animation: orbital-surface-drift 16s ease-in-out infinite alternate;
-}
-
-.science-backdrop::after {
-  position: absolute;
-  z-index: 5;
-  inset: 0;
-  background: radial-gradient(ellipse at center, transparent 36%, rgba(1, 8, 19, 0.42) 100%);
-  content: "";
-}
-
-.science-aurora {
-  position: absolute;
-  z-index: 1;
-  width: min(60vw, 860px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  filter: blur(70px);
-  mix-blend-mode: screen;
-  opacity: 0.54;
-  pointer-events: none;
-  will-change: transform, opacity;
-}
-
-.science-aurora-cyan {
-  top: -34%;
-  left: -14%;
-  background: rgba(37, 206, 237, 0.46);
-  animation: aurora-cyan-float 13s ease-in-out infinite alternate;
-}
-
-.science-aurora-orange {
-  right: -18%;
-  bottom: -38%;
-  background: rgba(242, 140, 40, 0.36);
-  animation: aurora-orange-float 16s ease-in-out infinite alternate-reverse;
-}
-
-.science-aurora-blue {
-  top: 20%;
-  right: 13%;
-  width: min(34vw, 500px);
-  background: rgba(51, 112, 255, 0.24);
-  animation: aurora-blue-float 19s ease-in-out infinite alternate;
-}
-
-.science-orbital-system {
-  position: absolute;
-  z-index: 3;
-  top: 50%;
-  left: 18%;
-  width: clamp(280px, 34vw, 520px);
-  aspect-ratio: 1;
-  transform: translate(-50%, -50%);
-  opacity: 0.76;
-  filter: drop-shadow(0 28px 44px rgba(0, 0, 0, 0.28));
-  pointer-events: none;
-  will-change: transform;
-  animation: orbital-system-float 12s ease-in-out infinite alternate;
-}
-
-.science-nucleus {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: clamp(50px, 6vw, 82px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 32% 28%, #fff7d9 0 5%, #ffca63 18%, #f58a24 48%, rgba(239, 111, 22, 0.08) 73%),
-    #f58a24;
-  box-shadow: 0 0 18px rgba(255, 196, 88, 0.96), 0 0 64px rgba(242, 140, 40, 0.72), 0 0 124px rgba(61, 219, 243, 0.26);
-  transform: translate(-50%, -50%);
-  animation: nucleus-pulse 5.5s ease-in-out infinite;
-}
-
-.science-orbit-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 100%;
-  height: 38%;
-  border: 1px solid rgba(116, 233, 248, 0.62);
-  border-radius: 50%;
-  box-shadow: 0 0 20px rgba(63, 217, 240, 0.12), inset 0 0 14px rgba(63, 217, 240, 0.08);
-  transform: translate(-50%, -50%);
-  transform-origin: center;
-}
-
-.science-orbit-ring i {
-  position: absolute;
-  top: 50%;
-  right: -6px;
-  width: 11px;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: #84edfa;
-  box-shadow: 0 0 0 5px rgba(130, 238, 250, 0.1), 0 0 20px rgba(130, 238, 250, 0.82);
-  transform: translateY(-50%);
-}
-
-.science-orbit-ring-one {
-  animation: orbit-ring-one 12s linear infinite;
-}
-
-.science-orbit-ring-two {
-  width: 88%;
-  height: 56%;
-  border-color: rgba(255, 178, 82, 0.62);
-  animation: orbit-ring-two 16s linear infinite;
-}
-
-.science-orbit-ring-two i {
-  background: #ffb653;
-  box-shadow: 0 0 0 5px rgba(255, 182, 83, 0.1), 0 0 20px rgba(255, 182, 83, 0.82);
-}
-
-.science-orbit-ring-three {
-  width: 72%;
-  height: 78%;
-  border-color: rgba(112, 226, 246, 0.34);
-  animation: orbit-ring-three 19s linear infinite;
-}
-
-.science-orbit-ring-three i {
-  width: 8px;
-  background: #d4f8ff;
-}
-
-.science-bokeh {
-  position: absolute;
-  z-index: 2;
-  width: clamp(70px, 10vw, 160px);
-  aspect-ratio: 1;
-  border: 1px solid rgba(142, 239, 251, 0.18);
-  border-radius: 50%;
-  background: radial-gradient(circle at 36% 30%, rgba(155, 243, 255, 0.22), rgba(51, 193, 216, 0.02) 63%, transparent 70%);
-  filter: blur(0.3px);
-  opacity: 0.72;
-  will-change: transform, opacity;
-}
-
-.science-bokeh-one {
-  top: 16%;
-  right: 16%;
-  animation: bokeh-one-float 14s ease-in-out infinite alternate;
-}
-
-.science-bokeh-two {
-  bottom: 12%;
-  right: 32%;
-  width: clamp(44px, 6vw, 92px);
-  border-color: rgba(255, 184, 94, 0.23);
-  background: radial-gradient(circle at 36% 30%, rgba(255, 194, 109, 0.26), rgba(242, 140, 40, 0.02) 63%, transparent 70%);
-  animation: bokeh-two-float 18s ease-in-out infinite alternate-reverse;
-}
-
-.science-bokeh-three {
-  top: 56%;
-  left: 39%;
-  width: clamp(32px, 4vw, 60px);
-  animation: bokeh-three-float 11s ease-in-out infinite alternate;
-}
-
-.teacher-auth .login-card {
-  box-shadow: var(--shadow-card), 0 0 0 1px rgba(112, 230, 246, 0.12), 0 0 82px rgba(36, 199, 226, 0.14), 0 0 120px rgba(242, 140, 40, 0.06);
-}
-
-@keyframes orbital-surface-drift {
-  from { background-position: 0% 15%; }
-  to { background-position: 100% 85%; }
-}
-
-@keyframes aurora-cyan-float {
-  from { transform: translate3d(-4vw, 1vh, 0) scale(0.88); opacity: 0.38; }
-  to { transform: translate3d(16vw, 12vh, 0) scale(1.22); opacity: 0.72; }
-}
-
-@keyframes aurora-orange-float {
-  from { transform: translate3d(3vw, 3vh, 0) scale(0.92); opacity: 0.28; }
-  to { transform: translate3d(-18vw, -14vh, 0) scale(1.2); opacity: 0.64; }
-}
-
-@keyframes aurora-blue-float {
-  from { transform: translate3d(4vw, -4vh, 0) scale(0.9); opacity: 0.18; }
-  to { transform: translate3d(-10vw, 14vh, 0) scale(1.25); opacity: 0.52; }
-}
-
-@keyframes orbital-system-float {
-  from { transform: translate(-50%, -48%) rotate(-2deg); }
-  to { transform: translate(-50%, -54%) rotate(2deg); }
-}
-
-@keyframes nucleus-pulse {
-  0%, 100% { transform: translate(-50%, -50%) scale(0.92); filter: brightness(0.94); }
-  50% { transform: translate(-50%, -50%) scale(1.1); filter: brightness(1.18); }
-}
-
-@keyframes orbit-ring-one {
-  from { transform: translate(-50%, -50%) rotate(12deg); }
-  to { transform: translate(-50%, -50%) rotate(372deg); }
-}
-
-@keyframes orbit-ring-two {
-  from { transform: translate(-50%, -50%) rotate(138deg); }
-  to { transform: translate(-50%, -50%) rotate(-222deg); }
-}
-
-@keyframes orbit-ring-three {
-  from { transform: translate(-50%, -50%) rotate(262deg); }
-  to { transform: translate(-50%, -50%) rotate(622deg); }
-}
-
-@keyframes bokeh-one-float {
-  from { transform: translate3d(0, 0, 0) scale(0.9); opacity: 0.35; }
-  to { transform: translate3d(-34px, 22px, 0) scale(1.14); opacity: 0.82; }
-}
-
-@keyframes bokeh-two-float {
-  from { transform: translate3d(0, 0, 0) scale(1); opacity: 0.26; }
-  to { transform: translate3d(22px, -32px, 0) scale(1.24); opacity: 0.7; }
-}
-
-@keyframes bokeh-three-float {
-  from { transform: translate3d(0, 0, 0); opacity: 0.2; }
-  to { transform: translate3d(16px, -24px, 0); opacity: 0.72; }
-}
-
-@media (max-width: 768px) {
-  .science-orbital-system {
-    top: 28%;
-    left: 18%;
-    width: 300px;
-    opacity: 0.46;
-  }
-
-  .science-aurora {
-    width: 120vw;
-    filter: blur(52px);
-  }
-
-  .science-bokeh-one {
-    right: 5%;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .science-backdrop::before,
-  .science-aurora,
-  .science-orbital-system,
-  .science-orbit-ring,
-  .science-nucleus,
-  .science-bokeh {
     animation: none;
   }
 }

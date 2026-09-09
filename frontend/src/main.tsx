@@ -9728,18 +9728,44 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
 function ScienceBackdrop() {
   return (
     <div className="science-backdrop" aria-hidden="true">
-      <div className="science-aurora science-aurora-cyan" />
-      <div className="science-aurora science-aurora-orange" />
-      <div className="science-aurora science-aurora-blue" />
-      <div className="science-orbital-system">
-        <span className="science-nucleus" />
-        <span className="science-orbit-ring science-orbit-ring-one"><i /></span>
-        <span className="science-orbit-ring science-orbit-ring-two"><i /></span>
-        <span className="science-orbit-ring science-orbit-ring-three"><i /></span>
-      </div>
-      <span className="science-bokeh science-bokeh-one" />
-      <span className="science-bokeh science-bokeh-two" />
-      <span className="science-bokeh science-bokeh-three" />
+      <div className="science-backdrop-glow science-backdrop-glow-cyan" />
+      <div className="science-backdrop-glow science-backdrop-glow-orange" />
+      <svg className="science-backdrop-art" viewBox="0 0 1000 760" fill="none" xmlns="http://www.w3.org/2000/svg" focusable="false">
+        <ellipse className="science-orbit science-orbit-main" cx="500" cy="390" rx="330" ry="148" />
+        <ellipse className="science-orbit science-orbit-secondary" cx="500" cy="390" rx="274" ry="208" transform="rotate(58 500 390)" />
+
+        <g className="science-art science-art-atom" transform="translate(150 126)">
+          <ellipse cx="0" cy="0" rx="67" ry="25" />
+          <ellipse cx="0" cy="0" rx="67" ry="25" transform="rotate(60)" />
+          <ellipse cx="0" cy="0" rx="67" ry="25" transform="rotate(120)" />
+          <circle className="science-art-accent" cx="0" cy="0" r="7" />
+        </g>
+
+        <g className="science-art science-art-dna" transform="translate(90 488)">
+          <path d="M0 0C58 20 58 72 0 92C-58 112-58 164 0 184" />
+          <path d="M92 0C34 20 34 72 92 92C150 112 150 164 92 184" />
+          <path d="M18 25L74 25M10 62L82 62M10 112L82 112M18 149L74 149" />
+        </g>
+
+        <g className="science-art science-art-molecule" transform="translate(790 160)">
+          <path d="M0 18L58 52L38 118L-28 118L-48 52L0 18Z" />
+          <path d="M-48 52L-86 16M58 52L94 26M38 118L55 164" />
+          <circle className="science-art-accent" cx="0" cy="18" r="10" />
+          <circle className="science-art-accent" cx="-48" cy="52" r="10" />
+          <circle className="science-art-accent" cx="58" cy="52" r="10" />
+          <circle className="science-art-accent" cx="38" cy="118" r="10" />
+          <circle className="science-art-accent" cx="-28" cy="118" r="10" />
+          <circle className="science-art-accent" cx="-86" cy="16" r="7" />
+          <circle className="science-art-accent" cx="94" cy="26" r="7" />
+          <circle className="science-art-accent" cx="55" cy="164" r="7" />
+        </g>
+
+        <g className="science-art science-art-tube" transform="translate(786 522) rotate(22)">
+          <path d="M-14 -70H14V18L38 58C47 73 36 92 18 92H-18C-36 92-47 73-38 58L-14 18V-70Z" />
+          <path d="M-14 -50H14M-30 58C-10 66 10 66 31 58" />
+          <path className="science-art-liquid" d="M-29 60C-8 67 11 67 30 60L38 74C44 84 35 92 20 92H-20C-35 92-44 84-38 74L-29 60Z" />
+        </g>
+      </svg>
     </div>
   );
 }
