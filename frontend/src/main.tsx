@@ -4121,8 +4121,8 @@ function PublicContentPage({
 
   if (!view) {
     return (
-      <Shell language={language} setLanguage={setLanguage} t={t}>
-        <main className="content-page">
+      <Shell language={language} setLanguage={setLanguage} t={t} pageVariant="public">
+        <main className="content-page public-content-page">
           <section className="content-hero content-loading" aria-live="polite">
             <p>{t("public.loading")}</p>
           </section>
@@ -4132,8 +4132,8 @@ function PublicContentPage({
   }
 
   return (
-    <Shell language={language} setLanguage={setLanguage} t={t}>
-      <main className="content-page">
+    <Shell language={language} setLanguage={setLanguage} t={t} pageVariant="public">
+      <main className="content-page public-content-page">
         <section className="content-hero">
           {slug !== "about-teacher" ? (
             <p className="eyebrow">
@@ -9762,6 +9762,7 @@ function Shell({
   onLogout,
   logoutLabel,
   headerVariant,
+  pageVariant,
   studentNotifications,
   studentNavigation
 }: {
@@ -9772,6 +9773,7 @@ function Shell({
   onLogout?: () => void;
   logoutLabel?: string;
   headerVariant?: "teacher-auth";
+  pageVariant?: "public";
   studentNotifications?: {
     studentCode: string;
     refreshKey?: number;
@@ -9829,7 +9831,8 @@ function Shell({
   ];
 
   return (
-    <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell auth-page-shell` : ""}`}>
+    <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell auth-page-shell` : ""} ${pageVariant ? `${pageVariant}-page-shell` : ""}`}>
+      {pageVariant === "public" ? <ScienceBackdrop variant="student" /> : null}
       <header
         className={`site-header mobile-first-header ${isStudentAuthenticated ? "is-authenticated" : "is-guest"} ${language === "ar" ? "is-ar" : "is-en"} ${headerVariant ? `${headerVariant}-header` : ""}`}
         dir={language}
@@ -9917,6 +9920,9 @@ function Shell({
                 <>
                   <a href="/tips" onClick={() => handleNavClick("tips")}>{t("nav.tips")}</a>
                   <a href="/teacher/login" onClick={() => handleNavClick("teacher-login")}>{t("nav.teacherLogin")}</a>
+                  {guestNavigation.map((item) => (
+                    <a href={item.href} key={item.id} onClick={() => handleNavClick(item.id)}>{item.label}</a>
+                  ))}
                 </>
               )}
             </nav>

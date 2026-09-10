@@ -49,6 +49,7 @@ const authDirectory = path.resolve(process.env.WHATSAPP_AUTH_DIR || path.resolve
 const QR_RENDER_TIMEOUT_MS = 5000;
 const QR_WAIT_TIMEOUT_MS = 10000;
 const CONNECTION_STALL_TIMEOUT_MS = 45000;
+const CONNECTION_HEALTHCHECK_INTERVAL_MS = 30000;
 const MAX_RECONNECT_DELAY_MS = 30000;
 const state = {
   status: "disconnected",
@@ -65,6 +66,7 @@ const state = {
   qrGeneration: 0,
   reconnectAttempt: 0,
   connectionWatchdog: null,
+  connectionHealthcheckClosing: false,
   authResetting: null,
 };
 
@@ -168,7 +170,9 @@ export async function updateWhatsAppSettings(input, { actorId, request = null, d
 
 function setDisconnected() {
   if (state.connectionWatchdog) clearTimeout(state.connectionWatchdog);
+  if (state.connectionWatchdog) clearInterval(state.connectionWatchdog);
   state.connectionWatchdog = null;
+  state.connectionHealthcheckClosing = false;
   state.status = "disconnected";
   state.phoneNumber = null;
   state.qr = null;
@@ -208,6 +212,30 @@ function armConnectionWatchdog(socket) {
       console.error("Failed to close stalled WhatsApp socket", error);
     });
   }, CONNECTION_STALL_TIMEOUT_MS);
+}
+
+function armConnectedWatchdog(socket) {
+  if (state.connectionWatchdog) clearTimeout(state.connectionWatchdog);
+  if (state.connectionWatchdog) clearInterval(state.connectionWatchdog);
+  const watchdog = setInterval(() => {
+    if (state.socket !== socket || state.status !== "connected" || state.manuallyDisconnected) {
+      clearInterval(watchdog);
+      if (state.connectionWatchdog === watchdog) state.connectionWatchdog = null;
+      return;
+    }
+
+    // Baileys has its own keep-alive ping, but a closed transport can briefly
+    // remain represented as connected in application state. Force the normal
+    // close/reconnect path when the underlying WebSocket is no longer open.
+    if (socket.ws?.isOpen === false && !state.connectionHealthcheckClosing) {
+      state.connectionHealthcheckClosing = true;
+      console.warn("WhatsApp health check found a closed WebSocket; reconnecting");
+      void Promise.resolve(socket.end(new Error("whatsapp_healthcheck_failed"))).catch((error) => {
+        console.error("Failed to close unhealthy WhatsApp socket", error);
+      }).finally(() => { state.connectionHealthcheckClosing = false; });
+    }
+  }, CONNECTION_HEALTHCHECK_INTERVAL_MS);
+  state.connectionWatchdog = watchdog;
 }
 
 export async function connectWhatsApp() {
@@ -253,12 +281,14 @@ export async function connectWhatsApp() {
       if (connection === "open") {
         state.status = "connected";
         state.connectionEstablished = true;
+        state.connectionHealthcheckClosing = false;
         state.reconnectAttempt = 0;
         if (state.connectionWatchdog) clearTimeout(state.connectionWatchdog);
         state.connectionWatchdog = null;
         state.qrGeneration += 1;
         state.qr = null;
         state.phoneNumber = normalizeEgyptianPhone(socket.user?.id?.split(":")[0]) || socket.user?.id?.split(":")[0] || null;
+        armConnectedWatchdog(socket);
         console.log(`WhatsApp connected${state.phoneNumber ? ` as ${state.phoneNumber}` : ""}`);
       }
       if (connection === "close") {

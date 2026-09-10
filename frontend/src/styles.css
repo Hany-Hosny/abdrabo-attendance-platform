@@ -13872,3 +13872,227 @@ html[data-scanner-feedback="error"]::after {
     transition: none;
   }
 }
+
+/* Public content pages share the auth portal's continuous background and
+   layered header, so tab changes feel like one connected application. */
+.public-page-shell {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  overflow-x: clip;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(59, 205, 229, 0.11), transparent 30%),
+    radial-gradient(circle at 18% 16%, rgba(64, 206, 230, 0.08), transparent 24%),
+    radial-gradient(circle at 84% 78%, rgba(242, 140, 40, 0.07), transparent 26%),
+    linear-gradient(145deg, #07111d 0%, #0a1d31 52%, #07111d 100%) !important;
+}
+
+.public-page-shell > .science-backdrop {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  min-height: 100dvh;
+}
+
+.public-page-shell > .site-header:not(.admin-header) {
+  position: sticky !important;
+  z-index: 100 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.public-page-shell > .public-content-page,
+.public-page-shell > .site-footer {
+  position: relative;
+  z-index: 1;
+}
+
+.public-content-page {
+  position: relative;
+  padding-top: clamp(28px, 5vw, 56px);
+}
+
+.public-content-page .content-hero {
+  position: relative;
+  z-index: 1;
+}
+
+.public-content-page .content-panel {
+  border-color: rgba(110, 209, 229, 0.2);
+  background: rgba(15, 23, 42, 0.38);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  -webkit-backdrop-filter: blur(12px) saturate(115%);
+  backdrop-filter: blur(12px) saturate(115%);
+}
+
+[data-theme="light"] .public-page-shell {
+  background: linear-gradient(145deg, #edf6fb 0%, #dcecf5 52%, #eef7fb 100%) !important;
+}
+
+[data-theme="light"] .public-content-page .content-panel {
+  border-color: rgba(67, 104, 143, 0.22);
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow:
+    0 24px 70px rgba(41, 64, 91, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Phone auth refinement: preserve the depth cues by giving the form room to
+   breathe and reducing the header to one clear active tab plus the menu. */
+@media (max-width: 600px) {
+  .mobile-first-header.site-header:not(.admin-header) {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "controls center identity";
+    min-height: 64px;
+    row-gap: 0 !important;
+  }
+
+  .mobile-first-header .header-center-nav {
+    justify-content: center;
+    overflow: visible;
+  }
+
+  .mobile-first-header .header-center-nav a:not(.active),
+  .mobile-first-header .header-center-nav button:not(.active) {
+    display: none !important;
+  }
+
+  .mobile-first-header .header-center-nav a.active,
+  .mobile-first-header .header-center-nav button.active {
+    min-height: 36px;
+    padding-inline: 12px;
+    border-radius: 11px;
+    font-size: 11px;
+  }
+
+  .auth-page-shell > .teacher-auth {
+    min-height: 0;
+    padding: clamp(24px, 8vh, 72px) 14px 24px;
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card {
+    width: min(100%, 390px);
+    padding: clamp(22px, 6vw, 30px);
+    border-radius: 22px;
+    background:
+      linear-gradient(145deg, rgba(27, 64, 86, 0.78), rgba(8, 24, 43, 0.88)),
+      rgba(15, 23, 42, 0.42) !important;
+    border-color: rgba(110, 209, 229, 0.34);
+    box-shadow:
+      0 7px 0 rgba(2, 12, 24, 0.8),
+      0 20px 42px rgba(0, 0, 0, 0.34),
+      0 0 38px rgba(77, 208, 225, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.36);
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card h1 {
+    margin-bottom: clamp(20px, 5vw, 28px);
+    font-size: clamp(32px, 9vw, 46px);
+    line-height: 1.08;
+    text-wrap: balance;
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card label {
+    margin-bottom: 10px;
+    font-size: 15px;
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card input {
+    min-height: 54px;
+    border-radius: 14px;
+    border-color: rgba(105, 145, 194, 0.44);
+    background: rgba(3, 13, 29, 0.88);
+    box-shadow:
+      inset 0 2px 5px rgba(0, 0, 0, 0.28),
+      0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card input:focus,
+  .auth-page-shell > .teacher-auth > .login-card input:focus-visible {
+    border-color: #6fe7f4;
+    box-shadow:
+      0 0 0 3px rgba(77, 208, 225, 0.2),
+      0 0 24px rgba(77, 208, 225, 0.2),
+      inset 0 2px 5px rgba(0, 0, 0, 0.28);
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card .primary-button,
+  .auth-page-shell > .teacher-auth > .login-card .secondary-button {
+    min-height: 54px;
+    margin-top: 16px;
+    border-radius: 14px;
+    transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card .primary-button {
+    box-shadow:
+      0 5px 0 rgba(155, 74, 10, 0.8),
+      0 14px 24px rgba(242, 140, 40, 0.2),
+      inset 0 1px 0 rgba(255, 235, 194, 0.36);
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card .primary-button:hover,
+  .auth-page-shell > .teacher-auth > .login-card .primary-button:focus-visible {
+    transform: translateY(-2px);
+    box-shadow:
+      0 7px 0 rgba(155, 74, 10, 0.8),
+      0 18px 30px rgba(242, 140, 40, 0.3),
+      inset 0 1px 0 rgba(255, 235, 194, 0.42);
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card .primary-button:active,
+  .auth-page-shell > .teacher-auth > .login-card .secondary-button:active {
+    transform: translateY(3px);
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card .primary-button:active {
+    box-shadow: 0 2px 0 rgba(155, 74, 10, 0.8), 0 8px 16px rgba(242, 140, 40, 0.18);
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card .secondary-button {
+    border-color: rgba(242, 140, 40, 0.58);
+    background: rgba(10, 35, 52, 0.48);
+    box-shadow:
+      0 4px 0 rgba(72, 40, 19, 0.7),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .auth-page-shell > .teacher-auth > .login-card .secondary-button:hover,
+  .auth-page-shell > .teacher-auth > .login-card .secondary-button:focus-visible {
+    transform: translateY(-2px);
+    box-shadow:
+      0 6px 0 rgba(72, 40, 19, 0.7),
+      0 0 20px rgba(242, 140, 40, 0.16),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  .science-portal {
+    top: 48%;
+    width: min(150vw, 680px);
+    opacity: 0.54;
+  }
+
+  .science-backdrop-glow-cyan {
+    top: 44%;
+    left: 50%;
+  }
+
+  .science-backdrop-glow-orange {
+    top: 55%;
+    left: 50%;
+    width: min(76vw, 360px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-page-shell > .teacher-auth > .login-card .primary-button,
+  .auth-page-shell > .teacher-auth > .login-card .secondary-button {
+    transition: none;
+  }
+}

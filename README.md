@@ -50,6 +50,15 @@ Keep these settings aligned with the repository:
 - Frontend start command: `npm run start --workspace=@abdrabo/frontend`.
 - Frontend `VITE_API_BASE_URL`: `https://abdrabobackend-production.up.railway.app/api`.
 
+### WhatsApp connection persistence
+
+The WhatsApp linked-device credentials are stored in `WHATSAPP_AUTH_DIR` (the
+default is `backend/whatsapp_auth`). On Railway, attach a persistent Volume to
+the backend service and mount it at `/app/backend/whatsapp_auth`. Without that
+volume, a backend redeploy or replacement removes the linked-device session and
+requires QR pairing again. Do not attach the volume to the frontend service or
+run multiple backend replicas for this single WhatsApp session.
+
 Local `.env` changes do not update Railway Variables. Docker Compose and Railway are separate
 deployment paths, even though they use the same source repository.
 
