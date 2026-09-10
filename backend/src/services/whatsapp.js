@@ -6,6 +6,8 @@ import { pool, query } from "../db/pool.js";
 import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "./auth.js";
 import { recordWhatsAppConnectionNotification } from "./notifications.js";
 
+const normalizeTeacherDisplayName = (value) => String(value ?? "").replace(/مستر أحمد عبدربه/g, "Mr. Ahmed Abdrabo");
+
 const DEFAULT_TEMPLATES = Object.freeze([
   "مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}",
   "تنبيه حضور - مستر أحمد عبدربه:\nحضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام الساعة {time}.\nرابط ملف المتابعة: {portal_link}\nالمرجع: {ref_code}",
@@ -86,8 +88,8 @@ export function normalizeEgyptianPhone(value) {
 
 function normalizeSettings(row) {
   const normalizeTemplates = (value, fallback, requiredPlaceholder) => {
-    const templates = Array.isArray(value) ? value.map((template) => String(template ?? "").trim()).filter(Boolean).slice(0, 4) : [];
-    return templates.length >= 3 && templates.every((template) => templateHasPlaceholder(template, requiredPlaceholder)) ? templates : [...fallback];
+    const templates = Array.isArray(value) ? value.map((template) => normalizeTeacherDisplayName(String(template ?? "").trim())).filter(Boolean).slice(0, 4) : [];
+    return templates.length >= 3 && templates.every((template) => templateHasPlaceholder(template, requiredPlaceholder)) ? templates : fallback.map(normalizeTeacherDisplayName);
   };
   const templates = normalizeTemplates(row?.templates, DEFAULT_TEMPLATES, "{student_name}");
   const gradeTemplates = normalizeTemplates(row?.grade_templates, DEFAULT_GRADE_TEMPLATES, "{exam_title}");
@@ -679,7 +681,7 @@ async function processWhatsAppJob() {
     const body = portalLink && !templateHasPlaceholder(template, "portal_link")
       ? `${renderedBody}\n${portalLink}`
       : renderedBody;
-    const footer = locale === "ar-EG" ? "— منصة مستر أحمد عبدربه" : "— Abdrabo Attendance Platform";
+    const footer = locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
     const finalBody = body.includes(footer) ? body : `${body}\n\n${footer}`;
     await query(
       `UPDATE whatsapp_notification_jobs

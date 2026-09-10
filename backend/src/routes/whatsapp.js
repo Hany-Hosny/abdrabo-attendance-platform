@@ -1,4 +1,5 @@
 import express from "express";
+import { query } from "../db/pool.js";
 import { requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
 import { auditLog } from "../services/audit.js";
 import { hasPermission } from "../services/rbac.js";

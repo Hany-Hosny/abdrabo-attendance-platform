@@ -37,6 +37,7 @@ type WhatsAppHistoryRow = {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const TEMPLATE_TOKEN_PATTERN = /\{\{?\s*([a-zA-Z0-9_-]+)\s*\}\}?/gi;
+const normalizeTeacherDisplayName = (value: string) => value.replace(/مستر أحمد عبدربه/g, "Mr. Ahmed Abdrabo");
 
 function templateUsesPlaceholder(template: string, placeholder: string) {
   const key = placeholder.replace(/^\{+|\}+$/g, "").trim().toLowerCase();
@@ -67,20 +68,20 @@ const templateGroups: TemplateGroup[] = [
 
 const defaultSettings: WhatsAppSettings = {
   auto_send: false,
-  templates: fallbackTemplates,
-  grade_templates: fallbackGradeTemplates,
-  receipt_templates: fallbackReceiptTemplates,
-  advance_payment_templates: fallbackAdvancePaymentTemplates,
+  templates: fallbackTemplates.map(normalizeTeacherDisplayName),
+  grade_templates: fallbackGradeTemplates.map(normalizeTeacherDisplayName),
+  receipt_templates: fallbackReceiptTemplates.map(normalizeTeacherDisplayName),
+  advance_payment_templates: fallbackAdvancePaymentTemplates.map(normalizeTeacherDisplayName),
   min_delay_seconds: 4,
   max_delay_seconds: 8
 };
 
 function normalizeSettings(value: Partial<WhatsAppSettings> | undefined): WhatsAppSettings {
   const normalizeTemplates = (input: string[] | undefined, fallback: string[], requiredPlaceholder: string) => {
-    const templates = Array.isArray(input) ? input.map((item) => String(item ?? "").trim()).filter(Boolean).slice(0, 4) : [];
+    const templates = Array.isArray(input) ? input.map((item) => normalizeTeacherDisplayName(String(item ?? "").trim())).filter(Boolean).slice(0, 4) : [];
     const placeholderKey = requiredPlaceholder.replace(/^\{+|\}+$/g, "").trim().toLowerCase();
     const hasPlaceholder = (template: string) => templateUsesPlaceholder(template, placeholderKey);
-    return templates.length >= 3 && templates.every(hasPlaceholder) ? templates : [...fallback];
+    return templates.length >= 3 && templates.every(hasPlaceholder) ? templates : fallback.map(normalizeTeacherDisplayName);
   };
   return {
     auto_send: value?.auto_send === true,
