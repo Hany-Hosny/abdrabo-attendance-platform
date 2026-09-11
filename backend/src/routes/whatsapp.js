@@ -1,4 +1,5 @@
 import express from "express";
+import { z } from "zod";
 import { query } from "../db/pool.js";
 import { requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
 import { auditLog } from "../services/audit.js";
@@ -8,6 +9,7 @@ import {
   getWhatsAppQr,
   getWhatsAppSettings,
   getWhatsAppStatus,
+  enqueueGradeBatchNotifications,
   enqueueGradeNotification,
   updateWhatsAppSettings
 } from "../services/whatsapp.js";
@@ -17,6 +19,11 @@ whatsappRouter.use(requireTeacher);
 
 const HISTORY_TYPES = new Set(["attendance", "grade", "receipt", "advance_payment"]);
 const HISTORY_STATUSES = new Set(["pending", "processing", "sent", "failed", "skipped"]);
+// exam_results.id is SERIAL in the existing PostgreSQL schema, so the
+// boundary accepts numeric IDs (including JSON string IDs from older clients).
+const batchExamSchema = z.object({
+  resultIds: z.array(z.coerce.number().int().positive()).min(1).max(500)
+});
 
 function maskPhoneNumber(value) {
   const phone = String(value || "");
@@ -141,5 +148,14 @@ whatsappRouter.post("/send-grade", requirePermission("whatsapp.send_grades"), as
     if (result.reason === "invalid_phone") return res.status(409).json({ ok: false, status: result.reason });
     if (result.reason === "queue_conflict") return res.status(503).json({ ok: false, status: result.reason });
     res.status(result.reason === "already_queued" ? 200 : 202).json({ ok: true, ...result });
+  } catch (error) { next(error); }
+});
+
+whatsappRouter.post("/batch-exams", requirePermission("whatsapp.send_grades"), async (req, res, next) => {
+  const parsed = batchExamSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, status: "invalid_batch_result_ids", errors: [] });
+  try {
+    const result = await enqueueGradeBatchNotifications({ resultIds: parsed.data.resultIds });
+    res.status(200).json({ ok: true, ...result });
   } catch (error) { next(error); }
 });

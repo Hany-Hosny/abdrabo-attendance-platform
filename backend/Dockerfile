@@ -15,14 +15,12 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/package.json
+COPY shared/package.json ./shared/package.json
 
-RUN npm ci \
-    --omit=dev \
-    --workspace=@abdrabo/backend \
-    --include-workspace-root=false \
-    && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --chown=appuser:appgroup backend/src ./backend/src
+COPY --chown=appuser:appgroup shared ./shared
 
 RUN mkdir -p /app/backend/whatsapp_auth \
     && chown appuser:appgroup /app/backend/whatsapp_auth

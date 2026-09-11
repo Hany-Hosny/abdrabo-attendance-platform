@@ -830,7 +830,11 @@ operationsRouter.post("/fees/scan-lookup", requirePermission("payments.view"), a
 });
 
 async function recordAttendance({ sessionId, studentId, actorId, method = "scanner", status = "present", ip, deviceId, idempotencyKey = null, whatsappNotified = false, request }) {
-  const result = await query(`INSERT INTO attendance_records (session_id,student_id,status,method,ip_address,device_id,idempotency_key,whatsapp_notified)
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    const result = await client.query(`INSERT INTO attendance_records (session_id,student_id,status,method,ip_address,device_id,idempotency_key,whatsapp_notified)
     SELECT $1,$2,$3,$4,$5,$6,$7,$8
     WHERE EXISTS (
       SELECT 1
@@ -845,7 +849,7 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
     )
     ON CONFLICT DO NOTHING RETURNING *`, [sessionId, studentId, status, method, ip, deviceId, idempotencyKey, Boolean(whatsappNotified)]);
   if (!result.rowCount) {
-    const stillOpen = await query(`
+    const stillOpen = await client.query(`
       SELECT 1
       FROM attendance_sessions s
       JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
@@ -857,55 +861,246 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
           AND ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
       LIMIT 1
     `, [sessionId]);
-    if (!stillOpen.rowCount) return { windowClosed: true };
+    if (!stillOpen.rowCount) {
+      await client.query("COMMIT");
+      return { windowClosed: true };
+    }
     if (idempotencyKey) {
-      const replay = await query("SELECT * FROM attendance_records WHERE idempotency_key=$1 LIMIT 1", [idempotencyKey]);
+      const replay = await client.query("SELECT * FROM attendance_records WHERE idempotency_key=$1 LIMIT 1", [idempotencyKey]);
       if (replay.rowCount) {
         const record = replay.rows[0];
         if (Number(record.session_id) !== Number(sessionId) || Number(record.student_id) !== Number(studentId)) {
+          await client.query("COMMIT");
           return { duplicate: true, idempotencyConflict: true, record: null };
         }
+        await client.query("COMMIT");
         return { replay: true, record };
       }
     }
-    const existing = await query("SELECT * FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1", [sessionId, studentId]);
+    const existing = await client.query("SELECT * FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1", [sessionId, studentId]);
+    await client.query("COMMIT");
     return { duplicate: true, record: existing.rows[0] || null };
   }
-  await auditLog({ action: "attendance_recorded", actorId, studentId, sessionId, details: { method, status_after: status, record_id: result.rows[0].id, checkin_time: result.rows[0].checkin_time }, request });
-  if (status === "present" || status === "late") {
-    if (whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: result.rows[0].id, studentId })
-      .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
-  }
+  await auditLog({ db: client, action: "attendance_recorded", actorId, studentId, sessionId, details: { method, status_after: status, record_id: result.rows[0].id, checkin_time: result.rows[0].checkin_time }, request });
+  await client.query("COMMIT");
+  if ((status === "present" || status === "late") && whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: result.rows[0].id, studentId })
+    .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
   return { record: result.rows[0] };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
-const scannerMaintenanceAt = new Map();
+function attendanceWindowMessage(status) {
+  if (status === "session_not_started") return "Session not started.";
+  if (status === "attendance_day_mismatch") return "This class is not scheduled today.";
+  return "Attendance window closed.";
+}
 
-async function maintainScannerSessions(groupId) {
-  const key = String(groupId);
-  const now = Date.now();
-  const lastRun = scannerMaintenanceAt.get(key) || 0;
-  if (now - lastRun < 30_000) return;
-  scannerMaintenanceAt.set(key, now);
-  await finalizeExpiredAttendanceSessions();
-  // Repair only sessions finalized by the legacy ends_at rule. The short
-  // per-group cooldown keeps this compatibility path out of every scan.
-  await query(`DELETE FROM attendance_records ar
-    USING attendance_sessions s JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
-    WHERE ar.session_id=s.id AND s.group_id=$1 AND s.status='closed' AND ar.method='system'
-      AND cs.closes_after_minutes>20
-      AND NOT EXISTS (SELECT 1 FROM attendance_records existing WHERE existing.session_id=s.id AND existing.method <> 'system')
-      AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN
-        (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
-        AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [groupId]);
-  await query(`UPDATE attendance_sessions s SET status='open'
-    FROM class_schedules cs
-    WHERE s.group_id=$1 AND s.schedule_id=cs.id AND cs.group_id=s.group_id AND s.status='closed'
-      AND cs.closes_after_minutes>20
-      AND NOT EXISTS (SELECT 1 FROM attendance_records ar WHERE ar.session_id=s.id AND ar.method <> 'system')
-      AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN
-        (s.session_date+cs.start_time-(cs.opens_before_minutes||' minutes')::interval)
-        AND (s.session_date+cs.start_time+(cs.closes_after_minutes||' minutes')::interval)`, [groupId]);
+async function resolveRequestedAttendanceSession({ sessionId, groupId, actorId, request }) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`attendance-group:${groupId}`]);
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`attendance-session:${sessionId}`]);
+    const sessionResult = await client.query(`
+      SELECT s.*, to_char(s.session_date, 'YYYY-MM-DD') AS session_date_key,
+        cs.day_of_week, cs.start_time, cs.end_time,
+        cs.opens_before_minutes, cs.closes_after_minutes,
+        g.is_active AS group_active, g.deleted_at AS group_deleted_at
+      FROM attendance_sessions s
+      JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
+        AND cs.is_active=TRUE AND cs.deleted_at IS NULL
+      JOIN groups g ON g.id=s.group_id
+      WHERE s.id=$1
+      FOR UPDATE OF s
+    `, [sessionId]);
+    if (!sessionResult.rowCount) {
+      await client.query("COMMIT");
+      return { status: "session_not_found" };
+    }
+    const session = sessionResult.rows[0];
+    if (Number(session.group_id) !== Number(groupId)) {
+      await client.query("COMMIT");
+      return { status: "wrong_group" };
+    }
+    if (!session.group_active || session.group_deleted_at) {
+      await client.query("COMMIT");
+      return { status: "attendance_window_closed", session };
+    }
+
+    const clock = await client.query("SELECT CURRENT_TIMESTAMP AS server_now");
+    let window;
+    try {
+      window = assertAttendanceWindow({
+        sessionDate: session.session_date_key,
+        dayOfWeek: session.day_of_week,
+        startTime: session.start_time,
+        endTime: session.end_time,
+        openBeforeMinutes: session.opens_before_minutes,
+        closeAttendanceAfterMinutes: session.closes_after_minutes
+      }, { now: clock.rows[0].server_now });
+    } catch (error) {
+      await client.query("COMMIT");
+      return { status: error.code || "attendance_window_closed", session, window: error.attendanceWindow };
+    }
+
+    if (session.status !== "open") {
+      const reopened = await client.query(`
+        UPDATE attendance_sessions s
+        SET status='open',
+            starts_at=((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
+            opens_at=(((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+            closes_at=(((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+            ends_at=((((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time)) AT TIME ZONE 'Africa/Cairo')
+        FROM class_schedules cs
+        WHERE s.id=$1 AND cs.id=s.schedule_id
+        RETURNING s.*
+      `, [sessionId]);
+      if (!reopened.rowCount) throw new Error("attendance_session_reopen_conflict");
+      await auditLog({
+        db: client,
+        action: "attendance_session_auto_reopened",
+        actorId,
+        sessionId,
+        details: {
+          group_id: session.group_id,
+          schedule_id: session.schedule_id,
+          status_before: session.status,
+          status_after: "open",
+          previous_bounds: { starts_at: session.starts_at, opens_at: session.opens_at, closes_at: session.closes_at, ends_at: session.ends_at },
+          recalculated_bounds: { starts_at: reopened.rows[0].starts_at, opens_at: reopened.rows[0].opens_at, closes_at: reopened.rows[0].closes_at, ends_at: reopened.rows[0].ends_at },
+          server_now: clock.rows[0].server_now,
+          window
+        },
+        request
+      });
+      await client.query("COMMIT");
+      return { status: "ok", session: reopened.rows[0], window, reopened: true };
+    }
+    await client.query("COMMIT");
+    return { status: "ok", session, window, reopened: false };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function resolveImplicitAttendanceSession({ groupId, actorId, request }) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`attendance-group:${groupId}`]);
+    const result = await client.query(`
+      SELECT s.*, to_char(s.session_date, 'YYYY-MM-DD') AS session_date_key,
+        cs.day_of_week, cs.start_time, cs.end_time,
+        cs.opens_before_minutes, cs.closes_after_minutes,
+        g.is_active AS group_active, g.deleted_at AS group_deleted_at
+      FROM attendance_sessions s
+      JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
+      JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
+        AND cs.is_active=TRUE AND cs.deleted_at IS NULL
+      WHERE s.group_id=$1
+        AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+        AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
+      ORDER BY s.starts_at, s.id
+      FOR UPDATE OF s
+    `, [groupId]);
+    const clock = await client.query("SELECT CURRENT_TIMESTAMP AS server_now");
+    let fallbackStatus = "closed_session";
+    for (const session of result.rows) {
+      let window;
+      try {
+        window = assertAttendanceWindow({
+          sessionDate: session.session_date_key,
+          dayOfWeek: session.day_of_week,
+          startTime: session.start_time,
+          endTime: session.end_time,
+          openBeforeMinutes: session.opens_before_minutes,
+          closeAttendanceAfterMinutes: session.closes_after_minutes
+        }, { now: clock.rows[0].server_now });
+      } catch (error) {
+        fallbackStatus = error.code || fallbackStatus;
+        continue;
+      }
+      if (session.status !== "open") {
+        const reopened = await client.query(`
+          UPDATE attendance_sessions s
+          SET status='open',
+              starts_at=((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
+              opens_at=(((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+              closes_at=(((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+              ends_at=((((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time)) AT TIME ZONE 'Africa/Cairo')
+          FROM class_schedules cs
+          WHERE s.id=$1 AND cs.id=s.schedule_id
+          RETURNING s.*
+        `, [session.id]);
+        if (!reopened.rowCount) throw new Error("attendance_session_reopen_conflict");
+        await auditLog({
+          db: client,
+          action: "attendance_session_auto_reopened",
+          actorId,
+          sessionId: session.id,
+          details: { group_id: groupId, schedule_id: session.schedule_id, status_before: session.status, status_after: "open", server_now: clock.rows[0].server_now, window },
+          request
+        });
+        await client.query("COMMIT");
+        return { status: "ok", session: reopened.rows[0], window, reopened: true };
+      }
+      await client.query("COMMIT");
+      return { status: "ok", session, window, reopened: false };
+    }
+    await client.query("COMMIT");
+    return { status: fallbackStatus };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function correctSystemAbsence({ sessionId, studentId, actorId, ip, deviceId, idempotencyKey, whatsappNotified, request }) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    const corrected = await client.query(`
+      UPDATE attendance_records
+      SET status='present', method='scanner', checkin_time=NOW(), ip_address=$3, device_id=$4,
+          whatsapp_notified=$5, idempotency_key=COALESCE(idempotency_key,$6)
+      WHERE session_id=$1 AND student_id=$2 AND method='system' AND status='absent'
+        AND EXISTS (
+          SELECT 1
+          FROM attendance_sessions s
+          JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
+          WHERE s.id=$1 AND s.status='open' AND cs.is_active=TRUE AND cs.deleted_at IS NULL
+            AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
+            AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+            AND CURRENT_TIMESTAMP BETWEEN
+              ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+              AND ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+        )
+      RETURNING *
+    `, [sessionId, studentId, ip, deviceId, whatsappNotified, idempotencyKey]);
+    if (!corrected.rowCount) {
+      await client.query("COMMIT");
+      return null;
+    }
+    await auditLog({ db: client, action: "attendance_recorded", actorId, studentId, sessionId, details: { method: "scanner", status_before: "absent", status_after: "present", record_id: corrected.rows[0].id, corrected_system_absence: true }, request });
+    await client.query("COMMIT");
+    return corrected.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 operationsRouter.post("/attendance/manual", requirePermission("attendance.manage"), async (req, res, next) => {
@@ -979,44 +1174,11 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     if (hasExplicitSessionId) {
       const requestedSessionId = Number(normalizeDigits(rawSessionId).trim());
       if (!Number.isSafeInteger(requestedSessionId) || requestedSessionId <= 0) return res.status(400).json({ ok: false, status: "invalid_session_id", student: publicStudent });
-      sessionResult = await query(`
-        SELECT s.*, cs.day_of_week, cs.start_time, cs.end_time,
-          cs.opens_before_minutes, cs.closes_after_minutes,
-          g.is_active AS group_active, g.deleted_at AS group_deleted_at
-        FROM attendance_sessions s
-        JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
-          AND cs.is_active=TRUE AND cs.deleted_at IS NULL
-        JOIN groups g ON g.id=s.group_id
-        WHERE s.id=$1
-        LIMIT 1
-      `, [requestedSessionId]);
-      if (!sessionResult.rowCount) return res.status(409).json({ ok: false, error: "session_not_found", status: "session_not_found", message: "الحصة غير موجودة", student: publicStudent });
-      if (Number(sessionResult.rows[0].group_id) !== Number(student.group_id)) {
-        return res.status(409).json({ ok: false, error: "wrong_group", status: "wrong_group", message: "الطالب غير مسجل في هذه المجموعة", student: publicStudent });
-      }
-      const session = sessionResult.rows[0];
-      if (session.status !== "open" || !session.group_active || session.group_deleted_at) {
-        return res.status(409).json({ ok: false, error: "attendance_window_closed", status: "attendance_window_closed", message: "Attendance window closed.", student: publicStudent });
-      }
-      const serverClock = await query("SELECT CURRENT_TIMESTAMP AS server_now");
-      try {
-        assertAttendanceWindow({
-          sessionDate: String(session.session_date).slice(0, 10),
-          dayOfWeek: session.day_of_week,
-          startTime: session.start_time,
-          endTime: session.end_time,
-          openBeforeMinutes: session.opens_before_minutes,
-          closeAttendanceAfterMinutes: session.closes_after_minutes
-        }, { now: serverClock.rows[0].server_now });
-      } catch (error) {
-        const status = error.code || "attendance_window_closed";
-        const message = status === "session_not_started"
-          ? "Session not started."
-          : status === "attendance_day_mismatch"
-            ? "This class is not scheduled today."
-            : "Attendance window closed.";
-        return res.status(409).json({ ok: false, error: status, status, message, student: publicStudent });
-      }
+      const resolved = await resolveRequestedAttendanceSession({ sessionId: requestedSessionId, groupId: student.group_id, actorId: req.teacher.id, request: req });
+      if (resolved.status === "session_not_found") return res.status(409).json({ ok: false, error: "session_not_found", status: "session_not_found", message: "الحصة غير موجودة", student: publicStudent });
+      if (resolved.status === "wrong_group") return res.status(409).json({ ok: false, error: "wrong_group", status: "wrong_group", message: "الطالب غير مسجل في هذه المجموعة", student: publicStudent });
+      if (resolved.status !== "ok") return res.status(409).json({ ok: false, error: resolved.status, status: resolved.status, message: attendanceWindowMessage(resolved.status), student: publicStudent });
+      sessionResult = { rows: [resolved.session], rowCount: 1 };
     } else {
       const timing = await getAttendanceTimingDefaults();
       await query(`INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, ends_at, status)
@@ -1028,21 +1190,9 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
       ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
-      await maintainScannerSessions(student.group_id);
-      sessionResult = await query(`SELECT s.*
-      FROM attendance_sessions s
-      JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
-      JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id AND cs.is_active=TRUE AND cs.deleted_at IS NULL
-        AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
-      WHERE s.group_id=$1
-        AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
-        AND s.status='open'
-        AND CURRENT_TIMESTAMP BETWEEN
-          (s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'
-          AND (s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'
-      ORDER BY s.starts_at
-      LIMIT 1`, [student.group_id]);
-      if (!sessionResult.rowCount) return res.status(409).json({ ok: false, error: "closed_session", status: "closed_session", message: "لا توجد حصة مفتوحة لهذه المجموعة الآن", student: publicStudent });
+      const resolved = await resolveImplicitAttendanceSession({ groupId: student.group_id, actorId: req.teacher.id, request: req });
+      if (resolved.status !== "ok") return res.status(409).json({ ok: false, error: resolved.status, status: resolved.status, message: resolved.status === "closed_session" ? "لا توجد حصة مفتوحة لهذه المجموعة الآن" : attendanceWindowMessage(resolved.status), student: publicStudent });
+      sessionResult = { rows: [resolved.session], rowCount: 1 };
     }
     // Run hardware-bounce suppression only after the student and session are
     // known to be valid, so real database/business errors are never swallowed.
@@ -1050,26 +1200,11 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
       return res.status(200).json({ ok: true, status: "ignored_hardware_bounce" });
     }
     const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
-    const corrected = await query(`UPDATE attendance_records
-      SET status='present', method='scanner', checkin_time=NOW(), whatsapp_notified=$3, idempotency_key=COALESCE(idempotency_key,$4)
-      WHERE session_id=$1 AND student_id=$2 AND method='system' AND status='absent'
-        AND EXISTS (
-          SELECT 1
-          FROM attendance_sessions s
-          JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
-          WHERE s.id=$1 AND s.status='open' AND cs.is_active=TRUE AND cs.deleted_at IS NULL
-            AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
-            AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
-            AND CURRENT_TIMESTAMP BETWEEN
-              ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
-              AND ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
-        )
-      RETURNING *`, [sessionResult.rows[0].id, student.id, whatsappNotified, idempotencyKey]);
-    if (corrected.rowCount) {
-      await auditLog({ action: "attendance_recorded", actorId: req.teacher.id, studentId: student.id, sessionId: sessionResult.rows[0].id, details: { method: "scanner", status_before: "absent", status_after: "present", record_id: corrected.rows[0].id, corrected_system_absence: true }, request: req });
-      if (whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: corrected.rows[0].id, studentId: student.id })
+    const corrected = await correctSystemAbsence({ sessionId: sessionResult.rows[0].id, studentId: student.id, actorId: req.teacher.id, ip: req.ip, deviceId, idempotencyKey, whatsappNotified, request: req });
+    if (corrected) {
+      if (whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: corrected.id, studentId: student.id })
         .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
-      return res.json({ ok: true, status: "attendance_recorded", student: publicStudent, record: corrected.rows[0], corrected: true });
+      return res.json({ ok: true, status: "attendance_recorded", student: publicStudent, record: corrected, corrected: true });
     }
     const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,whatsappNotified,request:req});
     if (saved.windowClosed) return res.status(409).json({ ok: false, error: "attendance_window_closed", status: "attendance_window_closed", message: "Attendance window closed.", student: publicStudent });

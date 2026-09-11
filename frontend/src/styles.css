@@ -3101,6 +3101,33 @@ textarea {
   .whatsapp-history-date { display: none; }
 }
 
+/* Bulk exam-result dispatch */
+.exam-selection-column { width: 42px; text-align: center; }
+.exam-selection-column input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.exam-bulk-action-bar { position: sticky; bottom: 14px; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 16px; padding: 14px 16px; border: 1px solid rgba(110, 209, 229, .32); border-radius: 16px; background: rgba(5, 20, 36, .9); box-shadow: 0 18px 48px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .12); backdrop-filter: blur(18px); }
+.exam-bulk-action-bar strong { color: var(--text); font-size: 13px; }
+.exam-bulk-action-buttons { display: flex; flex-wrap: wrap; gap: 9px; }
+.exam-bulk-action-buttons button { width: auto; min-height: 40px; margin-top: 0; padding-inline: 16px; }
+.exam-bulk-action-buttons .primary-button { display: inline-flex; align-items: center; gap: 8px; }
+.exam-bulk-toast { position: fixed; inset-inline-start: 24px; bottom: 24px; z-index: 30; max-width: min(420px, calc(100vw - 48px)); padding: 13px 16px; border: 1px solid rgba(77, 208, 225, .38); border-radius: 12px; background: rgba(5, 20, 36, .94); color: #e7f8ff; box-shadow: 0 16px 38px rgba(0, 0, 0, .3); backdrop-filter: blur(16px); font-size: 12px; font-weight: 800; }
+.exam-bulk-toast.error { border-color: rgba(255, 127, 114, .45); color: #ffb0a8; }
+.exam-bulk-confirm-backdrop { z-index: 25; }
+.exam-bulk-confirm-modal { width: min(460px, 100%); }
+.exam-bulk-confirm-modal p { margin: 0; color: var(--muted); line-height: 1.8; }
+.exam-bulk-confirm-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.exam-bulk-confirm-actions button { width: auto; min-width: 130px; margin-top: 0; padding-inline: 16px; }
+
+[data-theme="light"] .exam-bulk-action-bar,
+[data-theme="light"] .exam-bulk-toast { background: rgba(255, 255, 255, .94); color: #142238; }
+
+@media (max-width: 620px) {
+  .exam-bulk-action-bar { align-items: stretch; flex-direction: column; }
+  .exam-bulk-action-buttons { display: grid; grid-template-columns: 1fr 1fr; }
+  .exam-bulk-action-buttons button { width: 100%; }
+  .exam-bulk-confirm-actions { flex-direction: column-reverse; }
+  .exam-bulk-confirm-actions button { width: 100%; }
+}
+
 .section-heading h2 {
   margin-bottom: 12px;
   font-size: 26px;

@@ -534,12 +534,185 @@ function redactPortalLink(value) {
     .replace(/([?&]access_token=)[A-Za-z0-9._-]+/g, "$1[redacted]");
 }
 
-async function createPortalAccessRecord(studentId, accessToken) {
-  await query(
+async function createPortalAccessRecord(studentId, accessToken, db = query) {
+  await db(
     `INSERT INTO student_portal_access_tokens (token_hash, student_id, expires_at)
      VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
     [hashStudentPortalAccessToken(accessToken), studentId]
   );
+}
+
+/**
+ * Hydrates and atomically enqueues a batch of exam-result notifications.
+ * The queue remains the only hand-off point to Baileys; this function never
+ * sends a WhatsApp message directly.
+ */
+export async function enqueueGradeBatchNotifications({ resultIds }) {
+  const normalizedIds = [...new Set((resultIds || []).map((value) => Number(value)).filter((value) => Number.isSafeInteger(value) && value > 0))];
+  if (!normalizedIds.length) return { queuedCount: 0, ignoredCount: 0, ignored: [], queuedResultIds: [], errors: [] };
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const hydrated = await client.query(`
+      SELECT er.id AS result_id, er.score, e.title AS exam_title, e.max_score, e.exam_date,
+        s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone,
+        s.whatsapp_opted_out, s.is_active, s.deleted_at
+      FROM exam_results er
+      JOIN exams e ON e.id = er.exam_id
+      JOIN students s ON s.id = er.student_id
+      WHERE er.id = ANY($1::int[]) AND s.is_active = TRUE AND s.deleted_at IS NULL
+      ORDER BY array_position($1::int[], er.id)`, [normalizedIds]);
+
+    const rowsById = new Map(hydrated.rows.map((row) => [Number(row.result_id), row]));
+    const ignored = [];
+    const candidates = [];
+    for (const resultId of normalizedIds) {
+      const row = rowsById.get(resultId);
+      if (!row) {
+        ignored.push({ resultId, reason: "not_found" });
+        continue;
+      }
+      if (row.whatsapp_opted_out === true) {
+        ignored.push({ resultId, reason: "opted_out", studentName: row.student_name });
+        continue;
+      }
+      const phone = normalizeEgyptianPhone(row.guardian_phone);
+      if (!phone) {
+        ignored.push({ resultId, reason: "invalid_phone", studentName: row.student_name });
+        continue;
+      }
+      candidates.push({ row, phone });
+    }
+
+    if (!candidates.length) {
+      await client.query("COMMIT");
+      return { queuedCount: 0, ignoredCount: ignored.length, ignored, queuedResultIds: [], errors: [] };
+    }
+
+    const existing = await client.query(`
+      SELECT source_id, status
+      FROM whatsapp_notification_jobs
+      WHERE notification_type = 'grade'
+        AND source_id = ANY($1::bigint[])
+        AND status IN ('pending', 'processing')`, [candidates.map(({ row }) => Number(row.result_id))]);
+    const activeSourceIds = new Set(existing.rows.map((row) => Number(row.source_id)));
+    const pendingCandidates = candidates.filter(({ row }) => {
+      const resultId = Number(row.result_id);
+      if (!activeSourceIds.has(resultId)) return true;
+      ignored.push({ resultId, reason: "already_queued", studentName: row.student_name });
+      return false;
+    });
+
+    if (!pendingCandidates.length) {
+      await client.query("COMMIT");
+      return { queuedCount: 0, ignoredCount: ignored.length, ignored, queuedResultIds: [], errors: [] };
+    }
+
+    const settings = await getWhatsAppSettings(client.query.bind(client));
+    const templates = notificationTemplates(settings, "grade").filter(Boolean);
+    await client.query(
+      `INSERT INTO whatsapp_template_rotation (notification_type, next_index)
+       VALUES ('grade', 0) ON CONFLICT (notification_type) DO NOTHING`
+    );
+    const rotation = await client.query(
+      `SELECT next_index FROM whatsapp_template_rotation
+       WHERE notification_type = 'grade' FOR UPDATE`
+    );
+    const firstTemplateIndex = Number(rotation.rows[0]?.next_index || 0) % templates.length;
+    await client.query(
+      `UPDATE whatsapp_template_rotation
+       SET next_index = (next_index + $1) % $2, updated_at = NOW()
+       WHERE notification_type = 'grade'`,
+      [pendingCandidates.length, templates.length]
+    );
+
+    const queueRows = pendingCandidates.map(({ row, phone }, offset) => {
+      const templateIndex = (firstTemplateIndex + offset) % templates.length;
+      const template = templates[templateIndex];
+      const accessToken = createStudentPortalAccessToken();
+      const portalLink = buildStudentPortalLink(row.student_id, row.student_code, accessToken);
+      const maxScore = Number(row.max_score);
+      const score = Number(row.score);
+      const percentage = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1).replace(/\.0$/, "") : "0";
+      const payload = {
+        type: "grade",
+        student_name: row.student_name,
+        student_code: row.student_code,
+        exam_title: row.exam_title,
+        score,
+        max_score: maxScore,
+        percentage,
+        event_time: row.exam_date,
+        portal_link: portalLink
+      };
+      const parts = cairoParts(row.exam_date);
+      const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
+      const refCode = notificationRefCode("GRD", row.exam_date, row.result_id, true);
+      const templateValues = { ...payload, ...parts, ref_code: refCode };
+      templateValues.ref_code = refCode;
+      const renderedBody = compileWhatsAppMessage("grade", template, templateValues).trim();
+      const finalBody = `${renderedBody}\n\n${locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform"}`;
+      return {
+        resultId: Number(row.result_id),
+        studentId: Number(row.student_id),
+        phoneNumber: phone,
+        accessToken,
+        payload,
+        refCode,
+        templateIndex,
+        template,
+        renderedMessage: redactPortalLink(finalBody)
+      };
+    });
+
+    const inserted = await client.query(`
+      INSERT INTO whatsapp_notification_jobs
+        (notification_type, source_id, student_id, phone_number, payload, ref_code, status,
+         template_index, template_text, rendered_message, next_attempt_at, created_at, updated_at)
+      SELECT 'grade', row.source_id, row.student_id, row.phone_number, row.payload, row.ref_code, 'pending',
+        row.template_index, row.template_text, row.rendered_message, NOW(), NOW(), NOW()
+      FROM jsonb_to_recordset($1::jsonb) AS row(
+        source_id bigint, student_id integer, phone_number text, payload jsonb, ref_code text,
+        template_index integer, template_text text, rendered_message text
+      )
+      ON CONFLICT DO NOTHING
+      RETURNING source_id`, [JSON.stringify(queueRows.map((row) => ({
+        source_id: row.resultId,
+        student_id: row.studentId,
+        phone_number: row.phoneNumber,
+        payload: row.payload,
+        ref_code: row.refCode,
+        template_index: row.templateIndex,
+        template_text: row.template,
+        rendered_message: row.renderedMessage
+      })))]);
+
+    const queuedResultIds = inserted.rows.map((row) => Number(row.source_id));
+    const queuedSet = new Set(queuedResultIds);
+    for (const row of queueRows) {
+      if (!queuedSet.has(row.resultId)) ignored.push({ resultId: row.resultId, reason: "queue_conflict" });
+    }
+    if (queuedResultIds.length) {
+      await client.query("UPDATE exam_results SET whatsapp_notified = FALSE WHERE id = ANY($1::int[])", [queuedResultIds]);
+      const accessRows = queueRows
+        .filter((row) => queuedSet.has(row.resultId))
+        .map((row) => ({ token_hash: hashStudentPortalAccessToken(row.accessToken), student_id: row.studentId }));
+      await client.query(`
+        INSERT INTO student_portal_access_tokens (token_hash, student_id, expires_at)
+        SELECT row.token_hash, row.student_id, NOW() + INTERVAL '1 hour'
+        FROM jsonb_to_recordset($1::jsonb) AS row(token_hash text, student_id integer)
+        ON CONFLICT (token_hash) DO NOTHING`, [JSON.stringify(accessRows)]);
+    }
+    await client.query("COMMIT");
+    if (queuedResultIds.length) wakeWhatsAppWorker();
+    return { queuedCount: queuedResultIds.length, ignoredCount: ignored.length, ignored, queuedResultIds, errors: [] };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 function notificationRefCode(prefix, dateValue, id, unique = false) {
@@ -698,8 +871,9 @@ export async function enqueueAdvancePaymentNotification({ paymentId }) {
   return { queued: true, ref_code: refCode };
 }
 
-async function claimNextJob() {
-  const client = await pool.connect();
+async function claimNextJob(dbClient = null) {
+  const client = dbClient || await pool.connect();
+  const ownsClient = !dbClient;
   try {
     await client.query("BEGIN");
     const result = await client.query(`SELECT * FROM whatsapp_notification_jobs
@@ -714,7 +888,7 @@ async function claimNextJob() {
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
-  } finally { client.release(); }
+  } finally { if (ownsClient) client.release(); }
 }
 
 async function updateJob(id, status, fields = {}) {
@@ -732,8 +906,14 @@ async function processWhatsAppJob() {
   if (state.workerRunning) return;
   state.workerRunning = true;
   let job = null;
+  let lockClient = null;
   try {
-    job = await claimNextJob();
+    // A process-local flag prevents duplicate work in one instance. The
+    // advisory lock extends that guarantee across multiple API instances.
+    lockClient = await pool.connect();
+    const lockResult = await lockClient.query("SELECT pg_try_advisory_lock($1::bigint) AS locked", [284951237]);
+    if (lockResult.rows[0]?.locked !== true) return;
+    job = await claimNextJob(lockClient);
     if (!job) return;
     const settings = await getWhatsAppSettings();
     const type = notificationTypeForJob(job);
@@ -746,12 +926,26 @@ async function processWhatsAppJob() {
       return;
     }
     if (state.status !== "connected" || !state.socket) {
-      await updateJob(job.id, "pending", { error: "whatsapp_disconnected", nextAttemptAt: new Date(Date.now() + 10_000) });
+      const attempts = Number(job.attempts || 0);
+      const retry = attempts < 3;
+      await updateJob(job.id, retry ? "pending" : "failed", {
+        error: "whatsapp_disconnected",
+        nextAttemptAt: retry ? new Date(Date.now() + 10_000) : null
+      });
       return;
     }
-    const elapsed = Date.now() - state.lastSentAt;
-    const delay = randomInteger(settings.min_delay_seconds, settings.max_delay_seconds) * 1000;
-    if (state.lastSentAt && elapsed < delay) await sleep(delay - elapsed);
+    const lastSentResult = await query(
+      `SELECT sent_at FROM whatsapp_notification_jobs
+       WHERE status = 'sent' AND sent_at IS NOT NULL
+       ORDER BY sent_at DESC, id DESC LIMIT 1`
+    );
+    const persistedLastSentAt = lastSentResult.rows[0]?.sent_at ? new Date(lastSentResult.rows[0].sent_at).getTime() : 0;
+    const lastSentAt = Math.max(state.lastSentAt, Number.isFinite(persistedLastSentAt) ? persistedLastSentAt : 0);
+    const elapsed = Date.now() - lastSentAt;
+    const delayMs = Math.floor(
+      Math.random() * (settings.max_delay_seconds - settings.min_delay_seconds + 1) + settings.min_delay_seconds
+    ) * 1000;
+    if (lastSentAt && elapsed < delayMs) await sleep(delayMs - elapsed);
     const payload = job.payload && typeof job.payload === "object" ? job.payload : {};
     const parts = cairoParts(payload.event_time || payload.checkin_time);
     const templates = notificationTemplates(settings, type).filter(Boolean);
@@ -761,11 +955,16 @@ async function processWhatsAppJob() {
     }
     const phone = normalizeEgyptianPhone(job.phone_number);
     if (!phone) { await updateJob(job.id, "skipped", { error: "invalid_phone" }); return; }
-    const { index: templateIndex, template } = await chooseTemplate(type, templates);
+    const persistedTemplateIndex = Number(job.template_index);
+    const hasPersistedTemplate = Number.isInteger(persistedTemplateIndex) && persistedTemplateIndex >= 0 && persistedTemplateIndex < templates.length && String(job.template_text || "").trim();
+    const { index: templateIndex, template } = hasPersistedTemplate
+      ? { index: persistedTemplateIndex, template: String(job.template_text) }
+      : await chooseTemplate(type, templates);
     const studentCode = String(payload.student_code || "").trim();
+    const configuredPortalLink = String(payload.portal_link || "").trim();
     const accessToken = createStudentPortalAccessToken();
-    const portalLink = buildStudentPortalLink(job.student_id, studentCode, accessToken);
-    if (portalLink) await createPortalAccessRecord(job.student_id, accessToken);
+    const portalLink = configuredPortalLink || buildStudentPortalLink(job.student_id, studentCode, accessToken);
+    if (portalLink && !configuredPortalLink) await createPortalAccessRecord(job.student_id, accessToken);
     const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
     const formattedPayload = {
       ...payload,
@@ -812,7 +1011,13 @@ async function processWhatsAppJob() {
         nextAttemptAt: retry ? new Date(Date.now() + retryDelayMs) : null
       });
     }
-  } finally { state.workerRunning = false; }
+  } finally {
+    if (lockClient) {
+      await lockClient.query("SELECT pg_advisory_unlock($1::bigint)", [284951237]).catch(() => undefined);
+      lockClient.release();
+    }
+    state.workerRunning = false;
+  }
 }
 
 function wakeWhatsAppWorker() {

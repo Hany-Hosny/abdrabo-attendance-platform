@@ -6,15 +6,19 @@ ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 COPY package*.json ./
-RUN npm install
+COPY frontend/package.json ./frontend/package.json
+COPY backend/package.json ./backend/package.json
+COPY shared/package.json ./shared/package.json
+RUN npm ci
 
-COPY index.html vite.config.ts tsconfig.json ./
-COPY src ./src
-COPY public ./public
-RUN npm run build
+COPY frontend/index.html frontend/vite.config.ts frontend/tsconfig.json ./frontend/
+COPY frontend/src ./frontend/src
+COPY frontend/public ./frontend/public
+COPY shared ./shared
+RUN npm run build --workspace frontend
 
 FROM nginx:1.27-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY security-headers.conf /etc/nginx/security-headers.conf
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/security-headers.conf /etc/nginx/security-headers.conf
+COPY --from=build /app/frontend/dist /usr/share/nginx/html
 EXPOSE 80

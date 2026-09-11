@@ -18,6 +18,9 @@ import type { PublicHeaderLabels, PublicLanguage, PublicTheme } from "./PublicHe
 import { resolvePublicRoute } from "./routes";
 import { HomeContentEditor } from "./cms/HomeContentEditor";
 import { DEFAULT_HOME_CONTENT, fetchHomeContent, type LandingPageContent } from "./cms/homeContent";
+import { registerServiceWorker } from "./registerServiceWorker";
+
+registerServiceWorker();
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const LANGUAGE_STORAGE_KEY = "abdrabo_language";
@@ -436,8 +439,17 @@ const translations = {
     "scanner.scanProfilePlaceholder": "امسح الليبل لفتح الملف الشخصي",
     "scanner.inactiveStudent": "هذا الطالب غير مفعل.",
     "scanner.closedSession": "لا توجد حصة مفتوحة لهذه المجموعة الآن.",
+    "scanner.sessionNotFound": "الحصة غير موجودة.",
+    "scanner.attendanceWindowClosed": "انتهى وقت تسجيل الحضور لهذه الحصة.",
+    "scanner.sessionNotStarted": "لم تبدأ الحصة بعد.",
+    "scanner.attendanceDayMismatch": "هذه الحصة غير مجدولة اليوم.",
     "scanner.sessionGroupMismatch": "هذه الحصة تابعة لمجموعة أخرى ولا يمكن تسجيل حضور هذا الطالب فيها.",
     "scanner.duplicate": "تم تسجيل حضور هذا الطالب بالفعل.",
+    "scanner.rateLimited": "تم تجاوز عدد المحاولات، حاول بعد قليل.",
+    "scanner.invalidSession": "معرّف الحصة غير صالح.",
+    "scanner.invalidDevice": "معرّف الجهاز غير صالح.",
+    "scanner.invalidIdempotency": "مفتاح الطلب غير صالح.",
+    "scanner.idempotencyConflict": "تعذر تأكيد طلب تسجيل الحضور.",
     "scanner.networkError": "تعذر الاتصال بالخادم. تحقق من الإنترنت وحاول مرة أخرى.",
     "scanner.savedLocally": "تم حفظ الحضور محلياً وسيتم مزامنته تلقائياً عند عودة الاتصال",
     "scanner.serverError": "حدث خطأ أثناء تسجيل الحضور. حاول مرة أخرى.",
@@ -568,6 +580,17 @@ const translations = {
     "whatsapp.gradeStatusFailed": "فشل الإرسال",
     "whatsapp.retryGrade": "إعادة إرسال النتيجة",
     "whatsapp.sendGradeAgain": "إرسال النتيجة مرة أخرى",
+    "whatsapp.bulkSelected": "تم تحديد {{count}} نتيجة",
+    "whatsapp.bulkSend": "إرسال للمحددين",
+    "whatsapp.bulkClear": "إلغاء التحديد",
+    "whatsapp.bulkConfirmTitle": "تأكيد إرسال نتائج الامتحانات",
+    "whatsapp.bulkConfirm": "سيتم إضافة {{count}} رسالة إلى طابور الإرسال. هل تريد المتابعة؟",
+    "whatsapp.bulkSending": "جاري الإضافة إلى الطابور...",
+    "whatsapp.bulkQueued": "تمت إضافة {{count}} نتيجة إلى طابور الإرسال.",
+    "whatsapp.bulkPartiallyQueued": "تمت إضافة {{queued}} رسالة، وتم تجاهل {{ignored}} نتيجة.",
+    "whatsapp.bulkQueueFailed": "تعذر إضافة نتائج الامتحانات إلى طابور الإرسال.",
+    "whatsapp.bulkSelectAll": "تحديد كل النتائج الظاهرة",
+    "whatsapp.bulkSelectRow": "تحديد نتيجة الطالب {{name}}",
     "whatsapp.sendReceipt": "إرسال إيصال الدفع عبر واتساب",
     "whatsapp.receiptQueued": "تمت إضافة إيصال الدفع إلى قائمة الانتظار.",
     "whatsapp.invalidPhone": "لا يوجد رقم ولي أمر مصري صالح لهذا الطالب.",
@@ -1826,8 +1849,17 @@ const translations = {
     "scanner.scanProfilePlaceholder": "Scan the label to open the profile",
     "scanner.inactiveStudent": "This student is inactive.",
     "scanner.closedSession": "There is no open class for this group right now.",
+    "scanner.sessionNotFound": "The attendance session was not found.",
+    "scanner.attendanceWindowClosed": "The attendance window for this session is closed.",
+    "scanner.sessionNotStarted": "The session has not started yet.",
+    "scanner.attendanceDayMismatch": "This session is not scheduled today.",
     "scanner.sessionGroupMismatch": "This session belongs to another group, so this student cannot be recorded in it.",
     "scanner.duplicate": "This student’s attendance was already recorded.",
+    "scanner.rateLimited": "Too many scan attempts. Try again shortly.",
+    "scanner.invalidSession": "The session ID is invalid.",
+    "scanner.invalidDevice": "The device ID is invalid.",
+    "scanner.invalidIdempotency": "The request key is invalid.",
+    "scanner.idempotencyConflict": "The attendance request could not be confirmed.",
     "scanner.networkError": "Could not connect to the server. Check the internet and try again.",
     "scanner.savedLocally": "Attendance saved locally and will sync automatically when the connection returns",
     "scanner.serverError": "An error occurred while recording attendance. Try again.",
@@ -1958,6 +1990,17 @@ const translations = {
     "whatsapp.gradeStatusFailed": "Failed",
     "whatsapp.retryGrade": "Retry result",
     "whatsapp.sendGradeAgain": "Send again",
+    "whatsapp.bulkSelected": "{{count}} results selected",
+    "whatsapp.bulkSend": "Send selected",
+    "whatsapp.bulkClear": "Clear selection",
+    "whatsapp.bulkConfirmTitle": "Confirm exam result dispatch",
+    "whatsapp.bulkConfirm": "{{count}} messages will be added to the sending queue. Continue?",
+    "whatsapp.bulkSending": "Adding to queue...",
+    "whatsapp.bulkQueued": "{{count}} exam results were added to the sending queue.",
+    "whatsapp.bulkPartiallyQueued": "{{queued}} messages were queued; {{ignored}} results were ignored.",
+    "whatsapp.bulkQueueFailed": "Could not add exam results to the sending queue.",
+    "whatsapp.bulkSelectAll": "Select all visible results",
+    "whatsapp.bulkSelectRow": "Select {{name}}'s result",
     "whatsapp.sendReceipt": "Send payment receipt by WhatsApp",
     "whatsapp.receiptQueued": "The payment receipt was added to the queue.",
     "whatsapp.invalidPhone": "This student has no valid Egyptian guardian number.",
@@ -3454,10 +3497,18 @@ function scannerStatusMessage(status: string, t: Translator) {
     deleted_student: "scanner.deletedStudent",
     student_not_found: "scanner.invalidCode",
     invalid_scan_value: "scanner.invalidScan",
-    session_not_found: "scanner.closedSession",
+    session_not_found: "scanner.sessionNotFound",
     session_group_mismatch: "scanner.sessionGroupMismatch",
     wrong_group: "scanner.sessionGroupMismatch",
     closed_session: "scanner.closedSession",
+    attendance_window_closed: "scanner.attendanceWindowClosed",
+    session_not_started: "scanner.sessionNotStarted",
+    attendance_day_mismatch: "scanner.attendanceDayMismatch",
+    invalid_session_id: "scanner.invalidSession",
+    invalid_device_id: "scanner.invalidDevice",
+    invalid_idempotency_key: "scanner.invalidIdempotency",
+    idempotency_conflict: "scanner.idempotencyConflict",
+    rate_limited: "scanner.rateLimited",
     duplicate_attendance: "scanner.duplicate"
   };
   return t(statusKey[status] || "scanner.serverError");
@@ -5876,7 +5927,7 @@ function TeacherDashboard({
             {activeTab === "fees" && can("payments.view") ? <FeesPanel session={session} language={language} t={t} /> : null}
             {activeTab === "reports" && can("payments.view") && can("payments.reports.view") ? <FinanceReportsPanel session={session} language={language} t={t} canReverse={can("payments.reverse")} /> : null}
             {activeTab === "attendance" && can("attendance.view") ? <AttendancePanel session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} onSessionIdChange={setSelectedAttendanceSessionId} /> : null}
-            {activeTab === "exams" && can("exams.view") ? <ExamResultsManager session={session} t={t} /> : null}
+            {activeTab === "exams" && can("exams.view") ? <ExamResultsManager session={session} language={language} t={t} /> : null}
             {activeTab === "inbox" && can("messages.view") ? <StaffInboxControls session={session} language={language} t={t} onUnreadCountChange={setInboxUnread} /> : null}
             {activeTab !== "overview" && activeTab !== "attendance" && activeTab !== "exams" && activeTab !== "settings" && placeholderTitles[activeTab] ? (
               <div className="admin-editor placeholder-panel">
@@ -8012,7 +8063,7 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
   const [rowFeedback, setRowFeedback] = useState<Record<number, string>>({});
   const selected = selectedSessionId;
   const headers = { Authorization: `Bearer ${session.token}` };
-  async function load() { const [sr, st] = await Promise.all([fetch(`${API_BASE_URL}/admin/attendance/sessions?date=${date}`, { headers }), fetch(`${API_BASE_URL}/admin/students`, { headers })]); const sd = await sr.json(), td = await st.json(); const nextSessions = Array.isArray(sd.sessions) ? sd.sessions : []; setSessions(nextSessions); setStudents(Array.isArray(td.students) ? td.students : []); const now = Date.now(); const activeSession = nextSessions.find((item: any) => { const opensAt = Date.parse(String(item.opens_at || item.starts_at || "")); const closesAt = Date.parse(String(item.closes_at || "")); const endsAt = Date.parse(String(item.ends_at || "")); const end = [closesAt, endsAt].filter(Number.isFinite).reduce((latest, value) => Math.min(latest, value), Number.POSITIVE_INFINITY); return Number.isFinite(opensAt) && Number.isFinite(end) && now >= opensAt && now <= end; }); const nextSelected = selectedSessionId && nextSessions.some((item: any) => String(item.id) === selectedSessionId) ? selectedSessionId : activeSession ? String(activeSession.id) : nextSessions[0] ? String(nextSessions[0].id) : ""; onSessionIdChange(nextSelected); }
+  async function load() { const [sr, st] = await Promise.all([fetch(`${API_BASE_URL}/admin/attendance/sessions?date=${date}`, { headers }), fetch(`${API_BASE_URL}/admin/students`, { headers })]); const sd = await sr.json(), td = await st.json(); const nextSessions = Array.isArray(sd.sessions) ? sd.sessions : []; const now = Date.now(); const selectableSessions = nextSessions.filter((item: any) => { if (String(item.status || "").toLowerCase() !== "open") return false; const opensAt = Date.parse(String(item.opens_at || item.starts_at || "")); const closesAt = Date.parse(String(item.closes_at || "")); const endsAt = Date.parse(String(item.ends_at || "")); const end = [closesAt, endsAt].filter(Number.isFinite).reduce((latest, value) => Math.min(latest, value), Number.POSITIVE_INFINITY); return Number.isFinite(opensAt) && Number.isFinite(end) && now >= opensAt && now <= end; }); setSessions(selectableSessions); setStudents(Array.isArray(td.students) ? td.students : []); const nextSelected = selectedSessionId && selectableSessions.some((item: any) => String(item.id) === selectedSessionId) ? selectedSessionId : selectableSessions[0] ? String(selectableSessions[0].id) : ""; onSessionIdChange(nextSelected); }
   async function loadRecords(id: string) { const r = await fetch(`${API_BASE_URL}/admin/attendance/sessions/${id}/records`, { headers }); const d = await r.json(); setRecords(Array.isArray(d.records) ? d.records : []); }
   useEffect(() => { load().catch(() => setStatus("تعذر تحميل الحضور / Could not load attendance")); }, [date]);
   useEffect(() => { if (selected) loadRecords(selected).catch(() => undefined); else setRecords([]); }, [selected]);
@@ -8131,7 +8182,9 @@ function MobileScannerModal({
         toastTimerRef.current = null;
       }, 2600);
     } catch (error) {
-      const errorMessage = error instanceof Error && error.message ? error.message : t("scanner.networkError");
+      const errorMessage = onScanRef.current
+        ? error instanceof Error && error.message ? error.message : t("scanner.networkError")
+        : t("scanner.networkError");
       setToast({ tone: "error", message: errorMessage });
       playScannerFeedback("error");
     } finally {
@@ -10169,17 +10222,44 @@ function SiteContentEditor({
   );
 }
 
-function examWhatsAppState(record: Record<string, any>, sendingGradeId: number | null) {
+type ExamResultRecord = {
+  id: number;
+  student_id: number;
+  full_name: string;
+  student_code: string;
+  group_name?: string;
+  title: string;
+  exam_date: string;
+  max_score: number | string;
+  score: number | string;
+  note?: string | null;
+  assessment?: string | null;
+  whatsapp_notified?: boolean;
+  whatsapp_status?: string | null;
+  whatsapp_error?: string | null;
+  [key: string]: unknown;
+};
+
+type ExamBatchResponse = {
+  ok: boolean;
+  queuedCount?: number;
+  ignoredCount?: number;
+  ignored?: Array<{ resultId: number; reason: string; studentName?: string }>;
+  queuedResultIds?: number[];
+  errors?: string[];
+};
+
+function examWhatsAppState(record: ExamResultRecord, sendingGradeId: number | null) {
   if (sendingGradeId === Number(record.id)) return "processing";
   const status = String(record.whatsapp_status || "").toLowerCase();
   if (status === "pending" || status === "processing" || status === "sent" || status === "failed") return status;
   return record.whatsapp_notified === true ? "sent" : "idle";
 }
 
-function ExamResultsManager({ session, t }: { session: TeacherSession; t: Translator }) {
+function ExamResultsManager({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [students, setStudents] = useState<AdminStudent[]>([]);
-  const [records, setRecords] = useState<Array<Record<string, any>>>([]);
+  const [records, setRecords] = useState<ExamResultRecord[]>([]);
   const [selectedGroup, setSelectedGroup] = useState("");
   const [search, setSearch] = useState("");
   const [recordSearch, setRecordSearch] = useState("");
@@ -10191,6 +10271,12 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
   const [saving, setSaving] = useState(false);
   const [deletingRecordId, setDeletingRecordId] = useState<number | null>(null);
   const [sendingGradeId, setSendingGradeId] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
+  const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
+  const [batchMutating, setBatchMutating] = useState(false);
+  const [batchToast, setBatchToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
+  const batchToastTimerRef = useRef<number | null>(null);
   const canSendGrades = sessionHasPermission(session, "whatsapp.send_grades");
 
   useEffect(() => {
@@ -10216,7 +10302,7 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(t("admin.profileLoadFailed"));
-        setRecords(Array.isArray(data.results) ? data.results : []);
+        setRecords(Array.isArray(data.results) ? data.results as ExamResultRecord[] : []);
       })
       .catch((error) => setStatus(error instanceof Error ? error.message : t("admin.profileLoadFailed")))
       .finally(() => setRecordsLoading(false));
@@ -10230,11 +10316,15 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
       if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
       fetch(`${API_BASE_URL}/admin/exams/results?${params.toString()}`, { headers: { Authorization: `Bearer ${session.token}` } })
         .then((response) => response.json())
-        .then((data) => { if (data.ok) setRecords(Array.isArray(data.results) ? data.results : []); })
+        .then((data) => { if (data.ok) setRecords(Array.isArray(data.results) ? data.results as ExamResultRecord[] : []); })
         .catch(() => undefined);
     }, 2000);
     return () => window.clearInterval(timer);
   }, [records, selectedGroup, recordSearch, session.token]);
+
+  useEffect(() => () => {
+    if (batchToastTimerRef.current !== null) window.clearTimeout(batchToastTimerRef.current);
+  }, []);
 
   const visibleStudents = students.filter((student) => {
     const matchesGroup = !selectedGroup || String(student.group_id) === selectedGroup;
@@ -10280,7 +10370,7 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
       if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
       const refreshed = await fetch(`${API_BASE_URL}/admin/exams/results?${params.toString()}`, { headers: { Authorization: `Bearer ${session.token}` } });
       const refreshedData = await refreshed.json();
-      if (refreshed.ok && refreshedData.ok) setRecords(Array.isArray(refreshedData.results) ? refreshedData.results : []);
+      if (refreshed.ok && refreshedData.ok) setRecords(Array.isArray(refreshedData.results) ? refreshedData.results as ExamResultRecord[] : []);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
     } finally {
@@ -10300,6 +10390,11 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(t("errors.loginFailed"));
       setRecords((current) => current.filter((record) => Number(record.id) !== recordId));
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        next.delete(recordId);
+        return next;
+      });
       setStatus(t("admin.examResultDeleted"));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
@@ -10309,7 +10404,7 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
   }
 
   async function sendGrade(recordId: number) {
-    if (!canSendGrades || sendingGradeId !== null) return;
+    if (!canSendGrades || sendingGradeId !== null || batchMutating) return;
     setSendingGradeId(recordId);
     setStatus("");
     try {
@@ -10331,8 +10426,84 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
     }
   }
 
+  const visibleRecordIds = records.map((record) => Number(record.id));
+  const allVisibleSelected = visibleRecordIds.length > 0 && visibleRecordIds.every((id) => selectedIds.has(id));
+  const someVisibleSelected = visibleRecordIds.some((id) => selectedIds.has(id));
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) headerCheckboxRef.current.indeterminate = someVisibleSelected && !allVisibleSelected;
+  }, [someVisibleSelected, allVisibleSelected]);
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleRecordIds);
+    setSelectedIds((current) => {
+      const next = new Set([...current].filter((id) => visibleIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [records]);
+
+  function toggleRowSelection(recordId: number) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(recordId)) next.delete(recordId); else next.add(recordId);
+      return next;
+    });
+  }
+
+  function toggleVisibleSelection() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) visibleRecordIds.forEach((id) => next.delete(id));
+      else visibleRecordIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function showBatchToast(tone: "success" | "error", message: string) {
+    if (batchToastTimerRef.current !== null) window.clearTimeout(batchToastTimerRef.current);
+    setBatchToast({ tone, message });
+    batchToastTimerRef.current = window.setTimeout(() => {
+      setBatchToast(null);
+      batchToastTimerRef.current = null;
+    }, 4500);
+  }
+
+  async function queueSelectedGrades() {
+    if (!canSendGrades || batchMutating || selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    setBatchMutating(true);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/whatsapp/batch-exams`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ resultIds: ids })
+      });
+      const data = await response.json().catch(() => ({})) as ExamBatchResponse;
+      if (!response.ok || !data.ok) throw new Error(t("whatsapp.bulkQueueFailed"));
+      const queuedResultIds = Array.isArray(data.queuedResultIds) ? data.queuedResultIds.map(Number) : ids;
+      const queuedSet = new Set(queuedResultIds);
+      setRecords((current) => current.map((record) => queuedSet.has(Number(record.id))
+        ? { ...record, whatsapp_notified: false, whatsapp_status: "pending", whatsapp_error: null }
+        : record));
+      setSelectedIds(new Set());
+      setBatchConfirmOpen(false);
+      const queuedCount = Number(data.queuedCount || 0);
+      const ignoredCount = Number(data.ignoredCount || 0);
+      showBatchToast("success",
+        ignoredCount > 0
+          ? t("whatsapp.bulkPartiallyQueued", { queued: String(queuedCount), ignored: String(ignoredCount) })
+          : t("whatsapp.bulkQueued", { count: String(queuedCount) })
+      );
+    } catch (error) {
+      showBatchToast("error", error instanceof Error ? error.message : t("whatsapp.bulkQueueFailed"));
+    } finally {
+      setBatchMutating(false);
+    }
+  }
+
   return (
-    <section className="admin-editor exam-results-manager">
+    <section className="admin-editor exam-results-manager" dir={language === "ar" ? "rtl" : "ltr"} lang={language}>
       <div className="section-heading">
         <h2>{t("dashboard.tabs.examResults")}</h2>
       </div>
@@ -10376,9 +10547,87 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
           <label className="exam-records-search">{t("admin.searchExamRecords")}
             <input value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="A-6251" />
           </label>
-          {recordsLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : records.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("table.exam")}</th><th>{t("table.date")}</th><th>{t("table.score")}</th><th>{t("table.assessment")}</th>{canSendGrades ? <th>{t("whatsapp.sendGrade")}</th> : null}<th>{t("admin.editExamResult")}</th><th>{t("admin.deleteExamResult")}</th></tr></thead><tbody>{records.map((record) => { const deliveryState = examWhatsAppState(record, sendingGradeId); const deliveryLabel = deliveryState === "sent" ? t("whatsapp.gradeStatusSent") : deliveryState === "failed" ? t("whatsapp.gradeStatusFailed") : deliveryState === "processing" ? t("whatsapp.gradeStatusSending") : deliveryState === "pending" ? t("whatsapp.gradeStatusQueued") : t("whatsapp.notSent"); const buttonLabel = deliveryState === "failed" ? t("whatsapp.retryGrade") : deliveryState === "sent" ? t("whatsapp.sendGradeAgain") : deliveryState === "processing" ? t("whatsapp.sendingGrade") : t("whatsapp.sendGrade"); return <tr key={record.id}><td>{record.full_name}</td><td>{record.student_code}</td><td>{record.title}</td><td>{formatExamResultDate(record.exam_date)}</td><td>{record.score}/{record.max_score}</td><td>{record.assessment || record.note || "—"}</td>{canSendGrades ? <td><div className="whatsapp-grade-action"><span className={`whatsapp-delivery-status ${deliveryState}`} title={deliveryState === "failed" ? record.whatsapp_error || deliveryLabel : deliveryLabel}><i aria-hidden="true" />{deliveryLabel}</span><button className={`secondary-button compact-button whatsapp-send-button ${deliveryState === "processing" ? "is-loading" : ""}`} type="button" onClick={() => void sendGrade(Number(record.id))} disabled={sendingGradeId !== null || deliveryState === "pending" || deliveryState === "processing"}><span aria-hidden="true">◉</span>{buttonLabel}</button></div></td> : null}<td><button className="secondary-button compact-button" type="button" onClick={() => setForm({ student_id: String(record.student_id), title: String(record.title || ""), exam_date: String(record.exam_date || "").slice(0, 10), max_score: String(record.max_score || "10"), score: String(record.score ?? ""), assessment: String(record.assessment || record.note || "") })}>{t("admin.editExamResult")}</button></td><td><button className="danger-button compact-button" type="button" onClick={() => deleteRecord(Number(record.id))} disabled={deletingRecordId === Number(record.id)}>{deletingRecordId === Number(record.id) ? t("admin.saving") : t("admin.deleteExamResult")}</button></td></tr>; })}</tbody></table></div> : <p className="empty-state">{t("admin.noExamResults")}</p>}
+          {recordsLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : records.length ? <>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th className="exam-selection-column">
+                      <input
+                        ref={headerCheckboxRef}
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleVisibleSelection}
+                        aria-label={t("whatsapp.bulkSelectAll")}
+                        disabled={batchMutating}
+                      />
+                    </th>
+                    <th>{t("admin.studentName")}</th>
+                    <th>{t("admin.studentCode")}</th>
+                    <th>{t("table.exam")}</th>
+                    <th>{t("table.date")}</th>
+                    <th>{t("table.score")}</th>
+                    <th>{t("table.assessment")}</th>
+                    {canSendGrades ? <th>{t("whatsapp.sendGrade")}</th> : null}
+                    <th>{t("admin.editExamResult")}</th>
+                    <th>{t("admin.deleteExamResult")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map((record) => {
+                    const resultId = Number(record.id);
+                    const deliveryState = examWhatsAppState(record, sendingGradeId);
+                    const deliveryLabel = deliveryState === "sent" ? t("whatsapp.gradeStatusSent") : deliveryState === "failed" ? t("whatsapp.gradeStatusFailed") : deliveryState === "processing" ? t("whatsapp.gradeStatusSending") : deliveryState === "pending" ? t("whatsapp.gradeStatusQueued") : t("whatsapp.notSent");
+                    const buttonLabel = deliveryState === "failed" ? t("whatsapp.retryGrade") : deliveryState === "sent" ? t("whatsapp.sendGradeAgain") : deliveryState === "processing" ? t("whatsapp.sendingGrade") : t("whatsapp.sendGrade");
+                    return <tr key={resultId}>
+                      <td className="exam-selection-column">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(resultId)}
+                          onChange={() => toggleRowSelection(resultId)}
+                          aria-label={t("whatsapp.bulkSelectRow", { name: record.full_name })}
+                          disabled={batchMutating}
+                        />
+                      </td>
+                      <td>{record.full_name}</td>
+                      <td>{record.student_code}</td>
+                      <td>{record.title}</td>
+                      <td>{formatExamResultDate(record.exam_date)}</td>
+                      <td>{record.score}/{record.max_score}</td>
+                      <td>{record.assessment || record.note || "—"}</td>
+                      {canSendGrades ? <td><div className="whatsapp-grade-action"><span className={`whatsapp-delivery-status ${deliveryState}`} title={deliveryState === "failed" ? record.whatsapp_error || deliveryLabel : deliveryLabel}><i aria-hidden="true" />{deliveryLabel}</span><button className={`secondary-button compact-button whatsapp-send-button ${deliveryState === "processing" ? "is-loading" : ""}`} type="button" onClick={() => void sendGrade(resultId)} disabled={sendingGradeId !== null || batchMutating || deliveryState === "pending" || deliveryState === "processing"}><span aria-hidden="true">◉</span>{buttonLabel}</button></div></td> : null}
+                      <td><button className="secondary-button compact-button" type="button" onClick={() => setForm({ student_id: String(record.student_id), title: String(record.title || ""), exam_date: String(record.exam_date || "").slice(0, 10), max_score: String(record.max_score || "10"), score: String(record.score ?? ""), assessment: String(record.assessment || record.note || "") })}>{t("admin.editExamResult")}</button></td>
+                      <td><button className="danger-button compact-button" type="button" onClick={() => deleteRecord(resultId)} disabled={deletingRecordId === resultId || batchMutating}>{deletingRecordId === resultId ? t("admin.saving") : t("admin.deleteExamResult")}</button></td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <AnimatePresence>
+              {selectedIds.size > 0 ? <motion.div className="exam-bulk-action-bar" initial={{ opacity: 0, y: 28 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 28 }} transition={{ duration: 0.2 }}>
+                <strong>{t("whatsapp.bulkSelected", { count: String(selectedIds.size) })}</strong>
+                <div className="exam-bulk-action-buttons">
+                  <button className="primary-button" type="button" onClick={() => setBatchConfirmOpen(true)} disabled={batchMutating || sendingGradeId !== null}><span aria-hidden="true">◉</span>{batchMutating ? t("whatsapp.bulkSending") : t("whatsapp.bulkSend")}</button>
+                  <button className="secondary-button" type="button" onClick={() => setSelectedIds(new Set())} disabled={batchMutating}>{t("whatsapp.bulkClear")}</button>
+                </div>
+              </motion.div> : null}
+            </AnimatePresence>
+          </> : <p className="empty-state">{t("admin.noExamResults")}</p>}
         </> : null}
       </div>
+      <AnimatePresence>
+        {batchToast ? <motion.div className={`exam-bulk-toast ${batchToast.tone}`} role={batchToast.tone === "error" ? "alert" : "status"} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }}>{batchToast.message}</motion.div> : null}
+      </AnimatePresence>
+      {batchConfirmOpen ? <div className="modal-backdrop exam-bulk-confirm-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !batchMutating) setBatchConfirmOpen(false); }}>
+        <section className="modal-card exam-bulk-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="exam-bulk-confirm-title">
+          <h3 id="exam-bulk-confirm-title">{t("whatsapp.bulkConfirmTitle")}</h3>
+          <p>{t("whatsapp.bulkConfirm", { count: String(selectedIds.size) })}</p>
+          <div className="exam-bulk-confirm-actions">
+            <button className="secondary-button" type="button" onClick={() => setBatchConfirmOpen(false)} disabled={batchMutating}>{t("whatsapp.bulkClear")}</button>
+            <button className="primary-button" type="button" onClick={() => void queueSelectedGrades()} disabled={batchMutating}>{batchMutating ? t("whatsapp.bulkSending") : t("whatsapp.bulkSend")}</button>
+          </div>
+        </section>
+      </div> : null}
     </section>
   );
 }

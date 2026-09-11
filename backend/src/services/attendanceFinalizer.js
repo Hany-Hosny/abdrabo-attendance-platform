@@ -17,13 +17,17 @@ export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [FINALIZER_LOCK_KEY]);
 
     const expired = await client.query(`
-      SELECT s.id, s.group_id, s.closes_at, s.ends_at
+      SELECT s.id, s.group_id, s.closes_at, s.ends_at,
+        (((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo') AS effective_closes_at,
+        (((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time) AT TIME ZONE 'Africa/Cairo') AS effective_ends_at
       FROM attendance_sessions s
       JOIN groups g ON g.id = s.group_id AND g.deleted_at IS NULL
       JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
       WHERE s.status = 'open'
-        AND s.closes_at <= COALESCE($1::timestamptz, NOW())
-      ORDER BY s.closes_at, s.id
+        AND cs.is_active = TRUE
+        AND cs.deleted_at IS NULL
+        AND (((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo') <= COALESCE($1::timestamptz, CURRENT_TIMESTAMP)
+      ORDER BY effective_closes_at, s.id
       FOR UPDATE OF s
     `, [now]);
 
@@ -47,7 +51,7 @@ export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
           )
         ON CONFLICT (session_id, student_id) DO NOTHING
         RETURNING id, student_id
-        `, [session.id, session.group_id, session.closes_at]);
+        `, [session.id, session.group_id, session.effective_closes_at]);
 
       const closed = await client.query(`
         UPDATE attendance_sessions
@@ -65,6 +69,9 @@ export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
         details: {
           group_id: session.group_id,
           status_after: "closed",
+          effective_closes_at: session.effective_closes_at,
+          stored_closes_at: session.closes_at,
+          effective_ends_at: session.effective_ends_at,
           automatic_absence_count: inserted.rowCount,
           automatic_absence_student_ids: inserted.rows.map((row) => row.student_id)
         }

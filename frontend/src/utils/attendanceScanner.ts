@@ -60,6 +60,7 @@ const DEDUPE_WINDOW_MS = 1_500;
 const MAX_QUEUE_SIZE = 1_000;
 const MAX_RECENT_SCANS = 2_048;
 const INPUT_DEBOUNCE_MS = 90;
+const SCANNER_BURST_THRESHOLD_MS = 120;
 const RETRY_DELAYS_MS = [1_000, 2_000, 5_000, 15_000, 30_000];
 
 let databasePromise: Promise<IDBDatabase | null> | null = null;
@@ -199,6 +200,8 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   const inputRef = useRef<HTMLInputElement>(null);
   const inputValueRef = useRef("");
   const inputDebounceRef = useRef<number | null>(null);
+  const lastInputKeyAtRef = useRef(0);
+  const inputBurstRef = useRef(false);
   const queueRef = useRef<QueueItem[]>([]);
   const queuedIdsRef = useRef(new Set<string>());
   const retryTimersRef = useRef(new Map<string, number>());
@@ -224,6 +227,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
     if (inputDebounceRef.current !== null) window.clearTimeout(inputDebounceRef.current);
     inputDebounceRef.current = null;
     if (!sanitized.trim()) return;
+    if (!inputBurstRef.current) return;
     inputDebounceRef.current = window.setTimeout(() => {
       inputDebounceRef.current = null;
       const bufferedValue = inputValueRef.current;
@@ -250,7 +254,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   }, [publish]);
 
   const updatePendingCount = useCallback(() => {
-    if (mountedRef.current) setPendingCount(queueRef.current.length + activeRequestsRef.current);
+    if (mountedRef.current) setPendingCount(queueRef.current.length + activeRequestsRef.current + retryTimersRef.current.size);
   }, []);
 
   const processItem = useCallback(async (item: QueueItem) => {
@@ -293,7 +297,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
         await removeOfflineItem(item.id);
         publishForItem(item.id, "error", `${data.student?.full_name ? `${data.student.full_name} — ` : ""}${messages.duplicate}`, data.student || item.student || null, "duplicate");
       } else if (response.status >= 500 || response.status === 429) {
-        throw new Error("retryable_server_error");
+        throw new Error(response.status === 429 ? "rate_limited" : "retryable_server_error");
       } else {
         await removeOfflineItem(item.id);
         const resolvedMessage = status === "student_not_found" ? messages.studentNotFound : messages.resolveStatus?.(status) || messages.serverError;
@@ -304,7 +308,10 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
       item.attempts += 1;
       await saveOfflineItem(item);
       if (!mountedRef.current) return;
-      publishForItem(item.id, "loading", messages.savedLocally, null);
+      const retryMessage = _error instanceof Error && _error.message === "rate_limited"
+        ? messages.resolveStatus?.("rate_limited") || messages.savedLocally
+        : messages.savedLocally;
+      publishForItem(item.id, "loading", retryMessage, null);
       const delay = RETRY_DELAYS_MS[Math.min(item.attempts - 1, RETRY_DELAYS_MS.length - 1)];
       if (item.attempts <= RETRY_DELAYS_MS.length) {
         const timer = window.setTimeout(() => {
@@ -331,7 +338,6 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
       if (mountedRef.current) {
         updatePendingCount();
         pumpRef.current();
-        void restoreOfflineQueueRef.current();
       }
     }
   }, [apiBaseUrl, authToken, deviceId, messages, publishForItem, sessionId, updatePendingCount]);
@@ -347,6 +353,8 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
 
   const enqueueScan = useCallback(async (rawValue: string) => {
     if (!mountedRef.current) return;
+    inputBurstRef.current = false;
+    lastInputKeyAtRef.current = 0;
     const token = normalizeScanValue(rawValue);
     if (!token) {
       publish("error", messages.scanRequired, null, "error");
@@ -395,6 +403,8 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   enqueueScanRef.current = enqueueScan;
 
   const commitInput = useCallback(() => {
+    inputBurstRef.current = false;
+    lastInputKeyAtRef.current = 0;
     if (inputDebounceRef.current !== null) window.clearTimeout(inputDebounceRef.current);
     inputDebounceRef.current = null;
     const bufferedValue = inputValueRef.current;
@@ -402,9 +412,15 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
   }, [enqueueScan]);
 
   const handleInputKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    commitInput();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      commitInput();
+      return;
+    }
+    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
+    const now = Date.now();
+    if (lastInputKeyAtRef.current && now - lastInputKeyAtRef.current <= SCANNER_BURST_THRESHOLD_MS) inputBurstRef.current = true;
+    lastInputKeyAtRef.current = now;
   }, [commitInput]);
 
   const handleSubmit = useCallback((event: React.FormEvent<HTMLFormElement>) => {
@@ -421,10 +437,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
     for (const item of orderedItems) {
       if (!mountedRef.current) return;
       const retryTimer = retryTimersRef.current.get(item.id);
-      if (retryTimer !== undefined) {
-        window.clearTimeout(retryTimer);
-        retryTimersRef.current.delete(item.id);
-      }
+      if (retryTimer !== undefined) continue;
       if (queuedIdsRef.current.has(item.id)) continue;
       if ((queueRef.current.length + activeRequestsRef.current) >= MAX_QUEUE_SIZE) break;
       queuedIdsRef.current.add(item.id);
@@ -508,6 +521,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
       if (!normalizedKey) return;
       event.preventDefault();
       inputRef.current?.focus({ preventScroll: true });
+      inputBurstRef.current = true;
       updateInput(`${inputValueRef.current}${normalizedKey}`);
     };
     window.addEventListener("keydown", handleGlobalKeyDown, true);

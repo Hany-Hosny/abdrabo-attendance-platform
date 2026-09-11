@@ -193,27 +193,40 @@ adminAcademicRouter.post("/groups", requirePermission("schedule.manage"), async 
 });
 
 adminAcademicRouter.put("/groups/:id", requirePermission("schedule.manage"), async (req, res, next) => {
+  let client;
   try {
     const data = groupPayload(req.body);
     if (data.schedules.length > 3) return res.status(400).json({ ok: false, status: "too_many_schedules" });
     const groupId = Number(req.params.id);
-    const beforeGroup = await query("SELECT id, center_id, name, display_name, grade, grade_level, subject, fees_amount, is_active FROM groups WHERE id=$1 AND deleted_at IS NULL", [groupId]);
-    const beforeSchedules = await query("SELECT id, day_of_week, start_time, end_time, opens_before_minutes, closes_after_minutes, is_active FROM class_schedules WHERE group_id=$1 AND deleted_at IS NULL ORDER BY id", [groupId]);
-    if (!beforeGroup.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
-    if (!data.centerId) data.centerId = (await query("SELECT center_id FROM groups WHERE id=$1", [Number(req.params.id)])).rows[0]?.center_id;
-    if (!validGroup(data)) return res.status(400).json({ ok: false, status: "invalid_group_payload" });
-    const updated = await query(
+    client = await pool.connect();
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`attendance-group:${groupId}`]);
+    const beforeGroup = await client.query("SELECT id, center_id, name, display_name, grade, grade_level, subject, fees_amount, is_active FROM groups WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", [groupId]);
+    const beforeSchedules = await client.query("SELECT id, day_of_week, start_time, end_time, opens_before_minutes, closes_after_minutes, is_active FROM class_schedules WHERE group_id=$1 AND deleted_at IS NULL ORDER BY id FOR UPDATE", [groupId]);
+    if (!beforeGroup.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "not_found" });
+    }
+    if (!data.centerId) data.centerId = beforeGroup.rows[0].center_id;
+    if (!validGroup(data)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ ok: false, status: "invalid_group_payload" });
+    }
+    const updated = await client.query(
       `UPDATE groups SET center_id = $1, name = $2, display_name = $3, grade = $4, grade_level = $5, subject = $6, fees_amount = $7, is_active = $8, updated_at=NOW()
        WHERE id = $9 AND deleted_at IS NULL RETURNING id`,
       [data.centerId, data.name, data.displayName, data.grade, data.gradeLevel, data.subject, data.feesAmount, data.isActive, groupId]
     );
-    if (!updated.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    if (!updated.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "not_found" });
+    }
 
     if (data.hasSchedules) {
       const keptScheduleIds = [];
       for (const schedule of data.schedules) {
         if (Number.isInteger(schedule.id) && schedule.id > 0) {
-          const updatedSchedule = await query(
+          const updatedSchedule = await client.query(
             `UPDATE class_schedules
              SET day_of_week=$1, start_time=$2, end_time=$3, opens_before_minutes=$4,
                  closes_after_minutes=$5, is_active=$6, deleted_at=NULL, updated_at=NOW()
@@ -226,7 +239,7 @@ adminAcademicRouter.put("/groups/:id", requirePermission("schedule.manage"), asy
             continue;
           }
         }
-        const insertedSchedule = await query(
+        const insertedSchedule = await client.query(
           `INSERT INTO class_schedules (group_id,day_of_week,start_time,end_time,opens_before_minutes,closes_after_minutes,is_active,deleted_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7,NULL)
            ON CONFLICT (group_id,day_of_week,start_time,end_time) DO UPDATE SET
@@ -240,34 +253,79 @@ adminAcademicRouter.put("/groups/:id", requirePermission("schedule.manage"), asy
         );
         keptScheduleIds.push(insertedSchedule.rows[0].id);
       }
-      await query(
+      await client.query(
         `UPDATE class_schedules
          SET deleted_at=NOW(), is_active=FALSE, updated_at=NOW()
          WHERE group_id=$1 AND NOT (id = ANY($2::int[])) AND deleted_at IS NULL`,
         [groupId, keptScheduleIds]
       );
     }
-    const result = await query(`${groupSelect} WHERE g.id = $1`, [groupId]);
-    await auditLog({ action: "group_updated", actorId: req.teacher.id, details: { group_id: groupId, changes: changedFields(beforeGroup.rows[0], result.rows[0]), before: { group: beforeGroup.rows[0], schedules: beforeSchedules.rows }, after: { group: result.rows[0], schedules: result.rows[0]?.schedules || data.schedules } }, request: req });
+    // Existing sessions keep their occurrence identity, but their derived
+    // timestamps must follow an in-day schedule edit so finalizers and the UI
+    // never use a stale cached boundary.
+    await client.query(`
+      UPDATE attendance_sessions s
+      SET starts_at=((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
+          opens_at=(((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+          closes_at=(((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+          ends_at=((((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time)) AT TIME ZONE 'Africa/Cairo')
+      FROM class_schedules cs
+      WHERE s.group_id=$1 AND s.schedule_id=cs.id AND cs.group_id=s.group_id
+        AND cs.deleted_at IS NULL
+        AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+    `, [groupId]);
+    const result = await client.query(`${groupSelect} WHERE g.id = $1`, [groupId]);
+    await auditLog({ db: client, action: "group_updated", actorId: req.teacher.id, details: { group_id: groupId, changes: changedFields(beforeGroup.rows[0], result.rows[0]), before: { group: beforeGroup.rows[0], schedules: beforeSchedules.rows }, after: { group: result.rows[0], schedules: result.rows[0]?.schedules || data.schedules } }, request: req });
+    await client.query("COMMIT");
     res.json({ ok: true, group: result.rows[0] });
   } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => undefined);
     next(error);
+  } finally {
+    client?.release();
   }
 });
 
 adminAcademicRouter.patch("/groups/:id/status", requirePermission("schedule.manage"), async (req, res, next) => {
+  let client;
   try {
     const isActive = parseBoolean(req.body?.is_active, false);
     const groupId = Number(req.params.id);
-    const before = await query("SELECT id, name, display_name, is_active FROM groups WHERE id=$1 AND deleted_at IS NULL", [groupId]);
-    if (!before.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
-    const result = await query("UPDATE groups SET is_active = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING id", [isActive, groupId]);
-    if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
-    await query("UPDATE class_schedules SET is_active = $1 WHERE group_id = $2", [isActive, groupId]);
-    await auditLog({ action: "group_status_changed", actorId: req.teacher.id, details: { group_id: groupId, changes: [{ field: "is_active", before: before.rows[0].is_active, after: isActive }], before: { is_active: before.rows[0].is_active }, after: { is_active: isActive } }, request: req });
+    client = await pool.connect();
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`attendance-group:${groupId}`]);
+    const before = await client.query("SELECT id, name, display_name, is_active FROM groups WHERE id=$1 AND deleted_at IS NULL FOR UPDATE", [groupId]);
+    if (!before.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "not_found" });
+    }
+    const result = await client.query("UPDATE groups SET is_active = $1, updated_at=NOW() WHERE id = $2 AND deleted_at IS NULL RETURNING id", [isActive, groupId]);
+    if (!result.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "not_found" });
+    }
+    await client.query("UPDATE class_schedules SET is_active = $1, updated_at=NOW() WHERE group_id = $2", [isActive, groupId]);
+    if (isActive) {
+      await client.query(`
+        UPDATE attendance_sessions s
+        SET starts_at=((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
+            opens_at=(((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+            closes_at=(((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+            ends_at=((((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time)) AT TIME ZONE 'Africa/Cairo')
+        FROM class_schedules cs
+        WHERE s.group_id=$1 AND s.schedule_id=cs.id AND cs.group_id=s.group_id
+          AND cs.is_active=TRUE AND cs.deleted_at IS NULL
+          AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+      `, [groupId]);
+    }
+    await auditLog({ db: client, action: "group_status_changed", actorId: req.teacher.id, details: { group_id: groupId, changes: [{ field: "is_active", before: before.rows[0].is_active, after: isActive }], before: { is_active: before.rows[0].is_active }, after: { is_active: isActive } }, request: req });
+    await client.query("COMMIT");
     res.json({ ok: true });
   } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => undefined);
     next(error);
+  } finally {
+    client?.release();
   }
 });
 
