@@ -9641,6 +9641,17 @@ th {
 .notification-popover-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 5px 8px; }
 .notification-popover-heading button, .notification-view-all { border: 0; background: transparent; color: #69adff; cursor: pointer; font-size: 11px; }
 .notification-popover-heading button:disabled { opacity: .45; }
+.notification-filter-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 2px 8px; padding: 3px; border: 1px solid rgba(128, 170, 211, 0.16); border-radius: 10px; background: rgba(8, 24, 43, 0.5); }
+.notification-filter-tabs button { display: inline-flex; min-width: 0; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; padding: 6px 5px; font-size: 11px; font-weight: 700; transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease; }
+.notification-filter-tabs button:hover { color: var(--text); background: rgba(255, 255, 255, 0.05); }
+.notification-filter-tabs button:active { transform: translateY(1px); }
+.notification-filter-tabs button.active { border-color: rgba(105, 173, 255, 0.34); background: rgba(67, 151, 255, 0.15); color: #dbeafe; }
+.notification-filter-tabs button b { display: inline-grid; min-width: 17px; height: 17px; place-items: center; border-radius: 999px; background: rgba(148, 163, 184, 0.14); color: inherit; font-size: 10px; line-height: 1; }
+.notification-filter-tabs button.active b { background: rgba(105, 173, 255, 0.24); color: #9dccff; }
+[data-theme="light"] .notification-filter-tabs { border-color: var(--line); background: var(--surface-inset); }
+[data-theme="light"] .notification-filter-tabs button { color: var(--text-secondary); }
+[data-theme="light"] .notification-filter-tabs button:hover { color: var(--text-primary); background: rgba(67, 151, 255, 0.06); }
+[data-theme="light"] .notification-filter-tabs button.active { border-color: rgba(37, 99, 235, 0.28); background: rgba(59, 130, 246, 0.12); color: #1e3a8a; }
 .notification-item { align-items: flex-start; }
 .notification-item.unread { background: rgba(67, 151, 255, 0.08); }
 .notification-icon { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 8px; background: rgba(67, 151, 255, 0.14); color: #78baff; font-weight: 900; }

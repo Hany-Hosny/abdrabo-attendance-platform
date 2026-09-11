@@ -1240,6 +1240,8 @@ const translations = {
     "dashboard.notificationsFilterWhatsApp": "واتساب",
     "dashboard.notificationsFilterAttendance": "حضور",
     "dashboard.notificationsFilterExams": "امتحانات",
+    "dashboard.notificationsFilterEvaluations": "التقييم",
+    "dashboard.notificationsFilterEmpty": "لا توجد إشعارات في هذا التصنيف",
     "dashboard.notificationsDeleteSelected": "حذف المحدد",
     "dashboard.notificationsDeleted": "تم حذف الإشعارات",
     "dashboard.notificationsMarkedRead": "تم تحديد الإشعارات كمقروءة",
@@ -2732,6 +2734,8 @@ const translations = {
     "dashboard.notificationsFilterWhatsApp": "WhatsApp",
     "dashboard.notificationsFilterAttendance": "Attendance",
     "dashboard.notificationsFilterExams": "Exams",
+    "dashboard.notificationsFilterEvaluations": "Evaluations",
+    "dashboard.notificationsFilterEmpty": "No notifications in this category",
     "dashboard.notificationsDeleteSelected": "Delete selected",
     "dashboard.notificationsDeleted": "Notifications deleted",
     "dashboard.notificationsMarkedRead": "Notifications marked as read",
@@ -5226,25 +5230,37 @@ function notificationDescription(notification: HeaderNotification, t: Translator
   return t("dashboard.notificationDescriptionPayment", { name });
 }
 
+type NotificationPopoverFilter = "all" | "attendance" | "evaluation";
+
+function notificationPopoverCategory(type: string): NotificationPopoverFilter | null {
+  if (type === "attendance_low") return "attendance";
+  if (type === "evaluation_low") return "evaluation";
+  return null;
+}
+
 function NotificationCenter({ session, language, t, onSelect, onOpenAll }: { session: TeacherSession; language: Language; t: Translator; onSelect: (notification: HeaderNotification) => void; onOpenAll: () => void }) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<HeaderNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [activeFilter, setActiveFilter] = useState<NotificationPopoverFilter>("all");
+  const [markAllState, setMarkAllState] = useState<"idle" | "loading" | "success">("idle");
   const [expanded, setExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const requestRef = useRef<AbortController | null>(null);
+  const mutationVersionRef = useRef(0);
   const readBusyRef = useRef(new Set<number>());
   const markAllBusyRef = useRef(false);
 
   async function load(limit = expanded ? 20 : 10, signal?: AbortSignal) {
+    const requestVersion = mutationVersionRef.current;
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/notifications?limit=${limit}`, { headers: { Authorization: `Bearer ${session.token}` }, signal });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error("notifications_failed");
-      if (!signal?.aborted) { setNotifications(payload.notifications || []); setUnreadCount(Number(payload.unreadCount || 0)); setError(""); }
+      if (!signal?.aborted && requestVersion === mutationVersionRef.current) { setNotifications(payload.notifications || []); setUnreadCount(Number(payload.unreadCount || 0)); setError(""); }
     } catch (reason: unknown) {
       const isAbortError = reason !== null && typeof reason === "object" && "name" in reason && reason.name === "AbortError";
       if (!isAbortError) setError(t("dashboard.notificationsLoadFailed"));
@@ -5271,6 +5287,7 @@ function NotificationCenter({ session, language, t, onSelect, onOpenAll }: { ses
 
   async function markRead(id: number) {
     if (readBusyRef.current.has(id)) return;
+    mutationVersionRef.current += 1;
     readBusyRef.current.add(id);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/notifications/${id}/read`, { method: "PATCH", headers: { Authorization: `Bearer ${session.token}` } });
@@ -5283,18 +5300,37 @@ function NotificationCenter({ session, language, t, onSelect, onOpenAll }: { ses
   async function markAllRead() {
     if (!unreadCount || markAllBusyRef.current) return;
     markAllBusyRef.current = true;
+    const mutationVersion = ++mutationVersionRef.current;
+    setMarkAllState("loading");
     try {
       const response = await fetch(`${API_BASE_URL}/admin/notifications/read-all`, { method: "POST", headers: { Authorization: `Bearer ${session.token}` } });
-      if (!response.ok) return;
-      setNotifications((items) => items.map((item) => ({ ...item, is_read: true })));
-      setUnreadCount(0);
-    } catch (_error) { /* keep unread state when the request fails */ }
-    finally { markAllBusyRef.current = false; }
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error("mark_all_failed");
+      if (mutationVersion === mutationVersionRef.current) {
+        setNotifications((items) => items.map((item) => ({ ...item, is_read: true })));
+        setUnreadCount(0);
+        setMarkAllState("success");
+        window.setTimeout(() => setMarkAllState("idle"), 1400);
+      }
+    } catch (_error) {
+      setMarkAllState("idle");
+      setError(t("dashboard.notificationsLoadFailed"));
+    } finally { markAllBusyRef.current = false; }
   }
   const badge = unreadCount > 99 ? "99+" : String(unreadCount);
+  const filteredNotifications = activeFilter === "all"
+    ? notifications
+    : notifications.filter((notification) => notificationPopoverCategory(notification.type) === activeFilter);
+  const filterTabs = [
+    { id: "all" as const, label: t("dashboard.notificationsFilterAll"), count: notifications.length },
+    { id: "attendance" as const, label: t("dashboard.notificationsFilterAttendance"), count: notifications.filter((notification) => notificationPopoverCategory(notification.type) === "attendance").length },
+    { id: "evaluation" as const, label: t("dashboard.notificationsFilterEvaluations"), count: notifications.filter((notification) => notificationPopoverCategory(notification.type) === "evaluation").length }
+  ];
   return <div className="admin-header-tool notification-center" ref={containerRef} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
     <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={t("dashboard.notificationCenter")} title={t("dashboard.notificationCenter")} aria-expanded={open} onClick={() => setOpen((value) => !value)}><BellIcon />{unreadCount > 0 ? <span className="header-unread-badge" aria-label={badge}>{badge}</span> : null}</button>
-    {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button type="button" onClick={markAllRead} disabled={!unreadCount}>{t("dashboard.markAllRead")}</button></div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : notifications.length ? <div className="notification-list">{notifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.type}`}>{notification.type === "new_message" ? "✉" : notification.type === "payment_overdue" ? "₤" : notification.type === "whatsapp_disconnected" ? "⚠" : "!"}</span><span><strong>{notificationTitle(notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setOpen(false); onOpenAll(); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
+    {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button className={markAllState === "success" ? "is-success" : ""} type="button" onClick={() => void markAllRead()} disabled={!unreadCount || markAllState === "loading"}>{markAllState === "loading" ? t("dashboard.loading") : markAllState === "success" ? t("dashboard.notificationsMarkedRead") : t("dashboard.markAllRead")}</button></div><div className="notification-filter-tabs" role="tablist" aria-label={t("dashboard.notifications")}>
+      {filterTabs.map((filter) => <button key={filter.id} className={activeFilter === filter.id ? "active" : ""} type="button" role="tab" aria-selected={activeFilter === filter.id} onClick={() => setActiveFilter(filter.id)}><span>{filter.label}</span><b>{filter.count}</b></button>)}
+    </div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : filteredNotifications.length ? <div className="notification-list">{filteredNotifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.type}`}>{notification.type === "new_message" ? "✉" : notification.type === "payment_overdue" ? "₤" : notification.type === "whatsapp_disconnected" ? "⚠" : "!"}</span><span><strong>{notificationTitle(notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{notifications.length ? t("dashboard.notificationsFilterEmpty") : t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setOpen(false); onOpenAll(); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
   </div>;
 }
 
