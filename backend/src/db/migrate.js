@@ -622,6 +622,12 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS whatsapp_notification_jobs_queue_idx
       ON whatsapp_notification_jobs(status, next_attempt_at, id);
+    -- A result can have multiple delivery attempts over its lifetime, but
+    -- there must never be two active outbox records for the same result.
+    CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_grade_active_source_idx
+      ON whatsapp_notification_jobs(source_id)
+      WHERE notification_type = 'grade' AND source_id IS NOT NULL
+        AND status IN ('pending', 'processing');
     CREATE TABLE IF NOT EXISTS whatsapp_template_rotation (
       notification_type TEXT PRIMARY KEY CHECK (notification_type IN ('attendance', 'grade', 'receipt', 'advance_payment')),
       next_index INTEGER NOT NULL DEFAULT 0 CHECK (next_index >= 0),
@@ -661,6 +667,10 @@ export async function migrate() {
   await query(`CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_notification_jobs_source_type_idx
     ON whatsapp_notification_jobs(notification_type, source_id)
     WHERE source_id IS NOT NULL AND status IN ('pending', 'processing')`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_grade_active_source_idx
+    ON whatsapp_notification_jobs(source_id)
+    WHERE notification_type = 'grade' AND source_id IS NOT NULL
+      AND status IN ('pending', 'processing')`);
   await query(
     `INSERT INTO whatsapp_settings (id, templates, grade_templates, receipt_templates, advance_payment_templates)
      VALUES (1, $1::jsonb, $2::jsonb, $3::jsonb, $4::jsonb)

@@ -374,6 +374,19 @@
   white-space: nowrap;
 }
 
+.audit-pagination-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 120px;
+  justify-content: center;
+}
+
+.audit-pagination-label b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 .audit-empty-state {
   padding: 48px 20px;
   border: 1px dashed var(--line);
@@ -3005,12 +3018,23 @@ textarea {
 .whatsapp-send-button.is-loading { opacity: .7; }
 .whatsapp-grade-action { display: grid; justify-items: start; gap: 6px; min-width: 142px; }
 .whatsapp-delivery-status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 800; white-space: nowrap; }
-.whatsapp-delivery-status i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.whatsapp-delivery-status i { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; flex: 0 0 18px; border-radius: 50%; background: rgba(255, 255, 255, .08); font-size: 12px; font-style: normal; line-height: 1; }
+.whatsapp-delivery-status small { display: block; color: var(--muted); font-size: 9px; font-weight: 700; }
 .whatsapp-delivery-status.idle { color: #cbd5e1; }
 .whatsapp-delivery-status.pending { color: #fbbf24; }
 .whatsapp-delivery-status.processing { color: #8ec4ff; }
 .whatsapp-delivery-status.sent { color: #55e09b; }
 .whatsapp-delivery-status.failed { color: #fb7185; }
+.whatsapp-delivery-status.sent i { background: rgba(85, 224, 155, .16); }
+.whatsapp-delivery-status.pending i,
+.whatsapp-delivery-status.processing i { animation: whatsapp-status-pulse 1.1s ease-in-out infinite; }
+.whatsapp-grade-action { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(112px, auto); align-items: center; gap: 8px; min-width: 240px; }
+.whatsapp-send-button { min-width: 112px; }
+
+@keyframes whatsapp-status-pulse {
+  0%, 100% { opacity: .45; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1); }
+}
 .whatsapp-not-sent-badge { display: inline-flex; align-items: center; gap: 4px; width: fit-content; margin-inline-start: 8px; padding: 3px 8px; border: 1px solid rgba(148, 163, 184, 0.22); border-radius: 999px; color: #cbd5e1; background: rgba(71, 85, 105, 0.28); font-size: 10px; font-weight: 700; line-height: 1.4; vertical-align: middle; white-space: nowrap; }
 .admin-editor .whatsapp-receipt-option { display: flex; flex-direction: row-reverse; align-items: center; justify-content: flex-start; gap: 12px; width: fit-content; margin: 16px 0; color: var(--text); font-size: 12px; line-height: 1.5; cursor: pointer; }
 .whatsapp-receipt-switch { position: relative; display: inline-flex; width: 44px; height: 24px; flex: 0 0 auto; }
@@ -3121,6 +3145,8 @@ textarea {
 [data-theme="light"] .exam-bulk-toast { background: rgba(255, 255, 255, .94); color: #142238; }
 
 @media (max-width: 620px) {
+  .exam-records-toolbar { grid-template-columns: 1fr; }
+  .whatsapp-grade-action { min-width: 210px; grid-template-columns: 1fr; align-items: stretch; }
   .exam-bulk-action-bar { align-items: stretch; flex-direction: column; }
   .exam-bulk-action-buttons { display: grid; grid-template-columns: 1fr 1fr; }
   .exam-bulk-action-buttons button { width: 100%; }
@@ -3292,8 +3318,12 @@ textarea {
 .exam-records-search {
   display: grid;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
+
+.exam-records-toolbar { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(260px, 1fr); gap: 12px; margin-bottom: 14px; }
+.exam-records-date-filter { display: grid; gap: 8px; }
+.exam-date-filter-controls { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(140px, 1fr); gap: 8px; }
 
 .editor-grid label {
   display: grid;

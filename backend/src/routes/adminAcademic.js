@@ -9,6 +9,7 @@ import { getDashboardAlertThresholds } from "../services/systemSettings.js";
 import { isNationalId, isPhoneNumber, normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.js";
 import { auditLog, changedFields, verifyAuditPin } from "../services/audit.js";
 import { parseStudentRetention, permanentlyDeleteStudents } from "../services/studentDeletion.js";
+import { enqueueGradeNotificationInTransaction, wakeWhatsAppWorker } from "../services/whatsapp.js";
 
 export const adminAcademicRouter = express.Router();
 adminAcademicRouter.use(requireTeacher);
@@ -65,6 +66,31 @@ async function generateScanSerial(studentCode) {
 
 function parseBoolean(value, fallback = true) {
   return typeof value === "boolean" ? value : fallback;
+}
+
+function isValidIsoDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function normalizeBulkExamRow(raw, index) {
+  const row = raw && typeof raw === "object" ? raw : {};
+  const studentIdValue = row.student_id ?? row.studentId;
+  const studentCode = String(row.student_code ?? row.studentCode ?? row.code ?? "").trim();
+  const title = String(row.title ?? row.exam_title ?? row.examName ?? "").trim();
+  const examDate = String(row.exam_date ?? row.date ?? "").trim();
+  const maxScore = Number(normalizeDigits(String(row.max_score ?? row.maxScore ?? "").trim()));
+  const score = Number(normalizeDigits(String(row.score ?? row.mark ?? "").trim()));
+  const assessment = String(row.assessment ?? row.evaluation_text ?? row.note ?? "").trim();
+  const studentId = studentIdValue == null || String(studentIdValue).trim() === "" ? null : Number(normalizeDigits(studentIdValue));
+  const validStudent = (Number.isInteger(studentId) && studentId > 0) || Boolean(studentCode);
+  if (!validStudent || !title || !isValidIsoDate(examDate) || !Number.isFinite(maxScore) || maxScore <= 0 || !Number.isFinite(score) || score < 0 || score > maxScore) {
+    const error = new Error("invalid_bulk_exam_row");
+    error.rowNumber = index + 1;
+    throw error;
+  }
+  return { studentId, studentCode, title, examDate, maxScore, score, assessment };
 }
 
 function groupPayload(body) {
@@ -521,8 +547,13 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
     const groupId = Number(normalizeDigits(req.query.group_id || ""));
     const studentId = Number(normalizeDigits(req.query.student_id || ""));
     const search = normalizeDigits(req.query.search || "").trim();
+    const date = String(req.query.date || "").trim();
+    if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00Z`).getTime()) || new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date)) {
+      return res.status(400).json({ ok: false, status: "invalid_exam_date" });
+    }
     if (Number.isInteger(groupId) && groupId > 0) { values.push(groupId); filters.push(`s.group_id = $${values.length}`); }
     if (Number.isInteger(studentId) && studentId > 0) { values.push(studentId); filters.push(`s.id = $${values.length}`); }
+    if (date) { values.push(date); filters.push(`e.exam_date = $${values.length}::date`); }
     if (search) {
       values.push(`%${search}%`);
       filters.push(`(s.full_name ILIKE $${values.length} OR s.student_code ILIKE $${values.length} OR s.student_serial ILIKE $${values.length} OR s.scan_serial ILIKE $${values.length} OR g.name ILIKE $${values.length})`);
@@ -530,14 +561,16 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
     const result = await query(
       `SELECT er.id, er.student_id, s.full_name, s.student_code, s.group_id, g.name AS group_name,
               e.id AS exam_id, e.title, e.exam_date, e.max_score, er.score, er.note, er.note AS assessment, er.whatsapp_notified,
-              grade_job.status AS whatsapp_status, grade_job.last_error AS whatsapp_error,
-              grade_job.sent_at AS whatsapp_sent_at, grade_job.id AS whatsapp_job_id
+              COALESCE(grade_job.status, CASE WHEN er.whatsapp_notified THEN 'sent' ELSE 'failed' END) AS whatsapp_status,
+              grade_job.last_error AS whatsapp_error, grade_job.sent_at AS whatsapp_sent_at,
+              grade_job.updated_at AS whatsapp_last_updated, grade_job.updated_at AS last_updated,
+              grade_job.id AS whatsapp_job_id
        FROM exam_results er
        JOIN exams e ON e.id = er.exam_id
        JOIN students s ON s.id = er.student_id
        JOIN groups g ON g.id = s.group_id
        LEFT JOIN LATERAL (
-         SELECT j.id, j.status, j.last_error, j.sent_at
+         SELECT j.id, j.status, j.last_error, j.sent_at, j.updated_at
          FROM whatsapp_notification_jobs j
          WHERE j.notification_type = 'grade' AND j.source_id = er.id
          ORDER BY j.id DESC
@@ -554,6 +587,7 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
 });
 
 adminAcademicRouter.post("/exams/results", requirePermission("exams.manage"), async (req, res, next) => {
+  let client;
   try {
     const studentId = Number(normalizeDigits(req.body?.student_id));
     const title = String(req.body?.title || "").trim();
@@ -568,31 +602,144 @@ adminAcademicRouter.post("/exams/results", requirePermission("exams.manage"), as
       return res.status(400).json({ ok: false, status: "invalid_exam_result" });
     }
 
-    const student = await query("SELECT id, group_id FROM students WHERE id = $1 AND deleted_at IS NULL", [studentId]);
-    if (!student.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
-
-    const existingExam = await query(
-      "SELECT id FROM exams WHERE group_id = $1 AND title = $2 AND exam_date = $3::date LIMIT 1",
-      [student.rows[0].group_id, title, examDate]
-    );
-    const examId = existingExam.rows[0]?.id || (await query(
-      "INSERT INTO exams (group_id, title, max_score, exam_date) VALUES ($1, $2, $3, $4::date) RETURNING id",
-      [student.rows[0].group_id, title, maxScore, examDate]
-    )).rows[0].id;
-
-    const existingResult = await query("SELECT id, exam_id, student_id, score, note FROM exam_results WHERE exam_id = $1 AND student_id = $2", [examId, studentId]);
-    const result = await query(
-       `INSERT INTO exam_results (exam_id, student_id, score, note, whatsapp_notified)
-       VALUES ($1, $2, $3, $4, FALSE)
-       ON CONFLICT (exam_id, student_id)
-       DO UPDATE SET score = EXCLUDED.score, note = EXCLUDED.note, whatsapp_notified = FALSE
-       RETURNING id, exam_id, student_id, score, note AS assessment`,
-      [examId, studentId, score, assessment || null]
-    );
-    await auditLog({ action: existingResult.rowCount ? "exam_result_updated" : "exam_result_created", actorId: req.teacher.id, studentId, details: { exam_id: examId, result_id: result.rows[0].id, title, exam_date: examDate, max_score: maxScore, changes: changedFields(existingResult.rows[0] || {}, result.rows[0]), before: existingResult.rows[0] || null, after: result.rows[0] }, request: req });
-    res.status(201).json({ ok: true, result: result.rows[0] });
+    client = await pool.connect();
+    await client.query("BEGIN");
+    const student = await client.query("SELECT id, group_id, full_name, student_code FROM students WHERE id = $1 AND deleted_at IS NULL FOR SHARE", [studentId]);
+    if (!student.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "not_found" });
+    }
+    await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`exam:${student.rows[0].group_id}:${title}:${examDate}`]);
+    const existingExam = await client.query(`
+      SELECT id
+      FROM exams
+      WHERE group_id = $1 AND title = $2 AND exam_date = $3::date
+      ORDER BY id
+      LIMIT 1
+      FOR UPDATE`, [student.rows[0].group_id, title, examDate]);
+    const examId = existingExam.rows[0]?.id || (await client.query(`
+      INSERT INTO exams (group_id, title, max_score, exam_date)
+      VALUES ($1, $2, $3, $4::date)
+      RETURNING id`, [student.rows[0].group_id, title, maxScore, examDate])).rows[0].id;
+    if (existingExam.rowCount) await client.query("UPDATE exams SET max_score = $1 WHERE id = $2", [maxScore, examId]);
+    const existingResult = await client.query(`
+      SELECT id, exam_id, student_id, score, note
+      FROM exam_results
+      WHERE exam_id = $1 AND student_id = $2
+      FOR UPDATE`, [examId, studentId]);
+    const result = await client.query(`
+      INSERT INTO exam_results (exam_id, student_id, score, note, whatsapp_notified)
+      VALUES ($1, $2, $3, $4, FALSE)
+      ON CONFLICT (exam_id, student_id)
+      DO UPDATE SET score = EXCLUDED.score, note = EXCLUDED.note,
+        whatsapp_notified = FALSE
+      RETURNING id, exam_id, student_id, score, note AS assessment`,
+      [examId, studentId, score, assessment || null]);
+    const outbox = await enqueueGradeNotificationInTransaction(client, { resultId: result.rows[0].id });
+    await auditLog({
+      db: client,
+      action: existingResult.rowCount ? "exam_result_updated" : "exam_result_created",
+      actorId: req.teacher.id,
+      studentId,
+      details: {
+        exam_id: examId,
+        result_id: result.rows[0].id,
+        title,
+        exam_date: examDate,
+        max_score: maxScore,
+        whatsapp_job_id: outbox.job_id || null,
+        changes: changedFields(existingResult.rows[0] || {}, result.rows[0]),
+        before: existingResult.rows[0] || null,
+        after: result.rows[0]
+      },
+      request: req
+    });
+    await client.query("COMMIT");
+    if (outbox.queued) {
+      // The worker only sees committed rows, so wake it after COMMIT.
+      wakeWhatsAppWorker();
+    }
+    res.status(201).json({ ok: true, result: result.rows[0], whatsapp: outbox });
   } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => undefined);
     next(error);
+  } finally {
+    client?.release();
+  }
+});
+
+// Sheet imports use JSON rows after the client has parsed the spreadsheet.
+// The whole import is one transaction: a single invalid student or score
+// rolls back every grade and every corresponding WhatsApp outbox row.
+adminAcademicRouter.post(["/exams/results/bulk", "/exams/results/bulk-sheet"], requirePermission("exams.manage"), async (req, res, next) => {
+  let client;
+  try {
+    if (!Array.isArray(req.body?.rows) || req.body.rows.length === 0 || req.body.rows.length > 500) {
+      return res.status(400).json({ ok: false, status: "invalid_bulk_exam_rows" });
+    }
+    const rows = req.body.rows.map((row, index) => normalizeBulkExamRow(row, index));
+    const imported = [];
+    const notifications = [];
+    client = await pool.connect();
+    await client.query("BEGIN");
+    for (const [index, row] of rows.entries()) {
+      const student = row.studentId
+        ? await client.query("SELECT id, group_id FROM students WHERE id = $1 AND deleted_at IS NULL FOR SHARE", [row.studentId])
+        : await client.query("SELECT id, group_id FROM students WHERE student_code = $1 AND deleted_at IS NULL FOR SHARE", [row.studentCode]);
+      if (!student.rowCount) {
+        const error = new Error("bulk_student_not_found");
+        error.rowNumber = index + 1;
+        throw error;
+      }
+      const studentRecord = student.rows[0];
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`exam:${studentRecord.group_id}:${row.title}:${row.examDate}`]);
+      const existingExam = await client.query(`
+        SELECT id FROM exams
+        WHERE group_id = $1 AND title = $2 AND exam_date = $3::date
+        ORDER BY id LIMIT 1 FOR UPDATE`, [studentRecord.group_id, row.title, row.examDate]);
+      const examId = existingExam.rows[0]?.id || (await client.query(`
+        INSERT INTO exams (group_id, title, max_score, exam_date)
+        VALUES ($1, $2, $3, $4::date) RETURNING id`, [studentRecord.group_id, row.title, row.maxScore, row.examDate])).rows[0].id;
+      if (existingExam.rowCount) await client.query("UPDATE exams SET max_score = $1 WHERE id = $2", [row.maxScore, examId]);
+      const existingResult = await client.query(`
+        SELECT id, exam_id, student_id, score, note
+        FROM exam_results WHERE exam_id = $1 AND student_id = $2 FOR UPDATE`, [examId, studentRecord.id]);
+      const result = await client.query(`
+        INSERT INTO exam_results (exam_id, student_id, score, note, whatsapp_notified)
+        VALUES ($1, $2, $3, $4, FALSE)
+        ON CONFLICT (exam_id, student_id)
+        DO UPDATE SET score = EXCLUDED.score, note = EXCLUDED.note, whatsapp_notified = FALSE
+        RETURNING id, exam_id, student_id, score, note AS assessment`,
+        [examId, studentRecord.id, row.score, row.assessment || null]);
+      const outbox = await enqueueGradeNotificationInTransaction(client, { resultId: result.rows[0].id });
+      imported.push({ result_id: result.rows[0].id, student_id: studentRecord.id, updated: existingResult.rowCount > 0 });
+      notifications.push(outbox);
+    }
+    await auditLog({
+      db: client,
+      action: "exam_results_bulk_imported",
+      actorId: req.teacher.id,
+      details: { row_count: imported.length, results: imported, queued_count: notifications.filter((item) => item.queued).length },
+      request: req
+    });
+    await client.query("COMMIT");
+    if (notifications.some((item) => item.queued)) wakeWhatsAppWorker();
+    res.status(201).json({
+      ok: true,
+      importedCount: imported.length,
+      createdCount: imported.filter((item) => !item.updated).length,
+      updatedCount: imported.filter((item) => item.updated).length,
+      queuedCount: notifications.filter((item) => item.queued).length,
+      results: imported
+    });
+  } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => undefined);
+    if (error?.message === "invalid_bulk_exam_row" || error?.message === "bulk_student_not_found") {
+      return res.status(400).json({ ok: false, status: error.message, row_number: error.rowNumber || null });
+    }
+    next(error);
+  } finally {
+    client?.release();
   }
 });
 

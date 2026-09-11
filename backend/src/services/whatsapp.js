@@ -715,6 +715,153 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
   }
 }
 
+/**
+ * Add (or refresh) the grade notification for a result using the caller's
+ * transaction client. This function deliberately never commits: the grade
+ * row and this outbox row must become visible together or not at all.
+ */
+export async function enqueueGradeNotificationInTransaction(client, { resultId }) {
+  const hydrated = await client.query(`
+    SELECT er.id AS result_id, er.score, er.note, e.title AS exam_title,
+      e.max_score, e.exam_date, s.id AS student_id, s.full_name AS student_name,
+      s.student_code, s.guardian_phone, s.whatsapp_opted_out
+    FROM exam_results er
+    JOIN exams e ON e.id = er.exam_id
+    JOIN students s ON s.id = er.student_id
+    WHERE er.id = $1
+    FOR UPDATE`, [resultId]);
+  const row = hydrated.rows[0];
+  if (!row) return { queued: false, reason: "not_found" };
+
+  const active = await client.query(`
+    SELECT id, status, ref_code
+    FROM whatsapp_notification_jobs
+    WHERE notification_type = 'grade' AND source_id = $1
+      AND status IN ('pending', 'processing')
+    ORDER BY id DESC
+    LIMIT 1
+    FOR UPDATE`, [resultId]);
+  if (active.rows[0]?.status === "processing") {
+    return { queued: false, reason: "already_queued", job_id: active.rows[0].id, status: active.rows[0].status, ref_code: active.rows[0].ref_code };
+  }
+
+  const settings = await getWhatsAppSettings(client.query.bind(client));
+  const templates = notificationTemplates(settings, "grade").filter(Boolean);
+  if (!templates.length) throw new Error("no_whatsapp_templates");
+  await client.query(`
+    INSERT INTO whatsapp_template_rotation (notification_type, next_index)
+    VALUES ('grade', 0)
+    ON CONFLICT (notification_type) DO NOTHING`);
+  const rotation = await client.query(`
+    SELECT next_index FROM whatsapp_template_rotation
+    WHERE notification_type = 'grade'
+    FOR UPDATE`);
+  const templateIndex = Number(rotation.rows[0]?.next_index || 0) % templates.length;
+  await client.query(`
+    UPDATE whatsapp_template_rotation
+    SET next_index = (next_index + 1) % $1, updated_at = NOW()
+    WHERE notification_type = 'grade'`, [templates.length]);
+
+  const template = templates[templateIndex];
+  const rawPhone = String(row.guardian_phone || "").trim();
+  const phone = normalizeEgyptianPhone(rawPhone) || rawPhone;
+  const accessToken = createStudentPortalAccessToken();
+  const portalLink = buildStudentPortalLink(row.student_id, row.student_code, accessToken);
+  const maxScore = Number(row.max_score);
+  const score = Number(row.score);
+  const percentage = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1).replace(/\.0$/, "") : "0";
+  const refCode = notificationRefCode("GRD", row.exam_date, row.result_id, true);
+  const payload = {
+    type: "grade",
+    student_name: row.student_name,
+    student_code: row.student_code,
+    exam_title: row.exam_title,
+    exam_date: row.exam_date,
+    score,
+    max_score: maxScore,
+    percentage,
+    evaluation_text: row.note || "",
+    assessment: row.note || "",
+    guardian_phone: rawPhone,
+    parent_contact: { guardian_phone: rawPhone, whatsapp_phone: phone || null },
+    whatsapp_opted_out: row.whatsapp_opted_out === true,
+    event_time: row.exam_date,
+    portal_link: portalLink
+  };
+  const parts = cairoParts(row.exam_date);
+  const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
+  const templateValues = { ...payload, ...parts, ref_code: refCode };
+  const renderedBody = compileWhatsAppMessage("grade", template, templateValues).trim();
+  const finalBody = `${renderedBody}\n\n${locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform"}`;
+  const values = [
+    row.student_id,
+    phone,
+    JSON.stringify(payload),
+    refCode,
+    templateIndex,
+    template,
+    redactPortalLink(finalBody)
+  ];
+  let job;
+  if (active.rows[0]) {
+    job = await client.query(`
+      UPDATE whatsapp_notification_jobs
+      SET student_id = $2, phone_number = $3, payload = $4::jsonb,
+        ref_code = $5, status = 'pending', attempts = 0, last_error = NULL,
+        template_index = $6, template_text = $7, rendered_message = $8,
+        next_attempt_at = NOW(), sent_at = NULL, updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, status, ref_code`, [active.rows[0].id, ...values]);
+  } else {
+    job = await client.query(`
+      INSERT INTO whatsapp_notification_jobs
+        (notification_type, source_id, student_id, phone_number, payload, ref_code,
+         status, template_index, template_text, rendered_message, next_attempt_at)
+      VALUES ('grade', $1, $2, $3, $4::jsonb, $5, 'pending', $6, $7, $8, NOW())
+      RETURNING id, status, ref_code`, [row.result_id, ...values]);
+  }
+  await client.query("UPDATE exam_results SET whatsapp_notified = FALSE WHERE id = $1", [row.result_id]);
+  await client.query(`
+    INSERT INTO student_portal_access_tokens (token_hash, student_id, expires_at)
+    VALUES ($1, $2, NOW() + INTERVAL '1 hour')
+    ON CONFLICT (token_hash) DO NOTHING`, [hashStudentPortalAccessToken(accessToken), row.student_id]);
+  return { queued: true, job_id: job.rows[0].id, status: job.rows[0].status, ref_code: job.rows[0].ref_code, result_id: row.result_id };
+}
+
+export async function retryGradeNotificationJob({ jobId }) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const current = await client.query(`
+      SELECT id, status, ref_code
+      FROM whatsapp_notification_jobs
+      WHERE id = $1 AND notification_type = 'grade'
+      FOR UPDATE`, [jobId]);
+    if (!current.rowCount) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "not_found" };
+    }
+    if (current.rows[0].status !== "failed") {
+      await client.query("COMMIT");
+      return { ok: true, reason: "already_active", status: current.rows[0].status, job_id: current.rows[0].id, ref_code: current.rows[0].ref_code };
+    }
+    const retried = await client.query(`
+      UPDATE whatsapp_notification_jobs
+      SET status = 'pending', attempts = 0, last_error = NULL,
+        next_attempt_at = NOW(), sent_at = NULL, updated_at = NOW()
+      WHERE id = $1 AND status = 'failed'
+      RETURNING id, status, ref_code`, [jobId]);
+    await client.query("COMMIT");
+    wakeWhatsAppWorker();
+    return { ok: true, retried: true, ...retried.rows[0] };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function notificationRefCode(prefix, dateValue, id, unique = false) {
   const date = new Date(dateValue || Date.now()).toISOString().slice(0, 10).replaceAll("-", "");
   return `${prefix}-${date}-${id}${unique ? `-${Date.now()}-${randomInteger(100, 999)}` : ""}`;
@@ -947,6 +1094,11 @@ async function processWhatsAppJob() {
     ) * 1000;
     if (lastSentAt && elapsed < delayMs) await sleep(delayMs - elapsed);
     const payload = job.payload && typeof job.payload === "object" ? job.payload : {};
+    if (type === "grade" && payload.whatsapp_opted_out === true) {
+      await updateJob(job.id, "failed", { error: "whatsapp_opted_out", nextAttemptAt: null });
+      await updateGradeNotificationState(job, false);
+      return;
+    }
     const parts = cairoParts(payload.event_time || payload.checkin_time);
     const templates = notificationTemplates(settings, type).filter(Boolean);
     if (!templates.length) {
@@ -954,7 +1106,12 @@ async function processWhatsAppJob() {
       return;
     }
     const phone = normalizeEgyptianPhone(job.phone_number);
-    if (!phone) { await updateJob(job.id, "skipped", { error: "invalid_phone" }); return; }
+    if (!phone) {
+      const terminalStatus = type === "grade" ? "failed" : "skipped";
+      await updateJob(job.id, terminalStatus, { error: "invalid_phone", nextAttemptAt: null });
+      if (type === "grade") await updateGradeNotificationState(job, false);
+      return;
+    }
     const persistedTemplateIndex = Number(job.template_index);
     const hasPersistedTemplate = Number.isInteger(persistedTemplateIndex) && persistedTemplateIndex >= 0 && persistedTemplateIndex < templates.length && String(job.template_text || "").trim();
     const { index: templateIndex, template } = hasPersistedTemplate
@@ -1020,7 +1177,7 @@ async function processWhatsAppJob() {
   }
 }
 
-function wakeWhatsAppWorker() {
+export function wakeWhatsAppWorker() {
   if (!state.workerTimer) void processWhatsAppJob();
 }
 

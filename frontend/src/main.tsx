@@ -898,6 +898,8 @@ const translations = {
     "audit.maintenancePinNotConfigured": "يجب إعداد رقم سجل النشاط أولاً.",
     "audit.date": "التاريخ والوقت",
     "audit.details": "التفاصيل",
+    "audit.page": "صفحة",
+    "audit.of": "من",
     "audit.noLogs": "لا توجد سجلات.",
     "audit.pinSaved": "تم حفظ الرقم السري.",
     "audit.locked": "تم إيقاف المحاولة مؤقتاً بسبب محاولات فاشلة.",
@@ -1458,6 +1460,8 @@ const translations = {
     "admin.searchExamRecords": "ابحث بكود الطالب أو اسمه أو مجموعته",
     "admin.examRecordsShow": "إظهار النتائج",
     "admin.examRecordsHide": "إخفاء النتائج",
+    "admin.examDateFilter": "تصفية حسب تاريخ الامتحان",
+    "admin.allTime": "كل التواريخ",
     "admin.editExamResult": "تعديل النتيجة",
     "admin.deleteExamResult": "مسح النتيجة",
     "admin.examTitle": "اسم الامتحان",
@@ -2308,6 +2312,8 @@ const translations = {
     "audit.maintenancePinNotConfigured": "Set up the audit PIN first.",
     "audit.date": "Date and time",
     "audit.details": "Details",
+    "audit.page": "Page",
+    "audit.of": "of",
     "audit.noLogs": "No audit logs found.",
     "audit.pinSaved": "PIN saved.",
     "audit.locked": "Access is temporarily locked after failed attempts.",
@@ -2868,6 +2874,8 @@ const translations = {
     "admin.searchExamRecords": "Search by student code, name, or group",
     "admin.examRecordsShow": "Show results",
     "admin.examRecordsHide": "Hide results",
+    "admin.examDateFilter": "Filter by exam date",
+    "admin.allTime": "All time",
     "admin.editExamResult": "Edit result",
     "admin.deleteExamResult": "Delete result",
     "admin.examTitle": "Exam title",
@@ -9039,6 +9047,8 @@ const auditActionOptions: Array<{ value: string; label: TranslationKey }> = [
   { value: "audit_logs_exported", label: "audit.action.logsExported" }
 ];
 
+const AUDIT_LOG_PAGE_SIZE = 10;
+
 function auditDetailLabelKey(key: string): TranslationKey | null {
   const keys: Record<string, TranslationKey> = {
     body: "audit.detail.content", path: "audit.detail.path", query: "audit.detail.query", method: "audit.detail.method",
@@ -9101,7 +9111,21 @@ function auditDetailText(key: string, value: unknown, language: Language, t: Tra
   return formatAuditDetailValue(value, language, t);
 }
 
-function auditNarrativeFromDetails(action: string, details: Record<string, any>, language: Language, t: Translator, actorName = "—") {
+function normalizeAuditDetails(value: unknown): Record<string, any> {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, any>;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, any>;
+    } catch {
+      // Legacy audit rows may contain plain text instead of JSON details.
+    }
+  }
+  return {};
+}
+
+function auditNarrativeFromDetails(action: string, rawDetails: unknown, language: Language, t: Translator, actorName = "—") {
+  const details = normalizeAuditDetails(rawDetails);
   const resolvedAction = resolveAuditAction(action, details);
   const body = details.body && typeof details.body === "object" ? details.body : {};
   const targetUser = details.target_user && typeof details.target_user === "object" ? details.target_user as Record<string, any> : {};
@@ -9131,7 +9155,8 @@ function auditNarrativeFromDetails(action: string, details: Record<string, any>,
   return t("audit.narrative.generic", { action: t(auditActionKey(resolvedAction, details)) });
 }
 
-function formatAuditDetails(details: Record<string, unknown>, language: Language, t: Translator = createTranslator(language), actorName = "") {
+function formatAuditDetails(rawDetails: unknown, language: Language, t: Translator = createTranslator(language), actorName = "") {
+  const details = normalizeAuditDetails(rawDetails);
   const action = String(details?._audit_action || details?.action || "system_action");
   const summary = auditNarrativeFromDetails(action, details as Record<string, any>, language, t, actorName || "—");
   const rows = [{ key: t("audit.detail.summary"), value: summary }];
@@ -9172,8 +9197,9 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [logs, setLogs] = useState<any[]>([]);
-  const [page, setPage] = useState(1);
-  const [total, setTotal] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [stats, setStats] = useState({ success_count: 0, failure_count: 0, user_count: 0 });
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
   const [copiedId, setCopiedId] = useState<number | null>(null);
@@ -9217,7 +9243,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
       const response = await fetch(`${API_BASE_URL}/admin/audit-logs/unlock`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.status || "unlock_failed");
-      setAccessToken(data.audit_access_token); setUnlocked(true); setPin(""); setPage(1);
+      setAccessToken(data.audit_access_token); setUnlocked(true); setPin(""); setCurrentPage(1);
       await Promise.all([loadLogs(1, data.audit_access_token, appliedFilters), loadFilterOptions(data.audit_access_token)]);
     } catch (error) { setStatus(error instanceof Error && error.message === "audit_pin_locked" ? t("audit.locked") : t("audit.invalidPin")); }
   }
@@ -9234,7 +9260,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
 
   function paramsForFilters(filterSet: AuditFilters, nextPage = 1, includePagination = true) {
     const params = new URLSearchParams();
-    if (includePagination) { params.set("page", String(nextPage)); params.set("limit", "50"); }
+    if (includePagination) { params.set("page", String(nextPage)); params.set("limit", String(AUDIT_LOG_PAGE_SIZE)); }
     if (filterSet.search.trim()) params.set("search", filterSet.search.trim());
     if (filterSet.action) params.set("action", filterSet.action);
     if (filterSet.userId) params.set("user_id", filterSet.userId);
@@ -9248,14 +9274,23 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
     return params;
   }
 
-  async function loadLogs(nextPage = page, token = accessToken, filterSet = appliedFilters) {
+  async function loadLogs(nextPage = currentPage, token = accessToken, filterSet = appliedFilters) {
     if (!token) return false;
     setLoading(true); setStatus("");
     try {
       const params = paramsForFilters(filterSet, nextPage);
       const response = await fetch(`${API_BASE_URL}/admin/audit-logs?${params}`, { headers: { ...auth, "X-Audit-Access-Token": token } });
       const data = await response.json(); if (!response.ok || !data.ok) throw new Error(data.status || "logs_failed");
-      setLogs(Array.isArray(data.logs) ? data.logs : []); setTotal(Number(data.total || 0)); setStats({ success_count: Number(data.stats?.success_count || 0), failure_count: Number(data.stats?.failure_count || 0), user_count: Number(data.stats?.user_count || 0) }); setPage(nextPage);
+      const responsePagination = data.pagination && typeof data.pagination === "object" ? data.pagination : {};
+      const resolvedLimit = Number(responsePagination.limit || AUDIT_LOG_PAGE_SIZE);
+      const resolvedTotalItems = Number(responsePagination.totalItems ?? data.total ?? 0);
+      const resolvedTotalPages = Math.max(1, Number(responsePagination.totalPages || Math.ceil(resolvedTotalItems / resolvedLimit)));
+      const resolvedCurrentPage = Math.min(Math.max(1, Number(responsePagination.currentPage || nextPage)), resolvedTotalPages);
+      setLogs(Array.isArray(data.data) ? data.data : Array.isArray(data.logs) ? data.logs : []);
+      setTotalItems(Number.isFinite(resolvedTotalItems) ? resolvedTotalItems : 0);
+      setTotalPages(Number.isFinite(resolvedTotalPages) ? resolvedTotalPages : 1);
+      setStats({ success_count: Number(data.stats?.success_count || 0), failure_count: Number(data.stats?.failure_count || 0), user_count: Number(data.stats?.user_count || 0) });
+      setCurrentPage(Number.isSafeInteger(resolvedCurrentPage) ? resolvedCurrentPage : 1);
       return true;
     } catch (error) { if (error instanceof Error && error.message === "audit_access_required") { setUnlocked(false); setAccessToken(""); } setStatus(t("fees.reportLoadFailed")); return false; }
     finally { setLoading(false); }
@@ -9339,24 +9374,11 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
     return () => { document.body.style.overflow = previousOverflow; window.removeEventListener("keydown", closeOnEscape); };
   }, [selectedLog]);
 
-  useEffect(() => {
-    const openActivityRow = (event: MouseEvent) => {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      const row = target.closest(".audit-activity-table tbody tr");
-      if (!row || !row.parentElement) return;
-      const index = Array.from(row.parentElement.children).indexOf(row);
-      if (index >= 0) setSelectedLog(logs[index] || null);
-    };
-    document.addEventListener("click", openActivityRow);
-    return () => document.removeEventListener("click", openActivityRow);
-  }, [logs]);
-
   function applyFilters(event?: React.FormEvent) {
     event?.preventDefault();
     const nextFilters = { ...filters };
     setAppliedFilters(nextFilters);
-    setPage(1);
+    setCurrentPage(1);
     void loadLogs(1, accessToken, nextFilters);
   }
 
@@ -9364,7 +9386,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
     const nextFilters = { ...emptyFilters };
     setFilters(nextFilters);
     setAppliedFilters(nextFilters);
-    setPage(1);
+    setCurrentPage(1);
     void loadLogs(1, accessToken, nextFilters);
   }
 
@@ -9385,7 +9407,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
     const key = `${format}-${scope}-${logId || "all"}`;
     setExportingKey(key); setExportSuccessKey(""); setStatus("");
     try {
-      const params = paramsForFilters(appliedFilters, page, scope === "current");
+      const params = paramsForFilters(appliedFilters, currentPage, scope === "current");
       params.set("format", format); params.set("scope", scope === "current" ? "current" : "all"); params.set("language", language);
       if (logId) params.set("log_id", String(logId));
       const response = await fetch(`${API_BASE_URL}/admin/audit-logs/export?${params}`, { headers: { ...auth, "X-Audit-Access-Token": accessToken } });
@@ -9413,10 +9435,13 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
     if (actionValue.includes("updated") || actionValue.includes("changed") || actionValue.includes("status") || actionValue.includes("exported")) return "warning";
     return "success";
   };
-  const formatAuditDate = (value: unknown) => new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short" }).format(new Date(String(value)));
-  const detailRowsFor = (log: any) => formatAuditDetails(log.details || {}, language, t, log.actor_name || log.actor_username || "").filter((item) => item.key !== t("audit.detail.summary") && item.key !== t("audit.detail.actor"));
+  const formatAuditDate = (value: unknown) => {
+    const date = value instanceof Date ? value : new Date(String(value ?? ""));
+    return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short" }).format(date) : "—";
+  };
+  const detailRowsFor = (log: any) => formatAuditDetails(log?.details, language, t, log?.actor_name || log?.actor_username || "").filter((item) => item.key !== t("audit.detail.summary") && item.key !== t("audit.detail.actor"));
   const changeRowsFor = (log: any) => {
-    const details = log.details || {};
+    const details = normalizeAuditDetails(log?.details);
     if (Array.isArray(details.changes) && details.changes.length) return details.changes.map((change: any, index: number) => {
       const field = String(change?.field || change?.setting || `field_${index + 1}`);
       return { field: auditDetailLabelKey(field) ? t(auditDetailLabelKey(field) as TranslationKey) : humanizeAuditKey(field), before: formatAuditDetailValue(change?.before ?? change?.previous_value, language, t), after: formatAuditDetailValue(change?.after ?? change?.new_value, language, t) };
@@ -9439,7 +9464,10 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   });
 
   const canExport = sessionHasPermission(session, "activity_log.export");
-  const pageCount = Math.max(1, Math.ceil(total / 50));
+  const page = currentPage;
+  const setPage = setCurrentPage;
+  const total = totalItems;
+  const pageCount = totalPages;
   const exportButtonLabel = (format: "csv" | "xlsx", scope: "current" | "all", logId?: number) => {
     const key = `${format}-${scope}-${logId || "all"}`;
     return exportingKey === key ? t("audit.exporting") : exportSuccessKey === key ? t("audit.exported") : format === "csv" ? t("audit.exportCsv") : t("audit.exportXlsx");
@@ -9457,10 +9485,10 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
     <form className="audit-filter-panel" onSubmit={applyFilters}><div className="audit-filter-heading"><button className="audit-filter-collapse-button" type="button" aria-expanded={filtersOpen} aria-controls="audit-filter-controls" aria-label={filtersOpen ? t("audit.collapseFilters") : t("audit.expandFilters")} onClick={() => setFiltersOpen((current) => !current)}><span aria-hidden="true">⌄</span></button><span className="audit-filter-hint">{loading ? t("audit.refreshing") : total.toLocaleString(language === "ar" ? "ar-EG" : "en-US") + " · " + t("audit.title")}</span></div><div id="audit-filter-controls" className={"audit-filter-collapse-content " + (filtersOpen ? "is-open" : "is-collapsed")}><div className="audit-filter-collapse-inner"><div className="audit-filter-grid"><label className="audit-filter-search">{t("audit.search")}<input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder={t("audit.studentSearchPlaceholder")} /></label><label>{t("audit.systemUser")}<select value={filters.userId} onChange={(event) => updateFilter("userId", event.target.value)}><option value="">{t("audit.allUsers")}</option>{filterOptions.users.map((user) => <option key={user.id} value={user.id}>{user.name || user.username || user.email}</option>)}</select></label><label>{t("audit.role")}<select value={filters.actorRole} onChange={(event) => updateFilter("actorRole", event.target.value)}><option value="">{t("audit.allRoles")}</option><option value="owner">{t("audit.role.owner")}</option><option value="admin">{t("audit.role.admin")}</option><option value="staff">{t("audit.role.staff")}</option></select></label><label>{t("audit.targetType")}<select value={filters.entityType} onChange={(event) => updateFilter("entityType", event.target.value)}><option value="">{t("audit.allTargetTypes")}</option>{["students", "groups", "attendance", "fees", "exams", "whatsapp", "settings", "login"].map((target) => <option key={target} value={target}>{targetLabel(target)}</option>)}</select></label><label>{t("audit.action")}<select value={filters.action} onChange={(event) => updateFilter("action", event.target.value)}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.outcome")}<select value={filters.outcome} onChange={(event) => updateFilter("outcome", event.target.value)}><option value="">{t("audit.allOutcomes")}</option><option value="success">{t("audit.success")}</option><option value="failure">{t("audit.failure")}</option></select></label><label>{t("audit.studentSearch")}<input list="audit-student-options" value={filters.student} onChange={(event) => { updateFilter("student", event.target.value); if (event.target.value.length >= 3) void loadFilterOptions(accessToken, event.target.value); }} placeholder={t("audit.studentSearchPlaceholder")} /></label><datalist id="audit-student-options">{filterOptions.students.map((student) => <option key={student.id} value={student.student_code || student.student_serial || student.full_name}>{student.full_name}{student.student_code ? " · " + student.student_code : ""}</option>)}</datalist><label>{t("audit.group")}<select value={filters.groupId} onChange={(event) => updateFilter("groupId", event.target.value)}><option value="">{t("audit.allGroups")}</option>{filterOptions.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>{t("audit.dateFrom")}<input type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} /></label></div>{filterChipItems.length ? <div className="audit-filter-chips"><span>{t("audit.activeFilters")}</span>{filterChipItems.map((chip) => <button key={String(chip.key)} type="button" onClick={() => { const next = { ...appliedFilters, [chip.key]: "" }; setFilters(next); setAppliedFilters(next); void loadLogs(1, accessToken, next); }} title={t("audit.removeFilter")}>{chip.label}: {chip.value} <b aria-hidden="true">×</b></button>)}</div> : null}<div className="audit-filter-actions"><button className="primary-button compact-button" type="submit" disabled={loading}>{loading ? t("audit.refreshing") : t("audit.applyFilters")}</button><button className="secondary-button compact-button" type="button" onClick={clearFilters} disabled={loading}>{t("audit.clearFilters")}</button></div></div></div></form>
     <div className="audit-toolbar"><div><strong>{t("audit.title")}</strong><span>{t("audit.activityCenterDescription")}</span></div>{canExport ? <div className="audit-export-actions"><span>{t("audit.exportCurrent")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "current")}>{exportButtonLabel("csv", "current")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "current")}>{exportButtonLabel("xlsx", "current")}</button><span>{t("audit.exportAll")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "all")}>{exportButtonLabel("csv", "all")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "all")}>{exportButtonLabel("xlsx", "all")}</button></div> : null}</div>
     {logs.length ? <div className="audit-table-wrap"><table className="audit-activity-table"><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.target")}</th><th>{t("audit.outcome")}</th><th><span className="sr-only">{t("audit.viewDetails")}</span></th></tr></thead><tbody>{logs.map((log) => { const tone = eventTone(log); return <tr key={log.id} className={"audit-event-row audit-event-" + tone}><td data-label={t("audit.date")}><time dateTime={String(log.created_at)}>{formatAuditDate(log.created_at)}</time></td><td data-label={t("audit.user")}><strong>{log.actor_name || log.actor_username || t("audit.role.system")}</strong><small>{roleLabelForAudit(log.actor_role)}</small></td><td data-label={t("audit.action")}><span className={"audit-event-badge audit-event-badge-" + tone}>{actionLabel(log)}</span></td><td data-label={t("audit.target")}><strong>{log.student_name || log.group_name || log.payment_id ? (log.student_name || log.group_name || t("audit.payment") + " #" + log.payment_id) : t("audit.noTarget")}</strong><small>{targetLabel(log.entity_type)}{log.student_code ? " · " + log.student_code : ""}{log.group_name && log.student_name ? " · " + log.group_name : ""}</small></td><td data-label={t("audit.outcome")}><span className={"audit-outcome audit-outcome-" + tone}>{String(log.outcome) === "failure" ? t("audit.failure") : t("audit.success")}</span></td><td data-label=""><button className="secondary-button compact-button audit-view-button" type="button" onClick={() => setSelectedLog(log)}>{t("audit.viewDetails")}</button></td></tr>; })}</tbody></table></div> : <p className="empty-state audit-empty-state">{t("audit.noLogs")}</p>}
-    <div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => void loadLogs(page - 1)}>{"‹"}</button><span>{page} / {pageCount}</span><button className="secondary-button compact-button" type="button" disabled={page >= pageCount || loading} onClick={() => void loadLogs(page + 1)}>{"›"}</button></div>
+    <div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={currentPage <= 1 || loading} onClick={() => void loadLogs(currentPage - 1)}>{"‹"}</button><span className="audit-pagination-label" dir={language === "ar" ? "rtl" : "ltr"}><span>{t("audit.page")}</span><b dir="ltr">{currentPage}</b><span>{t("audit.of")}</span><b dir="ltr">{totalPages}</b></span><button className="secondary-button compact-button" type="button" disabled={currentPage >= totalPages || loading} onClick={() => void loadLogs(currentPage + 1)}>{"›"}</button></div>
     {maintenancePanelForCenter}
     {status ? <p className="form-error">{status}</p> : null}
-    {selectedLog ? <div className="modal-backdrop audit-detail-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedLog(null); }}><section className="audit-detail-modal" role="dialog" aria-modal="true" aria-labelledby="audit-detail-title" dir={language === "ar" ? "rtl" : "ltr"}><header className="audit-detail-header"><div><span className={"audit-event-badge audit-event-badge-" + eventTone(selectedLog)}>{actionLabel(selectedLog)}</span><h3 id="audit-detail-title">{t("audit.whatHappened")}</h3><p>{auditNarrativeFromDetails(String(selectedLog.action || "system_action"), selectedLog.details || {}, language, t, selectedLog.actor_name || selectedLog.actor_username || t("audit.role.system"))}</p></div><button className="modal-close-button" type="button" onClick={() => setSelectedLog(null)} aria-label={t("audit.closeDetails")} title={t("audit.closeDetails")}>×</button></header><div className="audit-detail-scroll"><div className="audit-detail-meta"><div><span>{t("audit.user")}</span><strong>{selectedLog.actor_name || selectedLog.actor_username || t("audit.role.system")}</strong><small>{roleLabelForAudit(selectedLog.actor_role)}</small></div><div><span>{t("audit.date")}</span><strong>{formatAuditDate(selectedLog.created_at)}</strong></div><div><span>{t("audit.target")}</span><strong>{selectedLog.student_name || selectedLog.group_name || selectedLog.payment_id ? (selectedLog.student_name || selectedLog.group_name || t("audit.payment") + " #" + selectedLog.payment_id) : t("audit.noTarget")}</strong><small>{targetLabel(selectedLog.entity_type)}{selectedLog.student_code ? " · " + selectedLog.student_code : ""}</small></div><div><span>{t("audit.result")}</span><strong className={"audit-result-text audit-result-" + eventTone(selectedLog)}>{String(selectedLog.outcome) === "failure" ? t("audit.failure") : t("audit.success")}</strong></div></div>{selectedChangeRows.length ? <section className="audit-detail-section"><h4>{t("audit.beforeAfter")}</h4><div className="audit-change-list">{selectedChangeRows.map((change, index) => <div className="audit-change-row" key={change.field + "-" + index}><strong>{change.field}</strong><span>{change.before}</span><b aria-hidden="true">→</b><span>{change.after}</span></div>)}</div></section> : null}<section className="audit-detail-section"><h4>{t("audit.details")}</h4>{selectedDetailRows.length ? <div className="audit-detail-list">{selectedDetailRows.map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}</div> : <p className="empty-state">{t("audit.noChanges")}</p>}</section></div><footer className="audit-detail-footer"><span>{t("audit.detail.recordId")}: <b dir="ltr">{selectedLog.id}</b></span><button className="secondary-button compact-button" type="button" onClick={() => void copyActivityId(Number(selectedLog.id))}>{copiedId === Number(selectedLog.id) ? t("audit.copied") : t("audit.copyId")}</button>{canExport ? <><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "all", Number(selectedLog.id))}>{exportButtonLabel("csv", "all", Number(selectedLog.id))}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "all", Number(selectedLog.id))}>{exportButtonLabel("xlsx", "all", Number(selectedLog.id))}</button></> : null}</footer></section></div> : null}
+    {selectedLog ? createPortal(<div className="modal-backdrop audit-detail-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedLog(null); }}><section className="audit-detail-modal" role="dialog" aria-modal="true" aria-labelledby="audit-detail-title" dir={language === "ar" ? "rtl" : "ltr"}><header className="audit-detail-header"><div><span className={"audit-event-badge audit-event-badge-" + eventTone(selectedLog)}>{actionLabel(selectedLog)}</span><h3 id="audit-detail-title">{t("audit.whatHappened")}</h3><p>{auditNarrativeFromDetails(String(selectedLog.action || "system_action"), selectedLog.details || {}, language, t, selectedLog.actor_name || selectedLog.actor_username || t("audit.role.system"))}</p></div><button className="modal-close-button" type="button" onClick={() => setSelectedLog(null)} aria-label={t("audit.closeDetails")} title={t("audit.closeDetails")}>×</button></header><div className="audit-detail-scroll"><div className="audit-detail-meta"><div><span>{t("audit.user")}</span><strong>{selectedLog.actor_name || selectedLog.actor_username || t("audit.role.system")}</strong><small>{roleLabelForAudit(selectedLog.actor_role)}</small></div><div><span>{t("audit.date")}</span><strong>{formatAuditDate(selectedLog.created_at)}</strong></div><div><span>{t("audit.target")}</span><strong>{selectedLog.student_name || selectedLog.group_name || selectedLog.payment_id ? (selectedLog.student_name || selectedLog.group_name || t("audit.payment") + " #" + selectedLog.payment_id) : t("audit.noTarget")}</strong><small>{targetLabel(selectedLog.entity_type)}{selectedLog.student_code ? " · " + selectedLog.student_code : ""}</small></div><div><span>{t("audit.result")}</span><strong className={"audit-result-text audit-result-" + eventTone(selectedLog)}>{String(selectedLog.outcome) === "failure" ? t("audit.failure") : t("audit.success")}</strong></div></div>{selectedChangeRows.length ? <section className="audit-detail-section"><h4>{t("audit.beforeAfter")}</h4><div className="audit-change-list">{selectedChangeRows.map((change, index) => <div className="audit-change-row" key={change.field + "-" + index}><strong>{change.field}</strong><span>{change.before}</span><b aria-hidden="true">→</b><span>{change.after}</span></div>)}</div></section> : null}<section className="audit-detail-section"><h4>{t("audit.details")}</h4>{selectedDetailRows.length ? <div className="audit-detail-list">{selectedDetailRows.map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}</div> : <p className="empty-state">{t("audit.noChanges")}</p>}</section></div><footer className="audit-detail-footer"><span>{t("audit.detail.recordId")}: <b dir="ltr">{selectedLog.id}</b></span><button className="secondary-button compact-button" type="button" onClick={() => void copyActivityId(Number(selectedLog.id))}>{copiedId === Number(selectedLog.id) ? t("audit.copied") : t("audit.copyId")}</button>{canExport ? <><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "all", Number(selectedLog.id))}>{exportButtonLabel("csv", "all", Number(selectedLog.id))}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "all", Number(selectedLog.id))}>{exportButtonLabel("xlsx", "all", Number(selectedLog.id))}</button></> : null}</footer></section></div>, document.body) : null}
   </section>;
   const refreshLabel = refreshState === "loading" ? t("audit.refreshing") : refreshState === "success" ? t("audit.refreshed") : t("audit.refresh");
   const maintenancePanel = <details className="audit-maintenance"><summary>{t("audit.maintenance")}</summary><form className="audit-maintenance-form" onSubmit={deleteMaintenance}><p className="audit-maintenance-warning">{t("audit.maintenanceWarning")}</p><div className="audit-maintenance-fields"><label>{t("audit.maintenanceFrom")}<input type="date" value={maintenanceFrom} onChange={(event) => { setMaintenanceFrom(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenanceTo")}<input type="date" value={maintenanceTo} onChange={(event) => { setMaintenanceTo(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenancePin")}<input value={maintenancePin} onChange={(event) => setMaintenancePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><label>{t("audit.maintenancePassword")}<input value={maintenancePassword} onChange={(event) => setMaintenancePassword(event.target.value)} type="password" autoComplete="current-password" /></label></div><label>{t("audit.maintenanceReason")}<textarea value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} placeholder={t("audit.maintenanceReasonPlaceholder")} rows={3} maxLength={500} /></label><label>{t("audit.maintenanceConfirmation")}<input value={maintenanceConfirmation} onChange={(event) => setMaintenanceConfirmation(event.target.value)} placeholder={t("audit.maintenanceConfirmationHint")} autoComplete="off" /></label><div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={maintenanceOperation !== "idle"} onClick={previewMaintenance}>{maintenanceOperation === "preview" ? t("audit.maintenancePreviewing") : t("audit.maintenancePreview")}</button><button className="danger-button compact-button" type="submit" disabled={maintenanceOperation !== "idle" || maintenanceCount === null}>{maintenanceOperation === "delete" ? t("audit.maintenanceDeleting") : t("audit.maintenanceDelete")}</button></div>{maintenanceCount !== null ? <p className="audit-maintenance-count">{t("audit.maintenanceCount", { count: String(maintenanceCount) })}</p> : null}{maintenanceStatus ? <p className={`audit-maintenance-status ${maintenanceStatusTone}`}>{maintenanceStatus}</p> : null}</form></details>;
@@ -10237,6 +10265,9 @@ type ExamResultRecord = {
   whatsapp_notified?: boolean;
   whatsapp_status?: string | null;
   whatsapp_error?: string | null;
+  whatsapp_sent_at?: string | null;
+  whatsapp_last_updated?: string | null;
+  whatsapp_job_id?: number | null;
   [key: string]: unknown;
 };
 
@@ -10264,6 +10295,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   const [search, setSearch] = useState("");
   const [recordSearch, setRecordSearch] = useState("");
   const [recordsExpanded, setRecordsExpanded] = useState(false);
+  const [recordDate, setRecordDate] = useState("");
   const [form, setForm] = useState({ student_id: "", title: "", exam_date: localDateInputValue(), max_score: "10", score: "", assessment: "" });
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
@@ -10278,6 +10310,14 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
   const batchToastTimerRef = useRef<number | null>(null);
   const canSendGrades = sessionHasPermission(session, "whatsapp.send_grades");
+
+  const recordsQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (selectedGroup) params.set("group_id", selectedGroup);
+    if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
+    if (recordDate) params.set("date", recordDate);
+    return params.toString();
+  }, [selectedGroup, recordDate, recordSearch]);
 
   useEffect(() => {
     Promise.all([
@@ -10294,33 +10334,29 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   }, [session.token, t]);
 
   useEffect(() => {
+    let cancelled = false;
     setRecordsLoading(true);
-    const params = new URLSearchParams();
-    if (selectedGroup) params.set("group_id", selectedGroup);
-    if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
-    fetch(`${API_BASE_URL}/admin/exams/results?${params.toString()}`, { headers: { Authorization: `Bearer ${session.token}` } })
+    fetch(`${API_BASE_URL}/admin/exams/results?${recordsQuery}`, { headers: { Authorization: `Bearer ${session.token}` } })
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(t("admin.profileLoadFailed"));
-        setRecords(Array.isArray(data.results) ? data.results as ExamResultRecord[] : []);
+        if (!cancelled) setRecords(Array.isArray(data.results) ? data.results as ExamResultRecord[] : []);
       })
-      .catch((error) => setStatus(error instanceof Error ? error.message : t("admin.profileLoadFailed")))
-      .finally(() => setRecordsLoading(false));
-  }, [selectedGroup, recordSearch, session.token, t]);
+      .catch((error) => { if (!cancelled) setStatus(error instanceof Error ? error.message : t("admin.profileLoadFailed")); })
+      .finally(() => { if (!cancelled) setRecordsLoading(false); });
+    return () => { cancelled = true; };
+  }, [recordsQuery, session.token, t]);
 
   useEffect(() => {
     if (!records.some((record) => ["pending", "processing"].includes(String(record.whatsapp_status)))) return undefined;
     const timer = window.setInterval(() => {
-      const params = new URLSearchParams();
-      if (selectedGroup) params.set("group_id", selectedGroup);
-      if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
-      fetch(`${API_BASE_URL}/admin/exams/results?${params.toString()}`, { headers: { Authorization: `Bearer ${session.token}` } })
+      fetch(`${API_BASE_URL}/admin/exams/results?${recordsQuery}`, { headers: { Authorization: `Bearer ${session.token}` } })
         .then((response) => response.json())
         .then((data) => { if (data.ok) setRecords(Array.isArray(data.results) ? data.results as ExamResultRecord[] : []); })
         .catch(() => undefined);
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [records, selectedGroup, recordSearch, session.token]);
+  }, [records, recordsQuery, session.token]);
 
   useEffect(() => () => {
     if (batchToastTimerRef.current !== null) window.clearTimeout(batchToastTimerRef.current);
@@ -10365,10 +10401,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
       if (!response.ok || !data.ok) throw new Error(data.status === "invalid_exam_result" ? t("admin.invalidExamResult") : t("errors.loginFailed"));
       setStatus(t("admin.examResultSaved"));
       setForm((current) => ({ ...current, score: "", assessment: "" }));
-      const params = new URLSearchParams();
-      if (selectedGroup) params.set("group_id", selectedGroup);
-      if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
-      const refreshed = await fetch(`${API_BASE_URL}/admin/exams/results?${params.toString()}`, { headers: { Authorization: `Bearer ${session.token}` } });
+      const refreshed = await fetch(`${API_BASE_URL}/admin/exams/results?${recordsQuery}`, { headers: { Authorization: `Bearer ${session.token}` } });
       const refreshedData = await refreshed.json();
       if (refreshed.ok && refreshedData.ok) setRecords(Array.isArray(refreshedData.results) ? refreshedData.results as ExamResultRecord[] : []);
     } catch (error) {
@@ -10408,10 +10441,13 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
     setSendingGradeId(recordId);
     setStatus("");
     try {
-      const response = await fetch(`${API_BASE_URL}/whatsapp/send-grade`, {
+      const record = records.find((item) => Number(item.id) === recordId);
+      const isFailed = record?.whatsapp_status === "failed" && Number(record.whatsapp_job_id) > 0;
+      const endpoint = isFailed ? `${API_BASE_URL}/whatsapp/jobs/${record?.whatsapp_job_id}/retry` : `${API_BASE_URL}/whatsapp/send-grade`;
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
-        body: JSON.stringify({ result_id: recordId })
+        body: isFailed ? undefined : JSON.stringify({ result_id: recordId })
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.ok) throw new Error(data.status === "invalid_phone" ? t("whatsapp.invalidPhone") : t("whatsapp.saveFailed"));
@@ -10544,9 +10580,20 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
           </button>
         </div>
         {recordsExpanded ? <>
-          <label className="exam-records-search">{t("admin.searchExamRecords")}
-            <input value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="A-6251" />
-          </label>
+          <div className="exam-records-toolbar">
+            <label className="exam-records-search">{t("admin.searchExamRecords")}
+              <input value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="A-6251" />
+            </label>
+            <label className="exam-records-date-filter">{t("admin.examDateFilter")}
+              <div className="exam-date-filter-controls">
+                <select value={recordDate || "all"} onChange={(event) => setRecordDate(event.target.value === "all" ? "" : event.target.value)} aria-label={t("admin.examDateFilter")}>
+                  <option value="all">{t("admin.allTime")}</option>
+                  {recordDate ? <option value={recordDate}>{formatExamResultDate(recordDate)}</option> : null}
+                </select>
+                <input type="date" value={recordDate} onChange={(event) => setRecordDate(event.target.value)} aria-label={t("admin.examDateFilter")} />
+              </div>
+            </label>
+          </div>
           {recordsLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : records.length ? <>
             <div className="table-wrap">
               <table>
@@ -10579,6 +10626,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
                     const deliveryState = examWhatsAppState(record, sendingGradeId);
                     const deliveryLabel = deliveryState === "sent" ? t("whatsapp.gradeStatusSent") : deliveryState === "failed" ? t("whatsapp.gradeStatusFailed") : deliveryState === "processing" ? t("whatsapp.gradeStatusSending") : deliveryState === "pending" ? t("whatsapp.gradeStatusQueued") : t("whatsapp.notSent");
                     const buttonLabel = deliveryState === "failed" ? t("whatsapp.retryGrade") : deliveryState === "sent" ? t("whatsapp.sendGradeAgain") : deliveryState === "processing" ? t("whatsapp.sendingGrade") : t("whatsapp.sendGrade");
+                    const deliveryTimestamp = deliveryState === "sent" ? (record.whatsapp_sent_at || record.whatsapp_last_updated) : record.whatsapp_last_updated;
                     return <tr key={resultId}>
                       <td className="exam-selection-column">
                         <input
@@ -10595,7 +10643,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
                       <td>{formatExamResultDate(record.exam_date)}</td>
                       <td>{record.score}/{record.max_score}</td>
                       <td>{record.assessment || record.note || "—"}</td>
-                      {canSendGrades ? <td><div className="whatsapp-grade-action"><span className={`whatsapp-delivery-status ${deliveryState}`} title={deliveryState === "failed" ? record.whatsapp_error || deliveryLabel : deliveryLabel}><i aria-hidden="true" />{deliveryLabel}</span><button className={`secondary-button compact-button whatsapp-send-button ${deliveryState === "processing" ? "is-loading" : ""}`} type="button" onClick={() => void sendGrade(resultId)} disabled={sendingGradeId !== null || batchMutating || deliveryState === "pending" || deliveryState === "processing"}><span aria-hidden="true">◉</span>{buttonLabel}</button></div></td> : null}
+                      {canSendGrades ? <td><div className="whatsapp-grade-action"><span className={`whatsapp-delivery-status ${deliveryState}`} title={deliveryState === "failed" ? record.whatsapp_error || deliveryLabel : deliveryLabel}><i aria-hidden="true">{deliveryState === "sent" ? "✓" : deliveryState === "failed" ? "!" : deliveryState === "pending" || deliveryState === "processing" ? "◌" : "–"}</i>{deliveryLabel}{deliveryTimestamp ? <small>{formatDateTime(String(deliveryTimestamp), language, "—")}</small> : null}</span><button className={`secondary-button compact-button whatsapp-send-button ${deliveryState === "processing" ? "is-loading" : ""}`} type="button" onClick={() => void sendGrade(resultId)} disabled={sendingGradeId !== null || batchMutating || deliveryState === "pending" || deliveryState === "processing"}><span aria-hidden="true">◉</span>{buttonLabel}</button></div></td> : null}
                       <td><button className="secondary-button compact-button" type="button" onClick={() => setForm({ student_id: String(record.student_id), title: String(record.title || ""), exam_date: String(record.exam_date || "").slice(0, 10), max_score: String(record.max_score || "10"), score: String(record.score ?? ""), assessment: String(record.assessment || record.note || "") })}>{t("admin.editExamResult")}</button></td>
                       <td><button className="danger-button compact-button" type="button" onClick={() => deleteRecord(resultId)} disabled={deletingRecordId === resultId || batchMutating}>{deletingRecordId === resultId ? t("admin.saving") : t("admin.deleteExamResult")}</button></td>
                     </tr>;

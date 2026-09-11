@@ -11,6 +11,7 @@ import {
   getWhatsAppStatus,
   enqueueGradeBatchNotifications,
   enqueueGradeNotification,
+  retryGradeNotificationJob,
   updateWhatsAppSettings
 } from "../services/whatsapp.js";
 
@@ -157,5 +158,15 @@ whatsappRouter.post("/batch-exams", requirePermission("whatsapp.send_grades"), a
   try {
     const result = await enqueueGradeBatchNotifications({ resultIds: parsed.data.resultIds });
     res.status(200).json({ ok: true, ...result });
+  } catch (error) { next(error); }
+});
+
+whatsappRouter.post("/jobs/:id/retry", requirePermission("whatsapp.send_grades"), async (req, res, next) => {
+  try {
+    const jobId = Number(req.params.id);
+    if (!Number.isSafeInteger(jobId) || jobId <= 0) return res.status(400).json({ ok: false, status: "invalid_job" });
+    const result = await retryGradeNotificationJob({ jobId });
+    if (!result.ok && result.reason === "not_found") return res.status(404).json({ ok: false, status: result.reason });
+    res.status(result.retried ? 202 : 200).json({ ok: true, ...result });
   } catch (error) { next(error); }
 });
