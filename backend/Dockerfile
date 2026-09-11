@@ -22,9 +22,6 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --chown=appuser:appgroup backend/src ./backend/src
 COPY --chown=appuser:appgroup shared ./shared
 
-RUN mkdir -p /app/backend/whatsapp_auth \
-    && chown appuser:appgroup /app/backend/whatsapp_auth
-
 WORKDIR /app/backend
 
 USER appuser

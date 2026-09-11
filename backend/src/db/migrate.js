@@ -600,6 +600,15 @@ export async function migrate() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CHECK (min_delay_seconds <= max_delay_seconds)
     );
+    CREATE TABLE IF NOT EXISTS whatsapp_auth_state (
+      session_id TEXT NOT NULL,
+      key_id TEXT NOT NULL,
+      key_data JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (session_id, key_id)
+    );
+    CREATE INDEX IF NOT EXISTS whatsapp_auth_state_updated_idx
+      ON whatsapp_auth_state(session_id, updated_at);
     CREATE TABLE IF NOT EXISTS whatsapp_notification_jobs (
       id BIGSERIAL PRIMARY KEY,
       notification_type TEXT NOT NULL DEFAULT 'attendance' CHECK (notification_type IN ('attendance', 'grade', 'receipt', 'advance_payment')),

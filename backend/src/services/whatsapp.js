@@ -1,6 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers } from "@whiskeysockets/baileys";
+import { makeWASocket, initAuthCreds, BufferJSON, proto, DisconnectReason, Browsers } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import { pool, query } from "../db/pool.js";
 import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "./auth.js";
@@ -45,7 +43,7 @@ const publicAppUrl = String(
   (process.env.NODE_ENV === "production" ? "https://abdrabo.up.railway.app" : "http://localhost:3000")
 ).replace(/\/+$/, "");
 
-const authDirectory = path.resolve(process.env.WHATSAPP_AUTH_DIR || path.resolve(process.cwd(), "whatsapp_auth"));
+const WHATSAPP_AUTH_SESSION_ID = "primary";
 const QR_RENDER_TIMEOUT_MS = 5000;
 // WhatsApp can take several seconds to return the first QR reference, especially
 // after a server restart. Keep the request open long enough for the socket to
@@ -70,8 +68,114 @@ const state = {
   reconnectAttempt: 0,
   connectionWatchdog: null,
   connectionHealthcheckClosing: false,
-  authResetting: null,
 };
+
+let authWriteTail = Promise.resolve();
+
+function serializedAuthValue(value) {
+  return JSON.parse(JSON.stringify(value, BufferJSON.replacer));
+}
+
+function parsedAuthValue(value) {
+  return JSON.parse(JSON.stringify(value), BufferJSON.reviver);
+}
+
+function withAuthWriteLock(operation) {
+  const next = authWriteTail.then(operation, operation);
+  authWriteTail = next.catch(() => undefined);
+  return next;
+}
+
+async function writeAuthRows(rows) {
+  return withAuthWriteLock(async () => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      for (const row of rows) {
+        if (row.deleted) {
+          await client.query(
+            "DELETE FROM whatsapp_auth_state WHERE session_id = $1 AND key_id = $2",
+            [WHATSAPP_AUTH_SESSION_ID, row.keyId]
+          );
+        } else {
+          await client.query(
+            `INSERT INTO whatsapp_auth_state (session_id, key_id, key_data, updated_at)
+             VALUES ($1, $2, $3::jsonb, NOW())
+             ON CONFLICT (session_id, key_id) DO UPDATE SET key_data = EXCLUDED.key_data, updated_at = NOW()`,
+            [WHATSAPP_AUTH_SESSION_ID, row.keyId, JSON.stringify(serializedAuthValue(row.value))]
+          );
+        }
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  });
+}
+
+async function clearWhatsAppAuthState() {
+  return withAuthWriteLock(async () => {
+    await query("DELETE FROM whatsapp_auth_state WHERE session_id = $1", [WHATSAPP_AUTH_SESSION_ID]);
+  });
+}
+
+async function hasWhatsAppAuthState() {
+  const result = await query(
+    "SELECT 1 FROM whatsapp_auth_state WHERE session_id = $1 AND key_id = 'creds' LIMIT 1",
+    [WHATSAPP_AUTH_SESSION_ID]
+  );
+  return result.rowCount > 0;
+}
+
+async function usePostgresAuthState() {
+  const storedCreds = await query(
+    "SELECT key_data FROM whatsapp_auth_state WHERE session_id = $1 AND key_id = 'creds' LIMIT 1",
+    [WHATSAPP_AUTH_SESSION_ID]
+  );
+  const creds = storedCreds.rows[0]?.key_data ? parsedAuthValue(storedCreds.rows[0].key_data) : initAuthCreds();
+  return {
+    state: {
+      creds,
+      keys: {
+        get: async (type, ids) => {
+          if (!ids.length) return {};
+          const keyIds = ids.map((id) => `${type}-${id}`);
+          const result = await query(
+            "SELECT key_id, key_data FROM whatsapp_auth_state WHERE session_id = $1 AND key_id = ANY($2::text[])",
+            [WHATSAPP_AUTH_SESSION_ID, keyIds]
+          );
+          const stored = new Map(result.rows.map((row) => [row.key_id, row.key_data]));
+          const data = {};
+          for (const id of ids) {
+            const value = stored.get(`${type}-${id}`);
+            if (value == null) {
+              data[id] = null;
+              continue;
+            }
+            const parsed = parsedAuthValue(value);
+            data[id] = type === "app-state-sync-key"
+              ? proto.Message.AppStateSyncKeyData.fromObject(parsed)
+              : parsed;
+          }
+          return data;
+        },
+        set: async (data) => {
+          const rows = [];
+          for (const [type, values] of Object.entries(data || {})) {
+            for (const [id, value] of Object.entries(values || {})) {
+              rows.push({ keyId: `${type}-${id}`, value, deleted: value == null });
+            }
+          }
+          if (rows.length) await writeAuthRows(rows);
+        }
+      }
+    },
+    saveCreds: async () => writeAuthRows([{ keyId: "creds", value: creds, deleted: false }])
+  };
+}
 
 function normalizeDigits(value) {
   return String(value ?? "").replace(/[٠-٩۰-۹]/g, (digit) => {
@@ -266,12 +370,10 @@ export async function connectWhatsApp() {
   // the connection watchdog and connection.update handler own that lifecycle.
   if (state.status === "connecting" && state.socket) return getWhatsAppStatus();
   if (state.connecting) await state.connecting.catch(() => undefined);
-  if (state.authResetting) await state.authResetting;
   state.manuallyDisconnected = false;
   state.status = "connecting";
   state.connecting = (async () => {
-    await fs.promises.mkdir(authDirectory, { recursive: true });
-    const { state: authState, saveCreds } = await useMultiFileAuthState(authDirectory);
+    const { state: authState, saveCreds } = await usePostgresAuthState();
     const socket = makeWASocket({
       auth: authState,
       browser: Browsers.ubuntu("Abdrabo Attendance"),
@@ -287,7 +389,14 @@ export async function connectWhatsApp() {
     });
     state.socket = socket;
     armConnectionWatchdog(socket);
-    socket.ev.on("creds.update", saveCreds);
+    socket.ev.on("creds.update", () => {
+      void saveCreds().catch((error) => {
+        // A transient database outage must not become an unhandled rejection
+        // that takes down the WhatsApp process. Baileys will emit the next
+        // credentials update and the next reconnect reloads the last commit.
+        console.error("Failed to persist WhatsApp credentials", error);
+      });
+    });
     socket.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
       if (state.socket !== socket) return;
       if (qr) {
@@ -332,9 +441,7 @@ export async function connectWhatsApp() {
           }).catch((error) => console.error("Failed to record WhatsApp disconnect notification", error));
         }
         if (code === DisconnectReason.loggedOut) {
-          state.authResetting = fs.promises.rm(authDirectory, { recursive: true, force: true })
-            .catch((error) => console.error("Failed to clear logged-out WhatsApp session", error))
-            .finally(() => { state.authResetting = null; });
+          void clearWhatsAppAuthState().catch((error) => console.error("Failed to clear logged-out WhatsApp session", error));
         } else {
           scheduleReconnect();
         }
@@ -375,7 +482,7 @@ export async function disconnectWhatsApp() {
   try { await state.socket?.logout(); } catch (error) { console.warn("WhatsApp logout failed", error); }
   setDisconnected();
   state.connectionEstablished = false;
-  await fs.promises.rm(authDirectory, { recursive: true, force: true });
+  await clearWhatsAppAuthState();
   if (wasEstablished) {
     void recordWhatsAppConnectionNotification({ status: "disconnected", reason: "manual_disconnect", phoneNumber })
       .catch((error) => console.error("Failed to record WhatsApp disconnect notification", error));
@@ -1195,9 +1302,6 @@ export function startWhatsAppWorker() {
 export async function startWhatsAppService() {
   startWhatsAppWorker();
   try {
-    const files = await fs.promises.readdir(authDirectory);
-    if (files.length) await connectWhatsApp();
-  } catch (error) {
-    if (error.code !== "ENOENT") console.error("WhatsApp auth directory could not be read", error);
-  }
+    if (await hasWhatsAppAuthState()) await connectWhatsApp();
+  } catch (error) { console.error("WhatsApp PostgreSQL auth state could not be loaded", error); }
 }

@@ -86,9 +86,6 @@ services:
       postgres:
         condition: service_healthy
 
-    volumes:
-      - whatsapp-auth:/app/backend/whatsapp_auth
-
     networks:
       - database_net
       - application_net
@@ -179,4 +176,3 @@ networks:
 # =========================================================
 volumes:
   postgres-data:
-  whatsapp-auth:

@@ -52,12 +52,12 @@ Keep these settings aligned with the repository:
 
 ### WhatsApp connection persistence
 
-The WhatsApp linked-device credentials are stored in `WHATSAPP_AUTH_DIR` (the
-default is `backend/whatsapp_auth`). On Railway, attach a persistent Volume to
-the backend service and mount it at `/app/backend/whatsapp_auth`. Without that
-volume, a backend redeploy or replacement removes the linked-device session and
-requires QR pairing again. Do not attach the volume to the frontend service or
-run multiple backend replicas for this single WhatsApp session.
+The WhatsApp linked-device credentials are stored transactionally in the
+PostgreSQL `whatsapp_auth_state` table. No local auth directory or persistent
+filesystem volume is required. The database is the source of truth across
+Railway redeploys and backend restarts. The application still uses one logical
+WhatsApp session (`primary`); do not run multiple independent WhatsApp clients
+against the same account.
 
 Local `.env` changes do not update Railway Variables. Docker Compose and Railway are separate
 deployment paths, even though they use the same source repository.
