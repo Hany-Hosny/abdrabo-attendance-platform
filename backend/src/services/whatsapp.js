@@ -27,6 +27,11 @@ const DEFAULT_ADVANCE_PAYMENT_TEMPLATES = Object.freeze([
   "تم بنجاح تسجيل دفعة مالية مقدمة بقيمة {amount_paid} ج.م لحساب الطالب: {student_name}.\nالشهور المسددة: {months}\nسند رقم: {receipt_number}\nالمرجع: {ref_code}",
   "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"
 ]);
+const DEFAULT_ABSENCE_TEMPLATES = Object.freeze([
+  "تنبيه غياب - منصة مستر أحمد عبدربه\nلم يتم تسجيل حضور الطالب {student_name} في مجموعة {group_name} بتاريخ {date}.\nبرجاء التواصل مع إدارة المنصة.",
+  "إشعار غياب الطالب {student_name}\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب في حصة {group_name} بتاريخ {date}.",
+  "متابعة الحضور | {student_name}\nتم إغلاق جلسة {group_name} بتاريخ {date} دون تسجيل حضور الطالب."
+]);
 
 const DEFAULT_SETTINGS = Object.freeze({
   auto_send: false,
@@ -577,6 +582,7 @@ function normalizeNotificationType(value) {
   if (type === "receipt" || type === "fee") return "receipt";
   if (["advance_payment", "advance-payment", "advance"].includes(type)) return "advance_payment";
   if (type === "attendance") return "attendance";
+  if (type === "absence") return "absence";
   return null;
 }
 
@@ -586,6 +592,7 @@ function notificationTypeFromReference(value) {
   if (reference.startsWith("RCT-")) return "receipt";
   if (reference.startsWith("ADV-")) return "advance_payment";
   if (reference.startsWith("ATT-")) return "attendance";
+  if (reference.startsWith("ABS-")) return "absence";
   return null;
 }
 
@@ -618,6 +625,8 @@ function notificationTemplates(settings, type) {
     }
     case "attendance":
       return Array.isArray(settings.templates) ? settings.templates : [...DEFAULT_TEMPLATES];
+    case "absence":
+      return [...DEFAULT_ABSENCE_TEMPLATES];
     default:
       throw new Error("unsupported_whatsapp_notification_type");
   }

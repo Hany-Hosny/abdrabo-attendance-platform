@@ -9512,6 +9512,17 @@ th {
 .search-popover input { width: 100%; min-height: 40px; border: 1px solid rgba(133, 176, 220, 0.25); border-radius: 8px; background: var(--surface-input); color: var(--text); padding: 0 11px; }
 .header-popover-state { margin: 0; padding: 16px 8px 8px; color: var(--muted); font-size: 12px; text-align: center; }
 .search-results, .notification-list { display: grid; gap: 4px; margin-top: 8px; }
+.notification-list {
+  max-height: min(56vh, 430px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-inline-end: 2px;
+  scrollbar-color: rgba(128, 170, 211, 0.48) transparent;
+  scrollbar-width: thin;
+}
+.notification-list::-webkit-scrollbar { width: 6px; }
+.notification-list::-webkit-scrollbar-track { background: transparent; }
+.notification-list::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(128, 170, 211, 0.48); }
 .search-result, .notification-item { display: flex; width: 100%; align-items: center; gap: 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); cursor: pointer; padding: 8px; text-align: start; }
 .search-result:hover, .search-result.active, .notification-item:hover { border-color: rgba(128, 170, 211, 0.18); background: rgba(255, 255, 255, 0.06); }
 .search-result-avatar, .attention-avatar { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: rgba(67, 151, 255, 0.14); color: #78baff; font-weight: 900; }

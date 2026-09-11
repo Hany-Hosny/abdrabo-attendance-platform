@@ -215,6 +215,8 @@ function buildAuditLogQuery(queryParams = {}, { includePagination = true } = {})
   let limit = Math.min(200, Math.max(1, Number(queryParams.limit || queryParams.page_size || 50)));
   if (!Number.isSafeInteger(page)) page = 1;
   if (!Number.isSafeInteger(limit)) limit = 50;
+  const maxPageForSafeOffset = Math.floor(Number.MAX_SAFE_INTEGER / limit) + 1;
+  if (page > maxPageForSafeOffset) page = maxPageForSafeOffset;
   const pagination = includePagination ? (() => {
     values.push(limit, (page - 1) * limit);
     return `LIMIT $${values.length - 1} OFFSET $${values.length}`;
@@ -582,12 +584,17 @@ operationsRouter.get("/audit-logs", requirePermission("activity_log.view"), requ
     `, countBuilder.values);
     const logs = result.rows.map(resolveAuditLogRow);
     const stats = statsResult.rows[0] || {};
+    const totalItems = Number(countResult.rows[0]?.total || 0);
+    const totalPages = Math.max(1, Math.ceil(totalItems / builder.limit));
     res.json({
       ok: true,
-      logs,
-      page: builder.page,
-      limit: builder.limit,
-      total: Number(countResult.rows[0]?.total || 0),
+      data: logs,
+      pagination: {
+        totalItems,
+        totalPages,
+        currentPage: builder.page,
+        limit: builder.limit
+      },
       stats: { success_count: Number(stats.success_count || 0), failure_count: Number(stats.failure_count || 0), user_count: Number(stats.user_count || 0) }
     });
   } catch (error) { next(error); }

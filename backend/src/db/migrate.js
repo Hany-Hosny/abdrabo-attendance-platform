@@ -77,6 +77,7 @@ export async function migrate() {
       closes_at TIMESTAMPTZ NOT NULL,
       ends_at TIMESTAMPTZ NOT NULL,
       status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed', 'cancelled')),
+      absence_dispatched BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -306,6 +307,7 @@ export async function migrate() {
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;
+    ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS absence_dispatched BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE;
@@ -627,7 +629,7 @@ export async function migrate() {
       ON whatsapp_auth_state(session_id, updated_at);
     CREATE TABLE IF NOT EXISTS whatsapp_notification_jobs (
       id BIGSERIAL PRIMARY KEY,
-      notification_type TEXT NOT NULL DEFAULT 'attendance' CHECK (notification_type IN ('attendance', 'grade', 'receipt', 'advance_payment')),
+      notification_type TEXT NOT NULL DEFAULT 'attendance' CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment')),
       source_id BIGINT,
       attendance_record_id BIGINT UNIQUE REFERENCES attendance_records(id) ON DELETE CASCADE,
       student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
@@ -654,13 +656,13 @@ export async function migrate() {
       WHERE notification_type = 'grade' AND source_id IS NOT NULL
         AND status IN ('pending', 'processing');
     CREATE TABLE IF NOT EXISTS whatsapp_template_rotation (
-      notification_type TEXT PRIMARY KEY CHECK (notification_type IN ('attendance', 'grade', 'receipt', 'advance_payment')),
+      notification_type TEXT PRIMARY KEY CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment')),
       next_index INTEGER NOT NULL DEFAULT 0 CHECK (next_index >= 0),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS whatsapp_templates (
       id BIGSERIAL PRIMARY KEY,
-      category TEXT NOT NULL CHECK (category IN ('attendance', 'grade', 'receipt', 'advance_payment')),
+      category TEXT NOT NULL CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment')),
       message_body TEXT NOT NULL CHECK (length(trim(message_body)) > 0),
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -697,7 +699,11 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS rendered_message TEXT");
   await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN attendance_record_id DROP NOT NULL");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_notification_type_check");
-  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'grade', 'receipt', 'advance_payment'))");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
+  await query("ALTER TABLE whatsapp_template_rotation DROP CONSTRAINT IF EXISTS whatsapp_template_rotation_notification_type_check");
+  await query("ALTER TABLE whatsapp_template_rotation ADD CONSTRAINT whatsapp_template_rotation_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
+  await query("ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_category_check");
+  await query("ALTER TABLE whatsapp_templates ADD CONSTRAINT whatsapp_templates_category_check CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
   await query("UPDATE whatsapp_notification_jobs SET source_id = attendance_record_id WHERE source_id IS NULL");
   await query("DROP INDEX IF EXISTS whatsapp_notification_jobs_source_type_idx");
   await query(`CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_notification_jobs_source_type_idx
@@ -707,6 +713,7 @@ export async function migrate() {
     ON whatsapp_notification_jobs(source_id)
     WHERE notification_type = 'grade' AND source_id IS NOT NULL
       AND status IN ('pending', 'processing')`);
+  await query("CREATE INDEX IF NOT EXISTS attendance_sessions_absence_dispatch_idx ON attendance_sessions(status, absence_dispatched, closes_at, id)");
   await query(
     `INSERT INTO whatsapp_settings (id, templates, grade_templates, receipt_templates, advance_payment_templates)
      VALUES (1, $1::jsonb, $2::jsonb, $3::jsonb, $4::jsonb)
@@ -795,6 +802,19 @@ export async function migrate() {
     WHERE ws.id = 1 AND length(trim(item.value)) > 0
     ON CONFLICT (category, message_body) DO NOTHING
   `);
+
+  // Seed absence templates without re-enabling templates that an operator
+  // deliberately disabled. The unique key makes this safe on every restart.
+  await query(`
+    INSERT INTO whatsapp_templates (category, message_body, is_active)
+    SELECT 'absence', item.value, TRUE
+    FROM jsonb_array_elements_text($1::jsonb) AS item(value)
+    ON CONFLICT (category, message_body) DO NOTHING
+  `, [JSON.stringify([
+    "تنبيه غياب - منصة مستر أحمد عبدربه\nلم يتم تسجيل حضور الطالب {student_name} في مجموعة {group_name} بتاريخ {date}.\nبرجاء التواصل مع إدارة المنصة.",
+    "إشعار غياب الطالب {student_name}\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب في حصة {group_name} بتاريخ {date}.",
+    "متابعة الحضور | {student_name}\nتم إغلاق جلسة {group_name} بتاريخ {date} دون تسجيل حضور الطالب."
+  ])]);
 
   await query(`
     SET search_path TO public;

@@ -19,9 +19,9 @@ import {
 export const whatsappRouter = express.Router();
 whatsappRouter.use(requireTeacher);
 
-const HISTORY_TYPES = new Set(["attendance", "grade", "receipt", "advance_payment"]);
+const HISTORY_TYPES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment"]);
 const HISTORY_STATUSES = new Set(["pending", "processing", "sent", "failed", "skipped"]);
-const TEMPLATE_CATEGORIES = new Set(["attendance", "grade", "receipt", "advance_payment"]);
+const TEMPLATE_CATEGORIES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment"]);
 // exam_results.id is SERIAL in the existing PostgreSQL schema, so the
 // boundary accepts numeric IDs (including JSON string IDs from older clients).
 const batchExamSchema = z.object({
