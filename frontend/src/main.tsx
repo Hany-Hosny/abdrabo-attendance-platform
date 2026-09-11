@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { BrowserMultiFormatReader } from "@zxing/browser";
 import JsBarcode from "jsbarcode";
+import { AnimatePresence, motion } from "framer-motion";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import "./styles.css";
 import { normalizeDigits } from "./utils/normalizeDigits";
@@ -15,6 +16,8 @@ import { PasswordRecoveryDialog } from "./PasswordRecoveryDialog";
 import { PublicLayout } from "./PublicLayout";
 import type { PublicHeaderLabels, PublicLanguage, PublicTheme } from "./PublicHeader";
 import { resolvePublicRoute } from "./routes";
+import { HomeContentEditor } from "./cms/HomeContentEditor";
+import { DEFAULT_HOME_CONTENT, fetchHomeContent, type LandingPageContent } from "./cms/homeContent";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const LANGUAGE_STORAGE_KEY = "abdrabo_language";
@@ -1014,6 +1017,44 @@ const translations = {
     "audit.word.restored": "استرجاع",
     "audit.word.statusChanged": "تغيير حالة",
     "admin.siteContent": "محتوى الموقع",
+    "cms.page": "الصفحة",
+    "cms.loadedFallback": "تعذر تحميل آخر نسخة، يتم عرض المحتوى الافتراضي.",
+    "cms.hero.title": "إعدادات الواجهة الرئيسية",
+    "cms.hero.description": "تحكم في الرسالة الرئيسية وأزرار الدعوة لاتخاذ إجراء.",
+    "cms.hero.badge": "الشارة",
+    "cms.hero.titleField": "العنوان",
+    "cms.hero.subtitle": "الوصف التعريفي",
+    "cms.hero.primaryCta": "النص الأساسي",
+    "cms.hero.secondaryCta": "النص الثانوي",
+    "cms.grades.title": "مصفوفة المراحل الدراسية",
+    "cms.grades.description": "عدّل المراحل التسع ورتّب ظهورها على الصفحة الرئيسية.",
+    "cms.grade.title": "اسم المرحلة",
+    "cms.grade.stage": "التصنيف",
+    "cms.grade.comingSoon": "قريباً",
+    "cms.grade.available": "متاح الآن",
+    "cms.features.title": "بطاقات المميزات",
+    "cms.features.description": "أربع بطاقات ثابتة مع معاينة مباشرة للتصميم.",
+    "cms.feature.num": "الرقم",
+    "cms.feature.title": "العنوان",
+    "cms.feature.desc": "الوصف",
+    "cms.stats.title": "شريط الإحصائيات",
+    "cms.stats.description": "أضف أو عدّل مؤشرات المنصة الظاهرة أسفل الصفحة.",
+    "cms.stat.value": "القيمة",
+    "cms.stat.label": "التسمية",
+    "cms.stat.remove": "حذف المؤشر",
+    "cms.stat.add": "إضافة مؤشر",
+    "cms.saved": "تم الحفظ",
+    "cms.saveError": "راجع الحقول وحاول مرة أخرى.",
+    "cms.unsaved": "لديك تعديلات غير محفوظة",
+    "cms.synced": "المحتوى متزامن مع الخادم",
+    "cms.validationHint": "سيتم التحقق من كل الحقول قبل الحفظ.",
+    "cms.reset": "إلغاء التعديلات",
+    "cms.saving": "جاري الحفظ...",
+    "cms.save": "حفظ التعديلات",
+    "cms.guard.title": "لديك تعديلات غير محفوظة",
+    "cms.guard.description": "هل تريد مغادرة الصفحة دون حفظ التعديلات الحالية؟",
+    "cms.guard.stay": "البقاء والتعديل",
+    "cms.guard.leave": "مغادرة دون حفظ",
     "dashboard.adminTitle": "لوحة التحكم",
     "dashboard.adminSubtitle": "نظرة عامة على الأداء المالي والطلاب والمجموعات",
     "admin.permission.dashboard.view": "عرض لوحة التحكم",
@@ -2362,6 +2403,44 @@ const translations = {
     "audit.word.restored": "restored",
     "audit.word.statusChanged": "status changed",
     "admin.siteContent": "Site Content",
+    "cms.page": "Page",
+    "cms.loadedFallback": "The latest version could not be loaded. Showing the default content.",
+    "cms.hero.title": "Hero controls",
+    "cms.hero.description": "Manage the primary message and calls to action.",
+    "cms.hero.badge": "Badge",
+    "cms.hero.titleField": "Title",
+    "cms.hero.subtitle": "Subtitle",
+    "cms.hero.primaryCta": "Primary CTA",
+    "cms.hero.secondaryCta": "Secondary CTA",
+    "cms.grades.title": "Academic grades matrix",
+    "cms.grades.description": "Edit the nine grades and their order on the landing page.",
+    "cms.grade.title": "Grade title",
+    "cms.grade.stage": "Stage",
+    "cms.grade.comingSoon": "Coming soon",
+    "cms.grade.available": "Available now",
+    "cms.features.title": "Feature cards",
+    "cms.features.description": "Four fixed cards with a live design preview.",
+    "cms.feature.num": "Number",
+    "cms.feature.title": "Title",
+    "cms.feature.desc": "Description",
+    "cms.stats.title": "Stats strip",
+    "cms.stats.description": "Add or edit the platform metrics shown below the page.",
+    "cms.stat.value": "Value",
+    "cms.stat.label": "Label",
+    "cms.stat.remove": "Remove statistic",
+    "cms.stat.add": "Add statistic",
+    "cms.saved": "Saved",
+    "cms.saveError": "Review the fields and try again.",
+    "cms.unsaved": "You have unsaved changes",
+    "cms.synced": "Content is synced with the server",
+    "cms.validationHint": "Every field will be validated before saving.",
+    "cms.reset": "Discard changes",
+    "cms.saving": "Saving...",
+    "cms.save": "Save changes",
+    "cms.guard.title": "You have unsaved changes",
+    "cms.guard.description": "Leave this page without saving the current changes?",
+    "cms.guard.stay": "Keep editing",
+    "cms.guard.leave": "Leave without saving",
     "dashboard.adminTitle": "Executive Dashboard",
     "dashboard.adminSubtitle": "A focused view of financial, student, and group performance",
     "admin.permission.dashboard.view": "View dashboard",
@@ -3793,20 +3872,49 @@ function LandingGradeIcon({ kind }: { kind: LandingGrade["icon"] }) {
   return <svg {...props}><path d="m16 3 2.4 8.6L27 14l-8.6 2.4L16 25l-2.4-8.6L5 14l8.6-2.4z" /><path d="M25 24v5M22.5 26.5h5M7 5v5M4.5 7.5h5" /></svg>;
 }
 
-const landingGrades: LandingGrade[] = [
-  { id: "fifth-primary", label: "landing.grade.fifth", category: "landing.grade.primary", icon: "flask" },
-  { id: "sixth-primary", label: "landing.grade.sixth", category: "landing.grade.primary", icon: "flask" },
-  { id: "first-prep", label: "landing.grade.firstPrep", category: "landing.grade.prep", icon: "dna" },
-  { id: "second-prep", label: "landing.grade.secondPrep", category: "landing.grade.prep", icon: "dna" },
-  { id: "third-prep", label: "landing.grade.thirdPrep", category: "landing.grade.prep", icon: "dna" },
-  { id: "first-secondary", label: "landing.grade.firstSecondary", category: "landing.grade.secondary", icon: "atom" },
-  { id: "second-secondary", label: "landing.grade.secondSecondary", category: "landing.grade.secondary", icon: "atom" },
-  { id: "third-secondary", label: "landing.grade.thirdSecondary", category: "landing.grade.secondary", icon: "atom", disabled: true },
-  { id: "boost-groups", label: "landing.grade.boost", category: "landing.grade.special", icon: "spark", special: true }
-];
+const landingGradeVisuals: Record<string, Pick<LandingGrade, "icon" | "special">> = {
+  "fifth-primary": { icon: "flask" },
+  "sixth-primary": { icon: "flask" },
+  "first-prep": { icon: "dna" },
+  "second-prep": { icon: "dna" },
+  "third-prep": { icon: "dna" },
+  "first-secondary": { icon: "atom" },
+  "second-secondary": { icon: "atom" },
+  "third-secondary": { icon: "atom" },
+  "boost-groups": { icon: "spark", special: true }
+};
+
+const landingStageLabels: Record<LandingPageContent["grades"][number]["stage"], TranslationKey> = {
+  primary: "landing.grade.primary",
+  prep: "landing.grade.prep",
+  secondary: "landing.grade.secondary",
+  special: "landing.grade.special"
+};
+
+function LandingDynamicText({ value, className }: { value: string; className?: string }) {
+  return <AnimatePresence mode="wait" initial={false}><motion.span className={className} key={value} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.2 }}>{value}</motion.span></AnimatePresence>;
+}
 
 function LandingPage({ language, t }: { language: Language; t: Translator }) {
   const isArabic = language === "ar";
+  const [content, setContent] = useState<LandingPageContent>(DEFAULT_HOME_CONTENT[language]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadHomeContent = () => fetchHomeContent(API_BASE_URL, controller.signal)
+      .then(({ content: localizedContent }) => setContent(localizedContent[language]))
+      .catch((error) => { if (error?.name !== "AbortError") setContent(DEFAULT_HOME_CONTENT[language]); });
+    void loadHomeContent();
+    const refreshTimer = window.setInterval(() => { void loadHomeContent(); }, 30_000);
+    return () => {
+      window.clearInterval(refreshTimer);
+      controller.abort();
+    };
+  }, [language]);
+
+  useEffect(() => {
+    setContent(DEFAULT_HOME_CONTENT[language]);
+  }, [language]);
 
   function scrollToSection(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3816,12 +3924,12 @@ function LandingPage({ language, t }: { language: Language; t: Translator }) {
     <main className="landing-main" dir={language}>
           <section className="landing-hero landing-section" id="landing-home" aria-labelledby="landing-title">
             <div className="landing-hero-copy">
-              <span className="landing-badge"><i aria-hidden="true" />{t("landing.badge")}</span>
-              <h1 id="landing-title">{t("landing.title")}</h1>
-              <p>{t("landing.subtitle")}</p>
+              <span className="landing-badge"><i aria-hidden="true" /><LandingDynamicText value={content.hero.badge} /></span>
+              <h1 id="landing-title"><LandingDynamicText value={content.hero.title} /></h1>
+              <p><LandingDynamicText value={content.hero.subtitle} /></p>
               <div className="landing-hero-actions">
-                <a className="landing-primary-button" href="/login">{t("landing.primaryCta")}<span aria-hidden="true">↗</span></a>
-                <button className="landing-secondary-button" type="button" onClick={() => scrollToSection("grades")}>{t("landing.secondaryCta")}<span aria-hidden="true">↓</span></button>
+                <a className="landing-primary-button" href="/login"><LandingDynamicText value={content.hero.primaryCtaText} /><span aria-hidden="true">↗</span></a>
+                <button className="landing-secondary-button" type="button" onClick={() => scrollToSection("grades")}><LandingDynamicText value={content.hero.secondaryCtaText} /><span aria-hidden="true">↓</span></button>
               </div>
               <div className="landing-hero-note"><span aria-hidden="true">✦</span><span>{t("landing.gradesSubtitle")}</span></div>
             </div>
@@ -3845,21 +3953,24 @@ function LandingPage({ language, t }: { language: Language; t: Translator }) {
               <p>{t("landing.gradesSubtitle")}</p>
             </div>
             <div className="landing-grade-grid">
-              {landingGrades.map((grade) => (
+              {content.grades.slice().sort((a, b) => a.sortOrder - b.sortOrder).map((grade) => {
+                const visual = landingGradeVisuals[grade.id] || { icon: "spark" as const };
+                return (
                 <article
-                  className={`landing-grade-card ${grade.disabled ? "is-disabled" : ""} ${grade.special ? "is-special" : ""}`}
+                  className={`landing-grade-card ${grade.comingSoon ? "is-disabled" : ""} ${visual.special ? "is-special" : ""}`}
                   key={grade.id}
-                  aria-disabled={grade.disabled || undefined}
+                  aria-disabled={grade.comingSoon || undefined}
                 >
-                  {grade.disabled ? <span className="landing-ribbon">{t("landing.grade.comingSoon")}</span> : null}
-                  <div className={`landing-grade-icon-wrap landing-icon-${grade.icon}`}><LandingGradeIcon kind={grade.icon} /></div>
+                  {grade.comingSoon ? <span className="landing-ribbon">{t("landing.grade.comingSoon")}</span> : null}
+                  <div className={`landing-grade-icon-wrap landing-icon-${visual.icon}`}><LandingGradeIcon kind={visual.icon} /></div>
                   <div className="landing-grade-copy">
-                    <span>{t(grade.category)}</span>
-                    <h3>{t(grade.label)}</h3>
+                    <span>{t(landingStageLabels[grade.stage])}</span>
+                    <h3><LandingDynamicText value={grade.title} /></h3>
                   </div>
-                  <span className="landing-grade-status">{grade.disabled ? t("landing.grade.comingSoon") : grade.special ? "✦" : t("landing.grade.available")}</span>
+                  <span className="landing-grade-status">{grade.comingSoon ? t("landing.grade.comingSoon") : visual.special ? "✦" : <LandingDynamicText value={grade.badge} />}</span>
                 </article>
-              ))}
+                );
+              })}
             </div>
           </section>
 
@@ -3870,25 +3981,18 @@ function LandingPage({ language, t }: { language: Language; t: Translator }) {
               <p>{t("landing.featuresSubtitle")}</p>
             </div>
             <div className="landing-feature-grid">
-              {[
-                ["01", "landing.feature.whatsappTitle", "landing.feature.whatsappText", "◉"],
-                ["02", "landing.feature.practicalTitle", "landing.feature.practicalText", "⌁"],
-                ["03", "landing.feature.assessmentTitle", "landing.feature.assessmentText", "↗"],
-                ["04", "landing.feature.planTitle", "landing.feature.planText", "✦"]
-              ].map(([number, titleKey, textKey, icon]) => (
-                <article className="landing-feature-card" key={number}>
-                  <div className="landing-feature-topline"><span>{number}</span><i aria-hidden="true">{icon}</i></div>
-                  <h3>{t(titleKey as TranslationKey)}</h3>
-                  <p>{t(textKey as TranslationKey)}</p>
+              {content.features.map((feature, index) => (
+                <article className="landing-feature-card" key={feature.id}>
+                  <div className="landing-feature-topline"><span>{feature.num}</span><i aria-hidden="true">{["◉", "⌁", "↗", "✦"][index]}</i></div>
+                  <h3><LandingDynamicText value={feature.title} /></h3>
+                  <p><LandingDynamicText value={feature.desc} /></p>
                 </article>
               ))}
             </div>
           </section>
 
           <section className="landing-stats" aria-label={isArabic ? "إحصائيات المنصة" : "Platform statistics"}>
-            <div><strong>+4</strong><span>{t("landing.stat.experience")}</span></div>
-            <div><strong>+1200</strong><span>{t("landing.stat.students")}</span></div>
-            <div><strong>8</strong><span>{t("landing.stat.grades")}</span></div>
+            {content.stats.map((stat) => <div key={stat.id}><strong><LandingDynamicText value={stat.value} /></strong><span><LandingDynamicText value={stat.label} /></span></div>)}
           </section>
     </main>
   );
@@ -5486,6 +5590,8 @@ function TeacherDashboard({
     const requestedTab = adminTabFromLocation();
     return adminTabs.some((tab) => tab.id === requestedTab) ? requestedTab : (adminTabs[0]?.id || "overview");
   });
+  const cmsLeaveGuardRef = useRef<(() => boolean) | null>(null);
+  const cmsPendingNavigationRef = useRef<{ tab: AdminTab; studentId?: number; section?: string } | null>(null);
   const mobilePrimaryTabs = mobilePrimaryAdminTabIds
     .map((id) => adminTabs.find((tab) => tab.id === id))
     .filter((tab): tab is (typeof adminTabs)[number] => Boolean(tab));
@@ -5555,7 +5661,7 @@ function TeacherDashboard({
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [mobileMoreOpen]);
 
-  function navigateAdmin(tab: AdminTab, studentId?: number, section?: string) {
+  function commitAdminNavigation(tab: AdminTab, studentId?: number, section?: string) {
     if (!adminTabs.some((item) => item.id === tab)) return;
     setActiveTab(tab);
     const params = new URLSearchParams(window.location.search);
@@ -5565,6 +5671,14 @@ function TeacherDashboard({
     const query = params.toString();
     window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`);
     window.dispatchEvent(new Event("admin-location-change"));
+  }
+
+  function navigateAdmin(tab: AdminTab, studentId?: number, section?: string) {
+    if (activeTab === "site-content" && tab !== "site-content" && cmsLeaveGuardRef.current && !cmsLeaveGuardRef.current()) {
+      cmsPendingNavigationRef.current = { tab, studentId, section };
+      return;
+    }
+    commitAdminNavigation(tab, studentId, section);
   }
 
   return (
@@ -5752,7 +5866,7 @@ function TeacherDashboard({
             {activeTab === "overview" && can("dashboard.view") ? <AdminExecutiveDashboard token={session.token} language={language} t={dashboardTranslator} can={(permission) => can(permission as PermissionKey)} onNavigate={(tab, studentId, section) => navigateAdmin(tab as AdminTab, studentId, section)} onOpenScanner={can("attendance.manage") ? () => setCameraScannerOpen(true) : undefined} /> : null}
             {activeTab === "add-user" && can("users.create") ? <UsersTeamManager mode="create" session={session} t={t} /> : null}
             {activeTab === "users" && can("users.view") ? <UsersTeamManager mode="list" session={session} t={t} /> : null}
-            {activeTab === "site-content" && can("settings.manage") ? <SiteContentEditor session={session} language={language} t={t} /> : null}
+            {activeTab === "site-content" && can("settings.manage") ? <SiteContentEditor session={session} language={language} t={t} onRegisterLeaveGuard={(guard) => { cmsLeaveGuardRef.current = guard; }} onConfirmLeave={() => { const pending = cmsPendingNavigationRef.current; cmsPendingNavigationRef.current = null; cmsLeaveGuardRef.current = null; if (pending) commitAdminNavigation(pending.tab, pending.studentId, pending.section); }} /> : null}
             {activeTab === "audit-logs" && can("activity_log.view") ? <AuditLogsPanel session={session} language={language} t={t} /> : null}
             {activeTab === "settings" && can("settings.manage") ? <SystemSettingsPanel token={session.token} language={language} isOwner={session.teacher.role === "owner"} t={(key, values) => t(key as TranslationKey, values)} /> : null}
             {activeTab === "whatsapp" && can("whatsapp.view") ? <WhatsAppSettingsPanel token={session.token} language={language} canManage={can("whatsapp.manage")} canControlConnection={can("whatsapp.manage") && (session.teacher.role === "owner" || session.teacher.role === "admin")} t={(key, values) => t(key as TranslationKey, values)} /> : null}
@@ -9858,18 +9972,24 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
 function SiteContentEditor({
   session,
   language,
-  t
+  t,
+  onRegisterLeaveGuard,
+  onConfirmLeave
 }: {
   session: TeacherSession;
   language: Language;
   t: Translator;
+  onRegisterLeaveGuard?: (guard: (() => boolean) | null) => void;
+  onConfirmLeave?: () => void;
 }) {
-  const pageOptions: Array<{ slug: SiteSlug; label: string }> = [
+  const pageOptions: Array<{ slug: "home" | SiteSlug; label: string }> = [
+    { slug: "home", label: t("nav.home") },
     { slug: "about-teacher", label: t("nav.aboutTeacher") },
     { slug: "about-center", label: t("nav.aboutCenter") },
     { slug: "contact", label: t("nav.contact") },
     { slug: "tips", label: t("nav.tips") }
   ];
+  const [page, setPage] = useState<"home" | SiteSlug>("home");
   const [slug, setSlug] = useState<SiteSlug>("about-teacher");
   const [form, setForm] = useState<SitePage>(fallbackSitePages["about-teacher"]);
   const [contentAr, setContentAr] = useState(JSON.stringify(form.content_ar, null, 2));
@@ -9947,6 +10067,27 @@ function SiteContentEditor({
     }
   }
 
+  if (page === "home") {
+    return (
+      <section className="admin-editor site-content-editor-shell">
+        <HomeContentEditor
+          apiBaseUrl={API_BASE_URL}
+          token={session.token}
+          language={language}
+          t={(key, values) => t(key as TranslationKey, values)}
+          pageOptions={pageOptions}
+          onPageChange={(nextPage) => {
+            if (nextPage === "home") return;
+            setPage(nextPage);
+            setSlug(nextPage);
+          }}
+          onRegisterLeaveGuard={onRegisterLeaveGuard}
+          onConfirmLeave={onConfirmLeave}
+        />
+      </section>
+    );
+  }
+
   return (
     <section className="admin-editor">
       <div className="section-heading">
@@ -9956,8 +10097,16 @@ function SiteContentEditor({
         <label htmlFor="site-page-select">{t("admin.selectPage")}</label>
         <select
           id="site-page-select"
-          value={slug}
-          onChange={(event) => setSlug(event.target.value as SiteSlug)}
+          value={page}
+          onChange={(event) => {
+            const nextPage = event.target.value as "home" | SiteSlug;
+            if (nextPage === "home") {
+              setPage("home");
+              return;
+            }
+            setPage(nextPage);
+            setSlug(nextPage);
+          }}
         >
           {pageOptions.map((option) => (
             <option key={option.slug} value={option.slug}>

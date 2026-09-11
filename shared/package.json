@@ -1,0 +1,15 @@
+{
+  "name": "@abdrabo/shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    "./landingContent.js": {
+      "types": "./landingContent.d.ts",
+      "import": "./landingContent.js"
+    }
+  },
+  "dependencies": {
+    "zod": "^4.6.2"
+  }
+}

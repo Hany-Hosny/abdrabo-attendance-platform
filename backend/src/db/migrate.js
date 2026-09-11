@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { pool, query } from "./pool.js";
 import { hashPassword } from "../services/auth.js";
 import { DEFAULT_ADMIN_PERMISSIONS, DEFAULT_STAFF_PERMISSIONS, OWNER_USER_ID } from "../services/rbac.js";
+import { DEFAULT_HOME_CONTENT } from "@abdrabo/shared/landingContent.js";
 
 function hashValue(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
@@ -156,6 +157,12 @@ export async function migrate() {
       subtitle_en TEXT NOT NULL,
       content_ar JSONB NOT NULL DEFAULT '{}'::jsonb,
       content_en JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS site_content (
+      key VARCHAR PRIMARY KEY,
+      content JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -1066,6 +1073,13 @@ export async function migrate() {
       ]
     );
   }
+
+  await query(
+    `INSERT INTO site_content (key, content, updated_at)
+     VALUES ('home', $1::jsonb, NOW())
+     ON CONFLICT (key) DO NOTHING`,
+    [JSON.stringify(DEFAULT_HOME_CONTENT)]
+  );
 
   // Keep existing local seed data aligned with the current Arabic branding.
   await query("UPDATE groups SET subject = $1 WHERE subject = $2", ["العلوم", "العلوم المتكاملة"]);

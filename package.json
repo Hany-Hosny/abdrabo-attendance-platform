@@ -9,6 +9,7 @@
     "migrate": "npm run migrate --workspace backend"
   },
   "workspaces": [
+    "shared",
     "frontend",
     "backend"
   ],
