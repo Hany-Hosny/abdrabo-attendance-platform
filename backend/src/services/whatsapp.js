@@ -261,12 +261,10 @@ export async function connectWhatsApp() {
     setDisconnected();
     await closeStaleSocket(staleSocket);
   }
-  if (state.status === "connecting" && hasUsableSocket(state.socket)) return getWhatsAppStatus();
-  if (state.status === "connecting" && state.socket) {
-    const staleSocket = state.socket;
-    setDisconnected();
-    await closeStaleSocket(staleSocket);
-  }
+  // A Baileys socket can report isOpen=false while the QR handshake is still
+  // being negotiated. Never replace a connecting socket from a status/QR poll;
+  // the connection watchdog and connection.update handler own that lifecycle.
+  if (state.status === "connecting" && state.socket) return getWhatsAppStatus();
   if (state.connecting) await state.connecting.catch(() => undefined);
   if (state.authResetting) await state.authResetting;
   state.manuallyDisconnected = false;

@@ -15222,6 +15222,12 @@ body,
   outline-offset: 3px;
 }
 
+.public-layout-content .contact-social-link.is-disabled {
+  cursor: not-allowed;
+  filter: saturate(0.55);
+  opacity: 0.72;
+}
+
 .public-layout-content .contact-social-link.whatsapp {
   border-color: rgba(37, 211, 102, 0.35);
   background: linear-gradient(135deg, rgba(37, 211, 102, 0.24), rgba(18, 140, 126, 0.36)), rgba(10, 15, 29, 0.58);

@@ -31,11 +31,13 @@ function redactPortalTokens(value) {
 }
 
 whatsappRouter.get("/status", requirePermission("whatsapp.view"), (_req, res) => {
+  res.set("Cache-Control", "no-store");
   res.json({ ok: true, ...getWhatsAppStatus() });
 });
 
 whatsappRouter.get("/qr", requireRoles("owner", "admin"), requirePermission("whatsapp.manage"), async (_req, res, next) => {
   try {
+    res.set("Cache-Control", "no-store");
     res.json({ ok: true, ...await getWhatsAppQr() });
   } catch (error) { next(error); }
 });

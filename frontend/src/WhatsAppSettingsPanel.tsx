@@ -235,7 +235,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), 35_000);
         try {
-          const response = await fetch(`${API_BASE_URL}/whatsapp/qr`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+          const response = await fetch(`${API_BASE_URL}/whatsapp/qr?poll=${Date.now()}`, { cache: "no-store", headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
           const payload = await response.json().catch(() => ({}));
           if (!response.ok || !payload.ok) throw new Error("pairing_failed");
           lastPayload = payload;

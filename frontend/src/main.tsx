@@ -335,6 +335,7 @@ const translations = {
     "contact.directTitle": "تواصل مباشرة",
     "contact.directSubtitle": "اختر الطريقة المناسبة وسنسعد بالتواصل معك.",
     "contact.whatsappAction": "تواصل معنا عبر واتساب",
+    "contact.whatsappUnavailable": "رقم واتساب غير مُهيأ بعد",
     "contact.facebookAction": "تابعنا على فيسبوك",
     "contact.youtubeAction": "تابعنا على يوتيوب",
     "contact.formTitle": "أرسل رسالة",
@@ -1721,6 +1722,7 @@ const translations = {
     "contact.directTitle": "Connect directly",
     "contact.directSubtitle": "Choose the channel that works best for you.",
     "contact.whatsappAction": "Chat with us on WhatsApp",
+    "contact.whatsappUnavailable": "WhatsApp number is not configured yet",
     "contact.facebookAction": "Follow us on Facebook",
     "contact.youtubeAction": "Follow us on YouTube",
     "contact.formTitle": "Send a message",
@@ -3513,13 +3515,17 @@ function externalUrl(value: unknown) {
 }
 
 function whatsappUrl(value: unknown) {
-  const digits = normalizeDigits(String(value || "")).replace(/\D/g, "");
-  if (!digits) return "#";
+  const raw = normalizeDigits(String(value || "")).trim();
+  const digits = raw.replace(/\D/g, "");
+  // This is the demo value shipped with the local seed. Never expose it as
+  // a real public contact link because it does not identify the teacher's account.
+  if (!digits || digits === "01000000000") return null;
   const international = digits.startsWith("00")
     ? digits.slice(2)
-    : digits.startsWith("0")
-      ? `20${digits.slice(1)}`
-      : digits;
+      : digits.startsWith("0")
+        ? `20${digits.slice(1)}`
+        : digits;
+  if (international.length < 10 || international.length > 15) return null;
   return `https://wa.me/${international}`;
 }
 
@@ -4773,10 +4779,11 @@ function PublicContentPage({
               <h2>{t("contact.directTitle")}</h2>
               <p>{t("contact.directSubtitle")}</p>
               <div className="contact-social-links">
-                <a className="contact-social-link whatsapp" href={whatsappUrl(view.content.whatsapp)} target="_blank" rel="noreferrer" aria-label={t("contact.whatsappAction")}>
-                  <ContactSocialIcon kind="whatsapp" />
-                  <span className="contact-social-copy"><strong>{t("contact.whatsappAction")}</strong><small>{t("contact.whatsapp")}</small></span>
-                </a>
+                {(() => {
+                  const link = whatsappUrl(view.content.whatsapp);
+                  const content = <><ContactSocialIcon kind="whatsapp" /><span className="contact-social-copy"><strong>{t("contact.whatsappAction")}</strong><small>{link ? t("contact.whatsapp") : t("contact.whatsappUnavailable")}</small></span></>;
+                  return link ? <a className="contact-social-link whatsapp" href={link} target="_blank" rel="noreferrer" aria-label={t("contact.whatsappAction")}>{content}</a> : <div className="contact-social-link whatsapp is-disabled" role="status" aria-label={t("contact.whatsappUnavailable")}>{content}</div>;
+                })()}
                 <a className="contact-social-link facebook" href={externalUrl(view.content.facebook)} target="_blank" rel="noreferrer" aria-label={t("contact.facebookAction")}>
                   <ContactSocialIcon kind="facebook" />
                   <span className="contact-social-copy"><strong>{t("contact.facebookAction")}</strong><small>{t("contact.facebook")}</small></span>
