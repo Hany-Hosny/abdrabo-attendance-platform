@@ -14571,6 +14571,30 @@ body,
   scrollbar-color: rgba(248, 250, 252, 0.24) transparent;
 }
 
+/* About Teacher and the guest login are viewport compositions. Keep their
+   footer out of normal flow so a short desktop viewport does not get a
+   redundant document scrollbar. Mobile keeps normal flow for accessibility. */
+@media (min-width: 761px) {
+  .public-layout-no-scroll .landing-overlay {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .public-layout-no-scroll .public-footer {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    margin: 0;
+  }
+
+  .public-layout-content.public-layout-no-scroll .about-teacher-content {
+    height: calc(100dvh - 84px);
+    min-height: calc(100dvh - 84px);
+    padding-top: clamp(24px, 4vh, 56px);
+    padding-bottom: clamp(24px, 4vh, 56px);
+  }
+}
+
 .landing-header {
   position: sticky;
   top: 0;
