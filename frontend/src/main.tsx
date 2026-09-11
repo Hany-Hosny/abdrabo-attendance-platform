@@ -1515,6 +1515,9 @@ const translations = {
     "dashboard.tabs.attendance": "الحضور والغياب",
     "dashboard.tabs.exams": "درجات الامتحانات",
     "dashboard.tabs.examResults": "نتائج الامتحانات والتقييمات",
+    "dashboard.liveExamLockedTitle": "الاختبار المباشر مقفول",
+    "dashboard.liveExamLockedMessage": "يتاح الاختبار أثناء الحصة فقط بعد تسجيل حضورك.",
+    "dashboard.liveExamLockedHint": "سجّل حضورك أولاً من خلال QR الحصة، ثم افتح الاختبار مرة أخرى.",
     "dashboard.tabs.analytics": "مستوى الأداء والتحليلات",
     "analytics.title": "الرسم البياني لتطور المستوى",
     "analytics.subtitle": "تابع تطور درجاتك من أقدم امتحان إلى أحدث امتحان.",
@@ -2902,6 +2905,9 @@ const translations = {
     "dashboard.tabs.attendance": "Attendance",
     "dashboard.tabs.exams": "Exam Scores",
     "dashboard.tabs.examResults": "Exam Results & Assessments",
+    "dashboard.liveExamLockedTitle": "Live exam locked",
+    "dashboard.liveExamLockedMessage": "The exam unlocks during class only after you check in.",
+    "dashboard.liveExamLockedHint": "Check in using the class QR code, then open the exam again.",
     "dashboard.tabs.analytics": "Performance & Analytics",
     "analytics.title": "Performance progress",
     "analytics.subtitle": "Track your scores from the oldest exam to the newest one.",
@@ -3259,16 +3265,6 @@ function displayValue(value: unknown, language: Language) {
   };
   const key = dictionary[value];
   return key ? createTranslator(language)(key) : value;
-}
-
-function ensureDeviceId() {
-  const key = "abdrabo_device_id";
-  const existing = localStorage.getItem(key);
-  if (existing) return existing;
-  const value =
-    crypto.randomUUID?.() || `device_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  localStorage.setItem(key, value);
-  return value;
 }
 
 function safeSessionPayload(data: LoginResponse): LoginResponse {
@@ -4282,10 +4278,7 @@ function App() {
     const response = await fetch(`${API_BASE_URL}/student/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        student_code: normalizedCode,
-        device_id: ensureDeviceId()
-      })
+      body: JSON.stringify({ student_code: normalizedCode })
     });
 
     const data = (await response.json()) as LoginResponse;
@@ -10807,6 +10800,7 @@ function StudentDashboard({
   const [examRows, setExamRows] = useState<Array<Record<string, any>>>([]);
   const [examLoaded, setExamLoaded] = useState(false);
   const [examLoading, setExamLoading] = useState(false);
+  const [liveExamState, setLiveExamState] = useState<"idle" | "loading" | "locked" | "available" | "none">("idle");
   const [attendanceRows, setAttendanceRows] = useState<Array<Record<string, any>>>(
     () => Array.isArray(data.dashboard?.attendance) ? data.dashboard.attendance : []
   );
@@ -10880,6 +10874,29 @@ function StudentDashboard({
       .finally(() => { if (!cancelled) setExamLoading(false); });
     return () => { cancelled = true; };
   }, [activeTab, refreshKey, student.student_code, t]);
+
+  useEffect(() => {
+    if (activeTab !== "exams") return undefined;
+    let cancelled = false;
+    setLiveExamState("loading");
+    fetch(`${API_BASE_URL}/student/active-exam?poll=${Date.now()}`, {
+      cache: "no-store",
+      headers: studentAuthHeaders(student.student_code)
+    })
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+        if (response.status === 403 && result.code === "ATTENDANCE_REQUIRED") {
+          if (!cancelled) setLiveExamState("locked");
+          return;
+        }
+        if (!response.ok || !result.ok) throw new Error("live_exam_unavailable");
+        if (!cancelled) setLiveExamState(result.active_exam ? "available" : "none");
+      })
+      .catch(() => {
+        if (!cancelled) setLiveExamState("none");
+      });
+    return () => { cancelled = true; };
+  }, [activeTab, refreshKey, student.student_code]);
 
   useEffect(() => {
     if (activeTab !== "analytics" || !student.id) return;
@@ -11010,7 +11027,7 @@ function StudentDashboard({
           <section className="student-tab-content" id="student-tab-content" role="tabpanel" aria-label={studentNavItems.find((item) => item.id === activeTab)?.label}>
             {activeTab === "overview" ? <StudentOverviewPanel dashboard={dashboard} studentFees={studentFees} feesLoading={feesLoading} attendanceRate={vitalsAttendanceRate} averageScore={vitalsAverageScore} language={language} t={t} /> : null}
             {activeTab === "attendance" ? <AttendanceTable rows={dashboard.attendance} language={language} t={t} /> : null}
-            {activeTab === "exams" ? examLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : <ExamsTable rows={examLoaded ? examRows : dashboard.exams} language={language} t={t} /> : null}
+            {activeTab === "exams" ? examLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : <><LiveExamAccessCard state={liveExamState} t={t} /><ExamsTable rows={examLoaded ? examRows : dashboard.exams} language={language} t={t} /></> : null}
             {activeTab === "analytics" ? <StudentAnalyticsPanel rows={examLoaded ? examRows : dashboard.exams} attendanceRows={attendanceRows} loading={examLoading && !examLoaded} language={language} t={t} /> : null}
             {activeTab === "schedule" ? <ScheduleTable rows={dashboard.schedules} language={language} t={t} /> : null}
             {activeTab === "assignments" ? <HomeworkPanel studentCode={student.student_code} language={language} t={t} refreshKey={refreshKey} /> : null}
@@ -11021,6 +11038,27 @@ function StudentDashboard({
         </section>
       </main>
     </Shell>
+  );
+}
+
+function LiveExamAccessCard({
+  state,
+  t
+}: {
+  state: "idle" | "loading" | "locked" | "available" | "none";
+  t: Translator;
+}) {
+  if (state !== "locked") return null;
+  return (
+    <article className="student-live-exam-lock-card" role="status">
+      <span className="student-live-exam-lock-icon" aria-hidden="true">🔒</span>
+      <div>
+        <span className="student-section-kicker">{t("dashboard.tabs.exams")}</span>
+        <h3>{t("dashboard.liveExamLockedTitle")}</h3>
+        <p>{t("dashboard.liveExamLockedMessage")}</p>
+        <small>{t("dashboard.liveExamLockedHint")}</small>
+      </div>
+    </article>
   );
 }
 

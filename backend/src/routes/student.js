@@ -1,7 +1,6 @@
 import express from "express";
 import crypto from "node:crypto";
 import { query } from "../db/pool.js";
-import { loginAndRecordAttendance } from "../services/attendance.js";
 import { getFeeSummary } from "../services/fees.js";
 import { getDashboardData } from "../services/dashboard.js";
 import { normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.js";
@@ -11,6 +10,7 @@ import { createRateLimiter } from "../middleware/rateLimit.js";
 import { createStudentToken, hashStudentPortalAccessToken } from "../services/auth.js";
 import { authenticatedStudent } from "../services/studentAuth.js";
 import { ipKeyGenerator } from "express-rate-limit";
+import { requireActiveSessionAttendance } from "../middleware/requireActiveSessionAttendance.js";
 
 export const studentRouter = express.Router();
 const studentCodePattern = /^A-\d{4}$/;
@@ -64,7 +64,7 @@ studentRouter.post("/portal-access", studentPortalAccessRateLimit, async (req, r
 
 studentRouter.post("/login", studentLoginRateLimit, async (req, res, next) => {
   try {
-    const { student_code, device_id } = req.body || {};
+    const { student_code } = req.body || {};
     const normalizedCode = normalizeStudentCode(normalizeScanValue(student_code || ""));
 
     if (!normalizedCode) {
@@ -81,42 +81,53 @@ studentRouter.post("/login", studentLoginRateLimit, async (req, res, next) => {
       });
     }
 
-    if (!device_id || typeof device_id !== "string") {
-      await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: normalizedCode, reason: "device_id_required" }, request: req });
-      return res.status(400).json({ ok: false, status: "device_id_required", message: "Device ID is required." });
+    const result = await query(
+      `
+        SELECT st.id, st.full_name, st.student_code, st.student_serial, st.scan_serial,
+          st.group_id, g.name AS group_name, g.grade,
+          COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
+        FROM students st
+        LEFT JOIN groups g ON g.id = st.group_id
+        WHERE (st.student_code = $1 OR st.student_serial = $1 OR st.student_serial = $2)
+          AND st.is_active = TRUE AND st.deleted_at IS NULL
+        LIMIT 1
+      `,
+      [normalizedCode, String(normalizedCode).replace(/^A(\d{4})$/, "A-$1")]
+    );
+
+    if (!result.rowCount) {
+      await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: normalizedCode, reason: "invalid_student" }, request: req });
+      return res.status(401).json({ ok: false, status: "invalid_student", message: "Invalid or inactive student code." });
     }
 
-    const result = await loginAndRecordAttendance({
-      student_code: normalizedCode,
-      device_id: device_id.trim(),
-      ip: req.ip
+    const row = result.rows[0];
+    const student = {
+      id: row.id,
+      full_name: row.full_name,
+      student_code: row.student_code,
+      student_serial: row.student_serial,
+      scan_serial: row.scan_serial,
+      group_name: row.group_name,
+      grade: row.grade,
+      grade_level: row.grade_level,
+      subject: row.subject
+    };
+    const dashboard = await getDashboardData(row.id);
+    await auditLog({
+      action: "login_succeeded",
+      studentId: row.id,
+      details: { actor_type: "student", student_id: row.id, student_name: row.full_name, student_code: row.student_code, login_status: "authenticated" },
+      request: req
     });
 
-    if (!result.ok) {
-      await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: normalizedCode, reason: result.status }, request: req });
-      return res.status(result.status === "invalid_student" ? 401 : 409).json(result);
-    }
-
-    if (result.student?.id) {
-      result.student_token = createStudentToken(result.student);
-      await auditLog({
-        action: "login_succeeded",
-        studentId: result.student.id,
-        details: { actor_type: "student", student_id: result.student.id, student_name: result.student.full_name, student_code: result.student.student_code, login_status: result.status },
-        request: req
-      });
-      if (["attendance_recorded", "pending_review"].includes(result.status)) {
-        await auditLog({
-          action: "attendance_recorded",
-          studentId: result.student.id,
-          sessionId: result.today_session?.id || result.attendance_record?.session_id || null,
-          details: { method: "student_login", status_after: result.attendance_record?.status || result.status, student_name: result.student.full_name, student_code: result.student.student_code },
-          request: req
-        });
-      }
-    }
-
-    return res.json(result);
+    return res.json({
+      ok: true,
+      status: "authenticated",
+      message: "Student portal access granted.",
+      student_token: createStudentToken(student),
+      student,
+      dashboard
+    });
   } catch (error) {
     next(error);
   }
@@ -265,6 +276,26 @@ studentRouter.get("/me/exams", async (req, res, next) => {
     res.json({ ok: true, exams: result.rows });
   } catch (error) {
     next(error);
+  }
+});
+
+// Live exam access is deliberately separate from historical exam results.
+studentRouter.get("/active-exam", requireActiveSessionAttendance, async (req, res, next) => {
+  try {
+    const session = req.activeSessionAttendance.session;
+    const result = await query(
+      `
+        SELECT id, title, max_score, exam_date
+        FROM exams
+        WHERE group_id = $1 AND exam_date = $2::date
+        ORDER BY id DESC
+        LIMIT 1
+      `,
+      [session.group_id, session.session_date]
+    );
+    return res.json({ ok: true, active_exam: result.rows[0] || null });
+  } catch (error) {
+    return next(error);
   }
 });
 
