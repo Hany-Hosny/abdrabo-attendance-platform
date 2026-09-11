@@ -92,9 +92,9 @@ studentRouter.post("/login", studentLoginRateLimit, async (req, res, next) => {
       ip: req.ip
     });
 
-    if (!result.ok && result.status === "invalid_student") {
+    if (!result.ok) {
       await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: normalizedCode, reason: result.status }, request: req });
-      return res.status(401).json(result);
+      return res.status(result.status === "invalid_student" ? 401 : 409).json(result);
     }
 
     if (result.student?.id) {

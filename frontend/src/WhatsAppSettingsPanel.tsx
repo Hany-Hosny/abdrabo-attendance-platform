@@ -227,18 +227,31 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
 
   async function startPairing() {
     if (!canControlConnection || pairing || status.status === "connected") return;
-    setPairing(true); setError("");
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 15000);
+    setPairing(true); setError(""); setQr("");
+    const deadline = Date.now() + 75_000;
+    let lastPayload: { status?: WhatsAppStatus["status"]; phone_number?: string | null; has_qr?: boolean; qr?: string; ok?: boolean } | null = null;
     try {
-      const response = await fetch(`${API_BASE_URL}/whatsapp/qr`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) throw new Error("pairing_failed");
-      setStatus({ status: payload.status, phone_number: payload.phone_number || null, has_qr: payload.has_qr });
-      setQr(payload.qr || "");
-      if (!payload.qr && payload.status !== "connected") throw new Error("qr_unavailable");
+      while (Date.now() < deadline) {
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 35_000);
+        try {
+          const response = await fetch(`${API_BASE_URL}/whatsapp/qr`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || !payload.ok) throw new Error("pairing_failed");
+          lastPayload = payload;
+          setStatus({ status: payload.status, phone_number: payload.phone_number || null, has_qr: payload.has_qr });
+          if (payload.qr || payload.status === "connected") {
+            setQr(payload.qr || "");
+            return;
+          }
+        } finally {
+          window.clearTimeout(timeout);
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      }
+      if (lastPayload?.status !== "connected") throw new Error("qr_unavailable");
     } catch (_error) { setError(t("whatsapp.connectionFailed")); }
-    finally { window.clearTimeout(timeout); setPairing(false); }
+    finally { setPairing(false); }
   }
 
   async function disconnect() {

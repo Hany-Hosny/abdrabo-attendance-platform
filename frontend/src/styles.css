@@ -15780,3 +15780,64 @@ body,
   background: rgba(209, 250, 229, 0.72);
   color: #047857 !important;
 }
+
+/* Keep scanner feedback visually centered and independent from inherited RTL alignment. */
+.admin-shell .scanner-panel .scanner-feedback-card {
+  display: flex !important;
+  width: 100% !important;
+  min-height: 56px !important;
+  box-sizing: border-box !important;
+  align-self: stretch !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 auto !important;
+  padding: 13px 20px !important;
+  border-radius: 16px !important;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  line-height: 1.55 !important;
+  text-align: center !important;
+  text-wrap: balance;
+}
+
+.admin-shell .scanner-panel .scanner-feedback-card.form-error {
+  border-color: rgba(255, 127, 114, 0.42) !important;
+  background: linear-gradient(135deg, rgba(255, 127, 114, 0.16), rgba(127, 29, 29, 0.22)) !important;
+  color: #ffc0b7 !important;
+  box-shadow: 0 12px 30px rgba(127, 29, 29, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.admin-shell .scanner-panel .scanner-feedback-card.form-error::before {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  place-items: center;
+  margin-inline-end: 9px;
+  border: 1px solid rgba(255, 192, 183, 0.62);
+  border-radius: 50%;
+  content: "!";
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.admin-shell .scanner-panel .scanner-feedback-card.lookup-result {
+  border-color: rgba(33, 199, 122, 0.42) !important;
+  background: linear-gradient(135deg, rgba(33, 199, 122, 0.16), rgba(6, 95, 70, 0.22)) !important;
+  color: #a6f4c8 !important;
+  box-shadow: 0 12px 30px rgba(6, 95, 70, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.admin-shell .scanner-panel .scanner-feedback-card.scanner-queued-message {
+  border-color: rgba(77, 208, 225, 0.42) !important;
+  background: linear-gradient(135deg, rgba(77, 208, 225, 0.16), rgba(30, 64, 175, 0.22)) !important;
+  color: #b7f7fb !important;
+  box-shadow: 0 12px 30px rgba(30, 64, 175, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+[data-theme="light"] .admin-shell .scanner-panel .scanner-feedback-card.form-error {
+  border-color: rgba(185, 28, 28, 0.28) !important;
+  background: linear-gradient(135deg, rgba(254, 226, 226, 0.9), rgba(254, 242, 242, 0.78)) !important;
+  color: #b42318 !important;
+  box-shadow: 0 10px 24px rgba(185, 28, 28, 0.1) !important;
+}

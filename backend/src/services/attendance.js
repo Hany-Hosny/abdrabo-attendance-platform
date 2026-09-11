@@ -2,6 +2,8 @@ import { query } from "../db/pool.js";
 import { getDashboardData } from "./dashboard.js";
 import { finalizeExpiredAttendanceSessions } from "./attendanceFinalizer.js";
 import { normalizeStudentCode } from "../utils/normalizeDigits.js";
+import { cairoDateString } from "../utils/time.js";
+import { evaluateAttendanceWindow } from "../utils/attendanceWindow.js";
 import { enqueueAttendanceNotification } from "./whatsapp.js";
 
 export async function loginAndRecordAttendance({ student_code, device_id, ip }) {
@@ -50,13 +52,14 @@ export async function loginAndRecordAttendance({ student_code, device_id, ip }) 
       FROM attendance_sessions s
       JOIN groups g ON g.id = s.group_id AND g.is_active = TRUE AND g.deleted_at IS NULL
       JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
-        AND cs.is_active = TRUE AND cs.day_of_week = EXTRACT(DOW FROM s.session_date)::INTEGER
+        AND cs.is_active = TRUE AND cs.deleted_at IS NULL
+        AND cs.day_of_week = EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
       WHERE s.group_id = $1
         AND s.session_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
         AND s.status = 'open'
-        AND (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') BETWEEN
-          (s.opens_at AT TIME ZONE 'Africa/Cairo') AND
-          (LEAST(s.closes_at, s.ends_at) AT TIME ZONE 'Africa/Cairo')
+        AND CURRENT_TIMESTAMP BETWEEN
+          ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+          AND ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
       ORDER BY s.starts_at ASC
       LIMIT 1
     `,
@@ -64,10 +67,37 @@ export async function loginAndRecordAttendance({ student_code, device_id, ip }) 
   );
 
   if (!sessionResult.rowCount) {
+    const serverClock = await query("SELECT CURRENT_TIMESTAMP AS server_now");
+    const schedules = await query(
+      `SELECT day_of_week, start_time, end_time, opens_before_minutes, closes_after_minutes
+       FROM class_schedules
+       WHERE group_id=$1 AND is_active=TRUE AND deleted_at IS NULL
+       ORDER BY day_of_week, start_time`,
+      [student.group_id]
+    );
+    const sessionDate = cairoDateString(serverClock.rows[0].server_now);
+    const evaluations = schedules.rows.map((schedule) => evaluateAttendanceWindow({
+      sessionDate,
+      dayOfWeek: schedule.day_of_week,
+      startTime: schedule.start_time,
+      endTime: schedule.end_time,
+      openBeforeMinutes: schedule.opens_before_minutes,
+      closeAttendanceAfterMinutes: schedule.closes_after_minutes,
+      now: serverClock.rows[0].server_now
+    }));
+    const status = evaluations.some((evaluation) => evaluation.status === "session_not_started")
+      ? "session_not_started"
+      : evaluations.some((evaluation) => evaluation.status === "attendance_window_closed")
+        ? "attendance_window_closed"
+        : "attendance_day_mismatch";
     return {
-      ok: true,
-      status: "no_open_session",
-      message: "There is no open class right now.",
+      ok: false,
+      status,
+      message: status === "session_not_started"
+        ? "Session not started."
+        : status === "attendance_window_closed"
+          ? "Attendance window closed."
+          : "This class is not scheduled today.",
       student: publicStudent,
       dashboard
     };
@@ -107,7 +137,18 @@ export async function loginAndRecordAttendance({ student_code, device_id, ip }) 
         suspicious_reason,
         whatsapp_notified
       )
-      VALUES ($1, $2, $3, 'student_login', NOW(), NULL, NULL, NULL, $4, $5, $6, $7, $8)
+      SELECT $1, $2, $3, 'student_login', NOW(), NULL, NULL, NULL, $4, $5, $6, $7, $8
+      WHERE EXISTS (
+        SELECT 1
+        FROM attendance_sessions s
+        JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
+        WHERE s.id=$1 AND s.status='open' AND cs.is_active=TRUE AND cs.deleted_at IS NULL
+          AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
+          AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+          AND CURRENT_TIMESTAMP BETWEEN
+            ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+            AND ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+      )
       ON CONFLICT (session_id, student_id) DO UPDATE SET
         checkin_time = attendance_records.checkin_time
       RETURNING *
@@ -123,6 +164,16 @@ export async function loginAndRecordAttendance({ student_code, device_id, ip }) 
       !isSuspicious
     ]
   );
+
+  if (!record.rowCount) {
+    return {
+      ok: true,
+      status: "no_open_session",
+      message: "There is no open class right now.",
+      student: publicStudent,
+      dashboard
+    };
+  }
 
   if (record.rows[0]?.status === "present" || record.rows[0]?.status === "late") {
     void enqueueAttendanceNotification({ attendanceRecordId: record.rows[0].id, studentId: student.id })

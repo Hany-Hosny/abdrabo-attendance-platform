@@ -47,7 +47,10 @@ const publicAppUrl = String(
 
 const authDirectory = path.resolve(process.env.WHATSAPP_AUTH_DIR || path.resolve(process.cwd(), "whatsapp_auth"));
 const QR_RENDER_TIMEOUT_MS = 5000;
-const QR_WAIT_TIMEOUT_MS = 10000;
+// WhatsApp can take several seconds to return the first QR reference, especially
+// after a server restart. Keep the request open long enough for the socket to
+// finish negotiating, while leaving room under the API request timeout.
+const QR_WAIT_TIMEOUT_MS = 25000;
 const CONNECTION_STALL_TIMEOUT_MS = 45000;
 const CONNECTION_HEALTHCHECK_INTERVAL_MS = 30000;
 const MAX_RECONNECT_DELAY_MS = 30000;
@@ -203,6 +206,19 @@ function withTimeout(promise, timeoutMs, errorCode) {
   });
 }
 
+function hasUsableSocket(socket) {
+  return Boolean(socket && socket.ws?.isOpen !== false);
+}
+
+async function closeStaleSocket(socket) {
+  if (!socket) return;
+  try {
+    await Promise.resolve().then(() => socket.end(new Error("whatsapp_stale_socket")));
+  } catch (error) {
+    console.warn("Failed to close stale WhatsApp socket", error);
+  }
+}
+
 function armConnectionWatchdog(socket) {
   if (state.connectionWatchdog) clearTimeout(state.connectionWatchdog);
   state.connectionWatchdog = setTimeout(() => {
@@ -239,9 +255,19 @@ function armConnectedWatchdog(socket) {
 }
 
 export async function connectWhatsApp() {
-  if (state.status === "connected" && state.socket) return getWhatsAppStatus();
-  if (state.status === "connecting" && state.socket) return getWhatsAppStatus();
-  if (state.connecting) return state.connecting;
+  if (state.status === "connected" && hasUsableSocket(state.socket)) return getWhatsAppStatus();
+  if (state.status === "connected" && state.socket) {
+    const staleSocket = state.socket;
+    setDisconnected();
+    await closeStaleSocket(staleSocket);
+  }
+  if (state.status === "connecting" && hasUsableSocket(state.socket)) return getWhatsAppStatus();
+  if (state.status === "connecting" && state.socket) {
+    const staleSocket = state.socket;
+    setDisconnected();
+    await closeStaleSocket(staleSocket);
+  }
+  if (state.connecting) await state.connecting.catch(() => undefined);
   if (state.authResetting) await state.authResetting;
   state.manuallyDisconnected = false;
   state.status = "connecting";

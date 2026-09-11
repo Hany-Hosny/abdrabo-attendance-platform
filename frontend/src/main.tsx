@@ -8337,7 +8337,7 @@ function LegacyScannerPanel({ session, language, t, selectedSessionId = "", onOp
           <span>{student.student_serial || student.scan_serial || student.student_code} · {student.group_name} · {student.grade_level}</span>
         </div>
       ) : null}
-      {message ? <p className={`scanner-result-message ${scanState === "success" ? "lookup-result" : "form-error"}`} role="status">{message}</p> : null}
+      {message ? <p className={`scanner-result-message scanner-feedback-card ${scanState === "success" ? "lookup-result" : "form-error"}`} role="status">{message}</p> : null}
     </section>
   );
 }
@@ -8398,7 +8398,7 @@ function ScannerPanel({ session, language, t, selectedSessionId = "", onOpenCame
           <span>{scanner.student.student_serial || scanner.student.scan_serial || scanner.student.student_code} · {scanner.student.group_name} · {scanner.student.grade_level}</span>
         </div>
       ) : null}
-      {scanner.message ? <p className={`scanner-result-message ${scanner.scanState === "success" ? "lookup-result" : scanner.scanState === "loading" ? "scanner-queued-message" : "form-error"}`} role="status">{scanner.message}</p> : null}
+      {scanner.message ? <p className={`scanner-result-message scanner-feedback-card ${scanner.scanState === "success" ? "lookup-result" : scanner.scanState === "loading" ? "scanner-queued-message" : "form-error"}`} role="status">{scanner.message}</p> : null}
     </section>
   );
 }

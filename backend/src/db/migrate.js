@@ -386,7 +386,7 @@ export async function migrate() {
             THEN ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
           ELSE ((s.session_date + cs.start_time + INTERVAL '20 minutes') AT TIME ZONE 'Africa/Cairo')
         END,
-        ends_at = ((s.session_date + cs.end_time) AT TIME ZONE 'Africa/Cairo')
+        ends_at = (((s.session_date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time) AT TIME ZONE 'Africa/Cairo')
     FROM class_schedules cs
     WHERE cs.id = s.schedule_id AND cs.group_id = s.group_id;
 
