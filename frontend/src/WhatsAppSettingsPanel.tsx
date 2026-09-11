@@ -8,6 +8,7 @@ type WhatsAppSettings = {
   grade_templates: string[];
   receipt_templates: string[];
   advance_payment_templates: string[];
+  absence_templates: string[];
   min_delay_seconds: number;
   max_delay_seconds: number;
   portal_base_url?: string;
@@ -49,8 +50,10 @@ const fallbackTemplates = ["مرحباً بحضرتك، من منصة مستر �
 const fallbackGradeTemplates = ["نتيجة تقييم - مستر أحمد عبدربه 📝\nمرحباً بحضرتك، تم رصد نتيجة امتحان {exam_title} للطالب: {student_name}.\nالدرجة: {score} من {max_score} (النسبة: {percentage}%).\nكود الطالب: {student_code}\nتقرير الإجابات والتقييم: {portal_link}\nالمرجع: {ref_code}", "إشعار درجات | منصة مستر أحمد عبدربه\nحصل الطالب {student_name} في {exam_title} على نتيجة {score}/{max_score} بمعدل {percentage}%.\nتفاصيل التقييم: {portal_link}\nمع تحيات مستر أحمد عبدربه وإدارة المنصة.\nالمرجع: {ref_code}", "تقييم دراسي - مستر أحمد عبدربه:\nتم تصحيح {exam_title} للطالب {student_name}.\nالنتيجة المحققة: {score} من أصل {max_score}.\nرابط التقرير الكامل: {portal_link}\nكود: {ref_code}"];
 const fallbackReceiptTemplates = ["إيصال سداد مصروفات - مستر أحمد عبدربه 🧾\nالسلام عليكم يا فندم، تم استلام مبلغ {amount_paid} ج.م سداداً لمصروفات شهر {month} للطالب: {student_name}.\nرقم الإيصال: {receipt_number}\nكود الطالب: {student_code}\nعرض الإيصال: {portal_link}\nشكراً لتعاونكم الدائم.", "سند قبض إلكتروني | مستر أحمد عبدربه\nتم بنجاح تسجيل دفعة مالية بقيمة {amount_paid} ج.م لحساب الطالب: {student_name} (سداد {month}).\nرقم السند: {receipt_number}\nالسجل المالي: {portal_link}\nالمرجع: {ref_code}", "إشعار تحصيل نقدية - مكتب مستر أحمد عبدربه:\nتم استلام مبلغ {amount_paid} جنيه لمصروفات {month} الخاصة بالطالب {student_name}.\nإيصال رقم: #{receipt_number}.\nمتابعة الحساب: {portal_link}"];
 const fallbackAdvancePaymentTemplates = ["إشعار دفع مقدم - مستر أحمد عبدربه 💳\nتم استلام مبلغ {amount_paid} ج.م كدفعة مقدمة للطالب: {student_name} عن شهور: {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}", "تم بنجاح تسجيل دفعة مالية مقدمة بقيمة {amount_paid} ج.م لحساب الطالب: {student_name}.\nالشهور المسددة: {months}\nسند رقم: {receipt_number}\nالمرجع: {ref_code}", "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"];
+const fallbackAbsenceTemplates = ["تنبيه غياب - منصة مستر أحمد عبدربه\nلم يتم تسجيل حضور الطالب {student_name} في مجموعة {group_name} بتاريخ {date}.\nبرجاء التواصل مع إدارة المنصة.", "إشعار غياب الطالب {student_name}\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب في حصة {group_name} بتاريخ {date}.", "متابعة الحضور | {student_name}\nتم إغلاق جلسة {group_name} بتاريخ {date} دون تسجيل حضور الطالب."];
 
-type TemplateKey = "templates" | "grade_templates" | "receipt_templates" | "advance_payment_templates";
+type TemplateKey = "templates" | "grade_templates" | "receipt_templates" | "advance_payment_templates" | "absence_templates";
+type WhatsAppTemplateRow = { id: number; category: string; message_body: string; is_active?: boolean };
 type TemplateGroup = {
   key: TemplateKey;
   number: string;
@@ -61,9 +64,10 @@ type TemplateGroup = {
 
 const templateGroups: TemplateGroup[] = [
   { key: "templates", number: "03", titleKey: "whatsapp.attendanceTemplatesTitle", descriptionKey: "whatsapp.attendanceTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{date}", "{time}", "{group_name}", "{ref_code}", "{portal_link}"] },
-  { key: "grade_templates", number: "04", titleKey: "whatsapp.gradeTemplatesTitle", descriptionKey: "whatsapp.gradeTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{exam_title}", "{score}", "{max_score}", "{percentage}", "{portal_link}", "{ref_code}"] },
-  { key: "receipt_templates", number: "05", titleKey: "whatsapp.receiptTemplatesTitle", descriptionKey: "whatsapp.receiptTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{month}", "{receipt_number}", "{portal_link}", "{ref_code}"] },
-  { key: "advance_payment_templates", number: "06", titleKey: "whatsapp.advancePaymentTemplatesTitle", descriptionKey: "whatsapp.advancePaymentTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{months}", "{receipt_number}", "{portal_link}", "{ref_code}"] }
+  { key: "absence_templates", number: "04", titleKey: "whatsapp.absenceTemplatesTitle", descriptionKey: "whatsapp.absenceTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{date}", "{group_name}", "{ref_code}", "{portal_link}"] },
+  { key: "grade_templates", number: "05", titleKey: "whatsapp.gradeTemplatesTitle", descriptionKey: "whatsapp.gradeTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{exam_title}", "{score}", "{max_score}", "{percentage}", "{portal_link}", "{ref_code}"] },
+  { key: "receipt_templates", number: "06", titleKey: "whatsapp.receiptTemplatesTitle", descriptionKey: "whatsapp.receiptTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{month}", "{receipt_number}", "{portal_link}", "{ref_code}"] },
+  { key: "advance_payment_templates", number: "07", titleKey: "whatsapp.advancePaymentTemplatesTitle", descriptionKey: "whatsapp.advancePaymentTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{months}", "{receipt_number}", "{portal_link}", "{ref_code}"] }
 ];
 
 const defaultSettings: WhatsAppSettings = {
@@ -72,6 +76,7 @@ const defaultSettings: WhatsAppSettings = {
   grade_templates: fallbackGradeTemplates.map(normalizeTeacherDisplayName),
   receipt_templates: fallbackReceiptTemplates.map(normalizeTeacherDisplayName),
   advance_payment_templates: fallbackAdvancePaymentTemplates.map(normalizeTeacherDisplayName),
+  absence_templates: fallbackAbsenceTemplates.map(normalizeTeacherDisplayName),
   min_delay_seconds: 4,
   max_delay_seconds: 8
 };
@@ -89,6 +94,7 @@ function normalizeSettings(value: Partial<WhatsAppSettings> | undefined): WhatsA
     grade_templates: normalizeTemplates(value?.grade_templates, fallbackGradeTemplates, "{exam_title}"),
     receipt_templates: normalizeTemplates(value?.receipt_templates, fallbackReceiptTemplates, "{amount_paid}"),
     advance_payment_templates: normalizeTemplates(value?.advance_payment_templates, fallbackAdvancePaymentTemplates, "{months}"),
+    absence_templates: normalizeTemplates(value?.absence_templates, fallbackAbsenceTemplates, "{student_name}"),
     min_delay_seconds: Number.isInteger(Number(value?.min_delay_seconds)) ? Number(value?.min_delay_seconds) : 4,
     max_delay_seconds: Number.isInteger(Number(value?.max_delay_seconds)) ? Number(value?.max_delay_seconds) : 8,
     portal_base_url: String(value?.portal_base_url || window.location.origin).replace(/\/+$/, "")
@@ -184,7 +190,9 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
   const [feedback, setFeedback] = useState<"idle" | "saved" | "error">("idle");
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<"templates" | "history">("templates");
-  const [openTemplateGroups, setOpenTemplateGroups] = useState<Record<TemplateKey, boolean>>({ templates: false, grade_templates: false, receipt_templates: false, advance_payment_templates: false });
+  const [openTemplateGroups, setOpenTemplateGroups] = useState<Record<TemplateKey, boolean>>({ templates: false, absence_templates: false, grade_templates: false, receipt_templates: false, advance_payment_templates: false });
+  const [absenceTemplateRows, setAbsenceTemplateRows] = useState<WhatsAppTemplateRow[]>([]);
+  const [absenceTemplateIds, setAbsenceTemplateIds] = useState<Array<number | null>>([]);
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const dirty = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings]);
 
@@ -215,12 +223,18 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
       if (!statusPayload.ok || !settingsPayload.ok || !templatePayload.ok) throw new Error("load_failed");
       setStatus({ status: statusPayload.status, phone_number: statusPayload.phone_number || null, has_qr: statusPayload.has_qr });
       const next = normalizeSettings(settingsPayload.settings);
-      const dbTemplates = Array.isArray(templatePayload.templates) ? templatePayload.templates.filter((item: { is_active?: boolean }) => item.is_active !== false) : [];
-      const categoryMap: Record<string, TemplateKey> = { attendance: "templates", grade: "grade_templates", receipt: "receipt_templates", advance_payment: "advance_payment_templates" };
+      const allTemplateRows = Array.isArray(templatePayload.templates) ? templatePayload.templates as WhatsAppTemplateRow[] : [];
+      const dbTemplates = allTemplateRows.filter((item) => item.is_active !== false);
+      const absenceRows = allTemplateRows.filter((item) => item.category === "absence" && item.message_body);
+      const activeAbsenceRows = absenceRows.filter((item) => item.is_active !== false).slice(0, 4);
+      const categoryMap: Record<string, TemplateKey> = { attendance: "templates", absence: "absence_templates", grade: "grade_templates", receipt: "receipt_templates", advance_payment: "advance_payment_templates" };
       dbTemplates.forEach((item: { category?: string; message_body?: string }) => {
         const key = item.category ? categoryMap[item.category] : undefined;
-        if (key && item.message_body) next[key] = [...next[key], String(item.message_body)].filter((value, index, values) => values.indexOf(value) === index).slice(0, 4);
+        if (key && key !== "absence_templates" && item.message_body) next[key] = [...next[key], String(item.message_body)].filter((value, index, values) => values.indexOf(value) === index).slice(0, 4);
       });
+      if (activeAbsenceRows.length) next.absence_templates = activeAbsenceRows.map((item) => normalizeTeacherDisplayName(String(item.message_body).trim()));
+      setAbsenceTemplateRows(absenceRows);
+      setAbsenceTemplateIds(activeAbsenceRows.map((item) => Number(item.id)));
       setSettings(next); setSavedSettings(next); setError("");
     }).catch((reason) => { if (reason?.name !== "AbortError") setError(t("whatsapp.loadFailed")); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -233,12 +247,14 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     if (!canManage || settings[group].length >= 4) return;
     setFeedback("idle");
     setSettings((current) => ({ ...current, [group]: [...current[group], current[group][0] || "{student_name}"] }));
+    if (group === "absence_templates") setAbsenceTemplateIds((current) => [...current, null]);
   }
 
   function removeTemplate(group: TemplateKey, index: number) {
     if (!canManage || settings[group].length <= 3) return;
     setFeedback("idle");
     setSettings((current) => ({ ...current, [group]: current[group].filter((_value, templateIndex) => templateIndex !== index) }));
+    if (group === "absence_templates") setAbsenceTemplateIds((current) => current.filter((_value, templateIndex) => templateIndex !== index));
   }
 
   useEffect(() => {
@@ -291,18 +307,73 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     if (!canManage || saving || !dirty) return;
     setSaving(true); setFeedback("idle"); setError("");
     try {
+      const { absence_templates: absenceTemplates, ...settingsPayload } = settings;
       const response = await fetch(`${API_BASE_URL}/whatsapp/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ settings })
+        body: JSON.stringify({ settings: settingsPayload })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.ok) throw new Error("save_failed");
+      const syncedAbsenceRows = await saveAbsenceTemplates(absenceTemplates);
       const next = normalizeSettings(payload.settings);
+      next.absence_templates = syncedAbsenceRows.map((row) => normalizeTeacherDisplayName(row.message_body));
       setSettings(next); setSavedSettings(next); setFeedback("saved");
       window.setTimeout(() => setFeedback("idle"), 2200);
     } catch (_error) { setFeedback("error"); setError(t("whatsapp.saveFailed")); }
     finally { setSaving(false); }
+  }
+
+  async function saveAbsenceTemplates(templates: string[]) {
+    const activeIds = new Set(absenceTemplateIds.filter((id): id is number => Number.isSafeInteger(id)));
+    const requests: Promise<Response>[] = [];
+    templates.forEach((messageBody, index) => {
+      const id = absenceTemplateIds[index];
+      if (id) {
+        activeIds.add(id);
+        requests.push(fetch(`${API_BASE_URL}/whatsapp/templates/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ message_body: messageBody, is_active: true })
+        }));
+      } else {
+        const existingRow = absenceTemplateRows.find((row) => row.message_body === messageBody);
+        if (existingRow) {
+          activeIds.add(existingRow.id);
+          requests.push(fetch(`${API_BASE_URL}/whatsapp/templates/${existingRow.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ message_body: messageBody, is_active: true })
+          }));
+          return;
+        }
+        requests.push(fetch(`${API_BASE_URL}/whatsapp/templates`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ category: "absence", message_body: messageBody })
+        }));
+      }
+    });
+    absenceTemplateRows.forEach((row) => {
+      if (!activeIds.has(row.id)) {
+        requests.push(fetch(`${API_BASE_URL}/whatsapp/templates/${row.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ is_active: false })
+        }));
+      }
+    });
+    const responses = await Promise.all(requests);
+    if (responses.some((response) => !response.ok)) throw new Error("absence_templates_save_failed");
+    const refreshedResponse = await fetch(`${API_BASE_URL}/whatsapp/templates?category=absence`, { headers: { Authorization: `Bearer ${token}` } });
+    const refreshedPayload = await refreshedResponse.json().catch(() => ({}));
+    if (!refreshedResponse.ok || !refreshedPayload.ok) throw new Error("absence_templates_load_failed");
+    const refreshedRows = (Array.isArray(refreshedPayload.templates) ? refreshedPayload.templates : [])
+      .filter((row: WhatsAppTemplateRow) => row.is_active !== false && row.message_body)
+      .slice(0, 4) as WhatsAppTemplateRow[];
+    setAbsenceTemplateRows(refreshedRows);
+    setAbsenceTemplateIds(refreshedRows.map((row) => Number(row.id)));
+    return refreshedRows;
   }
 
   function updateTemplate(group: TemplateKey, index: number, value: string) {
@@ -385,7 +456,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
         <button className={activeTab === "templates" ? "active" : ""} type="button" role="tab" aria-selected={activeTab === "templates"} onClick={() => setActiveTab("templates")}>{t("whatsapp.templatesTab")}</button>
         <button className={activeTab === "history" ? "active" : ""} type="button" role="tab" aria-selected={activeTab === "history"} onClick={() => setActiveTab("history")}>{t("whatsapp.historyTab")}</button>
       </div>
-      <div className="settings-section-heading"><span>{activeTab === "templates" ? "03–06" : "07"}</span><div><h3>{t(activeTab === "templates" ? "whatsapp.templatesTitle" : "whatsapp.messageHistoryTitle")}</h3><p>{t(activeTab === "templates" ? "whatsapp.templatesDescription" : "whatsapp.messageHistoryDescription")}</p></div></div>
+      <div className="settings-section-heading"><span>{activeTab === "templates" ? "03–07" : "08"}</span><div><h3>{t(activeTab === "templates" ? "whatsapp.templatesTitle" : "whatsapp.messageHistoryTitle")}</h3><p>{t(activeTab === "templates" ? "whatsapp.templatesDescription" : "whatsapp.messageHistoryDescription")}</p></div></div>
       {activeTab === "history" ? <WhatsAppMessageHistory token={token} language={language} t={t} /> : <>
         <div className="whatsapp-template-groups">
         {memoizedTemplateGroups.map((group) => {
