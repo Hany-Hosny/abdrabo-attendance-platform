@@ -128,7 +128,12 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
       return null;
     }
 
-    const normalizedDiscount = Number.isFinite(Number(discountAmount)) ? Math.max(0, Math.round(Number(discountAmount) * 100) / 100) : 0;
+    const rawDiscount = Number(discountAmount);
+    if (!Number.isFinite(rawDiscount) || rawDiscount < 0) {
+      await client.query("ROLLBACK");
+      return { error: "invalid_discount" };
+    }
+    const normalizedDiscount = Math.round(rawDiscount * 100) / 100;
     if (normalizedDiscount > remaining + 0.001) {
       await client.query("ROLLBACK");
       return { error: "invalid_discount" };

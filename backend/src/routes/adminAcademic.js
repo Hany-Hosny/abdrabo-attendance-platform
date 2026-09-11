@@ -439,9 +439,12 @@ adminAcademicRouter.get("/students", requirePermission("students.view"), async (
     if (quickFilter === "present_today") filters.push(attendanceToday);
     else if (quickFilter === "absent_today") filters.push(`NOT ${attendanceToday}`);
     else if (quickFilter === "special_financial") filters.push(`EXISTS (
-      SELECT 1 FROM fee_dues fd
-      WHERE fd.student_id = s.id AND fd.amount > fd.paid_amount
-        AND fd.due_month <= date_trunc('month', ${todayCairo})::date
+      SELECT 1 FROM payments p
+      WHERE p.student_id = s.id
+        AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
+        AND (p.is_exempt = TRUE OR p.discount_amount > 0)
+        AND COALESCE(p.paid_at, p.payment_date) >= date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') AT TIME ZONE 'Africa/Cairo'
+        AND COALESCE(p.paid_at, p.payment_date) < (date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') + INTERVAL '1 month') AT TIME ZONE 'Africa/Cairo'
     )`);
     else if (quickFilter) return res.status(400).json({ ok: false, status: "invalid_student_filter" });
     if (search) {

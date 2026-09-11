@@ -817,6 +817,7 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS fee_dues_month_student_idx ON fee_dues(due_month, student_id);
     CREATE INDEX IF NOT EXISTS payments_paid_at_active_idx ON payments(paid_at DESC, id DESC);
     CREATE INDEX IF NOT EXISTS payments_student_paid_at_idx ON payments(student_id, paid_at DESC);
+    CREATE INDEX IF NOT EXISTS payments_student_billing_cycle_idx ON payments(student_id, paid_at, payment_date, is_exempt, discount_amount);
     UPDATE payments SET payment_reference = 'P-' || LPAD(id::text, 8, '0') WHERE payment_reference IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS payments_idempotency_key_idx ON payments(idempotency_key) WHERE idempotency_key IS NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS payments_reference_idx ON payments(payment_reference) WHERE payment_reference IS NOT NULL;

@@ -1318,7 +1318,7 @@ operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("pay
     if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
     const sendWhatsApp = req.body?.send_whatsapp === true;
     const isExempt = req.body?.is_exempt === true;
-    const discountAmount = isExempt ? 0 : Number(normalizeDigits(req.body?.discount_amount ?? 0));
+    const discountAmount = Number(normalizeDigits(req.body?.discount_amount ?? 0));
     if (!Number.isFinite(discountAmount) || discountAmount < 0) return res.status(400).json({ ok: false, status: "invalid_discount" });
     if (sendWhatsApp && !hasPermission(req.teacher, "whatsapp.send_receipts")) return res.status(403).json({ ok: false, status: "permission_required", permission: "whatsapp.send_receipts" });
     if (idempotencyKey) {

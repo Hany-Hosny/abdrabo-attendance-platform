@@ -2980,13 +2980,13 @@ textarea {
 .whatsapp-template-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .whatsapp-template-groups { display: grid; gap: 12px; }
 .whatsapp-template-accordion { overflow: hidden; border: 1px solid rgba(128, 170, 211, 0.18); border-radius: 12px; background: var(--surface-overlay); }
-.whatsapp-template-accordion-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; border: 0; color: var(--text); background: transparent; font: inherit; text-align: start; cursor: pointer; }
+.whatsapp-template-accordion-toggle { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; border: 0; color: var(--text); background: transparent; font: inherit; text-align: start; cursor: pointer; overflow: hidden; }
 .whatsapp-template-accordion-toggle:hover { background: rgba(105, 173, 255, 0.05); }
 .whatsapp-template-accordion-toggle:focus-visible { outline: 2px solid rgba(105, 173, 255, 0.8); outline-offset: -3px; }
-.whatsapp-template-accordion-heading { display: flex; min-width: 0; flex: 1; align-items: flex-start; gap: 12px; }
-.whatsapp-template-accordion-copy { display: grid; min-width: 0; gap: 4px; }
-.whatsapp-template-accordion-copy strong { font-size: 16px; line-height: 1.5; }
-.whatsapp-template-accordion-copy small { color: var(--muted); line-height: 1.6; }
+.whatsapp-template-accordion-heading { display: flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 12px; overflow: hidden; }
+.whatsapp-template-accordion-copy { display: grid; min-width: 0; flex: 1 1 auto; gap: 4px; overflow: hidden; text-align: start; }
+.whatsapp-template-accordion-copy strong { min-width: 0; overflow: hidden; font-size: 16px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.whatsapp-template-accordion-copy small { min-width: 0; overflow: hidden; color: var(--muted); line-height: 1.6; text-overflow: ellipsis; white-space: nowrap; }
 .whatsapp-template-accordion-badge { display: inline-flex; width: fit-content; max-width: 100%; padding: 3px 8px; border: 1px solid rgba(128, 170, 211, 0.2); border-radius: 999px; color: #a9bad0; background: rgba(128, 170, 211, 0.07); font-size: 10px; line-height: 1.5; }
 .whatsapp-template-accordion-icon { width: 22px; height: 22px; flex: 0 0 auto; fill: none; stroke: #9bcaff; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; transition: transform .25s ease, stroke .2s ease; }
 .whatsapp-template-accordion-icon.is-open { stroke: #8de8eb; }
@@ -4525,7 +4525,7 @@ textarea {
   flex-wrap: wrap;
   gap: 8px;
   min-height: 36px;
-  margin: 0 0 14px;
+  margin: 16px 0 14px;
 }
 
 .student-quick-filters button {
@@ -4543,8 +4543,9 @@ textarea {
 
 .student-quick-filters button.active {
   border-color: var(--accent);
-  background: rgba(242, 140, 40, 0.15);
-  color: var(--accent);
+  background: var(--accent);
+  box-shadow: 0 10px 24px rgba(242, 140, 40, 0.2);
+  color: #fff;
 }
 
 .student-list-skeleton {
@@ -4570,9 +4571,9 @@ textarea {
 
 .fee-checkout-panel {
   display: grid;
-  grid-template-columns: minmax(150px, .8fr) minmax(220px, 1.2fr) auto;
-  align-items: center;
-  gap: 14px;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 12px;
   margin: 12px 0;
   padding: 14px;
   border: 1px solid var(--line);
@@ -4589,16 +4590,19 @@ textarea {
 
 .fee-discount-field small,
 .fee-exemption-toggle small { color: var(--muted); font-size: 11px; }
+.fee-discount-field input:focus { outline: none; border-color: #f97316; box-shadow: 0 0 0 2px rgba(249, 115, 22, .35); }
+.fee-discount-field input:disabled { cursor: not-allowed; opacity: .5; }
 .fee-exemption-toggle { grid-template-columns: 1fr auto; align-items: center; }
 .fee-exemption-toggle input { position: absolute; opacity: 0; pointer-events: none; }
 .fee-exemption-toggle i { width: 42px; height: 24px; border-radius: 999px; background: var(--line); position: relative; }
 .fee-exemption-toggle i::after { content: ""; position: absolute; top: 3px; inset-inline-start: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .16s ease; }
 .fee-exemption-toggle input:checked + i { background: var(--success); }
 .fee-exemption-toggle input:checked + i::after { transform: translateX(18px); background: #fff; }
-.fee-checkout-total { min-width: 150px; color: var(--accent); font-size: 14px; font-weight: 900; text-align: center; }
+.fee-checkout-total { min-width: 150px; color: var(--accent); font-size: 14px; font-weight: 900; text-align: start; }
+.fee-checkout-total del { margin-inline-end: 8px; color: var(--muted); }
+.fee-checkout-cta { display: block; width: 100%; min-height: 54px; padding-block: 14px; border-radius: 12px; font-size: 18px; font-weight: 800; }
 
 @media (max-width: 720px) {
-  .fee-checkout-panel { grid-template-columns: 1fr; }
   .fee-checkout-total { text-align: start; }
 }
 
