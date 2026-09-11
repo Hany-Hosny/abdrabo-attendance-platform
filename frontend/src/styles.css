@@ -4592,7 +4592,29 @@ textarea {
 .fee-exemption-toggle small { color: var(--muted); font-size: 11px; }
 .fee-discount-field input:focus { outline: none; border-color: #f97316; box-shadow: 0 0 0 2px rgba(249, 115, 22, .35); }
 .fee-discount-field input:disabled { cursor: not-allowed; opacity: .5; }
-.fee-exemption-toggle { grid-template-columns: 1fr auto; align-items: center; }
+.fee-exemption-toggle {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+}
+.fee-exemption-toggle > span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  overflow: hidden;
+}
+.fee-exemption-toggle > span strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fee-exemption-toggle > span small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.fee-exemption-toggle i { justify-self: end; flex: 0 0 auto; }
 .fee-exemption-toggle input { position: absolute; opacity: 0; pointer-events: none; }
 .fee-exemption-toggle i { width: 42px; height: 24px; border-radius: 999px; background: var(--line); position: relative; }
 .fee-exemption-toggle i::after { content: ""; position: absolute; top: 3px; inset-inline-start: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .16s ease; }
