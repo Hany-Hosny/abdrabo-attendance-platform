@@ -137,6 +137,7 @@ whatsappRouter.post("/send-grade", requirePermission("whatsapp.send_grades"), as
     const result = await enqueueGradeNotification({ resultId });
     if (result.reason === "not_found") return res.status(404).json({ ok: false, status: result.reason });
     if (result.reason === "invalid_phone") return res.status(409).json({ ok: false, status: result.reason });
-    res.status(202).json({ ok: true, ...result });
+    if (result.reason === "queue_conflict") return res.status(503).json({ ok: false, status: result.reason });
+    res.status(result.reason === "already_queued" ? 200 : 202).json({ ok: true, ...result });
   } catch (error) { next(error); }
 });

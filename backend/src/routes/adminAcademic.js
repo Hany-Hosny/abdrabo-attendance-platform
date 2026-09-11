@@ -471,11 +471,20 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
     }
     const result = await query(
       `SELECT er.id, er.student_id, s.full_name, s.student_code, s.group_id, g.name AS group_name,
-              e.id AS exam_id, e.title, e.exam_date, e.max_score, er.score, er.note, er.note AS assessment, er.whatsapp_notified
+              e.id AS exam_id, e.title, e.exam_date, e.max_score, er.score, er.note, er.note AS assessment, er.whatsapp_notified,
+              grade_job.status AS whatsapp_status, grade_job.last_error AS whatsapp_error,
+              grade_job.sent_at AS whatsapp_sent_at, grade_job.id AS whatsapp_job_id
        FROM exam_results er
        JOIN exams e ON e.id = er.exam_id
        JOIN students s ON s.id = er.student_id
        JOIN groups g ON g.id = s.group_id
+       LEFT JOIN LATERAL (
+         SELECT j.id, j.status, j.last_error, j.sent_at
+         FROM whatsapp_notification_jobs j
+         WHERE j.notification_type = 'grade' AND j.source_id = er.id
+         ORDER BY j.id DESC
+         LIMIT 1
+       ) grade_job ON TRUE
        WHERE ${filters.join(" AND ")}
        ORDER BY e.exam_date DESC, s.full_name ASC, e.id DESC`,
       values

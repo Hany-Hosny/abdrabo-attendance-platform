@@ -12,6 +12,9 @@ import { AdminExecutiveDashboard } from "./AdminExecutiveDashboard";
 import { SystemSettingsPanel } from "./SystemSettingsPanel";
 import { WhatsAppSettingsPanel } from "./WhatsAppSettingsPanel";
 import { PasswordRecoveryDialog } from "./PasswordRecoveryDialog";
+import { PublicLayout } from "./PublicLayout";
+import type { PublicHeaderLabels, PublicLanguage, PublicTheme } from "./PublicHeader";
+import { resolvePublicRoute } from "./routes";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const LANGUAGE_STORAGE_KEY = "abdrabo_language";
@@ -273,14 +276,72 @@ const translations = {
     "public.availableGroups": "المجموعات المتاحة",
     "public.features": "مميزات السنتر",
     "public.address": "العنوان",
-    "public.loading": "جاري تحميل المحتوى...",
+    "public.loading": "جاري التجهيز...",
+    "public.preparing": "جاري التجهيز...",
+    "landing.badge": "مدرس العلوم",
+    "landing.title": "منصة الأستاذ أحمد عبدربه",
+    "landing.subtitle": "المنظومة التعليمية المتكاملة لتدريس مادة العلوم لجميع المراحل الدراسية.",
+    "landing.artSubject": "العلوم",
+    "landing.artCaption": "تعلم بوضوح",
+    "landing.primaryCta": "دخول الطالب",
+    "landing.secondaryCta": "استكشف الصفوف",
+    "landing.nav.aboutTeacher": "عن المحاضر",
+    "landing.gradesEyebrow": "مسارات تعليمية واضحة",
+    "landing.gradesTitle": "اختر صفك وابدأ رحلة التفوق",
+    "landing.gradesSubtitle": "محتوى منظم، تدريب مستمر، ومتابعة تساعد كل طالب على التقدم بثقة.",
+    "landing.grade.primary": "ابتدائي",
+    "landing.grade.prep": "إعدادي",
+    "landing.grade.secondary": "ثانوي",
+    "landing.grade.special": "دعم إضافي",
+    "landing.grade.fifth": "خامسة ابتدائي",
+    "landing.grade.sixth": "سادسة ابتدائي",
+    "landing.grade.firstPrep": "أولى إعدادي",
+    "landing.grade.secondPrep": "ثانية إعدادي",
+    "landing.grade.thirdPrep": "ثالثة إعدادي",
+    "landing.grade.firstSecondary": "أولى ثانوي",
+    "landing.grade.secondSecondary": "ثانية ثانوي",
+    "landing.grade.thirdSecondary": "ثالثة ثانوي",
+    "landing.grade.boost": "مجاميع تقوية",
+    "landing.grade.available": "متاح الآن",
+    "landing.grade.comingSoon": "قريباً",
+    "landing.featuresEyebrow": "تجربة تعليمية أذكى",
+    "landing.featuresTitle": "كل ما يحتاجه الطالب في مكان واحد",
+    "landing.featuresSubtitle": "من أول شرح الدرس وحتى متابعة النتيجة، المنصة مصممة لتجعل التقدم واضحاً.",
+    "landing.feature.whatsappTitle": "إشعارات واتساب فورية",
+    "landing.feature.whatsappText": "متابعة درجات الاختبارات والغياب.",
+    "landing.feature.practicalTitle": "فهم وتطبيق عملي",
+    "landing.feature.practicalText": "تبسيط التجارب قبل الحفظ.",
+    "landing.feature.assessmentTitle": "تقييم واختبارات دورية",
+    "landing.feature.assessmentText": "قياس مستوى وبنك أسئلة متجدد.",
+    "landing.feature.planTitle": "خطط متابعة فردية",
+    "landing.feature.planText": "تدريب خاص لرفع مستوى الطالب.",
+    "landing.stat.experience": "سنوات خبرة",
+    "landing.stat.students": "طالب تم تدريبهم",
+    "landing.stat.grades": "صفوف دراسية متاحة",
+    "landing.scrollLabel": "اكتشف المزيد",
+    "landing.footer": "© 2026 الأستاذ أحمد عبدربه · تصميم وتطوير م. هاني حسني",
+    "about.teacher.statExperience": "+4 سنوات خبرة",
+    "about.teacher.statExperienceDescription": "سنوات من العطاء والتطوير",
+    "about.teacher.statStudents": "+1200 طالب",
+    "about.teacher.statStudentsDescription": "تم تدريبهم ومتابعتهم",
+    "about.teacher.statResults": "92% تفوق",
+    "about.teacher.statResultsDescription": "نسبة تحسن في الدرجات واختبارات دورية",
     "contact.whatsapp": "واتساب",
     "contact.facebook": "فيسبوك",
     "contact.youtube": "يوتيوب",
+    "contact.directTitle": "تواصل مباشرة",
+    "contact.directSubtitle": "اختر الطريقة المناسبة وسنسعد بالتواصل معك.",
+    "contact.whatsappAction": "تواصل معنا عبر واتساب",
+    "contact.facebookAction": "تابعنا على فيسبوك",
+    "contact.youtubeAction": "تابعنا على يوتيوب",
+    "contact.formTitle": "أرسل رسالة",
+    "contact.formSubtitle": "اترك بياناتك وسنتواصل معك في أقرب وقت.",
     "contact.name": "الاسم",
     "contact.phone": "رقم الهاتف",
     "contact.message": "رسالتك",
     "contact.send": "إرسال",
+    "contact.sending": "جاري الإرسال...",
+    "contact.submitFailed": "تعذر إرسال الرسالة. حاول مرة أخرى.",
     "contact.success": "تم إرسال الرسالة بنجاح.",
     "home.eyebrow": "منصة حضور الطلاب",
     "home.title": "أهلاً وسهلاً بكم",
@@ -305,6 +366,7 @@ const translations = {
     "student.close": "إغلاق",
     "student.logout": "تسجيل الخروج",
     "teacher.loginTitle": "دخول المستر",
+    "teacher.adminPortalTitle": "بوابة الإدارة",
     "teacher.usernameLabel": "اسم المستخدم أو البريد الإلكتروني",
     "teacher.usernamePlaceholder": "teacher أو teacher@abdrabo.local",
     "teacher.passwordLabel": "كلمة المرور",
@@ -495,6 +557,13 @@ const translations = {
     "whatsapp.sendGrade": "إرسال النتيجة عبر واتساب",
     "whatsapp.sendingGrade": "جاري تجهيز رسالة النتيجة...",
     "whatsapp.gradeQueued": "تمت إضافة رسالة النتيجة إلى قائمة الانتظار.",
+    "whatsapp.gradeAlreadyQueued": "رسالة النتيجة موجودة بالفعل في قائمة الانتظار.",
+    "whatsapp.gradeStatusQueued": "قيد الانتظار",
+    "whatsapp.gradeStatusSending": "جاري الإرسال",
+    "whatsapp.gradeStatusSent": "تم الإرسال",
+    "whatsapp.gradeStatusFailed": "فشل الإرسال",
+    "whatsapp.retryGrade": "إعادة إرسال النتيجة",
+    "whatsapp.sendGradeAgain": "إرسال النتيجة مرة أخرى",
     "whatsapp.sendReceipt": "إرسال إيصال الدفع عبر واتساب",
     "whatsapp.receiptQueued": "تمت إضافة إيصال الدفع إلى قائمة الانتظار.",
     "whatsapp.invalidPhone": "لا يوجد رقم ولي أمر مصري صالح لهذا الطالب.",
@@ -1217,6 +1286,8 @@ const translations = {
     "admin.center": "السنتر",
     "admin.studentName": "اسم الطالب",
     "admin.studentCode": "كود الطالب",
+    "admin.copyStudentCode": "نسخ كود الطالب",
+    "admin.copyStudentCodeTitle": "نسخ الكود",
     "admin.fieldRequired": "هذا الحقل مطلوب.",
     "admin.scheduleRequired": "اختر يوم حصة واحدًا على الأقل.",
     "admin.scheduleTimeRequired": "اختر وقت البداية والنهاية.",
@@ -1553,14 +1624,72 @@ const translations = {
     "public.availableGroups": "Available Groups",
     "public.features": "Center Features",
     "public.address": "Address",
-    "public.loading": "Loading content...",
+    "public.loading": "Preparing...",
+    "public.preparing": "Preparing...",
+    "landing.badge": "Science Teacher",
+    "landing.title": "Mr. Ahmed Abdrabo Learning Platform",
+    "landing.subtitle": "An integrated Science learning system for students across every school stage.",
+    "landing.artSubject": "Science",
+    "landing.artCaption": "Learn with clarity",
+    "landing.primaryCta": "Student Login",
+    "landing.secondaryCta": "Explore Grades",
+    "landing.nav.aboutTeacher": "About the Teacher",
+    "landing.gradesEyebrow": "Clear learning paths",
+    "landing.gradesTitle": "Choose your grade and start growing",
+    "landing.gradesSubtitle": "Structured content, continuous practice, and follow-up that helps every student move forward with confidence.",
+    "landing.grade.primary": "Primary",
+    "landing.grade.prep": "Preparatory",
+    "landing.grade.secondary": "Secondary",
+    "landing.grade.special": "Extra support",
+    "landing.grade.fifth": "Grade 5 Primary",
+    "landing.grade.sixth": "Grade 6 Primary",
+    "landing.grade.firstPrep": "Grade 1 Preparatory",
+    "landing.grade.secondPrep": "Grade 2 Preparatory",
+    "landing.grade.thirdPrep": "Grade 3 Preparatory",
+    "landing.grade.firstSecondary": "Grade 1 Secondary",
+    "landing.grade.secondSecondary": "Grade 2 Secondary",
+    "landing.grade.thirdSecondary": "Grade 3 Secondary",
+    "landing.grade.boost": "Boost Groups",
+    "landing.grade.available": "Available now",
+    "landing.grade.comingSoon": "Coming soon",
+    "landing.featuresEyebrow": "A smarter learning experience",
+    "landing.featuresTitle": "Everything students need in one place",
+    "landing.featuresSubtitle": "From the first explanation to the latest result, the platform makes progress easy to see.",
+    "landing.feature.whatsappTitle": "Instant WhatsApp Alerts",
+    "landing.feature.whatsappText": "Track test scores and attendance.",
+    "landing.feature.practicalTitle": "Understand & Apply",
+    "landing.feature.practicalText": "Simplify experiments before memorization.",
+    "landing.feature.assessmentTitle": "Regular Assessment",
+    "landing.feature.assessmentText": "Measure progress with a refreshed question bank.",
+    "landing.feature.planTitle": "Individual Follow-up Plans",
+    "landing.feature.planText": "Focused practice to raise each student’s level.",
+    "landing.stat.experience": "Years of experience",
+    "landing.stat.students": "Students trained",
+    "landing.stat.grades": "Grades available",
+    "landing.scrollLabel": "Discover more",
+    "landing.footer": "© 2026 Mr. Ahmed Abdrabo · Designed & Developed by Eng. Hany Hosny",
+    "about.teacher.statExperience": "+4 years of experience",
+    "about.teacher.statExperienceDescription": "Years of giving and growth",
+    "about.teacher.statStudents": "+1200 students",
+    "about.teacher.statStudentsDescription": "Students trained and supported",
+    "about.teacher.statResults": "92% improvement",
+    "about.teacher.statResultsDescription": "Improvement across grades and regular exams",
     "contact.whatsapp": "WhatsApp",
     "contact.facebook": "Facebook",
     "contact.youtube": "YouTube",
+    "contact.directTitle": "Connect directly",
+    "contact.directSubtitle": "Choose the channel that works best for you.",
+    "contact.whatsappAction": "Chat with us on WhatsApp",
+    "contact.facebookAction": "Follow us on Facebook",
+    "contact.youtubeAction": "Follow us on YouTube",
+    "contact.formTitle": "Send a message",
+    "contact.formSubtitle": "Leave your details and we will get back to you soon.",
     "contact.name": "Name",
     "contact.phone": "Phone",
     "contact.message": "Message",
     "contact.send": "Send",
+    "contact.sending": "Sending...",
+    "contact.submitFailed": "We could not send your message. Please try again.",
     "contact.success": "Message sent successfully.",
     "home.eyebrow": "Student Attendance Platform",
     "home.title": "Welcome",
@@ -1585,6 +1714,7 @@ const translations = {
     "student.close": "Close",
     "student.logout": "Logout",
     "teacher.loginTitle": "Teacher Login",
+    "teacher.adminPortalTitle": "Admin Portal",
     "teacher.usernameLabel": "Username or Email",
     "teacher.usernamePlaceholder": "teacher or teacher@abdrabo.local",
     "teacher.passwordLabel": "Password",
@@ -1775,6 +1905,13 @@ const translations = {
     "whatsapp.sendGrade": "Send result by WhatsApp",
     "whatsapp.sendingGrade": "Preparing result message...",
     "whatsapp.gradeQueued": "The result message was added to the queue.",
+    "whatsapp.gradeAlreadyQueued": "The result message is already in the queue.",
+    "whatsapp.gradeStatusQueued": "Queued",
+    "whatsapp.gradeStatusSending": "Sending",
+    "whatsapp.gradeStatusSent": "Sent",
+    "whatsapp.gradeStatusFailed": "Failed",
+    "whatsapp.retryGrade": "Retry result",
+    "whatsapp.sendGradeAgain": "Send again",
     "whatsapp.sendReceipt": "Send payment receipt by WhatsApp",
     "whatsapp.receiptQueued": "The payment receipt was added to the queue.",
     "whatsapp.invalidPhone": "This student has no valid Egyptian guardian number.",
@@ -2497,6 +2634,8 @@ const translations = {
     "admin.center": "Center",
     "admin.studentName": "Student name",
     "admin.studentCode": "Student code",
+    "admin.copyStudentCode": "Copy student code",
+    "admin.copyStudentCodeTitle": "Copy code",
     "admin.fieldRequired": "This field is required.",
     "admin.scheduleRequired": "Select at least one class day.",
     "admin.scheduleTimeRequired": "Select both a start and end time.",
@@ -3288,6 +3427,60 @@ function localizedPage(page: SitePage, language: Language) {
   };
 }
 
+function externalUrl(value: unknown) {
+  const url = String(value || "").trim();
+  if (!url) return "#";
+  return /^https?:\/\//i.test(url) ? url : `https://${url}`;
+}
+
+function whatsappUrl(value: unknown) {
+  const digits = normalizeDigits(String(value || "")).replace(/\D/g, "");
+  if (!digits) return "#";
+  const international = digits.startsWith("00")
+    ? digits.slice(2)
+    : digits.startsWith("0")
+      ? `20${digits.slice(1)}`
+      : digits;
+  return `https://wa.me/${international}`;
+}
+
+function GlassLoader({ label }: { label: string }) {
+  return (
+    <div className="glass-loader" role="status" aria-live="polite">
+      <div className="glass-loader-card">
+        <span className="glass-loader-ring" aria-hidden="true" />
+        <span className="glass-loader-label">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function ContactSocialIcon({ kind }: { kind: "whatsapp" | "facebook" | "youtube" }) {
+  if (kind === "whatsapp") {
+    return (
+      <svg className="contact-social-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M20.2 11.4a8.1 8.1 0 0 1-11.9 7.1L4 20l1.5-4.1A8.1 8.1 0 1 1 20.2 11.4Z" />
+        <path d="M8.4 8.5c.3-.5.7-.5 1-.4l1.1 1.9c.2.3.1.6-.1.8l-.6.5c.7 1.3 1.7 2.3 3 3l.5-.6c.2-.2.5-.3.8-.1l1.9 1.1c.3.2.3.7 0 1-.4.5-1 .8-1.7.7-3.2-.5-6.8-3.9-7.4-7.2-.1-.3.1-.9.5-1.7Z" />
+      </svg>
+    );
+  }
+
+  if (kind === "facebook") {
+    return (
+      <svg className="contact-social-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M14 21v-8h2.7l.4-3H14V8.1c0-.9.2-1.5 1.5-1.5h1.7V4c-.3 0-1.1-.1-2.1-.1-2.7 0-4.5 1.6-4.5 4.6V10H8v3h2.6v8" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="contact-social-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M21 8.2a2.5 2.5 0 0 0-1.8-1.8C17.6 6 12 6 12 6s-5.6 0-7.2.4A2.5 2.5 0 0 0 3 8.2 26 26 0 0 0 2.6 12 26 26 0 0 0 3 15.8a2.5 2.5 0 0 0 1.8 1.8C6.4 18 12 18 12 18s5.6 0 7.2-.4a2.5 2.5 0 0 0 1.8-1.8 26 26 0 0 0 .4-3.8 26 26 0 0 0-.4-3.8Z" />
+      <path d="m10 9 5 3-5 3Z" />
+    </svg>
+  );
+}
+
 function roleLabel(role: string, t: Translator) {
   const key = `admin.role.${role}` as TranslationKey;
   return key in translations.ar ? t(key) : role;
@@ -3567,6 +3760,140 @@ function DigitalCardIcon() {
   return <svg className="digital-card-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18M7 13h4M7 16h6" /><path d="m16 13 1.5 1.5L20 12" /></svg>;
 }
 
+type LandingGrade = {
+  id: string;
+  label: TranslationKey;
+  category: TranslationKey;
+  icon: "flask" | "dna" | "atom" | "spark";
+  disabled?: boolean;
+  special?: boolean;
+};
+
+function LandingGradeIcon({ kind }: { kind: LandingGrade["icon"] }) {
+  const props = {
+    className: "landing-grade-icon",
+    viewBox: "0 0 32 32",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.7,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true
+  };
+
+  if (kind === "flask") {
+    return <svg {...props}><path d="M12 4h8M14 4v8.5L7.5 24a3 3 0 0 0 2.6 4.5h11.8a3 3 0 0 0 2.6-4.5L18 12.5V4" /><path d="M10.5 20h11M12.5 16.5h7" /><circle cx="15" cy="23" r="1" fill="currentColor" stroke="none" /></svg>;
+  }
+  if (kind === "dna") {
+    return <svg {...props}><path d="M10 4c7 4 7 8 0 12s-7 8 0 12M22 4c-7 4-7 8 0 12s7 8 0 12" /><path d="M11.5 8h9M9.5 13h13M9.5 19h13M11.5 24h9" /></svg>;
+  }
+  if (kind === "atom") {
+    return <svg {...props}><ellipse cx="16" cy="16" rx="12" ry="5.5" /><ellipse cx="16" cy="16" rx="12" ry="5.5" transform="rotate(60 16 16)" /><ellipse cx="16" cy="16" rx="12" ry="5.5" transform="rotate(120 16 16)" /><circle cx="16" cy="16" r="2.2" fill="currentColor" stroke="none" /></svg>;
+  }
+  return <svg {...props}><path d="m16 3 2.4 8.6L27 14l-8.6 2.4L16 25l-2.4-8.6L5 14l8.6-2.4z" /><path d="M25 24v5M22.5 26.5h5M7 5v5M4.5 7.5h5" /></svg>;
+}
+
+const landingGrades: LandingGrade[] = [
+  { id: "fifth-primary", label: "landing.grade.fifth", category: "landing.grade.primary", icon: "flask" },
+  { id: "sixth-primary", label: "landing.grade.sixth", category: "landing.grade.primary", icon: "flask" },
+  { id: "first-prep", label: "landing.grade.firstPrep", category: "landing.grade.prep", icon: "dna" },
+  { id: "second-prep", label: "landing.grade.secondPrep", category: "landing.grade.prep", icon: "dna" },
+  { id: "third-prep", label: "landing.grade.thirdPrep", category: "landing.grade.prep", icon: "dna" },
+  { id: "first-secondary", label: "landing.grade.firstSecondary", category: "landing.grade.secondary", icon: "atom" },
+  { id: "second-secondary", label: "landing.grade.secondSecondary", category: "landing.grade.secondary", icon: "atom" },
+  { id: "third-secondary", label: "landing.grade.thirdSecondary", category: "landing.grade.secondary", icon: "atom", disabled: true },
+  { id: "boost-groups", label: "landing.grade.boost", category: "landing.grade.special", icon: "spark", special: true }
+];
+
+function LandingPage({ language, t }: { language: Language; t: Translator }) {
+  const isArabic = language === "ar";
+
+  function scrollToSection(id: string) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  return (
+    <main className="landing-main" dir={language}>
+          <section className="landing-hero landing-section" id="landing-home" aria-labelledby="landing-title">
+            <div className="landing-hero-copy">
+              <span className="landing-badge"><i aria-hidden="true" />{t("landing.badge")}</span>
+              <h1 id="landing-title">{t("landing.title")}</h1>
+              <p>{t("landing.subtitle")}</p>
+              <div className="landing-hero-actions">
+                <a className="landing-primary-button" href="/login">{t("landing.primaryCta")}<span aria-hidden="true">↗</span></a>
+                <button className="landing-secondary-button" type="button" onClick={() => scrollToSection("grades")}>{t("landing.secondaryCta")}<span aria-hidden="true">↓</span></button>
+              </div>
+              <div className="landing-hero-note"><span aria-hidden="true">✦</span><span>{t("landing.gradesSubtitle")}</span></div>
+            </div>
+            <div className="landing-hero-art" aria-hidden="true">
+              <div className="landing-art-orbit landing-art-orbit-one" />
+              <div className="landing-art-orbit landing-art-orbit-two" />
+              <div className="landing-art-core"><span>ع</span></div>
+              <div className="landing-art-profile">
+                <img src="/assets/teacher-profile.png" alt="" />
+                <span><b>{t("landing.artSubject")}</b><small>{t("landing.artCaption")}</small></span>
+              </div>
+              <span className="landing-art-formula landing-art-formula-one">H₂O</span>
+              <span className="landing-art-formula landing-art-formula-two">DNA</span>
+            </div>
+          </section>
+
+          <section className="landing-section landing-grades-section" id="grades" aria-labelledby="grades-title">
+            <div className="landing-section-heading">
+              <span className="landing-kicker">{t("landing.gradesEyebrow")}</span>
+              <h2 id="grades-title">{t("landing.gradesTitle")}</h2>
+              <p>{t("landing.gradesSubtitle")}</p>
+            </div>
+            <div className="landing-grade-grid">
+              {landingGrades.map((grade) => (
+                <article
+                  className={`landing-grade-card ${grade.disabled ? "is-disabled" : ""} ${grade.special ? "is-special" : ""}`}
+                  key={grade.id}
+                  aria-disabled={grade.disabled || undefined}
+                >
+                  {grade.disabled ? <span className="landing-ribbon">{t("landing.grade.comingSoon")}</span> : null}
+                  <div className={`landing-grade-icon-wrap landing-icon-${grade.icon}`}><LandingGradeIcon kind={grade.icon} /></div>
+                  <div className="landing-grade-copy">
+                    <span>{t(grade.category)}</span>
+                    <h3>{t(grade.label)}</h3>
+                  </div>
+                  <span className="landing-grade-status">{grade.disabled ? t("landing.grade.comingSoon") : grade.special ? "✦" : t("landing.grade.available")}</span>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="landing-section landing-features-section" id="features" aria-labelledby="features-title">
+            <div className="landing-section-heading">
+              <span className="landing-kicker">{t("landing.featuresEyebrow")}</span>
+              <h2 id="features-title">{t("landing.featuresTitle")}</h2>
+              <p>{t("landing.featuresSubtitle")}</p>
+            </div>
+            <div className="landing-feature-grid">
+              {[
+                ["01", "landing.feature.whatsappTitle", "landing.feature.whatsappText", "◉"],
+                ["02", "landing.feature.practicalTitle", "landing.feature.practicalText", "⌁"],
+                ["03", "landing.feature.assessmentTitle", "landing.feature.assessmentText", "↗"],
+                ["04", "landing.feature.planTitle", "landing.feature.planText", "✦"]
+              ].map(([number, titleKey, textKey, icon]) => (
+                <article className="landing-feature-card" key={number}>
+                  <div className="landing-feature-topline"><span>{number}</span><i aria-hidden="true">{icon}</i></div>
+                  <h3>{t(titleKey as TranslationKey)}</h3>
+                  <p>{t(textKey as TranslationKey)}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="landing-stats" aria-label={isArabic ? "إحصائيات المنصة" : "Platform statistics"}>
+            <div><strong>+4</strong><span>{t("landing.stat.experience")}</span></div>
+            <div><strong>+1200</strong><span>{t("landing.stat.students")}</span></div>
+            <div><strong>8</strong><span>{t("landing.stat.grades")}</span></div>
+          </section>
+    </main>
+  );
+}
+
 function getPortalAccessTokenFromLocation() {
   const shortLinkMatch = window.location.pathname.match(/^\/p\/([A-Za-z0-9_-]{20,64})$/);
   return shortLinkMatch?.[1] || new URLSearchParams(window.location.search).get("access_token") || "";
@@ -3594,6 +3921,31 @@ function App() {
   );
   const [portalAccessLoading, setPortalAccessLoading] = useState(() => Boolean(getPortalAccessTokenFromLocation()));
   const t = useMemo(() => createTranslator(language), [language]);
+  const { theme, toggleTheme } = useTheme();
+  const publicBackground = useMemo(() => <PersistentScienceBackdrop />, []);
+  const publicLabels: PublicHeaderLabels = {
+    brandName: t("site.name"),
+    brandDescription: t("site.description"),
+    teacherLogin: t("nav.teacherLogin"),
+    home: t("nav.home"),
+    studentLogin: t("nav.studentLogin"),
+    aboutTeacher: t("landing.nav.aboutTeacher"),
+    contact: t("nav.contact"),
+    mainNavigation: t("nav.mobileNavigation"),
+    languageSelector: t("nav.language"),
+    themeToLight: t("theme.switchToLight"),
+    themeToDark: t("theme.switchToDark")
+  };
+  const publicLayoutProps = {
+    currentPath: path,
+    language: language as PublicLanguage,
+    theme: theme as PublicTheme,
+    labels: publicLabels,
+    background: publicBackground,
+    onLanguageChange: setLanguage,
+    onToggleTheme: toggleTheme,
+    onNavigate: navigate
+  };
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -3679,7 +4031,7 @@ function App() {
   }
 
   if (portalAccessLoading) {
-    return <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth"><main className="teacher-auth"><section className="login-card teacher-login-card student-login-card"><p>{t("student.enteringButton")}</p></section></main></Shell>;
+    return <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth"><main className="teacher-auth"><GlassLoader label={t("public.preparing")} /></main></Shell>;
   }
 
   function setLanguage(nextLanguage: Language) {
@@ -3878,26 +4230,9 @@ function App() {
     }
 
     return (
-      <TeacherLogin
-        language={language}
-        setLanguage={setLanguage}
-        onLogin={(session) => {
-          saveTeacherSession(session);
-          setTeacherSession(session);
-          navigate("/teacher/dashboard");
-        }}
-        t={t}
-      />
-    );
-  }
-
-  if (path === "/teacher/dashboard") {
-    if (!teacherSession) {
-      window.history.replaceState({}, "", "/teacher/login");
-      return (
+      <PublicLayout {...publicLayoutProps} variant="auth">
         <TeacherLogin
           language={language}
-          setLanguage={setLanguage}
           onLogin={(session) => {
             saveTeacherSession(session);
             setTeacherSession(session);
@@ -3905,6 +4240,25 @@ function App() {
           }}
           t={t}
         />
+      </PublicLayout>
+    );
+  }
+
+  if (path === "/teacher/dashboard") {
+    if (!teacherSession) {
+      window.history.replaceState({}, "", "/teacher/login");
+      return (
+        <PublicLayout {...publicLayoutProps} variant="auth">
+          <TeacherLogin
+            language={language}
+            onLogin={(session) => {
+              saveTeacherSession(session);
+              setTeacherSession(session);
+              navigate("/teacher/dashboard");
+            }}
+            t={t}
+          />
+        </PublicLayout>
       );
     }
 
@@ -3923,16 +4277,17 @@ function App() {
     if (!teacherSession) {
       window.history.replaceState({}, "", "/teacher/login");
       return (
-        <TeacherLogin
-          language={language}
-          setLanguage={setLanguage}
-          onLogin={(session) => {
-            saveTeacherSession(session);
-            setTeacherSession(session);
-            navigate("/teacher/dashboard");
-          }}
-          t={t}
-        />
+        <PublicLayout {...publicLayoutProps} variant="auth">
+          <TeacherLogin
+            language={language}
+            onLogin={(session) => {
+              saveTeacherSession(session);
+              setTeacherSession(session);
+              navigate("/teacher/dashboard");
+            }}
+            t={t}
+          />
+        </PublicLayout>
       );
     }
     return <NotificationsManagementCenter session={teacherSession} language={language} t={t} onBack={() => {
@@ -3941,17 +4296,90 @@ function App() {
     }} />;
   }
 
-  const publicSlug = getCurrentSiteSlug(path);
-  if (publicSlug) {
+  const publicRoute = resolvePublicRoute(path);
+  if (publicRoute) {
+    if (publicRoute.kind === "landing") {
+      return <PublicLayout {...publicLayoutProps} variant="landing"><LandingPage language={language} t={t} /></PublicLayout>;
+    }
+
+    if (publicRoute.kind === "content" && publicRoute.slug) {
+      return (
+        <PublicLayout {...publicLayoutProps} variant="content">
+          <PublicContentPage
+            slug={publicRoute.slug}
+            studentId={loginData?.student?.id}
+            studentCode={loginData?.student?.student_code}
+            language={language}
+            setLanguage={setLanguage}
+            t={t}
+          />
+        </PublicLayout>
+      );
+    }
+
     return (
-      <PublicContentPage
-        slug={publicSlug}
-        studentId={loginData?.student?.id}
-        studentCode={loginData?.student?.student_code}
-        language={language}
-        setLanguage={setLanguage}
-        t={t}
-      />
+      <PublicLayout {...publicLayoutProps} variant="auth">
+        <main className="teacher-auth public-student-login" id="student-login">
+          <section className="login-card teacher-login-card student-login-card" aria-labelledby="student-login-title">
+            <h1 id="student-login-title">{t("student.loginTitle")}</h1>
+            <form onSubmit={handleLogin}>
+              <label htmlFor="student-code">{t("student.codeLabel")}</label>
+              <input
+                id="student-code"
+                dir="ltr"
+                value={studentCode}
+                onChange={(event) => setStudentCode(normalizeScanValue(event.target.value))}
+                placeholder={t("student.codePlaceholder")}
+                autoComplete="off"
+                autoFocus
+              />
+              {error ? <p className="form-error">{error}</p> : null}
+              <button className="primary-button" disabled={loading} type="submit">
+                {loading ? t("student.enteringButton") : t("student.enterButton")}
+              </button>
+              <button className="secondary-button student-login-lookup-button" type="button" onClick={openLookupModal}>
+                {t("student.findCodeButton")}
+              </button>
+            </form>
+          </section>
+        </main>
+        {lookupOpen ? (
+          <div className="modal-backdrop" role="presentation">
+            <section className="modal" role="dialog" aria-modal="true" aria-labelledby="lookup-title">
+              <button className="close-button" aria-label={t("student.close")} onClick={closeLookupModal}>×</button>
+              <h2 id="lookup-title">{t("student.lookupTitle")}</h2>
+              <p>{t("student.lookupHelp")}</p>
+              <form onSubmit={handleLookup}>
+                <input
+                  value={lookupValue}
+                  onChange={(event) => {
+                    setLookupValue(normalizeDigits(event.target.value));
+                    setLookupError("");
+                    setLookupResult("");
+                  }}
+                  placeholder={t("student.lookupPlaceholder")}
+                  inputMode="numeric"
+                  autoComplete="off"
+                />
+                {lookupError ? <p className="form-error">{lookupError}</p> : null}
+                <button className="primary-button" type="submit" disabled={lookupLoading}>
+                  {lookupLoading ? t("student.lookupLoading") : t("student.lookupButton")}
+                </button>
+                {lookupResult ? (
+                  <div className="lookup-result-row" aria-live="polite">
+                    <p className="lookup-result">{lookupResult}</p>
+                    {lookupStudentCode ? (
+                      <button className="copy-code-button" type="button" onClick={copyLookupStudentCode} aria-label={t("student.copyCode")}>
+                        {lookupCopied ? t("student.codeCopied") : t("student.copyCode")}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </form>
+            </section>
+          </div>
+        ) : null}
+      </PublicLayout>
     );
   }
 
@@ -4083,6 +4511,7 @@ function PublicContentPage({
   const [loadedSlug, setLoadedSlug] = useState<SiteSlug | null>(null);
   const [contactSent, setContactSent] = useState(false);
   const [contactError, setContactError] = useState("");
+  const [contactSubmitting, setContactSubmitting] = useState(false);
   const [contactForm, setContactForm] = useState({ name: "", phone: "", message: "" });
   const isLoading = loadedSlug !== slug;
   const view = page && !isLoading ? localizedPage(page, language) : null;
@@ -4115,70 +4544,76 @@ function PublicContentPage({
     setContactForm((value) => ({ ...value, phone }));
     setContactError(!/^\d{11}$/.test(phone) ? t("errors.phoneLength") : "");
     if (!/^\d{11}$/.test(phone)) return;
-    const response = await fetch(`${API_BASE_URL}/site/contact`, { method: "POST", headers: { "Content-Type": "application/json", ...(studentCode ? studentAuthHeaders(studentCode) : {}) }, body: JSON.stringify({ ...contactForm, student_id: studentId }) });
-    if (response.ok) { setContactSent(true); setContactForm({ name: "", phone: "", message: "" }); }
+    setContactSubmitting(true);
+    setContactSent(false);
+    try {
+      const response = await fetch(`${API_BASE_URL}/site/contact`, { method: "POST", headers: { "Content-Type": "application/json", ...(studentCode ? studentAuthHeaders(studentCode) : {}) }, body: JSON.stringify({ ...contactForm, phone, student_id: studentId }) });
+      if (!response.ok) throw new Error("contact_submit_failed");
+      setContactSent(true);
+      setContactForm({ name: "", phone: "", message: "" });
+    } catch {
+      setContactError(t("contact.submitFailed"));
+    } finally {
+      setContactSubmitting(false);
+    }
   }
 
   if (!view) {
     return (
-      <Shell language={language} setLanguage={setLanguage} t={t} pageVariant="public">
-        <main className="content-page public-content-page">
-          <section className="content-hero content-loading" aria-live="polite">
-            <p>{t("public.loading")}</p>
-          </section>
-        </main>
-      </Shell>
+      <main className={`content-page public-content-page ${slug === "about-teacher" ? "about-teacher-content" : ""}`}>
+        <GlassLoader label={t("public.preparing")} />
+      </main>
     );
   }
 
   return (
-    <Shell language={language} setLanguage={setLanguage} t={t} pageVariant="public">
-      <main className="content-page public-content-page">
-        <section className="content-hero">
-          {slug !== "about-teacher" ? (
-            <p className="eyebrow">
-              {t(
-                `nav.${
-                  slug === "about-center"
-                    ? "aboutCenter"
-                    : slug === "tips"
-                      ? "tips"
-                      : "contact"
-                }` as TranslationKey
-              )}
-            </p>
-          ) : null}
-          <h1>{view.title}</h1>
-          <p>{view.subtitle}</p>
-        </section>
+    <main className={`content-page public-content-page ${slug === "about-teacher" ? "about-teacher-content" : ""}`}>
+        {slug !== "about-teacher" ? (
+          <section className={`content-hero ${slug === "contact" ? "contact-hero" : ""}`}>
+            {slug !== "contact" ? (
+              <p className="eyebrow">
+                {t(
+                  `nav.${
+                    slug === "about-center"
+                      ? "aboutCenter"
+                      : slug === "tips"
+                        ? "tips"
+                        : "contact"
+                  }` as TranslationKey
+                )}
+              </p>
+            ) : null}
+            <h1>{view.title}</h1>
+            <p>{view.subtitle}</p>
+          </section>
+        ) : null}
 
         {slug === "about-teacher" ? (
-          <section className="content-grid">
-            <article className="content-panel wide teacher-profile-panel">
+          <section className="about-teacher-layout" aria-labelledby="about-teacher-name">
+            <article className="about-teacher-profile">
               <div className="teacher-profile-photo">
                 <img src="/assets/teacher-profile.png" alt={view.content.teacherName} />
               </div>
               <div className="teacher-profile-copy">
-                <h2>{view.content.teacherName}</h2>
+                <span className="about-teacher-badge">{t("landing.badge")}</span>
+                <h1 id="about-teacher-name">{view.content.teacherName}</h1>
                 <p>{view.content.bio}</p>
               </div>
             </article>
-            <article className="content-panel">
-              <span>{t("public.statExperience")}</span>
-              <strong>{view.content.experienceYears}</strong>
-            </article>
-            <article className="content-panel">
-              <span>{t("public.teachingStyle")}</span>
-              <p>{view.content.teachingStyle}</p>
-            </article>
-            <article className="content-panel wide">
-              <span>{t("public.results")}</span>
-              <div className="pill-row">
-                {(view.content.stats || []).map((item: string) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </div>
-            </article>
+            <div className="about-teacher-stats" aria-label={t("public.results")}>
+              <article className="about-stat-card">
+                <strong>{t("about.teacher.statExperience")}</strong>
+                <span>{t("about.teacher.statExperienceDescription")}</span>
+              </article>
+              <article className="about-stat-card">
+                <strong>{t("about.teacher.statStudents")}</strong>
+                <span>{t("about.teacher.statStudentsDescription")}</span>
+              </article>
+              <article className="about-stat-card">
+                <strong>{t("about.teacher.statResults")}</strong>
+                <span>{t("about.teacher.statResultsDescription")}</span>
+              </article>
+            </div>
           </section>
         ) : null}
 
@@ -4229,47 +4664,60 @@ function PublicContentPage({
         ) : null}
 
         {slug === "contact" ? (
-          <section className="content-grid">
-            <article className="content-panel">
-              <span>{t("contact.whatsapp")}</span>
-              <strong>{view.content.whatsapp}</strong>
-            </article>
-            <article className="content-panel">
-              <span>{t("contact.facebook")}</span>
-              <strong>{view.content.facebook}</strong>
-            </article>
-            <article className="content-panel">
-              <span>{t("contact.youtube")}</span>
-              <strong>{view.content.youtube}</strong>
+          <section className="contact-layout" aria-label={view.title}>
+            <article className="content-panel contact-social-panel">
+              <h2>{t("contact.directTitle")}</h2>
+              <p>{t("contact.directSubtitle")}</p>
+              <div className="contact-social-links">
+                <a className="contact-social-link whatsapp" href={whatsappUrl(view.content.whatsapp)} target="_blank" rel="noreferrer" aria-label={t("contact.whatsappAction")}>
+                  <ContactSocialIcon kind="whatsapp" />
+                  <span className="contact-social-copy"><strong>{t("contact.whatsappAction")}</strong><small>{t("contact.whatsapp")}</small></span>
+                </a>
+                <a className="contact-social-link facebook" href={externalUrl(view.content.facebook)} target="_blank" rel="noreferrer" aria-label={t("contact.facebookAction")}>
+                  <ContactSocialIcon kind="facebook" />
+                  <span className="contact-social-copy"><strong>{t("contact.facebookAction")}</strong><small>{t("contact.facebook")}</small></span>
+                </a>
+                <a className="contact-social-link youtube" href={externalUrl(view.content.youtube)} target="_blank" rel="noreferrer" aria-label={t("contact.youtubeAction")}>
+                  <ContactSocialIcon kind="youtube" />
+                  <span className="contact-social-copy"><strong>{t("contact.youtubeAction")}</strong><small>{t("contact.youtube")}</small></span>
+                </a>
+              </div>
             </article>
             <article className="content-panel contact-form-panel">
-              <span>{view.content.formIntro}</span>
+              <h2>{t("contact.formTitle")}</h2>
+              <p>{view.content.formIntro || t("contact.formSubtitle")}</p>
               <form onSubmit={submitContact}>
-                <input value={contactForm.name} onChange={(e)=>setContactForm({...contactForm,name:e.target.value})} placeholder={t("contact.name")} />
-                <input type="text" value={contactForm.phone} onChange={(e)=>{setContactError("");setContactForm({...contactForm,phone:normalizeDigits(e.target.value)});}} placeholder={t("contact.phone")} inputMode="numeric" />
+                <label className="contact-form-field" htmlFor="contact-name">
+                  <span>{t("contact.name")}</span>
+                  <input id="contact-name" value={contactForm.name} onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })} placeholder={t("contact.name")} autoComplete="name" />
+                </label>
+                <label className="contact-form-field" htmlFor="contact-phone">
+                  <span>{t("contact.phone")}</span>
+                  <input id="contact-phone" type="text" value={contactForm.phone} onChange={(e) => { setContactError(""); setContactForm({ ...contactForm, phone: normalizeDigits(e.target.value) }); }} placeholder={t("contact.phone")} inputMode="numeric" autoComplete="tel" />
+                </label>
                 {contactError ? <p className="form-error">{contactError}</p> : null}
-                <textarea value={contactForm.message} onChange={(e)=>setContactForm({...contactForm,message:e.target.value})} placeholder={t("contact.message")} rows={4} />
-                <button className="primary-button" type="submit">
-                  {t("contact.send")}
+                <label className="contact-form-field" htmlFor="contact-message">
+                  <span>{t("contact.message")}</span>
+                  <textarea id="contact-message" value={contactForm.message} onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })} placeholder={t("contact.message")} rows={4} />
+                </label>
+                <button className="primary-button" type="submit" disabled={contactSubmitting}>
+                  {contactSubmitting ? t("contact.sending") : t("contact.send")}
                 </button>
-                {contactSent ? <p className="lookup-result">{t("contact.success")}</p> : null}
+                {contactSent ? <p className="lookup-result" role="status">{t("contact.success")}</p> : null}
               </form>
             </article>
           </section>
         ) : null}
-      </main>
-    </Shell>
+    </main>
   );
 }
 
 function TeacherLogin({
   language,
-  setLanguage,
   onLogin,
   t
 }: {
   language: Language;
-  setLanguage: (language: Language) => void;
   onLogin: (session: TeacherSession) => void;
   t: Translator;
 }) {
@@ -4309,11 +4757,10 @@ function TeacherLogin({
   }
 
   return (
-    <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth">
-      <main className="teacher-auth">
-        <ScienceBackdrop variant="teacher" />
-        <section className="login-card teacher-login-card" aria-labelledby="teacher-login-title">
-          <h1 id="teacher-login-title">{t("teacher.loginTitle")}</h1>
+    <>
+      <main className="teacher-auth public-teacher-login">
+        <section className="login-card teacher-login-card public-teacher-login-card" aria-labelledby="teacher-login-title">
+          <h1 id="teacher-login-title">{t("teacher.adminPortalTitle")}</h1>
           <form onSubmit={handleTeacherLogin}>
             <label htmlFor="teacher-identifier">{t("teacher.usernameLabel")}</label>
             <input
@@ -4343,7 +4790,7 @@ function TeacherLogin({
         </section>
       </main>
       <PasswordRecoveryDialog open={recoveryOpen} identifier={identifier} language={language} t={(key, values) => t(key as TranslationKey, values)} onClose={() => setRecoveryOpen(false)} />
-    </Shell>
+    </>
   );
 }
 
@@ -7280,9 +7727,17 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
   const [serialRegenerating, setSerialRegenerating] = useState(false);
   const [noteBody, setNoteBody] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [isCopied, setIsCopied] = useState(false);
+  const copyResetTimeoutRef = useRef<number | null>(null);
   const profileModalRef = useRef<HTMLElement | null>(null);
   const auth = { Authorization: `Bearer ${session.token}` };
   const language: Language = document.documentElement.lang === "en" ? "en" : "ar";
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current !== null) window.clearTimeout(copyResetTimeoutRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -7388,6 +7843,23 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
     } finally { setSerialRegenerating(false); }
   }
 
+  async function handleCopy() {
+    const studentCode = profile?.student?.student_code;
+    if (!studentCode || !navigator.clipboard) return;
+
+    try {
+      await navigator.clipboard.writeText(studentCode);
+      setIsCopied(true);
+      if (copyResetTimeoutRef.current !== null) window.clearTimeout(copyResetTimeoutRef.current);
+      copyResetTimeoutRef.current = window.setTimeout(() => {
+        setIsCopied(false);
+        copyResetTimeoutRef.current = null;
+      }, 2000);
+    } catch {
+      setStatus(t("student.copyFailed"));
+    }
+  }
+
   const money = (value: unknown) => Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)} EGP` : "—";
   const profilePercent = (value: unknown) => value == null || !Number.isFinite(Number(value)) ? "—" : `${Number(value).toFixed(1)}%`;
   const attentionReasonLabel = (reason: any) => reason.type === "attendance" ? t("dashboard.attentionAttendance", { value: profilePercent(reason.value) }) : reason.type === "evaluation" ? t("dashboard.attentionEvaluation", { value: profilePercent(reason.value) }) : t("dashboard.attentionPayment", { amount: money(reason.amount) });
@@ -7402,7 +7874,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
         <article className="student360-attention-card"><span>{t("dashboard.needsAttention")}</span>{profile.summary?.attention?.length ? <ul>{profile.summary.attention.map((reason: any, index: number) => <li key={`${reason.type}-${index}`}>{attentionReasonLabel(reason)}</li>)}</ul> : <strong className="student360-ok">{t("dashboard.noCurrentAttention")}</strong>}</article>
       </section>
       <section className="profile-section"><h3>{t("admin.basicInfo")}</h3><div className="profile-info-grid">
-        <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b>{profile.student.student_code || "—"}</span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
+        <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b><strong className="profile-student-code-value" dir="ltr">{profile.student.student_code || "—"}<button className="profile-copy-button" type="button" onClick={() => void handleCopy()} aria-label={t("admin.copyStudentCode")} title={t("admin.copyStudentCodeTitle")} disabled={!profile.student.student_code}>{isCopied ? <svg className="profile-copy-icon is-copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg> : <svg className="profile-copy-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /></svg>}</button></strong></span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
       </div></section>
       <section className="profile-section profile-label-section"><h3>{t("admin.labelDetails")}</h3><div className="profile-label-card"><StudentLabelPreview student={profile.student} />{sessionHasPermission(session, "students.manage") ? <div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printProfileLabel} disabled={labelPrinting || !labelScanSerial(profile.student)}>{labelPrinting ? t("admin.printingLabel") : t("admin.printLabel")}</button><button className="secondary-button compact-button" type="button" onClick={regenerateProfileScanSerial} disabled={serialRegenerating}>{serialRegenerating ? t("admin.updating") : t("admin.regenerateScanSerial")}</button></div> : null}</div></section>
       {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{formatTimeOfDay(row.start_time, language)}–{formatTimeOfDay(row.end_time, language)}</span></small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
@@ -7832,14 +8304,17 @@ function LegacyScannerPanel({ session, language, t, selectedSessionId = "", onOp
           <h2>{t("admin.tabs.scanner")}</h2>
           <p>{t("scanner.inputLabel")}</p>
         </div>
-        <button className="secondary-button compact-button scanner-camera-button" type="button" onClick={onOpenCamera}>
-          <span aria-hidden="true">▥</span>{t("scanner.openCamera")}
-        </button>
       </div>
-      <form onSubmit={(event) => void scan(codeRef.current, event)}>
-        <label>
+      <button className="secondary-button compact-button scanner-camera-button" type="button" onClick={onOpenCamera}>
+        <span aria-hidden="true">▥</span>{t("scanner.openCamera")}
+      </button>
+      <form className="scanner-manual-form" onSubmit={(event) => void scan(codeRef.current, event)}>
+        <label className="scanner-manual-field-label" htmlFor="legacy-scanner-panel-code">
           {t("scanner.inputLabel")}
+        </label>
+        <div className="scanner-manual-row">
           <input
+            id="legacy-scanner-panel-code"
             ref={inputRef}
             dir="ltr"
             autoFocus
@@ -7851,10 +8326,10 @@ function LegacyScannerPanel({ session, language, t, selectedSessionId = "", onOp
             autoComplete="off"
             disabled={scanning}
           />
-        </label>
-        <button className="primary-button" type="submit" disabled={scanning || !code.trim()}>
-          {scanning ? t("dashboard.refreshing") : t("scanner.submit")}
-        </button>
+          <button className="primary-button scanner-submit-button" type="submit" disabled={scanning || !code.trim()}>
+            {scanning ? t("dashboard.refreshing") : t("scanner.submit")}
+          </button>
+        </div>
       </form>
       {student ? (
         <div className={`status-panel ${scanState === "success" ? "success" : "warning"}`}>
@@ -7862,7 +8337,7 @@ function LegacyScannerPanel({ session, language, t, selectedSessionId = "", onOp
           <span>{student.student_serial || student.scan_serial || student.student_code} · {student.group_name} · {student.grade_level}</span>
         </div>
       ) : null}
-      {message ? <p className={scanState === "success" ? "lookup-result" : "form-error"} role="status">{message}</p> : null}
+      {message ? <p className={`scanner-result-message ${scanState === "success" ? "lookup-result" : "form-error"}`} role="status">{message}</p> : null}
     </section>
   );
 }
@@ -7891,14 +8366,17 @@ function ScannerPanel({ session, language, t, selectedSessionId = "", onOpenCame
           <h2>{t("admin.tabs.scanner")}</h2>
           <p>{t("scanner.inputLabel")}</p>
         </div>
-        <button className="secondary-button compact-button scanner-camera-button" type="button" onClick={onOpenCamera}>
-          <span aria-hidden="true">▥</span>{t("scanner.openCamera")}
-        </button>
       </div>
-      <form onSubmit={scanner.handleSubmit}>
-        <label>
+      <button className="secondary-button compact-button scanner-camera-button" type="button" onClick={onOpenCamera}>
+        <span aria-hidden="true">▥</span>{t("scanner.openCamera")}
+      </button>
+      <form className="scanner-manual-form" onSubmit={scanner.handleSubmit}>
+        <label className="scanner-manual-field-label" htmlFor="scanner-panel-code">
           {t("scanner.inputLabel")}
+        </label>
+        <div className="scanner-manual-row">
           <input
+            id="scanner-panel-code"
             ref={scanner.inputRef}
             dir="ltr"
             autoFocus
@@ -7909,10 +8387,10 @@ function ScannerPanel({ session, language, t, selectedSessionId = "", onOpenCame
             placeholder={t("scanner.inputPlaceholder")}
             autoComplete="off"
           />
-        </label>
-        <button className="primary-button" type="submit" disabled={!scanner.inputValue.trim()}>
-          {scanner.pendingCount ? `${t("dashboard.refreshing")} · ${scanner.pendingCount}` : t("scanner.submit")}
-        </button>
+          <button className="primary-button scanner-submit-button" type="submit" disabled={!scanner.inputValue.trim()}>
+            {scanner.pendingCount ? `${t("dashboard.refreshing")} · ${scanner.pendingCount}` : t("scanner.submit")}
+          </button>
+        </div>
       </form>
       {scanner.student ? (
         <div className={`status-panel ${scanner.scanState === "success" ? "success" : "warning"}`}>
@@ -7920,7 +8398,7 @@ function ScannerPanel({ session, language, t, selectedSessionId = "", onOpenCame
           <span>{scanner.student.student_serial || scanner.student.scan_serial || scanner.student.student_code} · {scanner.student.group_name} · {scanner.student.grade_level}</span>
         </div>
       ) : null}
-      {scanner.message ? <p className={scanner.scanState === "success" ? "lookup-result" : scanner.scanState === "loading" ? "scanner-queued-message" : "form-error"} role="status">{scanner.message}</p> : null}
+      {scanner.message ? <p className={`scanner-result-message ${scanner.scanState === "success" ? "lookup-result" : scanner.scanState === "loading" ? "scanner-queued-message" : "form-error"}`} role="status">{scanner.message}</p> : null}
     </section>
   );
 }
@@ -9542,6 +10020,13 @@ function SiteContentEditor({
   );
 }
 
+function examWhatsAppState(record: Record<string, any>, sendingGradeId: number | null) {
+  if (sendingGradeId === Number(record.id)) return "processing";
+  const status = String(record.whatsapp_status || "").toLowerCase();
+  if (status === "pending" || status === "processing" || status === "sent" || status === "failed") return status;
+  return record.whatsapp_notified === true ? "sent" : "idle";
+}
+
 function ExamResultsManager({ session, t }: { session: TeacherSession; t: Translator }) {
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [students, setStudents] = useState<AdminStudent[]>([]);
@@ -9587,6 +10072,20 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
       .catch((error) => setStatus(error instanceof Error ? error.message : t("admin.profileLoadFailed")))
       .finally(() => setRecordsLoading(false));
   }, [selectedGroup, recordSearch, session.token, t]);
+
+  useEffect(() => {
+    if (!records.some((record) => ["pending", "processing"].includes(String(record.whatsapp_status)))) return undefined;
+    const timer = window.setInterval(() => {
+      const params = new URLSearchParams();
+      if (selectedGroup) params.set("group_id", selectedGroup);
+      if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
+      fetch(`${API_BASE_URL}/admin/exams/results?${params.toString()}`, { headers: { Authorization: `Bearer ${session.token}` } })
+        .then((response) => response.json())
+        .then((data) => { if (data.ok) setRecords(Array.isArray(data.results) ? data.results : []); })
+        .catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [records, selectedGroup, recordSearch, session.token]);
 
   const visibleStudents = students.filter((student) => {
     const matchesGroup = !selectedGroup || String(student.group_id) === selectedGroup;
@@ -9672,7 +10171,10 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok || !data.ok) throw new Error(data.status === "invalid_phone" ? t("whatsapp.invalidPhone") : t("whatsapp.saveFailed"));
-      setStatus(t("whatsapp.gradeQueued"));
+      setRecords((current) => current.map((record) => Number(record.id) === recordId
+        ? { ...record, whatsapp_notified: false, whatsapp_status: data.status || "pending", whatsapp_error: null }
+        : record));
+      setStatus(data.reason === "already_queued" ? t("whatsapp.gradeAlreadyQueued") : t("whatsapp.gradeQueued"));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : t("whatsapp.saveFailed"));
     } finally {
@@ -9725,7 +10227,7 @@ function ExamResultsManager({ session, t }: { session: TeacherSession; t: Transl
           <label className="exam-records-search">{t("admin.searchExamRecords")}
             <input value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="A-6251" />
           </label>
-          {recordsLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : records.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("table.exam")}</th><th>{t("table.date")}</th><th>{t("table.score")}</th><th>{t("table.assessment")}</th>{canSendGrades ? <th>{t("whatsapp.sendGrade")}</th> : null}<th>{t("admin.editExamResult")}</th><th>{t("admin.deleteExamResult")}</th></tr></thead><tbody>{records.map((record) => <tr key={record.id}><td>{record.full_name}</td><td>{record.student_code}</td><td>{record.title}</td><td>{formatExamResultDate(record.exam_date)}</td><td>{record.score}/{record.max_score}</td><td>{record.assessment || record.note || "—"}</td>{canSendGrades ? <td><button className={`secondary-button compact-button whatsapp-send-button ${sendingGradeId === Number(record.id) ? "is-loading" : ""}`} type="button" onClick={() => void sendGrade(Number(record.id))} disabled={sendingGradeId !== null}><span aria-hidden="true">◉</span>{sendingGradeId === Number(record.id) ? t("whatsapp.sendingGrade") : t("whatsapp.sendGrade")}</button></td> : null}<td><button className="secondary-button compact-button" type="button" onClick={() => setForm({ student_id: String(record.student_id), title: String(record.title || ""), exam_date: String(record.exam_date || "").slice(0, 10), max_score: String(record.max_score || "10"), score: String(record.score ?? ""), assessment: String(record.assessment || record.note || "") })}>{t("admin.editExamResult")}</button></td><td><button className="danger-button compact-button" type="button" onClick={() => deleteRecord(Number(record.id))} disabled={deletingRecordId === Number(record.id)}>{deletingRecordId === Number(record.id) ? t("admin.saving") : t("admin.deleteExamResult")}</button></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("admin.noExamResults")}</p>}
+          {recordsLoading ? <p className="field-hint">{t("admin.profileLoading")}</p> : records.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("table.exam")}</th><th>{t("table.date")}</th><th>{t("table.score")}</th><th>{t("table.assessment")}</th>{canSendGrades ? <th>{t("whatsapp.sendGrade")}</th> : null}<th>{t("admin.editExamResult")}</th><th>{t("admin.deleteExamResult")}</th></tr></thead><tbody>{records.map((record) => { const deliveryState = examWhatsAppState(record, sendingGradeId); const deliveryLabel = deliveryState === "sent" ? t("whatsapp.gradeStatusSent") : deliveryState === "failed" ? t("whatsapp.gradeStatusFailed") : deliveryState === "processing" ? t("whatsapp.gradeStatusSending") : deliveryState === "pending" ? t("whatsapp.gradeStatusQueued") : t("whatsapp.notSent"); const buttonLabel = deliveryState === "failed" ? t("whatsapp.retryGrade") : deliveryState === "sent" ? t("whatsapp.sendGradeAgain") : deliveryState === "processing" ? t("whatsapp.sendingGrade") : t("whatsapp.sendGrade"); return <tr key={record.id}><td>{record.full_name}</td><td>{record.student_code}</td><td>{record.title}</td><td>{formatExamResultDate(record.exam_date)}</td><td>{record.score}/{record.max_score}</td><td>{record.assessment || record.note || "—"}</td>{canSendGrades ? <td><div className="whatsapp-grade-action"><span className={`whatsapp-delivery-status ${deliveryState}`} title={deliveryState === "failed" ? record.whatsapp_error || deliveryLabel : deliveryLabel}><i aria-hidden="true" />{deliveryLabel}</span><button className={`secondary-button compact-button whatsapp-send-button ${deliveryState === "processing" ? "is-loading" : ""}`} type="button" onClick={() => void sendGrade(Number(record.id))} disabled={sendingGradeId !== null || deliveryState === "pending" || deliveryState === "processing"}><span aria-hidden="true">◉</span>{buttonLabel}</button></div></td> : null}<td><button className="secondary-button compact-button" type="button" onClick={() => setForm({ student_id: String(record.student_id), title: String(record.title || ""), exam_date: String(record.exam_date || "").slice(0, 10), max_score: String(record.max_score || "10"), score: String(record.score ?? ""), assessment: String(record.assessment || record.note || "") })}>{t("admin.editExamResult")}</button></td><td><button className="danger-button compact-button" type="button" onClick={() => deleteRecord(Number(record.id))} disabled={deletingRecordId === Number(record.id)}>{deletingRecordId === Number(record.id) ? t("admin.saving") : t("admin.deleteExamResult")}</button></td></tr>; })}</tbody></table></div> : <p className="empty-state">{t("admin.noExamResults")}</p>}
         </> : null}
       </div>
     </section>
@@ -9753,6 +10255,10 @@ function ScienceBackdrop({ variant }: { variant: "student" | "teacher" }) {
     </div>
   );
 }
+
+const PersistentScienceBackdrop = React.memo(function PersistentScienceBackdrop() {
+  return <ScienceBackdrop variant="student" />;
+});
 
 function Shell({
   children,

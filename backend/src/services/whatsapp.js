@@ -525,13 +525,57 @@ function notificationRefCode(prefix, dateValue, id, unique = false) {
 
 async function enqueueJob({ notificationType, sourceId, studentId, phone, payload, refCode, attendanceRecordId = null }) {
   const queuedPayload = { ...(payload || {}), type: notificationType };
-  await query(`
+  const existing = await query(
+    `SELECT id, status, ref_code
+     FROM whatsapp_notification_jobs
+     WHERE notification_type = $1 AND source_id = $2
+     ORDER BY id DESC
+     LIMIT 1`,
+    [notificationType, sourceId]
+  );
+  const previous = existing.rows[0];
+  if (previous?.status === "pending" || previous?.status === "processing") {
+    return { queued: false, reason: "already_queued", job_id: previous.id, status: previous.status, ref_code: previous.ref_code };
+  }
+  if (previous?.status === "failed") {
+    const retried = await query(
+      `UPDATE whatsapp_notification_jobs
+       SET student_id = $2, phone_number = $3, payload = $4::jsonb, ref_code = $5,
+           status = 'pending', attempts = 0, last_error = NULL, template_index = NULL,
+           template_text = NULL, rendered_message = NULL, next_attempt_at = NOW(),
+           sent_at = NULL, updated_at = NOW()
+       WHERE id = $1 AND status = 'failed'
+       RETURNING id, status, ref_code`,
+      [previous.id, studentId, phone, JSON.stringify(queuedPayload), refCode]
+    );
+    if (retried.rowCount) {
+      wakeWhatsAppWorker();
+      return { queued: true, retried: true, job_id: retried.rows[0].id, status: retried.rows[0].status, ref_code: retried.rows[0].ref_code };
+    }
+  }
+  const inserted = await query(`
     INSERT INTO whatsapp_notification_jobs (notification_type, source_id, attendance_record_id, student_id, phone_number, payload, ref_code)
     VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
-    ON CONFLICT DO NOTHING`, [
+    ON CONFLICT DO NOTHING
+    RETURNING id, status, ref_code`, [
     notificationType, sourceId, attendanceRecordId, studentId, phone, JSON.stringify(queuedPayload), refCode
   ]);
-  wakeWhatsAppWorker();
+  if (inserted.rowCount) {
+    wakeWhatsAppWorker();
+    return { queued: true, job_id: inserted.rows[0].id, status: inserted.rows[0].status, ref_code: inserted.rows[0].ref_code };
+  }
+  const conflicting = await query(
+    `SELECT id, status, ref_code
+     FROM whatsapp_notification_jobs
+     WHERE notification_type = $1 AND source_id = $2 AND status IN ('pending', 'processing')
+     ORDER BY id DESC
+     LIMIT 1`,
+    [notificationType, sourceId]
+  );
+  if (conflicting.rowCount) {
+    return { queued: false, reason: "already_queued", job_id: conflicting.rows[0].id, status: conflicting.rows[0].status, ref_code: conflicting.rows[0].ref_code };
+  }
+  return { queued: false, reason: "queue_conflict" };
 }
 
 export async function enqueueAttendanceNotification({ attendanceRecordId, studentId }) {
@@ -579,12 +623,12 @@ export async function enqueueGradeNotification({ resultId }) {
   const score = Number(row.score);
   const percentage = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1).replace(/\.0$/, "") : "0";
   const refCode = notificationRefCode("GRD", row.exam_date, row.result_id, true);
-  await enqueueJob({ notificationType: "grade", sourceId: row.result_id, studentId: row.student_id, phone, refCode, payload: {
+  await query("UPDATE exam_results SET whatsapp_notified = FALSE WHERE id = $1", [row.result_id]);
+  const queue = await enqueueJob({ notificationType: "grade", sourceId: row.result_id, studentId: row.student_id, phone, refCode, payload: {
     student_name: row.student_name, student_code: row.student_code, exam_title: row.exam_title,
     score, max_score: maxScore, percentage, event_time: row.exam_date
   } });
-  await query("UPDATE exam_results SET whatsapp_notified = TRUE WHERE id = $1", [row.result_id]);
-  return { queued: true, ref_code: refCode };
+  return { ...queue, ref_code: queue.ref_code || refCode };
 }
 
 export async function enqueueReceiptNotification({ paymentId }) {
@@ -653,6 +697,11 @@ async function updateJob(id, status, fields = {}) {
   await query(`UPDATE whatsapp_notification_jobs SET status = $2, last_error = $3,
     next_attempt_at = COALESCE($4, next_attempt_at), sent_at = CASE WHEN $2 = 'sent' THEN NOW() ELSE sent_at END,
     updated_at = NOW() WHERE id = $1`, [id, status, fields.error || null, fields.nextAttemptAt || null]);
+}
+
+async function updateGradeNotificationState(job, notified) {
+  if (notificationTypeForJob(job) !== "grade" || !job?.source_id) return;
+  await query("UPDATE exam_results SET whatsapp_notified = $2 WHERE id = $1", [job.source_id, notified]);
 }
 
 async function processWhatsAppJob() {
@@ -724,9 +773,13 @@ async function processWhatsAppJob() {
     await state.socket.sendMessage(`${phone.slice(1)}@s.whatsapp.net`, messagePayload);
     state.lastSentAt = Date.now();
     await updateJob(job.id, "sent");
+    await updateGradeNotificationState(job, true);
   } catch (error) {
     console.error("WhatsApp notification worker error", error);
     if (job?.id) {
+      await updateGradeNotificationState(job, false).catch((stateError) => {
+        console.error("Failed to keep exam WhatsApp state unsent", stateError);
+      });
       const attempts = Number(job.attempts || 0);
       const retry = attempts < 3;
       const retryDelayMs = Math.min(15 * 60_000, 15_000 * (2 ** Math.max(0, attempts - 1)));
