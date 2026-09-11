@@ -425,9 +425,25 @@ adminAcademicRouter.get("/students", requirePermission("students.view"), async (
   try {
     const status = String(req.query.status || "active");
     const search = normalizeDigits(req.query.q || req.query.search || "").trim();
+    const quickFilter = String(req.query.filter || "").trim();
     const values = [status];
     const statusFilter = "(($1 = 'all') OR ($1 = 'deleted' AND s.deleted_at IS NOT NULL) OR ($1 = 'active' AND s.deleted_at IS NULL AND s.is_active=TRUE) OR ($1 = 'disabled' AND s.deleted_at IS NULL AND s.is_active=FALSE))";
     const filters = [statusFilter];
+    const todayCairo = "(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date";
+    const attendanceToday = `EXISTS (
+      SELECT 1 FROM attendance_records ar
+      JOIN attendance_sessions ats ON ats.id = ar.session_id
+      WHERE ar.student_id = s.id AND ats.session_date = ${todayCairo}
+        AND ar.status IN ('present', 'late')
+    )`;
+    if (quickFilter === "present_today") filters.push(attendanceToday);
+    else if (quickFilter === "absent_today") filters.push(`NOT ${attendanceToday}`);
+    else if (quickFilter === "special_financial") filters.push(`EXISTS (
+      SELECT 1 FROM fee_dues fd
+      WHERE fd.student_id = s.id AND fd.amount > fd.paid_amount
+        AND fd.due_month <= date_trunc('month', ${todayCairo})::date
+    )`);
+    else if (quickFilter) return res.status(400).json({ ok: false, status: "invalid_student_filter" });
     if (search) {
       values.push(`%${search}%`);
       const n = values.length;

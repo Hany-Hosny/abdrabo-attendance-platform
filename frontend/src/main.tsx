@@ -752,6 +752,14 @@ const translations = {
     "fees.remaining": "المتبقي",
     "fees.payFull": "دفع المبلغ الكامل",
     "fees.fullOnly": "الدفع الكامل فقط — لا يوجد دفع جزئي في الإصدار الأول.",
+    "fees.discountAmount": "الخصم (ج.م)",
+    "fees.discountHint": "يتم خصم القيمة من إجمالي المستحق.",
+    "fees.fullExemption": "إعفاء كامل",
+    "fees.exemptionHint": "تسجيل التسوية بدون تحصيل نقدي.",
+    "fees.exemptAmount": "إعفاء كامل — 0.00 EGP",
+    "fees.confirmAmount": "المبلغ المستحق الآن: {{amount}} ج.م",
+    "fees.confirmPayment": "تأكيد — {{amount}} ج.م",
+    "fees.applyExemption": "تطبيق الإعفاء",
     "fees.paymentRecorded": "تم تسجيل الدفع.",
     "fees.studentNotFound": "الطالب غير موجود.",
     "fees.alreadyPaid": "تم سداد المصروفات بالفعل.",
@@ -1396,6 +1404,11 @@ const translations = {
     "admin.noGroups": "لا توجد مجموعات بعد.",
     "admin.noStudents": "لا يوجد طلاب بعد.",
     "admin.searchStudents": "ابحث باسم الطالب أو الكود أو الهاتف أو المجموعة",
+    "admin.studentQuickFilters": "فلاتر الطلاب السريعة",
+    "admin.studentFilter.all": "الكل",
+    "admin.studentFilter.present_today": "حاضر اليوم",
+    "admin.studentFilter.absent_today": "غائب اليوم",
+    "admin.studentFilter.special_financial": "حالة مالية خاصة",
     "admin.groupFilter": "المجموعة",
     "admin.allGroups": "كل المجموعات",
     "admin.selectAll": "تحديد الكل",
@@ -2166,6 +2179,14 @@ const translations = {
     "fees.remaining": "Remaining",
     "fees.payFull": "Pay full amount",
     "fees.fullOnly": "Full payment only — partial payments are not available in V1.",
+    "fees.discountAmount": "Discount (EGP)",
+    "fees.discountHint": "The amount is deducted from the outstanding balance.",
+    "fees.fullExemption": "Full exemption",
+    "fees.exemptionHint": "Settle the balance without cash collection.",
+    "fees.exemptAmount": "Full exemption — 0.00 EGP",
+    "fees.confirmAmount": "Due now: {{amount}} EGP",
+    "fees.confirmPayment": "Confirm — {{amount}} EGP",
+    "fees.applyExemption": "Apply exemption",
     "fees.paymentRecorded": "Payment recorded.",
     "fees.studentNotFound": "Student not found.",
     "fees.alreadyPaid": "Fees already paid.",
@@ -2811,6 +2832,11 @@ const translations = {
     "admin.noGroups": "No groups yet.",
     "admin.noStudents": "No students yet.",
     "admin.searchStudents": "Search by student name, code, phone, or group",
+    "admin.studentQuickFilters": "Student quick filters",
+    "admin.studentFilter.all": "All",
+    "admin.studentFilter.present_today": "Present today",
+    "admin.studentFilter.absent_today": "Absent today",
+    "admin.studentFilter.special_financial": "Financial attention",
     "admin.groupFilter": "Group",
     "admin.selectAll": "Select All",
     "admin.deselectAll": "Deselect All",
@@ -6924,6 +6950,8 @@ function AcademicManager({
   const [detailFilter, setDetailFilter] = useState<RecordStatusFilter>("all");
   const [studentSearch, setStudentSearch] = useState("");
   const [studentGroupId, setStudentGroupId] = useState("");
+  const [studentQuickFilter, setStudentQuickFilter] = useState<"all" | "present_today" | "absent_today" | "special_financial">("all");
+  const [studentListLoading, setStudentListLoading] = useState(false);
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
   const [permanentBulkDeleteConfirmOpen, setPermanentBulkDeleteConfirmOpen] = useState(false);
@@ -6999,6 +7027,8 @@ function AcademicManager({
   }
 
   async function loadData() {
+    setStudentListLoading(true);
+    try {
     const groupResponse = await fetch(`${API_BASE_URL}/admin/groups`, { headers });
     const groupData = (await groupResponse.json()) as { ok: boolean; groups?: AdminGroup[]; centers?: Array<{ id: number; name: string }> };
     if (!groupResponse.ok || !groupData.ok) throw new Error(t("errors.loginFailed"));
@@ -7009,15 +7039,19 @@ function AcademicManager({
     const params = new URLSearchParams({ status: statusFilter });
     if (studentSearch.trim()) params.set("q", studentSearch.trim());
     if (studentGroupId) params.set("group_id", studentGroupId);
+    if (studentQuickFilter !== "all") params.set("filter", studentQuickFilter);
     const studentResponse = await fetch(`${API_BASE_URL}/admin/students?${params.toString()}`, { headers });
     const studentData = (await studentResponse.json()) as { ok: boolean; students?: AdminStudent[] };
     if (!studentResponse.ok || !studentData.ok) throw new Error(t("errors.loginFailed"));
     setStudents(studentData.students || []);
+    } finally {
+      setStudentListLoading(false);
+    }
   }
 
   useEffect(() => {
     loadData().catch((error) => setStatus(error instanceof Error ? error.message : t("errors.loginFailed")));
-  }, [statusFilter, studentSearch, studentGroupId]);
+  }, [statusFilter, studentSearch, studentGroupId, studentQuickFilter]);
 
   useEffect(() => {
     const visibleIds = new Set(students.map((student) => student.id));
@@ -7726,6 +7760,9 @@ function AcademicManager({
       {kind === "students" && session.teacher.role !== "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons">{(["active","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
 
       {kind === "students" ? <label className="student-search-field">{t("admin.searchStudents")}<input value={studentSearch} onChange={(e) => setStudentSearch(normalizeDigits(e.target.value))} placeholder={t("admin.searchStudents")} /></label> : null}
+      {kind === "students" ? <div className="student-quick-filters" role="group" aria-label={t("admin.studentQuickFilters")}>
+        {(["all", "present_today", "absent_today", "special_financial"] as const).map((filter) => <button key={filter} className={studentQuickFilter === filter ? "active" : ""} type="button" onClick={() => setStudentQuickFilter(filter)}>{t(`admin.studentFilter.${filter}` as TranslationKey)}</button>)}
+      </div> : null}
       {kind === "students" ? <div className="student-bulk-toolbar">
         <label className="student-group-filter">{t("admin.groupFilter")}
           <select value={studentGroupId} onChange={(event) => setStudentGroupId(event.target.value)}>
@@ -7817,7 +7854,7 @@ function AcademicManager({
         {groups.length === 0 ? <p className="empty-state">{t("admin.noGroups")}</p> : null}
       </div> : null}
       {kind === "students" && showStudents ? <div className="academic-list student-selection-list">
-        {students.map((student) => <StudentCard
+        {studentListLoading ? <div className="student-list-skeleton" aria-label={t("dashboard.refreshing")}><i /><i /><i /></div> : students.map((student) => <StudentCard
           key={student.id}
           student={student}
           t={t}
@@ -7835,7 +7872,7 @@ function AcademicManager({
           onRestore={(value) => void restoreStudent(value)}
           onPermanentDelete={(value) => void permanentlyDeleteStudent(value)}
         />)}
-        {!students.length ? <p className="empty-state">{t("admin.noStudents")}</p> : null}
+        {!studentListLoading && !students.length ? <p className="empty-state">{t("admin.noStudents")}</p> : null}
       </div> : null}
       {kind !== "groups" && status ? <p className={status.startsWith(t("admin.studentSaved", { code: "" })) ? "lookup-result" : "form-error"}>{status}</p> : null}
       {kind === "students" && studentBulkToast ? <div className={`student-bulk-toast ${studentBulkToast.type}`} role={studentBulkToast.type === "error" ? "alert" : "status"} aria-live={studentBulkToast.type === "error" ? "assertive" : "polite"}>
@@ -8608,6 +8645,8 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
   const [status, setStatus] = useState("");
   const [lookupLoading, setLookupLoading] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [discountInput, setDiscountInput] = useState("");
+  const [isExempt, setIsExempt] = useState(false);
   const [advanceLoading, setAdvanceLoading] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [sendReceipt, setSendReceipt] = useState(canSendReceipts);
@@ -8639,6 +8678,8 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     setSummary(null);
     setAdvanceData(null);
     setSelectedMonths([]);
+    setDiscountInput("");
+    setIsExempt(false);
     setSendReceipt(canSendReceipts);
     const value = normalizeScanValue(rawValue);
     hardwareScanBufferRef.current = "";
@@ -8797,12 +8838,14 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     setPaymentLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/fees/payments`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey(), ...auth }, body: JSON.stringify({ student_id: summary.id, send_whatsapp: canSendReceipts && sendReceipt })
+        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey(), ...auth }, body: JSON.stringify({ student_id: summary.id, discount_amount: isExempt ? 0 : Number(normalizeDigits(discountInput || "0")), is_exempt: isExempt, send_whatsapp: canSendReceipts && sendReceipt })
       });
       const data = await response.json();
       if (!response.ok || !data.ok) { setStatus(paymentErrorMessage(data.status, data.message, t)); return; }
       setStatus(data.whatsapp?.reason === "invalid_phone" ? `${t("fees.paymentRecorded")} — ${t("whatsapp.invalidPhone")}` : data.whatsapp?.queued ? `${t("fees.paymentRecorded")} — ${t("whatsapp.receiptQueued")}` : t("fees.paymentRecorded"));
       setSummary({ ...summary, paid_amount: summary.required_amount, remaining_balance: 0, current_cycle_paid: summary.current_cycle_fee, current_cycle_outstanding: 0 });
+      setDiscountInput("");
+      setIsExempt(false);
       setSendReceipt(canSendReceipts);
       window.dispatchEvent(new Event("fees-updated"));
     } catch { setStatus(t("fees.paymentFailed")); } finally { setPaymentLoading(false); }
@@ -8867,6 +8910,9 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     : "";
   const dueMonthsKey = dueMonths && dueMonths.split(document.documentElement.lang === "en" ? "," : "،").length > 1 ? "fees.dueMonths" : "fees.dueMonth";
   const availableMonthsCount = advanceMonths.filter((month: any) => month.available).length;
+  const outstandingAmount = Number(summary?.remaining_balance || 0);
+  const requestedDiscount = Number(normalizeDigits(discountInput || "0"));
+  const calculatedPayment = isExempt ? 0 : Math.max(0, outstandingAmount - (Number.isFinite(requestedDiscount) ? requestedDiscount : 0));
 
   return <section className="admin-editor fees-panel">
     <div className="section-heading fees-panel-heading">
@@ -8880,7 +8926,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
       {canAdvance ? <button className={mode === "advance" ? "active" : ""} type="button" onClick={() => { setMode("advance"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setSendReceipt(true); setStatus(""); }}>{t("fees.advancePayment")}</button> : null}
     </div>
     <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input ref={inputRef} autoFocus dir="ltr" type="text" value={code} onChange={(event) => { hardwareScanBufferRef.current = event.target.value; setCode(event.target.value); }} placeholder="A-2303" autoComplete="off" disabled={lookupLoading} /></label><button className="primary-button" type="submit" disabled={lookupLoading || !code.trim()}>{lookupLoading ? t("dashboard.refreshing") : t("fees.find")}</button></form>
-    {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>{canCollect ? <><small>{t("fees.fullOnly")}</small>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="secondary-button" type="button" onClick={pay} disabled={paymentLoading}>{paymentLoading ? t("dashboard.refreshing") : t("fees.payFull")}</button></> : null}</div> : null}
+    {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>{canCollect ? <><div className="fee-checkout-panel"><label className="fee-discount-field"><span>{t("fees.discountAmount")}</span><input type="number" min="0" step="0.01" value={discountInput} disabled={isExempt || paymentLoading} onChange={(event) => setDiscountInput(normalizeDigits(event.target.value))} placeholder="0.00" /><small>{t("fees.discountHint")}</small></label><label className="fee-exemption-toggle"><span><strong>{t("fees.fullExemption")}</strong><small>{t("fees.exemptionHint")}</small></span><input type="checkbox" checked={isExempt} disabled={paymentLoading} onChange={(event) => setIsExempt(event.target.checked)} /><i aria-hidden="true" /></label><span className="fee-checkout-total">{isExempt ? t("fees.exemptAmount") : t("fees.confirmAmount", { amount: calculatedPayment.toFixed(2) })}</span></div>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="secondary-button" type="button" onClick={pay} disabled={paymentLoading || (!isExempt && (!Number.isFinite(requestedDiscount) || requestedDiscount > outstandingAmount))}>{paymentLoading ? t("dashboard.refreshing") : isExempt ? t("fees.applyExemption") : t("fees.confirmPayment", { amount: calculatedPayment.toFixed(2) })}</button></> : null}</div> : null}
     {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : monthlyFee <= 0 ? <p className="empty-state">{t("fees.advanceFeeNotConfigured")}</p> : <><div className="advance-sequence-heading"><div><span className="advance-section-kicker">{t("fees.advancePayment")}</span><h3>{t("fees.advanceMonths")}</h3><p>{t("fees.advanceSequenceHint")}</p></div><div className="advance-selection-summary"><span className="advance-sequence-count"><strong>{selectedMonths.length}</strong><small>{t("fees.advanceSelected")}</small></span><span className="advance-available-count"><strong>{availableMonthsCount}</strong><small>{t("fees.advanceAvailableMonth")}</small></span></div></div><div className="advance-month-legend" aria-label={t("fees.advanceMonths")}><span className="advance-legend-item is-next"><i aria-hidden="true" />{t("fees.advanceAvailableMonth")}</span><span className="advance-legend-item is-paid"><i aria-hidden="true" />{t("fees.advancePaidMonth")}</span><span className="advance-legend-item is-locked"><i aria-hidden="true" />{t("fees.advanceLockedStatus")}</span></div><div className="advance-month-grid">{advanceMonths.map((month: any, index: number) => { const key = monthKey(month); const paid = isMonthPaid(month); const selected = selectedMonthSet.has(key); const unlocked = isMonthUnlocked(index); const locked = !paid && !unlocked; const stateLabel = paid ? t("fees.advancePaidMonth") : locked ? t("fees.advanceLockedMonth") : selected ? t("fees.advanceSelectedStatus") : t("fees.advanceAvailableMonth"); return <label className={`advance-month-option ${paid ? "is-paid" : unlocked ? "is-next" : "is-locked"} ${selected ? "is-selected" : ""}`} key={month.month} title={locked ? t("fees.advanceLockedMonth") : stateLabel}><span className="advance-month-card-top"><span className={`advance-month-state-icon ${paid ? "is-paid" : locked ? "is-locked" : "is-next"}`} aria-hidden="true">{paid ? "✓" : String(index + 1).padStart(2, "0")}</span><span className="advance-month-status">{stateLabel}</span></span><span className="advance-month-content"><strong>{monthLabel(month.month)}</strong><small>{locked ? t("fees.advanceLockedMonth") : t("fees.advancePaymentLabel")}</small></span><span className="advance-month-footer"><b>{Number(month.remaining_amount || month.amount || 0).toFixed(2)} EGP</b>{paid ? <span className="advance-month-paid-mark" aria-label={t("fees.advancePaidMonth")}>✓</span> : <input type="checkbox" checked={selected} disabled={!unlocked && !selected} aria-label={`${monthLabel(month.month)} — ${stateLabel}`} onChange={(event) => toggleAdvanceMonth(month, index, event.target.checked)} />}</span></label>; })}</div>{!advanceMonths.some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total"><span>{t("fees.advanceSelected")}: <strong>{selectedMonths.length}</strong></span><span>{t("fees.advanceTotal")}: <strong>{totalAdvance.toFixed(2)} EGP</strong></span></p>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
     <MobileScannerModal open={cameraOpen} onClose={() => setCameraOpen(false)} session={session} language={language} t={t} onScan={lookupFromCamera} />

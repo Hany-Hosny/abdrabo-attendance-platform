@@ -12,7 +12,8 @@ import {
   enqueueGradeBatchNotifications,
   enqueueGradeNotification,
   retryGradeNotificationJob,
-  updateWhatsAppSettings
+  updateWhatsAppSettings,
+  resolveWhatsAppTemplate
 } from "../services/whatsapp.js";
 
 export const whatsappRouter = express.Router();
@@ -20,6 +21,7 @@ whatsappRouter.use(requireTeacher);
 
 const HISTORY_TYPES = new Set(["attendance", "grade", "receipt", "advance_payment"]);
 const HISTORY_STATUSES = new Set(["pending", "processing", "sent", "failed", "skipped"]);
+const TEMPLATE_CATEGORIES = new Set(["attendance", "grade", "receipt", "advance_payment"]);
 // exam_results.id is SERIAL in the existing PostgreSQL schema, so the
 // boundary accepts numeric IDs (including JSON string IDs from older clients).
 const batchExamSchema = z.object({
@@ -77,6 +79,57 @@ whatsappRouter.put("/settings", requirePermission("whatsapp.manage"), async (req
     res.json({ ok: true, settings });
   } catch (error) {
     if (String(error?.message || "").startsWith("invalid_")) return res.status(400).json({ ok: false, status: error.message });
+    next(error);
+  }
+});
+
+whatsappRouter.get("/templates", requirePermission("whatsapp.view"), async (req, res, next) => {
+  try {
+    const category = String(req.query.category || "").trim();
+    const values = [];
+    const where = category && TEMPLATE_CATEGORIES.has(category) ? (values.push(category), "WHERE category = $1") : "";
+    if (category && !TEMPLATE_CATEGORIES.has(category)) return res.status(400).json({ ok: false, status: "invalid_template_category" });
+    const result = await query(`SELECT id, category, message_body, is_active, created_at, updated_at FROM whatsapp_templates ${where} ORDER BY category, id`, values);
+    res.json({ ok: true, templates: result.rows });
+  } catch (error) { next(error); }
+});
+
+whatsappRouter.post("/templates/resolve", requirePermission("whatsapp.view"), async (req, res, next) => {
+  try {
+    const category = String(req.body?.category || "").trim();
+    if (!TEMPLATE_CATEGORIES.has(category)) return res.status(400).json({ ok: false, status: "invalid_template_category" });
+    const resolved = await resolveWhatsAppTemplate({ category, values: req.body?.values && typeof req.body.values === "object" ? req.body.values : {} });
+    res.json({ ok: true, ...resolved });
+  } catch (error) { next(error); }
+});
+
+whatsappRouter.post("/templates", requirePermission("whatsapp.manage"), async (req, res, next) => {
+  try {
+    const category = String(req.body?.category || "").trim();
+    const messageBody = String(req.body?.message_body || "").trim();
+    if (!TEMPLATE_CATEGORIES.has(category)) return res.status(400).json({ ok: false, status: "invalid_template_category" });
+    if (messageBody.length < 5 || messageBody.length > 2000) return res.status(400).json({ ok: false, status: "invalid_template_length" });
+    const result = await query(`INSERT INTO whatsapp_templates (category, message_body, is_active) VALUES ($1, $2, TRUE) RETURNING *`, [category, messageBody]);
+    await auditLog({ action: "whatsapp_template_created", actorId: req.teacher.id, request: req, details: { category, template_id: result.rows[0].id } });
+    res.status(201).json({ ok: true, template: result.rows[0] });
+  } catch (error) {
+    if (error?.code === "23505") return res.status(409).json({ ok: false, status: "duplicate_template" });
+    next(error);
+  }
+});
+
+whatsappRouter.patch("/templates/:id", requirePermission("whatsapp.manage"), async (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    const messageBody = req.body?.message_body == null ? null : String(req.body.message_body).trim();
+    const isActive = req.body?.is_active == null ? null : req.body.is_active === true;
+    if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ ok: false, status: "invalid_template" });
+    if (messageBody !== null && (messageBody.length < 5 || messageBody.length > 2000)) return res.status(400).json({ ok: false, status: "invalid_template_length" });
+    const result = await query(`UPDATE whatsapp_templates SET message_body = COALESCE($2, message_body), is_active = COALESCE($3, is_active), updated_at = NOW() WHERE id = $1 RETURNING *`, [id, messageBody, isActive]);
+    if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    res.json({ ok: true, template: result.rows[0] });
+  } catch (error) {
+    if (error?.code === "23505") return res.status(409).json({ ok: false, status: "duplicate_template" });
     next(error);
   }
 });

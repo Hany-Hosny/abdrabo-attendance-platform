@@ -491,6 +491,9 @@ export async function migrate() {
       student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
       group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE RESTRICT,
       amount NUMERIC(10,2) NOT NULL CHECK (amount > 0), 
+      paid_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (paid_amount >= 0),
+      discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (discount_amount >= 0),
+      is_exempt BOOLEAN NOT NULL DEFAULT FALSE,
       payment_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       payment_method TEXT NOT NULL DEFAULT 'cash', 
       notes TEXT,
@@ -509,6 +512,9 @@ export async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_type TEXT NOT NULL DEFAULT 'normal';
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+    ALTER TABLE payments ADD COLUMN IF NOT EXISTS is_exempt BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
@@ -518,6 +524,16 @@ export async function migrate() {
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS grade_level_snapshot TEXT;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
     ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_reference TEXT;
+    UPDATE payments SET paid_amount = CASE WHEN paid_amount = 0 AND amount > 0 THEN amount ELSE paid_amount END,
+      discount_amount = COALESCE(discount_amount, 0), is_exempt = COALESCE(is_exempt, FALSE);
+    ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_amount_check;
+    ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_paid_amount_check;
+    ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_discount_amount_check;
+    ALTER TABLE payments DROP CONSTRAINT IF EXISTS payments_exemption_check;
+    ALTER TABLE payments ADD CONSTRAINT payments_amount_check CHECK (is_exempt OR amount > 0);
+    ALTER TABLE payments ADD CONSTRAINT payments_paid_amount_check CHECK (paid_amount >= 0 AND paid_amount = amount);
+    ALTER TABLE payments ADD CONSTRAINT payments_discount_amount_check CHECK (discount_amount >= 0);
+    ALTER TABLE payments ADD CONSTRAINT payments_exemption_check CHECK ((is_exempt AND paid_amount = 0) OR NOT is_exempt);
 
     CREATE TABLE IF NOT EXISTS payment_reversals (
       id BIGSERIAL PRIMARY KEY,
@@ -642,6 +658,17 @@ export async function migrate() {
       next_index INTEGER NOT NULL DEFAULT 0 CHECK (next_index >= 0),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS whatsapp_templates (
+      id BIGSERIAL PRIMARY KEY,
+      category TEXT NOT NULL CHECK (category IN ('attendance', 'grade', 'receipt', 'advance_payment')),
+      message_body TEXT NOT NULL CHECK (length(trim(message_body)) > 0),
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (category, message_body)
+    );
+    CREATE INDEX IF NOT EXISTS whatsapp_templates_category_active_idx
+      ON whatsapp_templates(category, is_active);
     CREATE TABLE IF NOT EXISTS student_portal_access_tokens (
       token_hash TEXT PRIMARY KEY,
       student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
@@ -747,6 +774,27 @@ export async function migrate() {
       "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"
     ])]
   );
+
+  // Migrate the legacy JSON template arrays into indexed rows once. The
+  // unique key makes this safe across restarts while preserving edits already
+  // made through the legacy settings screen.
+  await query(`
+    INSERT INTO whatsapp_templates (category, message_body, is_active)
+    SELECT source.category, item.value, TRUE
+    FROM whatsapp_settings ws
+    CROSS JOIN LATERAL (
+      VALUES
+        ('attendance', ws.templates),
+        ('grade', ws.grade_templates),
+        ('receipt', ws.receipt_templates),
+        ('advance_payment', ws.advance_payment_templates)
+    ) AS source(category, template_values)
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+      CASE WHEN jsonb_typeof(source.template_values) = 'array' THEN source.template_values ELSE '[]'::jsonb END
+    ) AS item(value)
+    WHERE ws.id = 1 AND length(trim(item.value)) > 0
+    ON CONFLICT (category, message_body) DO NOTHING
+  `);
 
   await query(`
     SET search_path TO public;

@@ -1317,12 +1317,15 @@ operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("pay
     const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
     if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
     const sendWhatsApp = req.body?.send_whatsapp === true;
+    const isExempt = req.body?.is_exempt === true;
+    const discountAmount = isExempt ? 0 : Number(normalizeDigits(req.body?.discount_amount ?? 0));
+    if (!Number.isFinite(discountAmount) || discountAmount < 0) return res.status(400).json({ ok: false, status: "invalid_discount" });
     if (sendWhatsApp && !hasPermission(req.teacher, "whatsapp.send_receipts")) return res.status(403).json({ ok: false, status: "permission_required", permission: "whatsapp.send_receipts" });
     if (idempotencyKey) {
       const replay = await query("SELECT * FROM payments WHERE idempotency_key = $1 LIMIT 1", [idempotencyKey]);
       if (replay.rowCount) {
         if (Number(replay.rows[0].student_id) !== studentId || replay.rows[0].payment_type !== "normal" || replay.rows[0].payment_method !== paymentMethod) return res.status(409).json({ ok: false, status: "idempotency_conflict" });
-        return res.status(200).json({ ok: true, payment: replay.rows[0], paid_amount: replay.rows[0].amount, replayed: true });
+        return res.status(200).json({ ok: true, payment: replay.rows[0], paid_amount: replay.rows[0].paid_amount ?? replay.rows[0].amount, discount_amount: replay.rows[0].discount_amount ?? 0, is_exempt: replay.rows[0].is_exempt === true, replayed: true });
       }
     }
     const summary = await getFeeSummary(studentId);
@@ -1332,7 +1335,8 @@ operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("pay
       const message = status === "already_paid" ? "تم سداد المصروفات بالفعل. / Fees already paid." : "لا توجد مصروفات مستحقة لهذا الطالب. / No outstanding fees for this student.";
       return res.status(409).json({ ok: false, status, message });
     }
-    const payment = await recordFullPayment({ studentId, actorId: req.teacher.id, paymentMethod, notes: req.body?.notes || null, idempotencyKey, whatsappNotified: sendWhatsApp, request: req });
+    const payment = await recordFullPayment({ studentId, actorId: req.teacher.id, paymentMethod, notes: req.body?.notes || null, idempotencyKey, whatsappNotified: sendWhatsApp, discountAmount, isExempt, request: req });
+    if (payment?.error === "invalid_discount") return res.status(400).json({ ok: false, status: payment.error });
     if (payment?.idempotency_conflict) return res.status(409).json({ ok: false, status: "idempotency_conflict" });
     if (!payment) return res.status(409).json({ ok: false, status: "already_paid", message: "تم سداد المصروفات بالفعل. / Fees already paid." });
     let whatsapp = null;
@@ -1340,7 +1344,7 @@ operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("pay
       try { whatsapp = await enqueueReceiptNotification({ paymentId: payment.id }); }
       catch (error) { console.error("Failed to queue WhatsApp receipt notification", error); whatsapp = { queued: false, reason: "queue_failed" }; }
     }
-    return res.status(201).json({ ok: true, payment, paid_amount: payment.amount, whatsapp });
+    return res.status(201).json({ ok: true, payment, paid_amount: payment.paid_amount ?? payment.amount, discount_amount: payment.discount_amount ?? 0, is_exempt: payment.is_exempt === true, whatsapp });
   } catch (error) {
     console.error("Failed to record payment", error);
     return res.status(500).json({ ok: false, status: "payment_failed" });

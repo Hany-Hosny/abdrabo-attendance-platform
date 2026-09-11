@@ -92,7 +92,7 @@ export async function getFeeSummary(studentId, { ensure = true } = {}) {
   return result.rows[0] || null;
 }
 
-export async function recordFullPayment({ studentId, actorId, paymentMethod = "cash", notes = null, idempotencyKey = null, whatsappNotified = false, request = null }) {
+export async function recordFullPayment({ studentId, actorId, paymentMethod = "cash", notes = null, idempotencyKey = null, whatsappNotified = false, discountAmount = 0, isExempt = false, request = null }) {
   await ensureMonthlyFees(Number(studentId));
   const client = await pool.connect();
   try {
@@ -128,6 +128,13 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
       return null;
     }
 
+    const normalizedDiscount = Number.isFinite(Number(discountAmount)) ? Math.max(0, Math.round(Number(discountAmount) * 100) / 100) : 0;
+    if (normalizedDiscount > remaining + 0.001) {
+      await client.query("ROLLBACK");
+      return { error: "invalid_discount" };
+    }
+    const appliedDiscount = isExempt ? Math.round(remaining * 100) / 100 : normalizedDiscount;
+    const paidAmount = isExempt ? 0 : Math.max(0, Math.round((remaining - appliedDiscount) * 100) / 100);
     const coveredMonths = [];
     for (const due of dues.rows) {
       const dueRemaining = Number(due.amount) - Number(due.paid_amount);
@@ -139,14 +146,14 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
     const payment = await client.query(`
       INSERT INTO payments (
         student_id, group_id, amount, payment_date, paid_at, payment_method,
-        notes, recorded_by, paid_by, payment_months, whatsapp_notified, idempotency_key,
+        notes, recorded_by, paid_by, payment_months, paid_amount, discount_amount, is_exempt, whatsapp_notified, idempotency_key,
         student_name_snapshot, student_code_snapshot, student_serial_snapshot,
         scan_serial_snapshot, group_name_snapshot, grade_level_snapshot
-      ) VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15)
+      ) VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       ON CONFLICT DO NOTHING
       RETURNING *
     `, [
-      studentId, groupId, remaining, paymentMethod, notes, actorId, JSON.stringify(coveredMonths), Boolean(whatsappNotified), idempotencyKey,
+      studentId, groupId, paidAmount, paymentMethod, notes, actorId, JSON.stringify(coveredMonths), paidAmount, appliedDiscount, Boolean(isExempt), Boolean(whatsappNotified), idempotencyKey,
       dues.rows[0].full_name, dues.rows[0].student_code, dues.rows[0].student_serial,
       dues.rows[0].scan_serial, dues.rows[0].group_name, dues.rows[0].grade_level
     ]);
@@ -166,7 +173,9 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
       paymentId: payment.rows[0].id,
       request,
       details: {
-        amount: Number(remaining),
+        amount: Number(paidAmount),
+        discount_amount: Number(appliedDiscount),
+        is_exempt: Boolean(isExempt),
         payment_type: "normal",
         payment_method: paymentMethod,
         payment_months: coveredMonths,
@@ -178,6 +187,9 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
       throwOnError: true
     });
     await client.query("COMMIT");
+    payment.rows[0].gross_amount = remaining;
+    payment.rows[0].discount_amount = appliedDiscount;
+    payment.rows[0].is_exempt = Boolean(isExempt);
     return payment.rows[0];
   } catch (error) {
     await client.query("ROLLBACK");
@@ -323,11 +335,11 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
 
     const amount = coveredMonths.reduce((sum, item) => sum + Number(item.amount), 0);
     const payment = await client.query(`
-      INSERT INTO payments (student_id, group_id, amount, payment_date, paid_at, payment_method,
+      INSERT INTO payments (student_id, group_id, amount, paid_amount, discount_amount, is_exempt, payment_date, paid_at, payment_method,
         notes, recorded_by, paid_by, payment_months, payment_type, whatsapp_notified, idempotency_key,
         student_name_snapshot, student_code_snapshot, student_serial_snapshot,
         scan_serial_snapshot, group_name_snapshot, grade_level_snapshot)
-      VALUES ($1, $2, $3, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, 'advance', $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $3, 0, FALSE, NOW(), NOW(), $4, $5, $6, $6, $7::jsonb, 'advance', $8, $9, $10, $11, $12, $13, $14, $15)
       ON CONFLICT DO NOTHING
       RETURNING *
     `, [

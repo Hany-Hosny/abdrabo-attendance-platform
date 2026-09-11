@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { makeWASocket, initAuthCreds, BufferJSON, proto, DisconnectReason, Browsers } from "@whiskeysockets/baileys";
 import QRCode from "qrcode";
 import { pool, query } from "../db/pool.js";
@@ -262,6 +263,18 @@ export async function updateWhatsAppSettings(input, { actorId, request = null, d
          updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
       [settings.auto_send, JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates), settings.min_delay_seconds, settings.max_delay_seconds, actorId || null]
     );
+    await client.query(`
+      INSERT INTO whatsapp_templates (category, message_body, is_active)
+      SELECT source.category, item.value, TRUE
+      FROM (VALUES
+        ('attendance', $1::jsonb), ('grade', $2::jsonb), ('receipt', $3::jsonb), ('advance_payment', $4::jsonb)
+      ) AS source(category, template_values)
+      CROSS JOIN LATERAL jsonb_array_elements_text(source.template_values) AS item(value)
+      ON CONFLICT (category, message_body) DO UPDATE SET is_active = TRUE, updated_at = NOW()
+    `, [JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates)]);
+    for (const [category, templates] of [["attendance", settings.templates], ["grade", settings.grade_templates], ["receipt", settings.receipt_templates], ["advance_payment", settings.advance_payment_templates]]) {
+      await client.query(`UPDATE whatsapp_templates SET is_active = EXISTS (SELECT 1 FROM jsonb_array_elements_text($2::jsonb) item WHERE item.value = message_body), updated_at = NOW() WHERE category = $1`, [category, JSON.stringify(templates)]);
+    }
     if (audit && JSON.stringify(before) !== JSON.stringify(settings)) {
       await audit({ db: client, action: "whatsapp_settings_changed", actorId, details: { previous: before, next: settings }, request });
     }
@@ -610,8 +623,44 @@ function notificationTemplates(settings, type) {
   }
 }
 
+async function activeTemplateRows(category, db = query) {
+  const result = await db(
+    `SELECT id, message_body FROM whatsapp_templates
+     WHERE category = $1 AND is_active = TRUE
+     ORDER BY id`,
+    [category]
+  );
+  return result.rows;
+}
+
+async function getNotificationTemplates(settings, type, db = query) {
+  const category = normalizeNotificationType(type);
+  const rows = await activeTemplateRows(category, db);
+  if (rows.length) return rows.map((row) => String(row.message_body));
+  return notificationTemplates(settings, category);
+}
+
+export function resolveSpintax(template, values = {}) {
+  const expanded = String(template || "").replace(/\{([^{}|]+(?:\|[^{}|]+)+)\}/g, (_match, choices) => {
+    const options = String(choices).split("|");
+    return options[randomInteger(0, options.length - 1)].trim();
+  });
+  return applyTemplate(expanded, values);
+}
+
+export async function resolveWhatsAppTemplate({ category, values = {}, sourceId = "preview", db = query }) {
+  const templates = await getNotificationTemplates({}, category, db);
+  if (!templates.length) throw new Error("no_whatsapp_templates");
+  const rows = await activeTemplateRows(normalizeNotificationType(category), db);
+  const selected = rows.length ? rows[randomInteger(0, rows.length - 1)] : { id: 0, message: templates[randomInteger(0, templates.length - 1)] };
+  const entropy = `${Date.now()}-${sourceId}-${crypto.randomUUID()}`;
+  const uniqueHash = crypto.createHash("sha256").update(entropy).digest("hex").slice(0, 16);
+  const reference = `ABS-${Date.now()}-${selected.id}-${uniqueHash}`;
+  return { id: Number(selected.id), message: `${resolveSpintax(selected.message || selected, { ...values, ref_code: reference })}\n\nRef: ${reference}`, reference };
+}
+
 function compileWhatsAppMessage(_type, template, values) {
-  return applyTemplate(template, values);
+  return resolveSpintax(template, values);
 }
 
 export function buildStudentPortalLink(studentId, _studentCode, accessToken) {
@@ -717,7 +766,7 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
     }
 
     const settings = await getWhatsAppSettings(client.query.bind(client));
-    const templates = notificationTemplates(settings, "grade").filter(Boolean);
+    const templates = (await getNotificationTemplates(settings, "grade", client.query.bind(client))).filter(Boolean);
     await client.query(
       `INSERT INTO whatsapp_template_rotation (notification_type, next_index)
        VALUES ('grade', 0) ON CONFLICT (notification_type) DO NOTHING`
@@ -853,7 +902,7 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
   }
 
   const settings = await getWhatsAppSettings(client.query.bind(client));
-  const templates = notificationTemplates(settings, "grade").filter(Boolean);
+  const templates = (await getNotificationTemplates(settings, "grade", client.query.bind(client))).filter(Boolean);
   if (!templates.length) throw new Error("no_whatsapp_templates");
   await client.query(`
     INSERT INTO whatsapp_template_rotation (notification_type, next_index)
@@ -1084,7 +1133,7 @@ export async function enqueueGradeNotification({ resultId }) {
 
 export async function enqueueReceiptNotification({ paymentId }) {
   const result = await query(`
-    SELECT p.id AS payment_id, p.amount, p.payment_reference, p.payment_months,
+    SELECT p.id AS payment_id, p.amount, p.paid_amount, p.discount_amount, p.is_exempt, p.payment_reference, p.payment_months,
       p.payment_date, s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
     FROM payments p
     JOIN students s ON s.id = p.student_id
@@ -1097,7 +1146,9 @@ export async function enqueueReceiptNotification({ paymentId }) {
   const month = months.join(", ");
   const refCode = notificationRefCode("RCT", row.payment_date, row.payment_id, true);
   await enqueueJob({ notificationType: "receipt", sourceId: row.payment_id, studentId: row.student_id, phone, refCode, payload: {
-    student_name: row.student_name, student_code: row.student_code, amount_paid: Number(row.amount).toFixed(2),
+    student_name: row.student_name, student_code: row.student_code, amount_paid: Number(row.paid_amount ?? row.amount).toFixed(2),
+    discount_amount: Number(row.discount_amount || 0).toFixed(2), is_exempt: row.is_exempt === true,
+    payment_status: row.is_exempt ? "exempt" : Number(row.discount_amount || 0) > 0 ? "discounted" : "paid",
     month, receipt_number: row.payment_reference || refCode, event_time: row.payment_date
   } });
   return { queued: true, ref_code: refCode };
@@ -1105,7 +1156,7 @@ export async function enqueueReceiptNotification({ paymentId }) {
 
 export async function enqueueAdvancePaymentNotification({ paymentId }) {
   const result = await query(`
-    SELECT p.id AS payment_id, p.amount, p.payment_reference, p.payment_months,
+    SELECT p.id AS payment_id, p.amount, p.paid_amount, p.discount_amount, p.is_exempt, p.payment_reference, p.payment_months,
       p.payment_date, s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
     FROM payments p
     JOIN students s ON s.id = p.student_id
@@ -1119,7 +1170,9 @@ export async function enqueueAdvancePaymentNotification({ paymentId }) {
     : "";
   const refCode = notificationRefCode("ADV", row.payment_date, row.payment_id, true);
   await enqueueJob({ notificationType: "advance_payment", sourceId: row.payment_id, studentId: row.student_id, phone, refCode, payload: {
-    student_name: row.student_name, student_code: row.student_code, amount_paid: Number(row.amount).toFixed(2),
+    student_name: row.student_name, student_code: row.student_code, amount_paid: Number(row.paid_amount ?? row.amount).toFixed(2),
+    discount_amount: Number(row.discount_amount || 0).toFixed(2), is_exempt: row.is_exempt === true,
+    payment_status: row.is_exempt ? "exempt" : Number(row.discount_amount || 0) > 0 ? "discounted" : "paid",
     months, receipt_number: row.payment_reference || refCode, event_time: row.payment_date
   } });
   return { queued: true, ref_code: refCode };
@@ -1207,7 +1260,7 @@ async function processWhatsAppJob() {
       return;
     }
     const parts = cairoParts(payload.event_time || payload.checkin_time);
-    const templates = notificationTemplates(settings, type).filter(Boolean);
+    const templates = (await getNotificationTemplates(settings, type)).filter(Boolean);
     if (!templates.length) {
       await updateJob(job.id, "failed", { error: "no_whatsapp_templates" });
       return;
@@ -1247,8 +1300,14 @@ async function processWhatsAppJob() {
     const body = portalLink && !templateHasPlaceholder(template, "portal_link")
       ? `${renderedBody}\n${portalLink}`
       : renderedBody;
+    const adjustmentLine = type === "receipt" && (payload.is_exempt === true || Number(payload.discount_amount || 0) > 0)
+      ? payload.is_exempt === true
+        ? (locale === "ar-EG" ? "حالة السداد: إعفاء كامل" : "Payment status: Full exemption")
+        : (locale === "ar-EG" ? `الخصم المطبق: ${payload.discount_amount} ج.م` : `Discount applied: ${payload.discount_amount} EGP`)
+      : "";
+    const adjustedBody = adjustmentLine && !body.includes(adjustmentLine) ? `${body}\n${adjustmentLine}` : body;
     const footer = locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
-    const finalBody = body.includes(footer) ? body : `${body}\n\n${footer}`;
+    const finalBody = adjustedBody.includes(footer) ? adjustedBody : `${adjustedBody}\n\n${footer}`;
     await query(
       `UPDATE whatsapp_notification_jobs
        SET template_index = $2, template_text = $3, rendered_message = $4, updated_at = NOW()

@@ -4520,6 +4520,88 @@ textarea {
   margin: 0 0 12px;
 }
 
+.student-quick-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 36px;
+  margin: 0 0 14px;
+}
+
+.student-quick-filters button {
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-inset);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.student-quick-filters button.active {
+  border-color: var(--accent);
+  background: rgba(242, 140, 40, 0.15);
+  color: var(--accent);
+}
+
+.student-list-skeleton {
+  display: grid;
+  gap: 12px;
+  min-height: 220px;
+}
+
+.student-list-skeleton i {
+  display: block;
+  min-height: 92px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--surface-inset), rgba(255,255,255,.08), var(--surface-inset));
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s linear infinite;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.fee-checkout-panel {
+  display: grid;
+  grid-template-columns: minmax(150px, .8fr) minmax(220px, 1.2fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-inset);
+}
+
+.fee-discount-field,
+.fee-exemption-toggle {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.fee-discount-field small,
+.fee-exemption-toggle small { color: var(--muted); font-size: 11px; }
+.fee-exemption-toggle { grid-template-columns: 1fr auto; align-items: center; }
+.fee-exemption-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.fee-exemption-toggle i { width: 42px; height: 24px; border-radius: 999px; background: var(--line); position: relative; }
+.fee-exemption-toggle i::after { content: ""; position: absolute; top: 3px; inset-inline-start: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .16s ease; }
+.fee-exemption-toggle input:checked + i { background: var(--success); }
+.fee-exemption-toggle input:checked + i::after { transform: translateX(18px); background: #fff; }
+.fee-checkout-total { min-width: 150px; color: var(--accent); font-size: 14px; font-weight: 900; text-align: center; }
+
+@media (max-width: 720px) {
+  .fee-checkout-panel { grid-template-columns: 1fr; }
+  .fee-checkout-total { text-align: start; }
+}
+
 .student-profile-picker {
   display: grid;
   grid-template-columns: minmax(250px, 1.15fr) minmax(280px, 1.4fr) auto;

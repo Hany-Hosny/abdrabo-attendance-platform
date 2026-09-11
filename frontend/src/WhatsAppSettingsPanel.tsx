@@ -209,16 +209,37 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     const controller = new AbortController();
     Promise.all([
       fetch(`${API_BASE_URL}/whatsapp/status`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }).then((response) => response.json()),
-      fetch(`${API_BASE_URL}/whatsapp/settings`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }).then((response) => response.json())
-    ]).then(([statusPayload, settingsPayload]) => {
-      if (!statusPayload.ok || !settingsPayload.ok) throw new Error("load_failed");
+      fetch(`${API_BASE_URL}/whatsapp/settings`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }).then((response) => response.json()),
+      fetch(`${API_BASE_URL}/whatsapp/templates`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }).then((response) => response.json())
+    ]).then(([statusPayload, settingsPayload, templatePayload]) => {
+      if (!statusPayload.ok || !settingsPayload.ok || !templatePayload.ok) throw new Error("load_failed");
       setStatus({ status: statusPayload.status, phone_number: statusPayload.phone_number || null, has_qr: statusPayload.has_qr });
       const next = normalizeSettings(settingsPayload.settings);
+      const dbTemplates = Array.isArray(templatePayload.templates) ? templatePayload.templates.filter((item: { is_active?: boolean }) => item.is_active !== false) : [];
+      const categoryMap: Record<string, TemplateKey> = { attendance: "templates", grade: "grade_templates", receipt: "receipt_templates", advance_payment: "advance_payment_templates" };
+      dbTemplates.forEach((item: { category?: string; message_body?: string }) => {
+        const key = item.category ? categoryMap[item.category] : undefined;
+        if (key && item.message_body) next[key] = [...next[key], String(item.message_body)].filter((value, index, values) => values.indexOf(value) === index).slice(0, 4);
+      });
       setSettings(next); setSavedSettings(next); setError("");
     }).catch((reason) => { if (reason?.name !== "AbortError") setError(t("whatsapp.loadFailed")); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [token]);
+
+  const memoizedTemplateGroups = useMemo(() => templateGroups.map((group) => ({ ...group, templates: settings[group.key] })), [settings]);
+
+  function addTemplate(group: TemplateKey) {
+    if (!canManage || settings[group].length >= 4) return;
+    setFeedback("idle");
+    setSettings((current) => ({ ...current, [group]: [...current[group], current[group][0] || "{student_name}"] }));
+  }
+
+  function removeTemplate(group: TemplateKey, index: number) {
+    if (!canManage || settings[group].length <= 3) return;
+    setFeedback("idle");
+    setSettings((current) => ({ ...current, [group]: current[group].filter((_value, templateIndex) => templateIndex !== index) }));
+  }
 
   useEffect(() => {
     const interval = window.setInterval(() => { void loadStatus().catch(() => undefined); }, status.status === "connected" ? 5000 : 2000);
@@ -367,7 +388,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
       <div className="settings-section-heading"><span>{activeTab === "templates" ? "03–06" : "07"}</span><div><h3>{t(activeTab === "templates" ? "whatsapp.templatesTitle" : "whatsapp.messageHistoryTitle")}</h3><p>{t(activeTab === "templates" ? "whatsapp.templatesDescription" : "whatsapp.messageHistoryDescription")}</p></div></div>
       {activeTab === "history" ? <WhatsAppMessageHistory token={token} language={language} t={t} /> : <>
         <div className="whatsapp-template-groups">
-        {templateGroups.map((group) => {
+        {memoizedTemplateGroups.map((group) => {
           const isOpen = openTemplateGroups[group.key];
           const templates = settings[group.key];
           const contentId = `whatsapp-${group.key}-content`;
@@ -378,7 +399,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
             </button>
             <div className={`whatsapp-template-accordion-content ${isOpen ? "is-open" : ""}`} id={contentId} aria-hidden={!isOpen}>
               <div className="whatsapp-template-accordion-inner">
-                <div className="whatsapp-template-list">{templates.map((template, index) => { const refKey = `${group.key}-${index}`; return <label className="whatsapp-template-card" key={index}><span className="whatsapp-template-number">{String(index + 1).padStart(2, "0")}</span><strong>{t("whatsapp.templateLabel", { number: String(index + 1) })}</strong><textarea ref={(element) => { textareaRefs.current[refKey] = element; }} disabled={!canManage} dir="auto" value={template} onChange={(event) => updateTemplate(group.key, index, event.target.value)} maxLength={2000} /><span className="whatsapp-placeholder-label">{t("whatsapp.placeholders")}</span><div className="whatsapp-placeholder-chips">{group.placeholders.map((placeholder) => { const isUsed = templateUsesPlaceholder(template, placeholder); return <button className={isUsed ? "is-used" : ""} disabled={!canManage || isUsed} type="button" key={placeholder} aria-label={isUsed ? `Used ${placeholder}` : `Insert ${placeholder}`} onClick={() => insertPlaceholder(group.key, index, placeholder)}>{isUsed ? `✓ ${placeholder}` : placeholder}</button>; })}</div></label>; })}</div>
+                <div className="whatsapp-template-list">{templates.map((template, index) => { const refKey = `${group.key}-${index}`; return <label className="whatsapp-template-card" key={index}><span className="whatsapp-template-number">{String(index + 1).padStart(2, "0")}</span><strong>{t("whatsapp.templateLabel", { number: String(index + 1) })}</strong><textarea ref={(element) => { textareaRefs.current[refKey] = element; }} disabled={!canManage} dir="auto" value={template} onChange={(event) => updateTemplate(group.key, index, event.target.value)} maxLength={2000} /><span className="whatsapp-placeholder-label">{t("whatsapp.placeholders")}</span><div className="whatsapp-placeholder-chips">{group.placeholders.map((placeholder) => { const isUsed = templateUsesPlaceholder(template, placeholder); return <button className={isUsed ? "is-used" : ""} disabled={!canManage || isUsed} type="button" key={placeholder} aria-label={isUsed ? `Used ${placeholder}` : `Insert ${placeholder}`} onClick={() => insertPlaceholder(group.key, index, placeholder)}>{isUsed ? `✓ ${placeholder}` : placeholder}</button>; })}</div>{canManage && templates.length > 3 ? <button className="secondary-button compact-button" type="button" onClick={() => removeTemplate(group.key, index)}>{language === "ar" ? "حذف القالب" : "Delete template"}</button> : null}</label>; })}</div><button className="secondary-button compact-button" type="button" disabled={!canManage || templates.length >= 4} onClick={() => addTemplate(group.key)}>{language === "ar" ? "إضافة قالب" : "Add template"}</button>
                 {group.key === "templates" ? <div className="whatsapp-preview-box"><div><strong>{t("whatsapp.previewTitle")}</strong><small>{t("whatsapp.previewDescription")}</small></div><p>{previewParts.map((part, index) => <span key={`${part}-${index}`}>{index ? <a href={portalLink} target="_blank" rel="noreferrer">{portalLink}</a> : null}{part}</span>)}</p></div> : null}
               </div>
             </div>
