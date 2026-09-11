@@ -1,13 +1,14 @@
 import crypto from "node:crypto";
 import { pool } from "../db/pool.js";
 import { auditLog } from "./audit.js";
-import { normalizeEgyptianPhone, resolveSpintax } from "./whatsapp.js";
+import { getWhatsAppSettings, normalizeEgyptianPhone, resolveSpintax } from "./whatsapp.js";
 
 const FINALIZER_LOCK_KEY = "abdrabo-attendance-expiry-finalizer";
 const ABSENCE_QUEUE_BATCH_SIZE = 500;
 
 function randomTemplate(templates) {
-  return templates[Math.floor(Math.random() * templates.length)];
+  const index = Math.floor(Math.random() * templates.length);
+  return { index, template: templates[index] };
 }
 
 function absenceReference(studentId) {
@@ -28,7 +29,8 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
     if (!phoneNumber) continue;
 
     const refCode = absenceReference(student.student_id);
-    const template = randomTemplate(session.templates);
+    const selected = randomTemplate(session.templates);
+    const template = selected.template;
     const renderedMessage = resolveSpintax(template, {
       student_name: student.student_name,
       student_code: student.student_code,
@@ -51,12 +53,14 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
         event_time: session.session_date
       },
       ref_code: refCode,
+      template_index: selected.index,
       template_text: template,
       rendered_message: `${renderedMessage}\n\nRef: ${refCode}`
     });
   }
 
-  if (!eligible.length) return 0;
+  const invalidPhoneCount = absentStudents.length - eligible.length;
+  if (!eligible.length) return { queuedCount: 0, unresolvedCount: invalidPhoneCount };
 
   // A session is row-locked by the caller. Still inspect all historical jobs
   // so a recovered database cannot create a second message for an already
@@ -81,14 +85,14 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
     const inserted = await client.query(
       `INSERT INTO whatsapp_notification_jobs
         (notification_type, source_id, attendance_record_id, student_id, phone_number,
-         payload, ref_code, status, template_text, rendered_message,
+         payload, ref_code, status, template_index, template_text, rendered_message,
          next_attempt_at, created_at, updated_at)
        SELECT 'absence', row.source_id, row.attendance_record_id, row.student_id,
-         row.phone_number, row.payload, row.ref_code, 'pending', row.template_text,
+         row.phone_number, row.payload, row.ref_code, 'pending', row.template_index, row.template_text,
          row.rendered_message, NOW(), NOW(), NOW()
        FROM jsonb_to_recordset($1::jsonb) AS row(
          source_id bigint, attendance_record_id bigint, student_id integer,
-         phone_number text, payload jsonb, ref_code text, template_text text,
+         phone_number text, payload jsonb, ref_code text, template_index integer, template_text text,
          rendered_message text
        )
        ON CONFLICT DO NOTHING`,
@@ -97,7 +101,7 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
     insertedCount += inserted.rowCount;
   }
 
-  return insertedCount;
+  return { queuedCount: insertedCount, unresolvedCount: invalidPhoneCount };
 }
 
 async function processSession(sessionId, now = null) {
@@ -183,6 +187,12 @@ async function processSession(sessionId, now = null) {
       return { skipped: true, reason: "session_not_closed" };
     }
 
+    const whatsappSettings = await getWhatsAppSettings(client.query.bind(client));
+    if (!whatsappSettings.auto_send) {
+      await client.query("COMMIT");
+      return { session_id: session.session_id, queued_count: 0, deferred: true, reason: "auto_send_disabled" };
+    }
+
     const templatesResult = await client.query(
       `SELECT id, message_body
        FROM whatsapp_templates
@@ -212,29 +222,38 @@ async function processSession(sessionId, now = null) {
       [session.session_id, session.group_id]
     );
 
-    const queuedCount = await queueAbsenceNotifications(client, session, absentResult.rows);
-    await client.query(
-      `UPDATE attendance_sessions
-       SET absence_dispatched = TRUE
-       WHERE id = $1 AND status = 'closed' AND absence_dispatched = FALSE`,
-      [session.session_id]
-    );
+    const queueResult = await queueAbsenceNotifications(client, session, absentResult.rows);
+    if (queueResult.unresolvedCount === 0) {
+      await client.query(
+        `UPDATE attendance_sessions
+         SET absence_dispatched = TRUE
+         WHERE id = $1 AND status = 'closed' AND absence_dispatched = FALSE`,
+        [session.session_id]
+      );
+    }
 
     await auditLog({
       db: client,
-      action: "attendance_absence_notifications_queued",
+      action: "attendance_session_auto_finalized",
       sessionId: session.session_id,
       details: {
+        session_id: session.session_id,
+        session_date: session.session_date instanceof Date ? session.session_date.toISOString().slice(0, 10) : String(session.session_date || "").slice(0, 10),
         group_id: session.group_id,
-        absence_notification_count: queuedCount,
+        group_name: session.group_name,
+        schedule_id: session.schedule_id,
+        closed_at: schedule?.closes_at ? new Date(schedule.closes_at).toISOString() : null,
+        automatic_absence_count: absentResult.rowCount,
+        absence_notification_count: queueResult.queuedCount,
         eligible_absence_count: absentResult.rowCount,
+        unresolved_absence_count: queueResult.unresolvedCount,
         status_after: "closed",
-        absence_dispatched: true
+        absence_dispatched: queueResult.unresolvedCount === 0
       }
     });
 
     await client.query("COMMIT");
-    return { session_id: session.session_id, queued_count: queuedCount };
+    return { session_id: session.session_id, queued_count: queueResult.queuedCount, unresolved_count: queueResult.unresolvedCount };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     console.error(`Failed to finalize attendance session ${sessionId}`, error.stack || error);

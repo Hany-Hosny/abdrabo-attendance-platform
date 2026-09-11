@@ -1,5 +1,6 @@
 import { pool, query } from "../db/pool.js";
 import { auditLog } from "./audit.js";
+import { enqueueAdvancePaymentNotificationInTransaction, enqueueReceiptNotificationInTransaction } from "./whatsapp.js";
 
 // Creates any missing monthly dues up to the current month. The unique key on
 // fee_dues makes this safe to run at startup, on the first day, or on demand.
@@ -105,8 +106,15 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
           await client.query("ROLLBACK");
           return { idempotency_conflict: true };
         }
+        const whatsapp = whatsappNotified
+          ? await enqueueReceiptNotificationInTransaction(client, { paymentId: existing.rows[0].id })
+          : null;
+        if (whatsappNotified) {
+          const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+          await client.query("UPDATE payments SET whatsapp_notified = $2 WHERE id = $1", [existing.rows[0].id, considered]);
+        }
         await client.query("COMMIT");
-        return existing.rows[0];
+        return { payment: existing.rows[0], whatsapp, replayed: true };
       }
     }
     const dues = await client.query(`
@@ -164,12 +172,27 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
     ]);
     if (!payment.rowCount && idempotencyKey) {
       const existing = await client.query("SELECT * FROM payments WHERE idempotency_key = $1 FOR UPDATE", [idempotencyKey]);
+      const whatsapp = whatsappNotified && existing.rows[0]
+        ? await enqueueReceiptNotificationInTransaction(client, { paymentId: existing.rows[0].id })
+        : null;
+      if (whatsappNotified && existing.rows[0]) {
+        const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+        await client.query("UPDATE payments SET whatsapp_notified = $2 WHERE id = $1", [existing.rows[0].id, considered]);
+      }
       await client.query("COMMIT");
-      return existing.rows[0] || null;
+      return { payment: existing.rows[0] || null, whatsapp, replayed: true };
     }
     const paymentReference = `P-${String(payment.rows[0].id).padStart(8, "0")}`;
     await client.query("UPDATE payments SET payment_reference = $1 WHERE id = $2", [paymentReference, payment.rows[0].id]);
     payment.rows[0].payment_reference = paymentReference;
+    const whatsapp = whatsappNotified
+      ? await enqueueReceiptNotificationInTransaction(client, { paymentId: payment.rows[0].id })
+      : null;
+    if (whatsappNotified) {
+      const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+      await client.query("UPDATE payments SET whatsapp_notified = $2 WHERE id = $1", [payment.rows[0].id, considered]);
+      payment.rows[0].whatsapp_notified = considered;
+    }
     await auditLog({
       db: client,
       action: "payment_created",
@@ -195,7 +218,7 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
     payment.rows[0].gross_amount = remaining;
     payment.rows[0].discount_amount = appliedDiscount;
     payment.rows[0].is_exempt = Boolean(isExempt);
-    return payment.rows[0];
+    return { payment: payment.rows[0], whatsapp };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -278,8 +301,15 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
           await client.query("ROLLBACK");
           return { error: "idempotency_conflict" };
         }
+        const whatsapp = whatsappNotified
+          ? await enqueueAdvancePaymentNotificationInTransaction(client, { paymentId: existing.rows[0].id })
+          : null;
+        if (whatsappNotified) {
+          const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+          await client.query("UPDATE payments SET whatsapp_notified = $2 WHERE id = $1", [existing.rows[0].id, considered]);
+        }
         await client.query("COMMIT");
-        return { payment: existing.rows[0], months: existing.rows[0].payment_months || [], replayed: true };
+        return { payment: existing.rows[0], months: existing.rows[0].payment_months || [], whatsapp, replayed: true };
       }
     }
     const studentResult = await client.query(`
@@ -354,12 +384,27 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
     ]);
     if (!payment.rowCount && idempotencyKey) {
       const existing = await client.query("SELECT * FROM payments WHERE idempotency_key = $1 FOR UPDATE", [idempotencyKey]);
+      const whatsapp = whatsappNotified && existing.rows[0]
+        ? await enqueueAdvancePaymentNotificationInTransaction(client, { paymentId: existing.rows[0].id })
+        : null;
+      if (whatsappNotified && existing.rows[0]) {
+        const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+        await client.query("UPDATE payments SET whatsapp_notified = $2 WHERE id = $1", [existing.rows[0].id, considered]);
+      }
       await client.query("COMMIT");
-      return { payment: existing.rows[0] || null, months: existing.rows[0]?.payment_months || [], replayed: true };
+      return { payment: existing.rows[0] || null, months: existing.rows[0]?.payment_months || [], whatsapp, replayed: true };
     }
     const paymentReference = `P-${String(payment.rows[0].id).padStart(8, "0")}`;
     await client.query("UPDATE payments SET payment_reference = $1 WHERE id = $2", [paymentReference, payment.rows[0].id]);
     payment.rows[0].payment_reference = paymentReference;
+    const whatsapp = whatsappNotified
+      ? await enqueueAdvancePaymentNotificationInTransaction(client, { paymentId: payment.rows[0].id })
+      : null;
+    if (whatsappNotified) {
+      const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+      await client.query("UPDATE payments SET whatsapp_notified = $2 WHERE id = $1", [payment.rows[0].id, considered]);
+      payment.rows[0].whatsapp_notified = considered;
+    }
     await auditLog({
       db: client,
       action: "advance_payment_created",
@@ -380,7 +425,7 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
       throwOnError: true
     });
     await client.query("COMMIT");
-    return { payment: payment.rows[0], months: coveredMonths };
+    return { payment: payment.rows[0], months: coveredMonths, whatsapp };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

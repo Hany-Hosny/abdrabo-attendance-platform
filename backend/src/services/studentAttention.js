@@ -54,7 +54,7 @@ export async function listStudentsNeedingAttention({ groupId = null, includePaym
   const result = await db(`
     WITH attendance_summary AS (
       SELECT s.id,
-        COUNT(DISTINCT ats.id)::int AS attendance_sessions,
+        COUNT(ar.id) FILTER (WHERE ar.status IN ('present', 'late', 'absent'))::int AS attendance_sessions,
         COUNT(ar.id) FILTER (WHERE ar.status IN ('present', 'late'))::int AS attendance_attended
       FROM students s
       LEFT JOIN attendance_sessions ats

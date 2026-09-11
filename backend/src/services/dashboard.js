@@ -267,7 +267,9 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
       WHERE session_date >= $1::date AND session_date < $2::date
       GROUP BY group_id
     ), attendance AS (
-      SELECT ats.group_id, COUNT(*) FILTER (WHERE ar.status IN ('present', 'late'))::int AS attended_count
+      SELECT ats.group_id,
+        COUNT(*) FILTER (WHERE ar.status IN ('present', 'late'))::int AS attended_count,
+        COUNT(*) FILTER (WHERE ar.status IN ('present', 'late', 'absent'))::int AS counted_count
       FROM attendance_records ar JOIN attendance_sessions ats ON ats.id = ar.session_id
       JOIN students s ON s.id = ar.student_id AND s.is_active = TRUE AND s.deleted_at IS NULL
       WHERE ats.session_date >= $1::date AND ats.session_date < $2::date
@@ -290,6 +292,7 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
       COALESCE(sc.student_count, 0) AS active_students,
       COALESCE(ses.session_count, 0) AS session_count,
       COALESCE(att.attended_count, 0) AS attended_count,
+      COALESCE(att.counted_count, 0) AS counted_count,
       ev.evaluation_average,
       COALESCE(d.required_amount, 0) AS required_amount,
       COALESCE(d.collected_amount, 0) AS collected_amount,
@@ -318,7 +321,8 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
       FROM students s JOIN groups g ON g.id = s.group_id
       WHERE s.is_active = TRUE AND s.deleted_at IS NULL AND g.is_active = TRUE AND g.deleted_at IS NULL ${alertGroupClause}
     ), attendance_scope AS (
-      SELECT sis.id, COUNT(DISTINCT ats.id) AS sessions,
+      SELECT sis.id,
+        COUNT(*) FILTER (WHERE ar.status IN ('present', 'late', 'absent')) AS sessions,
         COUNT(*) FILTER (WHERE ar.status IN ('present', 'late')) AS attended
       FROM students_in_scope sis
       LEFT JOIN attendance_sessions ats ON ats.group_id = sis.group_id AND ats.session_date >= $1::date AND ats.session_date < $2::date
@@ -397,7 +401,7 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
         groupName: row.name,
         studentCount: Number(row.student_count || 0),
         activeStudents: Number(row.active_students || 0),
-        attendanceRate: percentage(row.attended_count, numberOrZero(row.session_count) * numberOrZero(row.student_count)),
+        attendanceRate: percentage(row.attended_count, row.counted_count),
         evaluationAverage: row.evaluation_average == null ? null : numberOrZero(row.evaluation_average)
       };
       return canFinancial ? { ...performance, collectionRate: percentage(row.collected_amount, row.required_amount), overdueCount: Number(row.overdue_dues || 0) } : performance;

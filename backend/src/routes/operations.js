@@ -15,7 +15,8 @@ import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue, scanLook
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { hasPermission } from "../services/rbac.js";
 import { ipKeyGenerator } from "express-rate-limit";
-import { enqueueAdvancePaymentNotification, enqueueAttendanceNotification, enqueueReceiptNotification } from "../services/whatsapp.js";
+import { enqueueAttendanceNotification, enqueueAttendanceNotificationInTransaction, wakeWhatsAppWorker } from "../services/whatsapp.js";
+import { MANUAL_ATTENDANCE_STATUSES } from "../utils/attendanceStatus.js";
 
 export const operationsRouter = express.Router();
 operationsRouter.use(requireTeacher);
@@ -228,20 +229,20 @@ const auditActionLabels = {
   ar: {
     payment_created: "تم تسجيل دفع المصروفات", advance_payment_created: "تم تسجيل دفع مقدم", payment_reversed: "تم عكس دفعة",
     student_created: "تم إنشاء طالب", student_updated: "تم تعديل بيانات طالب", student_changed: "تم تعديل الطالب", student_status_changed: "تم تغيير حالة طالب", student_restored: "تم استرجاع طالب", student_archived: "تمت أرشفة طالب", students_bulk_archived: "تمت أرشفة طلاب محددون", students_bulk_permanently_deleted: "تم حذف طلاب نهائيًا", student_label_printed: "تمت طباعة ليبل الطالب", student_scan_serial_regenerated: "تم تجديد سريال مسح الطالب",
-    attendance_recorded: "تم تسجيل الحضور", attendance_changed: "تم تغيير الحضور", attendance_scanned: "تم تنفيذ مسح الحضور", attendance_session_created: "تم إنشاء جلسة حضور", suspicious_scan: "تم تسجيل محاولة مسح مشبوهة",
+    attendance_recorded: "تم تسجيل الحضور", attendance_changed: "تم تغيير الحضور", attendance_scanned: "تم تنفيذ مسح الحضور", attendance_session_created: "تم إنشاء جلسة حضور", attendance_session_auto_finalized: "إغلاق جلسة الحضور أوتوماتيكياً", attendance_session_auto_reopened: "إعادة فتح جلسة الحضور أوتوماتيكياً", attendance_absence_notifications_queued: "تجهيز إشعارات الغياب", suspicious_scan: "تم تسجيل محاولة مسح مشبوهة",
     group_created: "تم إنشاء مجموعة", group_updated: "تم تعديل المجموعة", group_changed: "تم تعديل المجموعة", group_status_changed: "تم تغيير حالة المجموعة", group_archived: "تمت أرشفة المجموعة",
     exam_result_created: "تم تسجيل نتيجة امتحان", exam_result_updated: "تم تعديل نتيجة امتحان", exam_result_changed: "تم تعديل نتيجة امتحان", exam_result_deleted: "تم حذف نتيجة امتحان", homework_created: "تم إنشاء واجب", homework_updated: "تم تعديل واجب", homework_deleted: "تم حذف واجب",
     message_sent: "تم إرسال رسالة", message_deleted: "تم حذف رسالة", message_action: "تم تنفيذ إجراء على رسالة", message_read_status_changed: "تم تحديث حالة قراءة الرسالة", note_created: "تمت إضافة ملاحظة", note_updated: "تم تعديل ملاحظة", note_deleted: "تم حذف ملاحظة",
-    user_created: "تم إنشاء مستخدم", user_updated: "تم تعديل مستخدم", user_changed: "تم تعديل مستخدم", permissions_changed: "تم تعديل صلاحيات مستخدم", role_changed: "تم تغيير دور مستخدم", ownership_transferred: "تم نقل ملكية النظام", user_password_reset: "تم تغيير كلمة مرور مستخدم", user_status_changed: "تم تغيير حالة مستخدم", user_archived: "تمت أرشفة مستخدم", user_restored: "تم استرجاع مستخدم", user_permanently_deleted: "تم حذف مستخدم نهائيًا", login_succeeded: "تم تسجيل الدخول", login_failed: "فشلت محاولة تسجيل الدخول", logout: "تم تسجيل الخروج", audit_logs_unlocked: "تم فتح سجل النشاط", audit_pin_changed: "تم تغيير رقم سجل النشاط", audit_pin_failed: "فشلت محاولة فتح سجل النشاط", audit_logs_exported: "تم تصدير سجل النشاط", system_settings_changed: "تم تعديل إعدادات النظام", whatsapp_settings_changed: "تم تعديل إعدادات واتساب", system_action: "إجراء إداري بالنظام", system_request: "إجراء بالنظام"
+    user_created: "تم إنشاء مستخدم", user_updated: "تم تعديل مستخدم", user_changed: "تم تعديل مستخدم", permissions_changed: "تم تعديل صلاحيات مستخدم", role_changed: "تم تغيير دور مستخدم", ownership_transferred: "تم نقل ملكية النظام", user_password_reset: "تم تغيير كلمة مرور مستخدم", user_status_changed: "تم تغيير حالة مستخدم", user_archived: "تمت أرشفة مستخدم", user_restored: "تم استرجاع مستخدم", user_permanently_deleted: "تم حذف مستخدم نهائيًا", login_succeeded: "تم تسجيل الدخول", login_failed: "فشلت محاولة تسجيل الدخول", logout: "تم تسجيل الخروج", audit_logs_unlocked: "تم فتح سجل النشاط", audit_pin_changed: "تم تغيير رقم سجل النشاط", audit_pin_failed: "فشلت محاولة فتح سجل النشاط", audit_logs_exported: "تم تصدير سجل النشاط", system_settings_changed: "تم تعديل إعدادات النظام", whatsapp_settings_changed: "تحديث إعدادات وقوالب الواتساب", whatsapp_settings_updated: "تحديث إعدادات وقوالب الواتساب", whatsapp_disconnected: "تم فصل اتصال واتساب", whatsapp_template_created: "تم إنشاء قالب واتساب", site_content_updated: "تم تحديث محتوى الموقع", exam_results_bulk_imported: "تم استيراد نتائج امتحانات جماعياً", email_provider_tested: "تم اختبار مزود البريد الإلكتروني", advanced_settings_updated: "تم تحديث الإعدادات المتقدمة", system_admin_action: "إجراء إداري عام على النظام", system_action: "إجراء إداري عام على النظام", system_request: "إجراء عام على النظام"
   },
   en: {
     payment_created: "Payment recorded", advance_payment_created: "Advance payment recorded", payment_reversed: "Payment reversed",
     student_created: "Student created", student_updated: "Student updated", student_changed: "Student changed", student_status_changed: "Student status changed", student_restored: "Student restored", student_archived: "Student archived", students_bulk_archived: "Students archived in bulk", students_bulk_permanently_deleted: "Students permanently deleted in bulk", student_label_printed: "Student label printed", student_scan_serial_regenerated: "Student scan serial regenerated",
-    attendance_recorded: "Attendance recorded", attendance_changed: "Attendance changed", attendance_scanned: "Attendance scan processed", attendance_session_created: "Attendance session created", suspicious_scan: "Suspicious scan recorded",
+    attendance_recorded: "Attendance recorded", attendance_changed: "Attendance changed", attendance_scanned: "Attendance scan processed", attendance_session_created: "Attendance session created", attendance_session_auto_finalized: "Attendance session closed automatically", attendance_session_auto_reopened: "Attendance session reopened automatically", attendance_absence_notifications_queued: "Absence notifications prepared", suspicious_scan: "Suspicious scan recorded",
     group_created: "Group created", group_updated: "Group updated", group_changed: "Group updated", group_status_changed: "Group status changed", group_archived: "Group archived",
     exam_result_created: "Exam result recorded", exam_result_updated: "Exam result updated", exam_result_changed: "Exam result updated", exam_result_deleted: "Exam result deleted", homework_created: "Homework created", homework_updated: "Homework updated", homework_deleted: "Homework deleted",
     message_sent: "Message sent", message_deleted: "Message deleted", message_action: "Message action", message_read_status_changed: "Message read status updated", note_created: "Note added", note_updated: "Note updated", note_deleted: "Note deleted",
-    user_created: "User created", user_updated: "User updated", user_changed: "User updated", permissions_changed: "User permissions changed", role_changed: "User role changed", ownership_transferred: "System ownership transferred", user_password_reset: "User password changed", user_status_changed: "User status changed", user_archived: "User archived", user_restored: "User restored", user_permanently_deleted: "User permanently deleted", login_succeeded: "Login successful", login_failed: "Login attempt failed", logout: "Logged out", audit_logs_unlocked: "Audit logs unlocked", audit_pin_changed: "Audit PIN changed", audit_pin_failed: "Audit PIN attempt failed", audit_logs_exported: "Audit log exported", system_settings_changed: "System settings changed", whatsapp_settings_changed: "WhatsApp settings changed", system_action: "Administrative system action", system_request: "System action"
+    user_created: "User created", user_updated: "User updated", user_changed: "User updated", permissions_changed: "User permissions changed", role_changed: "User role changed", ownership_transferred: "System ownership transferred", user_password_reset: "User password changed", user_status_changed: "User status changed", user_archived: "User archived", user_restored: "User restored", user_permanently_deleted: "User permanently deleted", login_succeeded: "Login successful", login_failed: "Login attempt failed", logout: "Logged out", audit_logs_unlocked: "Audit logs unlocked", audit_pin_changed: "Audit PIN changed", audit_pin_failed: "Audit PIN attempt failed", audit_logs_exported: "Audit log exported", system_settings_changed: "System settings changed", whatsapp_settings_changed: "WhatsApp settings and templates updated", whatsapp_settings_updated: "WhatsApp settings and templates updated", whatsapp_disconnected: "WhatsApp disconnected", whatsapp_template_created: "WhatsApp template created", site_content_updated: "Site content updated", exam_results_bulk_imported: "Exam results imported in bulk", email_provider_tested: "Email provider tested", advanced_settings_updated: "Advanced settings updated", system_admin_action: "General administrative system action", system_action: "General administrative system action", system_request: "General system action"
   }
 };
 
@@ -884,15 +885,35 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
         return { replay: true, record };
       }
     }
-    const existing = await client.query("SELECT * FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1", [sessionId, studentId]);
+    const existing = await client.query("SELECT * FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1 FOR UPDATE", [sessionId, studentId]);
+    if (status === "excused" && existing.rows[0]?.method === "system" && existing.rows[0]?.status === "absent") {
+      const corrected = await client.query(`UPDATE attendance_records
+        SET status = 'excused', method = 'manual', checkin_time = NOW(), whatsapp_notified = FALSE
+        WHERE id = $1
+        RETURNING *`, [existing.rows[0].id]);
+      await client.query(`UPDATE whatsapp_notification_jobs
+        SET status = 'skipped', last_error = 'attendance_excused', next_attempt_at = NULL,
+            lease_expires_at = NULL, updated_at = NOW()
+        WHERE notification_type = 'absence' AND attendance_record_id = $1
+          AND status IN ('pending', 'processing')`, [existing.rows[0].id]);
+      await auditLog({ db: client, action: "attendance_recorded", actorId, studentId, sessionId, details: { method: "manual", status_before: "absent", status_after: "excused", record_id: corrected.rows[0].id }, request });
+      await client.query("COMMIT");
+      return { corrected: true, record: corrected.rows[0] };
+    }
     await client.query("COMMIT");
     return { duplicate: true, record: existing.rows[0] || null };
   }
-  await auditLog({ db: client, action: "attendance_recorded", actorId, studentId, sessionId, details: { method, status_after: status, record_id: result.rows[0].id, checkin_time: result.rows[0].checkin_time }, request });
+  let whatsapp = null;
+  if ((status === "present" || status === "late") && whatsappNotified) {
+    whatsapp = await enqueueAttendanceNotificationInTransaction(client, { attendanceRecordId: result.rows[0].id, studentId });
+    const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+    await client.query("UPDATE attendance_records SET whatsapp_notified = $2 WHERE id = $1", [result.rows[0].id, considered]);
+    result.rows[0].whatsapp_notified = considered;
+  }
+  await auditLog({ db: client, action: "attendance_recorded", actorId, studentId, sessionId, details: { method, status_before: null, status_after: status, record_id: result.rows[0].id, checkin_time: result.rows[0].checkin_time, whatsapp_queue_reason: whatsapp?.reason || null }, request });
   await client.query("COMMIT");
-  if ((status === "present" || status === "late") && whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: result.rows[0].id, studentId })
-    .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
-  return { record: result.rows[0] };
+  if (whatsapp?.queued) wakeWhatsAppWorker();
+  return { record: result.rows[0], whatsapp };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -1099,8 +1120,20 @@ async function correctSystemAbsence({ sessionId, studentId, actorId, ip, deviceI
       await client.query("COMMIT");
       return null;
     }
-    await auditLog({ db: client, action: "attendance_recorded", actorId, studentId, sessionId, details: { method: "scanner", status_before: "absent", status_after: "present", record_id: corrected.rows[0].id, corrected_system_absence: true }, request });
+    const whatsapp = whatsappNotified
+      ? await enqueueAttendanceNotificationInTransaction(client, { attendanceRecordId: corrected.rows[0].id, studentId })
+      : null;
+    const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+    await client.query("UPDATE attendance_records SET whatsapp_notified = $2 WHERE id = $1", [corrected.rows[0].id, considered]);
+    await client.query(`UPDATE whatsapp_notification_jobs
+      SET status = 'skipped', last_error = 'attendance_corrected', next_attempt_at = NULL,
+          lease_expires_at = NULL, updated_at = NOW()
+      WHERE notification_type = 'absence' AND attendance_record_id = $1
+        AND status IN ('pending', 'processing')`, [corrected.rows[0].id]);
+    corrected.rows[0].whatsapp_notified = considered;
+    await auditLog({ db: client, action: "attendance_recorded", actorId, studentId, sessionId, details: { method: "scanner", status_before: "absent", status_after: "present", record_id: corrected.rows[0].id, corrected_system_absence: true, whatsapp_queue_reason: whatsapp?.reason || null }, request });
     await client.query("COMMIT");
+    if (whatsapp?.queued) wakeWhatsAppWorker();
     return corrected.rows[0];
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -1114,23 +1147,34 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
   try {
     const sessionId=Number(normalizeDigits(req.body?.session_id)), studentId=Number(normalizeDigits(req.body?.student_id)), status=String(req.body?.status||"present");
     const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
-    if (!sessionId || !studentId || !["present","absent","late","pending_review"].includes(status)) return res.status(400).json({ok:false,status:"invalid_attendance_payload"});
+    if (!sessionId || !studentId || !MANUAL_ATTENDANCE_STATUSES.includes(status)) return res.status(400).json({ok:false,status:"invalid_attendance_payload"});
     const check = await query("SELECT 1 FROM attendance_sessions s JOIN students st ON st.group_id=s.group_id WHERE s.id=$1 AND st.id=$2", [sessionId,studentId]);
     if (!check.rowCount) return res.status(400).json({ok:false,status:"wrong_group"});
     const existing = await query("SELECT id, status, method FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1", [sessionId, studentId]);
-    if (existing.rowCount && existing.rows[0].method === "system" && existing.rows[0].status === "absent") {
+    if (existing.rowCount && ((existing.rows[0].method === "system" && existing.rows[0].status === "absent") || existing.rows[0].status === "excused")) {
+      const previousStatus = existing.rows[0].status;
       const updated = await query(`UPDATE attendance_records
         SET status=$1, method='manual', checkin_time=NOW(), whatsapp_notified=$3
         WHERE id=$2
         RETURNING *`, [status, existing.rows[0].id, status === "present" || status === "late" ? whatsappNotified : false]);
-      await auditLog({ action: "attendance_recorded", actorId: req.teacher.id, studentId, sessionId, details: { method: "manual", status_before: "absent", status_after: status, record_id: updated.rows[0].id }, request: req });
-      if (status === "present" || status === "late") {
-        if (whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: updated.rows[0].id, studentId })
-          .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
+      await auditLog({ action: "attendance_recorded", actorId: req.teacher.id, studentId, sessionId, details: { method: "manual", status_before: previousStatus, status_after: status, record_id: updated.rows[0].id }, request: req });
+      if (status === "present" || status === "late" || status === "excused") {
+        await query(`UPDATE whatsapp_notification_jobs
+          SET status = 'skipped', last_error = 'attendance_corrected', next_attempt_at = NULL,
+              lease_expires_at = NULL, updated_at = NOW()
+          WHERE notification_type = 'absence' AND attendance_record_id = $1
+            AND status IN ('pending', 'processing')`, [updated.rows[0].id]);
+        if (whatsappNotified && (status === "present" || status === "late")) {
+          const whatsapp = await enqueueAttendanceNotification({ attendanceRecordId: updated.rows[0].id, studentId });
+          const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+          await query("UPDATE attendance_records SET whatsapp_notified = $2 WHERE id = $1", [updated.rows[0].id, considered]);
+          updated.rows[0].whatsapp_notified = considered;
+        }
       }
       return res.status(200).json({ok:true,record:updated.rows[0],corrected:true});
     }
     const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,whatsappNotified,request:req});
+    if (saved.corrected) return res.status(200).json({ok:true,record:saved.record,corrected:true});
     if (saved.duplicate) return res.status(409).json({ok:false,status:"duplicate_attendance"});
     res.status(201).json({ok:true,record:saved.record});
   } catch (error) { next(error); }
@@ -1303,12 +1347,7 @@ operationsRouter.post("/fees/advance-payments", paymentRateLimit, requirePermiss
     if (result.error === "current_month_unpaid") return res.status(409).json({ ok: false, status: result.error, message: "The current month must be paid before making an advance payment. / يجب سداد الشهر الحالي أولاً قبل الدفع مقدماً." });
     if (result.error === "invalid_months") return res.status(400).json({ ok: false, status: result.error, message: "Invalid advance months. / أشهر الدفع المقدم غير صحيحة." });
     if (result.error === "month_already_paid") return res.status(409).json({ ok: false, status: result.error, month: result.month, message: "This month is already paid. / هذا الشهر مدفوع بالفعل." });
-    let whatsapp = null;
-    if (sendWhatsApp && result.payment?.id) {
-      try { whatsapp = await enqueueAdvancePaymentNotification({ paymentId: result.payment.id }); }
-      catch (error) { console.error("Failed to queue WhatsApp advance-payment notification", error); whatsapp = { queued: false, reason: "queue_failed" }; }
-    }
-    res.status(201).json({ ok: true, payment: result.payment, months: result.months, whatsapp });
+    res.status(result.replayed ? 200 : 201).json({ ok: true, payment: result.payment, months: result.months, whatsapp: result.whatsapp || null, replayed: Boolean(result.replayed) });
   } catch (error) {
     console.error("Failed to record advance payment", error);
     return res.status(500).json({ ok: false, status: "payment_failed" });
@@ -1328,30 +1367,22 @@ operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("pay
     const discountAmount = Number(normalizeDigits(req.body?.discount_amount ?? 0));
     if (!Number.isFinite(discountAmount) || discountAmount < 0) return res.status(400).json({ ok: false, status: "invalid_discount" });
     if (sendWhatsApp && !hasPermission(req.teacher, "whatsapp.send_receipts")) return res.status(403).json({ ok: false, status: "permission_required", permission: "whatsapp.send_receipts" });
-    if (idempotencyKey) {
-      const replay = await query("SELECT * FROM payments WHERE idempotency_key = $1 LIMIT 1", [idempotencyKey]);
-      if (replay.rowCount) {
-        if (Number(replay.rows[0].student_id) !== studentId || replay.rows[0].payment_type !== "normal" || replay.rows[0].payment_method !== paymentMethod) return res.status(409).json({ ok: false, status: "idempotency_conflict" });
-        return res.status(200).json({ ok: true, payment: replay.rows[0], paid_amount: replay.rows[0].paid_amount ?? replay.rows[0].amount, discount_amount: replay.rows[0].discount_amount ?? 0, is_exempt: replay.rows[0].is_exempt === true, replayed: true });
+    if (!idempotencyKey) {
+      const summary = await getFeeSummary(studentId);
+      if (!summary) return res.status(404).json({ ok: false, status: "not_found", message: "الطالب غير موجود. / Student was not found." });
+      if (Number(summary.remaining_balance) <= 0) {
+        const status = Number(summary.required_amount) > 0 ? "already_paid" : "no_outstanding_fees";
+        const message = status === "already_paid" ? "تم سداد المصروفات بالفعل. / Fees already paid." : "لا توجد مصروفات مستحقة لهذا الطالب. / No outstanding fees for this student.";
+        return res.status(409).json({ ok: false, status, message });
       }
     }
-    const summary = await getFeeSummary(studentId);
-    if (!summary) return res.status(404).json({ ok: false, status: "not_found", message: "الطالب غير موجود. / Student was not found." });
-    if (Number(summary.remaining_balance) <= 0) {
-      const status = Number(summary.required_amount) > 0 ? "already_paid" : "no_outstanding_fees";
-      const message = status === "already_paid" ? "تم سداد المصروفات بالفعل. / Fees already paid." : "لا توجد مصروفات مستحقة لهذا الطالب. / No outstanding fees for this student.";
-      return res.status(409).json({ ok: false, status, message });
-    }
-    const payment = await recordFullPayment({ studentId, actorId: req.teacher.id, paymentMethod, notes: req.body?.notes || null, idempotencyKey, whatsappNotified: sendWhatsApp, discountAmount, isExempt, request: req });
-    if (payment?.error === "invalid_discount") return res.status(400).json({ ok: false, status: payment.error });
-    if (payment?.idempotency_conflict) return res.status(409).json({ ok: false, status: "idempotency_conflict" });
+    const paymentResult = await recordFullPayment({ studentId, actorId: req.teacher.id, paymentMethod, notes: req.body?.notes || null, idempotencyKey, whatsappNotified: sendWhatsApp, discountAmount, isExempt, request: req });
+    if (paymentResult?.error === "invalid_discount") return res.status(400).json({ ok: false, status: paymentResult.error });
+    if (paymentResult?.idempotency_conflict) return res.status(409).json({ ok: false, status: "idempotency_conflict" });
+    const payment = paymentResult?.payment;
     if (!payment) return res.status(409).json({ ok: false, status: "already_paid", message: "تم سداد المصروفات بالفعل. / Fees already paid." });
-    let whatsapp = null;
-    if (sendWhatsApp && payment?.id) {
-      try { whatsapp = await enqueueReceiptNotification({ paymentId: payment.id }); }
-      catch (error) { console.error("Failed to queue WhatsApp receipt notification", error); whatsapp = { queued: false, reason: "queue_failed" }; }
-    }
-    return res.status(201).json({ ok: true, payment, paid_amount: payment.paid_amount ?? payment.amount, discount_amount: payment.discount_amount ?? 0, is_exempt: payment.is_exempt === true, whatsapp });
+    const whatsapp = paymentResult.whatsapp || null;
+    return res.status(paymentResult.replayed ? 200 : 201).json({ ok: true, payment, paid_amount: payment.paid_amount ?? payment.amount, discount_amount: payment.discount_amount ?? 0, is_exempt: payment.is_exempt === true, whatsapp, replayed: Boolean(paymentResult.replayed) });
   } catch (error) {
     console.error("Failed to record payment", error);
     return res.status(500).json({ ok: false, status: "payment_failed" });

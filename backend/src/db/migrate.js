@@ -87,7 +87,7 @@ export async function migrate() {
       student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
       student_name_snapshot TEXT,
       student_code_snapshot TEXT,
-      status TEXT NOT NULL DEFAULT 'present' CHECK (status IN ('present', 'absent', 'late', 'pending_review', 'rejected')),
+      status TEXT NOT NULL DEFAULT 'present' CHECK (status IN ('present', 'absent', 'late', 'pending_review', 'rejected', 'excused')),
       method TEXT NOT NULL DEFAULT 'gps',
       checkin_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       location_lat DOUBLE PRECISION,
@@ -301,7 +301,7 @@ export async function migrate() {
     ALTER TABLE students ADD CONSTRAINT students_gender_check CHECK (gender IN ('male', 'female', 'unknown'));
 
     ALTER TABLE attendance_records DROP CONSTRAINT IF EXISTS attendance_records_status_check;
-    ALTER TABLE attendance_records ADD CONSTRAINT attendance_records_status_check CHECK (status IN ('present','absent','late','pending_review','rejected'));
+    ALTER TABLE attendance_records ADD CONSTRAINT attendance_records_status_check CHECK (status IN ('present','absent','late','pending_review','rejected','excused'));
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
@@ -644,6 +644,9 @@ export async function migrate() {
       rendered_message TEXT,
       next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       sent_at TIMESTAMPTZ,
+      lease_expires_at TIMESTAMPTZ,
+      provider_message_id TEXT,
+      provider_accepted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -697,6 +700,9 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_index INTEGER");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_text TEXT");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS rendered_message TEXT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_message_id TEXT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_accepted_at TIMESTAMPTZ");
   await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN attendance_record_id DROP NOT NULL");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_notification_type_check");
   await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");

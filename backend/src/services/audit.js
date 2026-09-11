@@ -119,6 +119,7 @@ function actionForRequest(req) {
   if (/\/groups$/.test(path)) return req.method === "POST" ? "group_created" : "group_changed";
   if (/\/exams\/results/.test(path)) return req.method === "DELETE" ? "exam_result_deleted" : "exam_result_changed";
   if (/\/homework/.test(path)) return req.method === "POST" ? "homework_created" : req.method === "DELETE" ? "homework_deleted" : "homework_updated";
+  if (/\/exams\/results\/(bulk|bulk-sheet)$/.test(path)) return "exam_results_bulk_imported";
   if (/\/notes/.test(path)) return req.method === "POST" ? "note_created" : req.method === "DELETE" ? "note_deleted" : "note_updated";
   if (/\/students\/.+\/print-label$/.test(path)) return "student_label_printed";
   if (/\/students\/.+\/regenerate-scan-serial$/.test(path)) return "student_scan_serial_regenerated";
@@ -135,6 +136,11 @@ function actionForRequest(req) {
   if (/\/users$/.test(path)) return req.method === "POST" ? "user_created" : "user_changed";
   if (/\/inbox/.test(path)) return path.includes("read") ? "message_read_status_changed" : req.method === "DELETE" ? "message_deleted" : "message_sent";
   if (/\/site\/pages/.test(path)) return "site_page_updated";
+  if (/\/site-content\/?$/.test(path)) return "site_content_updated";
+  if (/\/whatsapp\/settings$/.test(path)) return "whatsapp_settings_updated";
+  if (/\/whatsapp\/templates\/?$/.test(path)) return req.method === "POST" ? "whatsapp_template_created" : "whatsapp_settings_updated";
+  if (/\/admin\/settings\/password-recovery/.test(path)) return "advanced_settings_updated";
+  if (/\/admin\/settings/.test(path)) return "system_settings_changed";
   if (/\/contact$/.test(path)) return "public_inquiry_created";
   if (/\/audit-logs\/pin$/.test(path)) return "audit_pin_changed";
   if (/\/audit-logs\/unlock$/.test(path)) return "audit_logs_unlocked";

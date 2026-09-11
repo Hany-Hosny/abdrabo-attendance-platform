@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import type { ReactNode, MouseEvent } from "react";
+import { useState, type ReactNode, type MouseEvent } from "react";
 
 export type PublicLanguage = "ar" | "en";
 export type PublicTheme = "dark" | "light";
@@ -58,6 +58,7 @@ export function PublicHeader({
   onToggleTheme,
   onNavigate
 }: PublicHeaderProps) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const activePath = normalizePath(currentPath);
   const navItems: NavItem[] = [
     { path: "/", label: labels.home },
@@ -70,6 +71,11 @@ export function PublicHeader({
     if (!onNavigate || !navPaths.includes(item.path as (typeof navPaths)[number])) return;
     event.preventDefault();
     onNavigate(item.path);
+  }
+
+  function handleMobileNavigation(event: MouseEvent<HTMLAnchorElement>, item: NavItem) {
+    handleNavigation(event, item);
+    setMobileMenuOpen(false);
   }
 
   const themeLabel = theme === "dark" ? labels.themeToLight : labels.themeToDark;
@@ -128,8 +134,50 @@ export function PublicHeader({
           <button className="public-theme-toggle" type="button" tabIndex={0} onClick={onToggleTheme} aria-label={themeLabel} title={themeLabel} aria-pressed={theme === "light"}>
             <ThemeIcon theme={theme} />
           </button>
+          <button
+            className="public-mobile-menu-toggle"
+            type="button"
+            tabIndex={0}
+            aria-label={labels.mainNavigation}
+            aria-controls="public-mobile-menu"
+            aria-expanded={mobileMenuOpen}
+            onClick={() => setMobileMenuOpen((open) => !open)}
+          >
+            <span aria-hidden="true">☰</span>
+          </button>
         </div>
       </div>
+      {mobileMenuOpen ? (
+        <div className="public-mobile-menu-backdrop" role="presentation" onClick={(event) => { if (event.target === event.currentTarget) setMobileMenuOpen(false); }}>
+          <div className="public-mobile-menu" id="public-mobile-menu" role="dialog" aria-modal="true" aria-label={labels.mainNavigation}>
+            <div className="public-mobile-menu-heading">
+              <strong>{labels.mainNavigation}</strong>
+              <button className="public-mobile-menu-close" type="button" aria-label={labels.mainNavigation} onClick={() => setMobileMenuOpen(false)}>×</button>
+            </div>
+            <nav className="public-mobile-menu-links" aria-label={labels.mainNavigation}>
+              {navItems.map((item) => {
+                const isActive = normalizePath(item.path) === activePath;
+                return (
+                  <a
+                    className={isActive ? "is-active" : ""}
+                    href={item.path}
+                    key={item.path}
+                    aria-current={isActive ? "page" : undefined}
+                    onClick={(event) => handleMobileNavigation(event, item)}
+                  >
+                    <span>{item.label}</span>
+                    <span aria-hidden="true">{language === "ar" ? "←" : "→"}</span>
+                  </a>
+                );
+              })}
+              <a href="/teacher/login" onClick={(event) => handleMobileNavigation(event, { path: "/teacher/login", label: labels.teacherLogin })}>
+                <span>{labels.teacherLogin}</span>
+                <span aria-hidden="true">{language === "ar" ? "←" : "→"}</span>
+              </a>
+            </nav>
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }

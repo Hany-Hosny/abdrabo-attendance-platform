@@ -10,6 +10,7 @@ import { isNationalId, isPhoneNumber, normalizeDigits, normalizeStudentCode } fr
 import { auditLog, changedFields, verifyAuditPin } from "../services/audit.js";
 import { parseStudentRetention, permanentlyDeleteStudents } from "../services/studentDeletion.js";
 import { enqueueGradeNotificationInTransaction, wakeWhatsAppWorker } from "../services/whatsapp.js";
+import { attendanceRateFromStatuses } from "../utils/attendanceStatus.js";
 
 export const adminAcademicRouter = express.Router();
 adminAcademicRouter.use(requireTeacher);
@@ -511,14 +512,16 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
     const totalSessions = attendance.rows.length;
     const presentCount = attendance.rows.filter((row) => row.status === "present" || row.status === "late").length;
     const absentCount = attendance.rows.filter((row) => row.status === "absent").length;
-    const attendanceRate = totalSessions ? (presentCount / totalSessions) * 100 : null;
+    const excusedCount = attendance.rows.filter((row) => row.status === "excused").length;
+    const countedAttendanceSessions = presentCount + absentCount;
+    const attendanceRate = attendanceRateFromStatuses(attendance.rows);
     const evaluationRows = exams.rows.filter((row) => Number(row.max_score) > 0 && Number.isFinite(Number(row.score)));
     const evaluationAverage = evaluationRows.length
       ? evaluationRows.reduce((sum, row) => sum + (Number(row.score) / Number(row.max_score)) * 100, 0) / evaluationRows.length
       : null;
     const thresholds = canViewAttention ? await getDashboardAlertThresholds() : null;
     const attention = canViewAttention ? buildStudentAttention({
-      attendanceSessions: totalSessions,
+      attendanceSessions: countedAttendanceSessions,
       attendanceAttended: presentCount,
       evaluationAverage,
       paymentOverdue: feeSummary?.payment_status === "overdue",
@@ -530,7 +533,7 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
       ok: true,
       student,
       summary: {
-        attendance: canViewAttendance ? { percentage: attendanceRate, presentCount, totalSessions } : null,
+        attendance: canViewAttendance ? { percentage: attendanceRate, presentCount, absentCount, excusedCount, countedSessions: countedAttendanceSessions, totalSessions } : null,
         evaluations: canViewEvaluations ? { average: evaluationAverage, count: evaluationRows.length } : null,
         payments: canViewPayments ? {
           percentage: feeSummary?.required_amount > 0 ? (Number(feeSummary.paid_amount) / Number(feeSummary.required_amount)) * 100 : null,
@@ -545,7 +548,8 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
         total_sessions: totalSessions,
         present_count: presentCount,
         absent_count: absentCount,
-        attendance_percentage: totalSessions ? (presentCount / totalSessions) * 100 : 0,
+        excused_count: excusedCount,
+        attendance_percentage: attendanceRate ?? 0,
         records: attendance.rows
       } } : {}),
       ...(canViewEvaluations ? { exams: exams.rows } : {}),

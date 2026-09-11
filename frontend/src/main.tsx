@@ -841,7 +841,7 @@ const translations = {
     "audit.result": "نتيجة العملية",
     "audit.beforeAfter": "التغييرات",
     "audit.noChanges": "لا توجد تغييرات مسجلة.",
-    "audit.noTarget": "لا يوجد سجل مرتبط",
+    "audit.noTarget": "إجراء عام على النظام",
     "audit.copyId": "نسخ رقم النشاط",
     "audit.copied": "تم النسخ",
     "audit.copyFailed": "تعذر نسخ رقم النشاط.",
@@ -928,13 +928,15 @@ const translations = {
     "audit.action.studentLabelPrinted": "تمت طباعة ليبل الطالب",
     "audit.action.studentPurged": "تم حذف البيانات الشخصية للطالب",
     "audit.action.attendanceRecorded": "تم تسجيل الحضور",
-    "audit.action.attendanceSessionAutoFinalized": "تم إغلاق الحصة وإضافة الغياب تلقائياً",
+    "audit.action.attendanceSessionAutoFinalized": "إغلاق جلسة الحضور أوتوماتيكياً",
+    "audit.action.attendanceSessionAutoReopened": "إعادة فتح جلسة الحضور أوتوماتيكياً",
+    "audit.action.attendanceAbsenceNotificationsQueued": "تجهيز إشعارات الغياب",
     "audit.action.messageAction": "تم تنفيذ إجراء على رسالة",
     "audit.action.noteAction": "تم تنفيذ إجراء على ملاحظة",
     "audit.action.pinChanged": "تم تغيير رقم سجل النشاط",
     "audit.action.logsUnlocked": "تم فتح سجل النشاط",
     "audit.action.pinFailed": "فشلت محاولة فتح سجل النشاط",
-    "audit.action.systemRequest": "إجراء بالنظام",
+    "audit.action.systemRequest": "إجراء عام على النظام",
     "audit.action.userCreated": "تم إنشاء مستخدم",
     "audit.action.userUpdated": "تم تعديل مستخدم",
     "audit.action.permissionsChanged": "تم تعديل صلاحيات مستخدم",
@@ -972,10 +974,27 @@ const translations = {
     "audit.action.studentScanSerialRegenerated": "تم تجديد سريال مسح الطالب",
     "audit.action.studentPermanentlyAnonymized": "تم إخفاء بيانات الطالب نهائياً",
     "audit.action.sitePageUpdated": "تم تعديل محتوى صفحة الموقع",
+    "audit.action.siteContentUpdated": "تم تحديث محتوى الموقع",
     "audit.action.publicInquiryCreated": "تم إنشاء استفسار عام",
     "audit.action.systemAction": "إجراء إداري بالنظام",
     "audit.action.systemSettingsChanged": "تم تعديل إعدادات النظام",
     "audit.action.whatsappSettingsChanged": "تم تعديل إعدادات واتساب",
+    "audit.action.whatsappSettingsUpdated": "تحديث إعدادات وقوالب الواتساب",
+    "audit.action.whatsappDisconnected": "تم فصل اتصال واتساب",
+    "audit.action.whatsappTemplateCreated": "تم إنشاء قالب واتساب",
+    "audit.action.examResultsBulkImported": "تم استيراد نتائج امتحانات جماعياً",
+    "audit.action.emailProviderTested": "تم اختبار مزود البريد الإلكتروني",
+    "audit.action.advancedSettingsUpdated": "تم تحديث الإعدادات المتقدمة",
+    "audit.action.passwordResetRequested": "تم طلب إعادة تعيين كلمة المرور",
+    "audit.action.passwordResetCodeSent": "تم إرسال رمز إعادة تعيين كلمة المرور",
+    "audit.action.passwordResetCodeSendFailed": "فشل إرسال رمز إعادة تعيين كلمة المرور",
+    "audit.action.passwordResetVerificationFailed": "فشل التحقق من رمز إعادة تعيين كلمة المرور",
+    "audit.action.passwordResetVerified": "تم التحقق من رمز إعادة تعيين كلمة المرور",
+    "audit.action.passwordResetCompleted": "اكتملت إعادة تعيين كلمة المرور",
+    "audit.action.passwordResetRateLimited": "تم تقييد طلبات إعادة تعيين كلمة المرور",
+    "audit.action.passwordResetSecretCreated": "تم إنشاء سر إعادة تعيين كلمة المرور",
+    "audit.action.passwordResetSecretRotated": "تم تدوير سر إعادة تعيين كلمة المرور",
+    "audit.action.systemAdminAction": "إجراء إداري عام على النظام",
     "audit.action.logsExported": "تم تصدير سجل النشاط",
     "audit.detail.summary": "وصف العملية",
     "audit.detail.before": "قبل التغيير",
@@ -1024,6 +1043,33 @@ const translations = {
     "audit.detail.phone": "رقم الهاتف",
     "audit.detail.grade": "الصف الدراسي",
     "audit.detail.groupName": "المجموعة",
+    "audit.detail.unknownKey": "تفصيل إضافي: {{key}}",
+    "audit.detail.storedClosesAt": "وقت الإغلاق المخزن",
+    "audit.detail.effectiveClosesAt": "وقت الإغلاق الفعلي",
+    "audit.detail.effectiveEndsAt": "وقت انتهاء الحصة الفعلي",
+    "audit.detail.automaticAbsenceCount": "عدد الغياب المرصود أوتوماتيكياً",
+    "audit.detail.automaticAbsenceStudentIds": "أكواد/معرّفات الطلاب الغائبين",
+    "audit.detail.paymentId": "معرّف الدفع",
+    "audit.detail.action": "نوع العملية",
+    "audit.detail.description": "وصف العملية",
+    "audit.detail.sessionId": "معرّف الجلسة",
+    "audit.detail.scheduleId": "معرّف الجدول",
+    "audit.detail.absenceCount": "عدد سجلات الغياب",
+    "audit.detail.notificationCount": "عدد إشعارات الغياب",
+    "audit.detail.eligibleCount": "عدد الطلاب المستحقين للإشعار",
+    "audit.detail.closedAt": "وقت الإغلاق",
+    "audit.detail.startsAt": "وقت بدء الجلسة",
+    "audit.detail.opensAt": "وقت فتح التسجيل",
+    "audit.detail.closesAt": "وقت إغلاق التسجيل",
+    "audit.detail.endsAt": "وقت انتهاء الجلسة",
+    "audit.detail.serverNow": "وقت النظام",
+    "audit.detail.provider": "مزود الخدمة",
+    "audit.detail.category": "التصنيف",
+    "audit.detail.templateId": "معرّف القالب",
+    "audit.detail.rowCount": "عدد الصفوف",
+    "audit.detail.queuedCount": "عدد الإشعارات المجهزة",
+    "audit.detail.page": "الصفحة",
+    "audit.detail.locale": "لغة المحتوى",
     "audit.detail.field": "الحقل",
     "audit.detail.valueBefore": "القيمة السابقة",
     "audit.detail.valueAfter": "القيمة الجديدة",
@@ -1033,6 +1079,9 @@ const translations = {
     "audit.value.reprint": "إعادة طباعة",
     "audit.value.initialPrint": "طباعة",
     "audit.value.set": "تم التعيين",
+    "audit.value.notAvailable": "غير متوفر",
+    "audit.value.emptyList": "لا توجد عناصر",
+    "audit.value.truncated": "تم اختصار القيمة",
     "audit.narrative.userCreated": "تم إنشاء المستخدم: {{name}} — اسم المستخدم: {{username}} — الدور: {{role}}",
     "audit.narrative.userUpdated": "تم تعديل المستخدم: {{name}} — اسم المستخدم: {{username}}",
     "audit.narrative.userPasswordReset": "تم تغيير كلمة مرور المستخدم: {{name}}",
@@ -1046,6 +1095,17 @@ const translations = {
     "audit.narrative.serialRegenerated": "تم تجديد سريال مسح الطالب: {{name}} — كود الطالب: {{code}}",
     "audit.narrative.logsUnlocked": "قام المستخدم {{actor}} بفتح سجل النشاط بنجاح.",
     "audit.narrative.pinFailed": "فشلت محاولة المستخدم {{actor}} لفتح سجل النشاط.",
+    "audit.narrative.sessionFinalized": "أغلق النظام جلسة حضور المجموعة {{group}} تلقائياً بعد انتهاء نافذة التسجيل، وأضاف {{absenceCount}} سجل غياب وجهّز {{notificationCount}} إشعاراً.",
+    "audit.narrative.sessionReopened": "أعاد النظام فتح جلسة حضور المجموعة {{group}} تلقائياً لاستقبال تسجيل حضور متأخر.",
+    "audit.narrative.whatsappSettingsUpdated": "تم حفظ إعدادات الإرسال وقوالب رسائل واتساب.",
+    "audit.narrative.siteContentUpdated": "تم حفظ تحديثات محتوى الموقع والصفحة الرئيسية.",
+    "audit.narrative.systemSettingsUpdated": "تم حفظ تغييرات إعدادات النظام.",
+    "audit.narrative.examResultsBulkImported": "تم استيراد نتائج الامتحانات في عملية واحدة.",
+    "audit.narrative.whatsappDisconnected": "تم فصل اتصال واتساب من إعدادات المنصة.",
+    "audit.narrative.whatsappTemplateCreated": "تم إنشاء قالب رسالة واتساب جديد.",
+    "audit.narrative.emailProviderTested": "تم اختبار اتصال مزود البريد الإلكتروني بنجاح.",
+    "audit.narrative.passwordReset": "تم تنفيذ خطوة من خطوات إعادة تعيين كلمة مرور المستخدم.",
+    "audit.narrative.systemAdminAction": "تم تنفيذ إجراء إداري عام على النظام.",
     "audit.narrative.generic": "تم تنفيذ إجراء: {{action}}",
     "audit.word.created": "إنشاء",
     "audit.word.updated": "تعديل",
@@ -1450,6 +1510,7 @@ const translations = {
     "admin.totalSessions": "إجمالي الحصص",
     "admin.presentCount": "حاضر",
     "admin.absentCount": "غائب",
+    "admin.excusedCount": "غياب بعذر",
     "admin.attendancePercentage": "نسبة الحضور",
     "admin.attendanceRecords": "سجل الحضور",
     "admin.examHistory": "سجل الامتحانات",
@@ -1662,6 +1723,8 @@ const translations = {
     "table.time": "الوقت",
     "attendance.present": "حاضر",
     "attendance.absent": "غائب",
+    "attendance.late": "متأخر",
+    "attendance.excused": "غياب بعذر",
     "attendance.notMarked": "لم يتم التحديد",
     "attendance.pendingReview": "قيد المراجعة",
     "attendance.updated": "تم تحديث الحضور.",
@@ -2270,7 +2333,7 @@ const translations = {
     "audit.result": "Operation result",
     "audit.beforeAfter": "Changes",
     "audit.noChanges": "No recorded changes.",
-    "audit.noTarget": "No linked record",
+    "audit.noTarget": "General system action",
     "audit.copyId": "Copy activity ID",
     "audit.copied": "Copied",
     "audit.copyFailed": "Could not copy the activity ID.",
@@ -2357,13 +2420,15 @@ const translations = {
     "audit.action.studentLabelPrinted": "Student label printed",
     "audit.action.studentPurged": "Student personal data purged",
     "audit.action.attendanceRecorded": "Attendance recorded",
-    "audit.action.attendanceSessionAutoFinalized": "Session closed and absences added automatically",
+    "audit.action.attendanceSessionAutoFinalized": "Attendance session closed automatically",
+    "audit.action.attendanceSessionAutoReopened": "Attendance session reopened automatically",
+    "audit.action.attendanceAbsenceNotificationsQueued": "Absence notifications prepared",
     "audit.action.messageAction": "Message action",
     "audit.action.noteAction": "Note action",
     "audit.action.pinChanged": "Audit PIN changed",
     "audit.action.logsUnlocked": "Audit logs unlocked",
     "audit.action.pinFailed": "Audit PIN attempt failed",
-    "audit.action.systemRequest": "System action",
+    "audit.action.systemRequest": "General system action",
     "audit.action.userCreated": "User created",
     "audit.action.userUpdated": "User updated",
     "audit.action.permissionsChanged": "User permissions changed",
@@ -2401,10 +2466,27 @@ const translations = {
     "audit.action.studentScanSerialRegenerated": "Student scan serial regenerated",
     "audit.action.studentPermanentlyAnonymized": "Student data permanently anonymized",
     "audit.action.sitePageUpdated": "Site page content updated",
+    "audit.action.siteContentUpdated": "Site content updated",
     "audit.action.publicInquiryCreated": "Public inquiry created",
     "audit.action.systemAction": "Administrative system action",
     "audit.action.systemSettingsChanged": "System settings changed",
     "audit.action.whatsappSettingsChanged": "WhatsApp settings changed",
+    "audit.action.whatsappSettingsUpdated": "WhatsApp settings and templates updated",
+    "audit.action.whatsappDisconnected": "WhatsApp disconnected",
+    "audit.action.whatsappTemplateCreated": "WhatsApp template created",
+    "audit.action.examResultsBulkImported": "Exam results imported in bulk",
+    "audit.action.emailProviderTested": "Email provider tested",
+    "audit.action.advancedSettingsUpdated": "Advanced settings updated",
+    "audit.action.passwordResetRequested": "Password reset requested",
+    "audit.action.passwordResetCodeSent": "Password reset code sent",
+    "audit.action.passwordResetCodeSendFailed": "Password reset code failed to send",
+    "audit.action.passwordResetVerificationFailed": "Password reset verification failed",
+    "audit.action.passwordResetVerified": "Password reset code verified",
+    "audit.action.passwordResetCompleted": "Password reset completed",
+    "audit.action.passwordResetRateLimited": "Password reset requests rate-limited",
+    "audit.action.passwordResetSecretCreated": "Password reset secret created",
+    "audit.action.passwordResetSecretRotated": "Password reset secret rotated",
+    "audit.action.systemAdminAction": "General administrative system action",
     "audit.action.logsExported": "Audit log exported",
     "audit.detail.summary": "Operation summary",
     "audit.detail.before": "Before change",
@@ -2453,6 +2535,33 @@ const translations = {
     "audit.detail.phone": "Phone",
     "audit.detail.grade": "Grade level",
     "audit.detail.groupName": "Group",
+    "audit.detail.unknownKey": "Additional detail: {{key}}",
+    "audit.detail.storedClosesAt": "Stored close time",
+    "audit.detail.effectiveClosesAt": "Effective close time",
+    "audit.detail.effectiveEndsAt": "Effective session end time",
+    "audit.detail.automaticAbsenceCount": "Automatically detected absences",
+    "audit.detail.automaticAbsenceStudentIds": "Absent student codes/IDs",
+    "audit.detail.paymentId": "Payment ID",
+    "audit.detail.action": "Action type",
+    "audit.detail.description": "Action description",
+    "audit.detail.sessionId": "Session ID",
+    "audit.detail.scheduleId": "Schedule ID",
+    "audit.detail.absenceCount": "Absence records",
+    "audit.detail.notificationCount": "Absence notifications",
+    "audit.detail.eligibleCount": "Eligible students",
+    "audit.detail.closedAt": "Closed at",
+    "audit.detail.startsAt": "Session start",
+    "audit.detail.opensAt": "Attendance opens",
+    "audit.detail.closesAt": "Attendance closes",
+    "audit.detail.endsAt": "Session end",
+    "audit.detail.serverNow": "System time",
+    "audit.detail.provider": "Service provider",
+    "audit.detail.category": "Category",
+    "audit.detail.templateId": "Template ID",
+    "audit.detail.rowCount": "Rows",
+    "audit.detail.queuedCount": "Notifications queued",
+    "audit.detail.page": "Page",
+    "audit.detail.locale": "Content language",
     "audit.detail.field": "Field",
     "audit.detail.valueBefore": "Previous value",
     "audit.detail.valueAfter": "New value",
@@ -2462,6 +2571,9 @@ const translations = {
     "audit.value.reprint": "Reprint",
     "audit.value.initialPrint": "Print",
     "audit.value.set": "Set",
+    "audit.value.notAvailable": "Not available",
+    "audit.value.emptyList": "No items",
+    "audit.value.truncated": "Value shortened",
     "audit.narrative.userCreated": "User created: {{name}} — Username: {{username}} — Role: {{role}}",
     "audit.narrative.userUpdated": "User updated: {{name}} — Username: {{username}}",
     "audit.narrative.userPasswordReset": "User password changed: {{name}}",
@@ -2475,6 +2587,17 @@ const translations = {
     "audit.narrative.serialRegenerated": "Student scan serial regenerated: {{name}} — Student code: {{code}}",
     "audit.narrative.logsUnlocked": "User {{actor}} unlocked the activity log successfully.",
     "audit.narrative.pinFailed": "User {{actor}} failed to unlock the activity log.",
+    "audit.narrative.sessionFinalized": "The system closed the {{group}} attendance session automatically after the attendance window ended, added {{absenceCount}} absence records, and prepared {{notificationCount}} notifications.",
+    "audit.narrative.sessionReopened": "The system reopened the {{group}} attendance session automatically to accept a late attendance record.",
+    "audit.narrative.whatsappSettingsUpdated": "WhatsApp sending settings and message templates were saved.",
+    "audit.narrative.siteContentUpdated": "Site content and the home page were updated.",
+    "audit.narrative.systemSettingsUpdated": "System settings changes were saved.",
+    "audit.narrative.examResultsBulkImported": "Exam results were imported in one bulk operation.",
+    "audit.narrative.whatsappDisconnected": "The WhatsApp connection was disconnected from platform settings.",
+    "audit.narrative.whatsappTemplateCreated": "A new WhatsApp message template was created.",
+    "audit.narrative.emailProviderTested": "The email provider connection was tested successfully.",
+    "audit.narrative.passwordReset": "A password reset step was completed for a user.",
+    "audit.narrative.systemAdminAction": "A general administrative action was performed on the system.",
     "audit.narrative.generic": "Action completed: {{action}}",
     "audit.word.created": "created",
     "audit.word.updated": "updated",
@@ -2879,6 +3002,7 @@ const translations = {
     "admin.totalSessions": "Total sessions",
     "admin.presentCount": "Present",
     "admin.absentCount": "Absent",
+    "admin.excusedCount": "Excused",
     "admin.attendancePercentage": "Attendance percentage",
     "admin.attendanceRecords": "Attendance records",
     "admin.examHistory": "Exam history",
@@ -3091,6 +3215,8 @@ const translations = {
     "table.time": "Time",
     "attendance.present": "Present",
     "attendance.absent": "Absent",
+    "attendance.late": "Late",
+    "attendance.excused": "Excused",
     "attendance.notMarked": "Not marked",
     "attendance.pendingReview": "Pending review",
     "attendance.updated": "Attendance updated.",
@@ -3555,7 +3681,9 @@ function scannerStatusMessage(status: string, t: Translator) {
 function attendanceStatusBadge(status: unknown, t: Translator) {
   const value = String(status || "");
   if (value === "present") return { label: t("attendance.present"), className: "attendance-status-badge attendance-status-present" };
+  if (value === "late") return { label: t("attendance.late"), className: "attendance-status-badge attendance-status-present" };
   if (value === "absent") return { label: t("attendance.absent"), className: "attendance-status-badge attendance-status-absent" };
+  if (value === "excused") return { label: t("attendance.excused"), className: "attendance-status-badge attendance-status-excused" };
   if (value === "pending_review") return { label: t("attendance.pendingReview"), className: "attendance-status-badge attendance-status-pending" };
   return { label: t("attendance.notMarked"), className: "attendance-status-badge attendance-status-not-marked" };
 }
@@ -8101,7 +8229,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
     {loading ? <p className="empty-state">{t("admin.profileLoading")}</p> : profile ? <>
       <div className="section-heading"><p className="eyebrow">{t("dashboard.student360")}</p><h2>{profile.student.full_name}</h2><p>{profile.student.student_code || profile.student.student_serial || "—"} · {profile.student.group_name || "—"} · {recordStatusLabel(profile.student, t)}</p></div>
       <section className="student360-summary" aria-label={t("dashboard.student360Subtitle")}>
-        <article><span>{t("dashboard.metricAttendance")}</span><strong>{profile.summary?.attendance ? profilePercent(profile.summary.attendance.percentage) : "—"}</strong><small>{profile.summary?.attendance ? t("dashboard.metricSessions", { present: String(profile.summary.attendance.presentCount), total: String(profile.summary.attendance.totalSessions) }) : t("dashboard.noStudentData")}</small></article>
+        <article><span>{t("dashboard.metricAttendance")}</span><strong>{profile.summary?.attendance ? profilePercent(profile.summary.attendance.percentage) : "—"}</strong><small>{profile.summary?.attendance ? t("dashboard.metricSessions", { present: String(profile.summary.attendance.presentCount), total: String(profile.summary.attendance.countedSessions ?? profile.summary.attendance.totalSessions) }) : t("dashboard.noStudentData")}</small></article>
         <article><span>{t("dashboard.metricEvaluations")}</span><strong>{profile.summary?.evaluations ? profilePercent(profile.summary.evaluations.average) : "—"}</strong><small>{profile.summary?.evaluations ? `${t("dashboard.metricAverage")} · ${profile.summary.evaluations.count || 0}` : t("dashboard.noStudentData")}</small></article>
         <article><span>{t("dashboard.metricPayments")}</span><strong>{profile.summary?.payments ? profilePercent(profile.summary.payments.percentage) : "—"}</strong><small>{profile.summary?.payments ? t("dashboard.metricCollected", { paid: money(profile.summary.payments.paid), required: money(profile.summary.payments.required) }) : t("dashboard.noStudentData")}</small></article>
         <article className="student360-attention-card"><span>{t("dashboard.needsAttention")}</span>{profile.summary?.attention?.length ? <ul>{profile.summary.attention.map((reason: any, index: number) => <li key={`${reason.type}-${index}`}>{attentionReasonLabel(reason)}</li>)}</ul> : <strong className="student360-ok">{t("dashboard.noCurrentAttention")}</strong>}</article>
@@ -8110,7 +8238,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
         <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b><strong className="profile-student-code-value" dir="ltr">{profile.student.student_code || "—"}<button className="profile-copy-button" type="button" onClick={() => void handleCopy()} aria-label={t("admin.copyStudentCode")} title={t("admin.copyStudentCodeTitle")} disabled={!profile.student.student_code}>{isCopied ? <svg className="profile-copy-icon is-copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg> : <svg className="profile-copy-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /></svg>}</button></strong></span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
       </div></section>
       <section className="profile-section profile-label-section"><h3>{t("admin.labelDetails")}</h3><div className="profile-label-card"><StudentLabelPreview student={profile.student} />{sessionHasPermission(session, "students.manage") ? <div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printProfileLabel} disabled={labelPrinting || !labelScanSerial(profile.student)}>{labelPrinting ? t("admin.printingLabel") : t("admin.printLabel")}</button><button className="secondary-button compact-button" type="button" onClick={regenerateProfileScanSerial} disabled={serialRegenerating}>{serialRegenerating ? t("admin.updating") : t("admin.regenerateScanSerial")}</button></div> : null}</div></section>
-      {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{formatTimeOfDay(row.start_time, language)}–{formatTimeOfDay(row.end_time, language)}</span></small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
+      {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.excusedCount")}</b>{profile.attendance.excused_count || 0}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{formatTimeOfDay(row.start_time, language)}–{formatTimeOfDay(row.end_time, language)}</span></small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
       {profile.exams ? <section className="profile-section" id="student360-evaluations"><h3>{t("admin.examHistory")}</h3>{profile.exams?.length ? <div className="profile-record-list profile-exam-list">{profile.exams.map((row: any) => { const evaluation = scoreEvaluation(row.score, row.max_score, t); return <div className="profile-exam-record" key={row.id}><div className="profile-exam-details"><strong>{displayValue(row.title, language)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small>{t("dashboard.latestExamDate")}: {formatDateOnly(String(row.exam_date || ""), language, "—")}</small>{row.note ? <small>{t("admin.assessment")}: {displayValue(row.note, language)}</small> : null}</div><div className="profile-exam-score">{row.score == null ? <strong>—</strong> : <><strong className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</strong>{evaluation ? <small className={`profile-exam-evaluation score-${evaluation.tone}`}>{evaluation.percentage.toFixed(0)}% — {evaluation.label}</small> : null}</>}</div></div>; })}</div> : <p className="empty-state">{t("admin.noProfileExams")}</p>}</section> : null}
       {profile.notes ? <section className="profile-section" id="student360-notes"><h3>{t("admin.notes")}</h3>{sessionHasPermission(session, "notes.manage") ? <form className="profile-note-form" onSubmit={saveNote}><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder={t("admin.notePlaceholder")} rows={3} /><button className="secondary-button compact-button" type="submit">{editingNoteId ? t("admin.editNote") : t("admin.addNote")}</button></form> : null}{profile.notes?.length ? <div className="profile-record-list">{profile.notes.map((note: any) => <div key={note.id}><span>{note.body}<small>{note.author_name} · {new Date(note.created_at).toLocaleString()}</small></span>{sessionHasPermission(session, "notes.manage") ? <div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setEditingNoteId(Number(note.id)); setNoteBody(note.body); }}>{t("admin.editNote")}</button><button className="secondary-button compact-button" type="button" onClick={() => deleteNote(Number(note.id))}>{t("admin.deleteNote")}</button></div> : null}</div>)}</div> : <p className="empty-state">{t("admin.noProfileNotes")}</p>}</section> : null}
       {profile.fees ? <section className="profile-section" id="student360-payments"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p>{profile.fees.payments ? <><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div className="profile-payment-record" key={row.id}><div className="profile-payment-amount"><strong>{money(row.amount)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><span>{row.payment_method || t("fees.normalPayment")}</span></div><div className="profile-record-primary"><span><b>{t("fees.paidBy")}:</b> {row.paid_by || "—"}</span><small><b>{t("fees.paymentDate")}:</b> {formatDateTime(String(row.paid_at || row.payment_date || ""), language, "—")}</small></div></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</> : null}</section> : null}
@@ -8129,6 +8257,7 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
   const [records, setRecords] = useState<any[]>([]);
   const [status, setStatus] = useState("");
   const [rowFeedback, setRowFeedback] = useState<Record<number, string>>({});
+  const [savingStudentId, setSavingStudentId] = useState<number | null>(null);
   const selected = selectedSessionId;
   const headers = { Authorization: `Bearer ${session.token}` };
   async function load() { const [sr, st] = await Promise.all([fetch(`${API_BASE_URL}/admin/attendance/sessions?date=${date}`, { headers }), fetch(`${API_BASE_URL}/admin/students`, { headers })]); const sd = await sr.json(), td = await st.json(); const nextSessions = Array.isArray(sd.sessions) ? sd.sessions : []; const now = Date.now(); const selectableSessions = nextSessions.filter((item: any) => { if (String(item.status || "").toLowerCase() !== "open") return false; const opensAt = Date.parse(String(item.opens_at || item.starts_at || "")); const closesAt = Date.parse(String(item.closes_at || "")); const endsAt = Date.parse(String(item.ends_at || "")); const end = [closesAt, endsAt].filter(Number.isFinite).reduce((latest, value) => Math.min(latest, value), Number.POSITIVE_INFINITY); return Number.isFinite(opensAt) && Number.isFinite(end) && now >= opensAt && now <= end; }); setSessions(selectableSessions); setStudents(Array.isArray(td.students) ? td.students : []); const nextSelected = selectedSessionId && selectableSessions.some((item: any) => String(item.id) === selectedSessionId) ? selectedSessionId : selectableSessions[0] ? String(selectableSessions[0].id) : ""; onSessionIdChange(nextSelected); }
@@ -8136,17 +8265,25 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
   useEffect(() => { load().catch(() => setStatus("تعذر تحميل الحضور / Could not load attendance")); }, [date]);
   useEffect(() => { if (selected) loadRecords(selected).catch(() => undefined); else setRecords([]); }, [selected]);
   async function mark(studentId: number, statusValue: string) {
+    if (savingStudentId !== null) return;
+    setSavingStudentId(studentId);
     setRowFeedback((current) => { const next = { ...current }; delete next[studentId]; return next; });
-    const response = await fetch(`${API_BASE_URL}/admin/attendance/manual`, { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ session_id: Number(selected), student_id: studentId, status: statusValue, send_whatsapp: sendWhatsApp }) });
-    const data = await response.json();
-    const message = data.ok ? t("attendance.updated") : data.status === "duplicate_attendance" ? t("attendance.alreadyRegistered") : t("attendance.updateFailed");
-    setRowFeedback((current) => ({ ...current, [studentId]: message }));
-    window.setTimeout(() => setRowFeedback((current) => { const next = { ...current }; delete next[studentId]; return next; }), 3500);
-    loadRecords(selected);
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/attendance/manual`, { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify({ session_id: Number(selected), student_id: studentId, status: statusValue, send_whatsapp: sendWhatsApp }) });
+      const data = await response.json().catch(() => ({}));
+      const message = data.ok ? t("attendance.updated") : data.status === "duplicate_attendance" ? t("attendance.alreadyRegistered") : t("attendance.updateFailed");
+      setRowFeedback((current) => ({ ...current, [studentId]: message }));
+      window.setTimeout(() => setRowFeedback((current) => { const next = { ...current }; delete next[studentId]; return next; }), 3500);
+      await loadRecords(selected);
+    } catch (_error) {
+      setRowFeedback((current) => ({ ...current, [studentId]: t("attendance.updateFailed") }));
+    } finally {
+      setSavingStudentId(null);
+    }
   }
   const selectedSession = sessions.find((item) => String(item.id) === selected);
   const groupStudents = students.filter((item) => !selectedSession || item.group_id === selectedSession.group_id);
-  return <section className="admin-editor"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => onSessionIdChange(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {formatTimeOfDay(item.start_time, language)} إلى {formatTimeOfDay(item.end_time, language)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}{canSendAttendance ? <label className="whatsapp-receipt-option attendance-whatsapp-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendWhatsApp} onChange={(event) => setSendWhatsApp(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendAttendance")}</span></label> : null}<div className="academic-list">{groupStudents.map((student) => { const currentRecord = records.find((record) => record.student_id === student.id); const currentStatus = currentRecord?.status || "not_marked"; const feedback = rowFeedback[student.id]; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}{currentRecord?.whatsapp_notified === false ? <span className="whatsapp-not-sent-badge" title={t("whatsapp.notSent")}>🔕 {t("whatsapp.notSent")}</span> : null}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "present")}>Present / حاضر</button><button className="secondary-button compact-button" disabled={!selected} onClick={() => mark(student.id, "absent")}>Absent / غائب</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
+  return <section className="admin-editor"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => onSessionIdChange(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {formatTimeOfDay(item.start_time, language)} إلى {formatTimeOfDay(item.end_time, language)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}{canSendAttendance ? <label className="whatsapp-receipt-option attendance-whatsapp-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendWhatsApp} onChange={(event) => setSendWhatsApp(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendAttendance")}</span></label> : null}<div className="academic-list">{groupStudents.map((student) => { const currentRecord = records.find((record) => record.student_id === student.id); const currentStatus = currentRecord?.status || "not_marked"; const feedback = rowFeedback[student.id]; const rowSaving = savingStudentId === student.id; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}{currentRecord?.whatsapp_notified === false ? <span className="whatsapp-not-sent-badge" title={t("whatsapp.notSent")}>🔕 {t("whatsapp.notSent")}</span> : null}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "present")}>{rowSaving ? "Saving… / جاري الحفظ" : "Present / حاضر"}</button><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "absent")}>{rowSaving ? "Saving… / جاري الحفظ" : "Absent / غائب"}</button><button className="secondary-button compact-button attendance-excused-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "excused")}>{rowSaving ? "Saving… / جاري الحفظ" : t("attendance.excused")}</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
 type CameraScannerToast = { tone: "success" | "error"; message: string };
@@ -8475,7 +8612,11 @@ function LegacyScannerPanel({ session, language, t, selectedSessionId = "", onOp
         data = {};
       }
 
-      if (data.status === "ignored_hardware_bounce") return;
+      if (data.status === "ignored_hardware_bounce") {
+        setScanState("idle");
+        setMessage("");
+        return;
+      }
       setStudent(data.student || null);
       if (response.ok && data.ok) {
         setScanState("success");
@@ -8957,6 +9098,14 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
 }
 
 function resolveAuditAction(action: string, details: Record<string, unknown> = {}) {
+  const aliases: Record<string, string> = {
+    whatsapp_settings_changed: "whatsapp_settings_updated",
+    whatsapp_settings_updated: "whatsapp_settings_updated",
+    site_page_updated: "site_page_updated",
+    system_admin_action: "system_admin_action"
+  };
+  const aliasedAction = aliases[action];
+  if (aliasedAction && aliasedAction !== action) return aliasedAction;
   if (action !== "system_request") return action;
   const request = details.request && typeof details.request === "object" ? details.request as Record<string, unknown> : {};
   const path = String(details.path || request.path || "");
@@ -8989,6 +9138,8 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     student_personal_data_purged: "audit.action.studentPurged",
     attendance_recorded: "audit.action.attendanceRecorded",
     attendance_session_auto_finalized: "audit.action.attendanceSessionAutoFinalized",
+    attendance_session_auto_reopened: "audit.action.attendanceSessionAutoReopened",
+    attendance_absence_notifications_queued: "audit.action.attendanceAbsenceNotificationsQueued",
     message_action: "audit.action.messageAction",
     note_action: "audit.action.noteAction",
     audit_pin_changed: "audit.action.pinChanged",
@@ -9038,13 +9189,61 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     student_scan_serial_regenerated: "audit.action.studentScanSerialRegenerated",
     student_permanently_anonymized: "audit.action.studentPermanentlyAnonymized",
     site_page_updated: "audit.action.sitePageUpdated",
+    site_content_updated: "audit.action.siteContentUpdated",
     public_inquiry_created: "audit.action.publicInquiryCreated",
-    whatsapp_settings_changed: "audit.action.whatsappSettingsChanged",
+    whatsapp_settings_changed: "audit.action.whatsappSettingsUpdated",
+    whatsapp_settings_updated: "audit.action.whatsappSettingsUpdated",
+    whatsapp_disconnected: "audit.action.whatsappDisconnected",
+    whatsapp_template_created: "audit.action.whatsappTemplateCreated",
+    exam_results_bulk_imported: "audit.action.examResultsBulkImported",
+    email_provider_tested: "audit.action.emailProviderTested",
+    advanced_settings_updated: "audit.action.advancedSettingsUpdated",
+    password_reset_requested: "audit.action.passwordResetRequested",
+    password_reset_code_sent: "audit.action.passwordResetCodeSent",
+    password_reset_code_send_failed: "audit.action.passwordResetCodeSendFailed",
+    password_reset_verification_failed: "audit.action.passwordResetVerificationFailed",
+    password_reset_verified: "audit.action.passwordResetVerified",
+    password_reset_completed: "audit.action.passwordResetCompleted",
+    password_reset_rate_limited: "audit.action.passwordResetRateLimited",
+    password_reset_secret_created: "audit.action.passwordResetSecretCreated",
+    password_reset_secret_rotated: "audit.action.passwordResetSecretRotated",
+    system_admin_action: "audit.action.systemAdminAction",
+    system_action: "audit.action.systemAdminAction",
     system_settings_changed: "audit.action.systemSettingsChanged",
-    system_action: "audit.action.systemAction",
     audit_logs_exported: "audit.action.logsExported"
   };
   return keys[action] || "audit.action.systemRequest";
+}
+
+function auditActionDescriptionKey(action: string, details: Record<string, unknown> = {}): TranslationKey {
+  const resolvedAction = resolveAuditAction(action, details);
+  const keys: Record<string, TranslationKey> = {
+    attendance_session_auto_finalized: "audit.narrative.sessionFinalized",
+    attendance_absence_notifications_queued: "audit.narrative.sessionFinalized",
+    attendance_session_auto_reopened: "audit.narrative.sessionReopened",
+    whatsapp_settings_changed: "audit.narrative.whatsappSettingsUpdated",
+    whatsapp_settings_updated: "audit.narrative.whatsappSettingsUpdated",
+    site_content_updated: "audit.narrative.siteContentUpdated",
+    site_page_updated: "audit.narrative.siteContentUpdated",
+    system_settings_changed: "audit.narrative.systemSettingsUpdated",
+    advanced_settings_updated: "audit.narrative.systemSettingsUpdated",
+    exam_results_bulk_imported: "audit.narrative.examResultsBulkImported",
+    whatsapp_disconnected: "audit.narrative.whatsappDisconnected",
+    whatsapp_template_created: "audit.narrative.whatsappTemplateCreated",
+    email_provider_tested: "audit.narrative.emailProviderTested",
+    password_reset_requested: "audit.narrative.passwordReset",
+    password_reset_code_sent: "audit.narrative.passwordReset",
+    password_reset_code_send_failed: "audit.narrative.passwordReset",
+    password_reset_verification_failed: "audit.narrative.passwordReset",
+    password_reset_verified: "audit.narrative.passwordReset",
+    password_reset_completed: "audit.narrative.passwordReset",
+    password_reset_rate_limited: "audit.narrative.passwordReset",
+    password_reset_secret_created: "audit.narrative.passwordReset",
+    password_reset_secret_rotated: "audit.narrative.passwordReset",
+    system_admin_action: "audit.narrative.systemAdminAction",
+    system_action: "audit.narrative.systemAdminAction"
+  };
+  return keys[resolvedAction] || "audit.narrative.generic";
 }
 
 const auditActionOptions: Array<{ value: string; label: TranslationKey }> = [
@@ -9070,6 +9269,9 @@ const auditActionOptions: Array<{ value: string; label: TranslationKey }> = [
   { value: "attendance_changed", label: "audit.action.attendanceChanged" },
   { value: "attendance_scanned", label: "audit.action.attendanceScanned" },
   { value: "attendance_session_created", label: "audit.action.attendanceSessionCreated" },
+  { value: "attendance_session_auto_finalized", label: "audit.action.attendanceSessionAutoFinalized" },
+  { value: "attendance_session_auto_reopened", label: "audit.action.attendanceSessionAutoReopened" },
+  { value: "attendance_absence_notifications_queued", label: "audit.action.attendanceAbsenceNotificationsQueued" },
   { value: "suspicious_scan", label: "audit.action.suspiciousScan" },
   { value: "group_created", label: "audit.action.groupCreated" },
   { value: "group_updated", label: "audit.action.groupUpdated" },
@@ -9109,9 +9311,19 @@ const auditActionOptions: Array<{ value: string; label: TranslationKey }> = [
   { value: "audit_logs_unlocked", label: "audit.action.logsUnlocked" },
   { value: "audit_pin_failed", label: "audit.action.pinFailed" },
   { value: "site_page_updated", label: "audit.action.sitePageUpdated" },
+  { value: "site_content_updated", label: "audit.action.siteContentUpdated" },
   { value: "system_settings_changed", label: "audit.action.systemSettingsChanged" },
+  { value: "advanced_settings_updated", label: "audit.action.advancedSettingsUpdated" },
+  { value: "whatsapp_settings_changed", label: "audit.action.whatsappSettingsUpdated" },
+  { value: "whatsapp_settings_updated", label: "audit.action.whatsappSettingsUpdated" },
+  { value: "whatsapp_disconnected", label: "audit.action.whatsappDisconnected" },
+  { value: "whatsapp_template_created", label: "audit.action.whatsappTemplateCreated" },
+  { value: "exam_results_bulk_imported", label: "audit.action.examResultsBulkImported" },
+  { value: "email_provider_tested", label: "audit.action.emailProviderTested" },
+  { value: "password_reset_completed", label: "audit.action.passwordResetCompleted" },
   { value: "public_inquiry_created", label: "audit.action.publicInquiryCreated" },
-  { value: "system_action", label: "audit.action.systemAction" },
+  { value: "system_admin_action", label: "audit.action.systemAdminAction" },
+  { value: "system_action", label: "audit.action.systemAdminAction" },
   { value: "system_request", label: "audit.action.systemRequest" },
   { value: "audit_logs_exported", label: "audit.action.logsExported" }
 ];
@@ -9130,6 +9342,13 @@ function auditDetailLabelKey(key: string): TranslationKey | null {
     status_before: "audit.detail.statusBefore", status_after: "audit.detail.statusAfter", amount: "audit.detail.amount", scanned_value: "audit.detail.scannedValue",
     outcome: "audit.detail.outcome", print_type: "audit.detail.printType", serial: "audit.detail.serial", student_serial: "audit.detail.serial",
     scan_serial: "audit.detail.scanSerial", remaining_print_count: "audit.detail.remainingPrintCount", session_date: "audit.detail.sessionDate",
+    stored_closes_at: "audit.detail.storedClosesAt", effective_closes_at: "audit.detail.effectiveClosesAt", effective_ends_at: "audit.detail.effectiveEndsAt",
+    session_id: "audit.detail.sessionId", schedule_id: "audit.detail.scheduleId", automatic_absence_count: "audit.detail.automaticAbsenceCount",
+    automatic_absence_student_ids: "audit.detail.automaticAbsenceStudentIds", payment_id: "audit.detail.paymentId",
+    absence_notification_count: "audit.detail.notificationCount", eligible_absence_count: "audit.detail.eligibleCount", closed_at: "audit.detail.closedAt",
+    starts_at: "audit.detail.startsAt", opens_at: "audit.detail.opensAt", closes_at: "audit.detail.closesAt", ends_at: "audit.detail.endsAt",
+    server_now: "audit.detail.serverNow", provider: "audit.detail.provider", category: "audit.detail.category", template_id: "audit.detail.templateId",
+    row_count: "audit.detail.rowCount", queued_count: "audit.detail.queuedCount", page: "audit.detail.page", locale: "audit.detail.locale",
     checkin_time: "audit.detail.checkinTime", guardian_phone: "audit.detail.guardianPhone", phone: "audit.detail.phone", grade_level: "audit.detail.grade",
     group_name: "audit.detail.groupName", full_name: "audit.detail.studentName", username: "admin.username", email: "admin.email", role: "admin.role",
     message_body: "audit.detail.content", page_slug: "admin.selectPage", marked_count: "audit.detail.recordId"
@@ -9145,35 +9364,73 @@ function isAuditHiddenKey(key: string) {
   return auditTechnicalDetailKeys.has(normalized) || auditSensitiveDetailKeys.has(normalized) || normalized.includes("password") || normalized.includes("token");
 }
 
-function humanizeAuditKey(key: string) {
-  return key.replace(/_/g, " ").replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+function humanizeAuditKey(key: string, language: Language, t: Translator) {
+  const normalized = String(key || "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[^a-zA-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+  const formatted = normalized.replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+  return language === "ar" ? t("audit.detail.unknownKey", { key: formatted || "Value" }) : formatted || t("audit.value.notAvailable");
 }
 
-function formatAuditDetailValue(value: unknown, language: Language, t: Translator, depth = 0): string {
-  if (value === null || value === undefined || value === "") return "—";
+function auditDetailLabel(key: string, language: Language, t: Translator): string {
+  const translationKey = auditDetailLabelKey(key);
+  return translationKey ? t(translationKey) : humanizeAuditKey(key, language, t);
+}
+
+function formatAuditDetailValue(value: unknown, language: Language, t: Translator, depth = 0, key = ""): string {
+  if (value === null || value === undefined || (typeof value === "string" && value.trim() === "")) return t("audit.value.notAvailable");
   if (value === "set") return t("audit.value.set");
   if (typeof value === "boolean") return value ? (language === "ar" ? "نعم" : "Yes") : (language === "ar" ? "لا" : "No");
-  if (typeof value !== "object") return String(value);
-  if (depth >= 2) return "…";
-  if (Array.isArray(value)) {
-    return value.map((entry) => formatAuditDetailValue(entry, language, t, depth + 1)).filter(Boolean).join("\n");
+  if (["session_date", "stored_closes_at", "effective_closes_at", "effective_ends_at", "server_now", "starts_at", "opens_at", "closes_at", "ends_at", "closed_at", "checkin_time"].includes(key) && (typeof value === "string" || typeof value === "number")) {
+    const raw = String(value);
+    const date = new Date(raw.length === 10 ? `${raw}T00:00:00Z` : raw);
+    if (Number.isFinite(date.getTime())) {
+      return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", {
+        dateStyle: "medium",
+        ...(raw.length === 10 ? {} : { timeStyle: "short" }),
+        timeZone: raw.length === 10 ? "UTC" : undefined
+      }).format(date);
+    }
   }
-  return Object.entries(value as Record<string, unknown>)
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : t("audit.value.notAvailable");
+  if (typeof value !== "object") return String(value);
+  if (depth >= 3) return t("audit.value.truncated");
+  if (Array.isArray(value)) {
+    if (!value.length) return t("audit.value.emptyList");
+    return value.map((entry, index) => {
+      const rendered = formatAuditDetailValue(entry, language, t, depth + 1);
+      return entry && typeof entry === "object" ? `${index + 1}. ${rendered}` : rendered;
+    }).join(value.every((entry) => entry === null || typeof entry !== "object") ? (language === "ar" ? "، " : ", ") : "\n");
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
     .filter(([key]) => !isAuditHiddenKey(key) && !key.startsWith("_"))
-    .map(([key, entryValue]) => `${auditDetailLabelKey(key) ? t(auditDetailLabelKey(key) as TranslationKey) : humanizeAuditKey(key)}: ${formatAuditDetailValue(entryValue, language, t, depth + 1)}`)
-    .join("\n");
+    .map(([entryKey, entryValue]) => `${auditDetailLabel(entryKey, language, t)}: ${formatAuditDetailValue(entryValue, language, t, depth + 1, entryKey)}`);
+  return entries.length ? entries.join("\n") : t("audit.value.notAvailable");
 }
 
 function auditDetailText(key: string, value: unknown, language: Language, t: Translator): string {
   if (key === "outcome") return value === "success" ? t("audit.value.success") : value === "failure" ? t("audit.value.failure") : formatAuditDetailValue(value, language, t);
   if (key === "print_type") return value === "reprint" ? t("audit.value.reprint") : t("audit.value.initialPrint");
   if (key === "payment_type") return value === "advance" ? t("fees.advancePaymentLabel") : t("fees.normalPayment");
+  if (["session_date", "stored_closes_at", "effective_closes_at", "effective_ends_at", "server_now", "starts_at", "opens_at", "closes_at", "ends_at", "closed_at", "checkin_time"].includes(key)) {
+    const raw = String(value ?? "");
+    const date = new Date(raw.length === 10 ? `${raw}T00:00:00Z` : raw);
+    if (Number.isFinite(date.getTime())) {
+      return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", {
+        dateStyle: "medium",
+        ...(raw.length === 10 ? {} : { timeStyle: "short" }),
+        timeZone: raw.length === 10 ? "UTC" : undefined
+      }).format(date);
+    }
+  }
   if (key === "changes" && Array.isArray(value)) {
     return value.map((change) => {
       if (!change || typeof change !== "object") return formatAuditDetailValue(change, language, t);
       const item = change as Record<string, unknown>;
       const field = String(item.field || item.setting || "field");
-      const label = auditDetailLabelKey(field) ? t(auditDetailLabelKey(field) as TranslationKey) : humanizeAuditKey(field);
+      const label = auditDetailLabel(field, language, t);
       return `${label}: ${formatAuditDetailValue(item.before ?? item.previous_value, language, t)} → ${formatAuditDetailValue(item.after ?? item.new_value, language, t)}`;
     }).join("\n");
   }
@@ -9202,6 +9459,9 @@ function auditNarrativeFromDetails(action: string, rawDetails: unknown, language
   const name = String(details.student_name_snapshot || details._student_name || details.full_name || body.full_name || details.student_name || after.full_name || after.name || targetUser.name || details.name || "—");
   const code = String(details.student_code_snapshot || details._student_code || details.student_code || body.student_code || after.student_code || "—");
   const role = body.role ? roleLabel(String(body.role), t) : after.role ? roleLabel(String(after.role), t) : targetUser.role ? roleLabel(String(targetUser.role), t) : "—";
+  const group = String(details.group_name || details._group_name || (details.group_id ? `${t("audit.detail.groupId")} #${details.group_id}` : t("audit.noTarget")));
+  const absenceCount = String(details.automatic_absence_count ?? details.absence_count ?? 0);
+  const notificationCount = String(details.absence_notification_count ?? details.queued_count ?? 0);
   if (resolvedAction === "user_created") return t("audit.narrative.userCreated", { name: String(body.name || name), username: String(body.username || "—"), role });
   if (resolvedAction === "user_updated") return t("audit.narrative.userUpdated", { name: String(body.name || name), username: String(body.username || "—") });
   if (resolvedAction === "user_password_reset") return t("audit.narrative.userPasswordReset", { name: String(body.name || name) });
@@ -9218,10 +9478,21 @@ function auditNarrativeFromDetails(action: string, rawDetails: unknown, language
   if (["attendance_recorded", "attendance_scanned", "attendance_changed"].includes(resolvedAction)) return t("audit.narrative.attendance", { name, code });
   if (resolvedAction === "audit_logs_unlocked") return t("audit.narrative.logsUnlocked", { actor: actorName });
   if (resolvedAction === "audit_pin_failed") return t("audit.narrative.pinFailed", { actor: actorName });
+  if (["attendance_session_auto_finalized", "attendance_absence_notifications_queued"].includes(resolvedAction)) return t("audit.narrative.sessionFinalized", { group, absenceCount, notificationCount });
+  if (resolvedAction === "attendance_session_auto_reopened") return t("audit.narrative.sessionReopened", { group });
+  if (["whatsapp_settings_changed", "whatsapp_settings_updated"].includes(resolvedAction)) return t("audit.narrative.whatsappSettingsUpdated");
+  if (["site_content_updated", "site_page_updated"].includes(resolvedAction)) return t("audit.narrative.siteContentUpdated");
+  if (resolvedAction === "system_settings_changed" || resolvedAction === "advanced_settings_updated") return t("audit.narrative.systemSettingsUpdated");
+  if (resolvedAction === "exam_results_bulk_imported") return t("audit.narrative.examResultsBulkImported");
+  if (resolvedAction === "whatsapp_disconnected") return t("audit.narrative.whatsappDisconnected");
+  if (resolvedAction === "whatsapp_template_created") return t("audit.narrative.whatsappTemplateCreated");
+  if (resolvedAction === "email_provider_tested") return t("audit.narrative.emailProviderTested");
+  if (resolvedAction.startsWith("password_reset_")) return t("audit.narrative.passwordReset");
+  if (resolvedAction === "system_admin_action" || resolvedAction === "system_action") return t("audit.narrative.systemAdminAction");
   if (resolvedAction === "login_succeeded") return language === "ar" ? `تم تسجيل الدخول بنجاح للمستخدم ${name !== "—" ? name : code}.` : `Login succeeded for ${name !== "—" ? name : code}.`;
   if (resolvedAction === "login_failed") return language === "ar" ? `فشلت محاولة تسجيل الدخول (${String(details.reason || "سبب غير محدد")}).` : `Login attempt failed (${String(details.reason || "unknown reason")}).`;
   if (resolvedAction === "logout") return language === "ar" ? `تم تسجيل خروج المستخدم ${name !== "—" ? name : String(details.username || "—")}.` : `User ${name !== "—" ? name : String(details.username || "—")} logged out.`;
-  return t("audit.narrative.generic", { action: t(auditActionKey(resolvedAction, details)) });
+  return t(auditActionDescriptionKey(resolvedAction, details), { action: t(auditActionKey(resolvedAction, details)) });
 }
 
 function formatAuditDetails(rawDetails: unknown, language: Language, t: Translator = createTranslator(language), actorName = "") {
@@ -9235,11 +9506,11 @@ function formatAuditDetails(rawDetails: unknown, language: Language, t: Translat
     if (key.startsWith("_") || isAuditHiddenKey(key) || ["action", "audit_version", "before", "after", "changes"].includes(key)) return;
     if (key === "body" && value && typeof value === "object" && !Array.isArray(value)) {
       Object.entries(value as Record<string, unknown>).forEach(([bodyKey, bodyValue]) => {
-        if (!isAuditHiddenKey(bodyKey)) rows.push({ key: auditDetailLabelKey(bodyKey) ? t(auditDetailLabelKey(bodyKey) as TranslationKey) : humanizeAuditKey(bodyKey), value: auditDetailText(bodyKey, bodyValue, language, t) });
+        if (!isAuditHiddenKey(bodyKey)) rows.push({ key: auditDetailLabel(bodyKey, language, t), value: auditDetailText(bodyKey, bodyValue, language, t) });
       });
       return;
     }
-    rows.push({ key: auditDetailLabelKey(key) ? t(auditDetailLabelKey(key) as TranslationKey) : humanizeAuditKey(key), value: auditDetailText(key, value, language, t) });
+    rows.push({ key: auditDetailLabel(key, language, t), value: auditDetailText(key, value, language, t) });
   });
   return rows;
 }
@@ -9513,11 +9784,11 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
     const details = normalizeAuditDetails(log?.details);
     if (Array.isArray(details.changes) && details.changes.length) return details.changes.map((change: any, index: number) => {
       const field = String(change?.field || change?.setting || `field_${index + 1}`);
-      return { field: auditDetailLabelKey(field) ? t(auditDetailLabelKey(field) as TranslationKey) : humanizeAuditKey(field), before: formatAuditDetailValue(change?.before ?? change?.previous_value, language, t), after: formatAuditDetailValue(change?.after ?? change?.new_value, language, t) };
+      return { field: auditDetailLabel(field, language, t), before: formatAuditDetailValue(change?.before ?? change?.previous_value, language, t), after: formatAuditDetailValue(change?.after ?? change?.new_value, language, t) };
     });
     const before = details.before && typeof details.before === "object" && !Array.isArray(details.before) ? details.before : {};
     const after = details.after && typeof details.after === "object" && !Array.isArray(details.after) ? details.after : {};
-    return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((key) => !isAuditHiddenKey(key) && !key.startsWith("_")).map((key) => ({ field: auditDetailLabelKey(key) ? t(auditDetailLabelKey(key) as TranslationKey) : humanizeAuditKey(key), before: formatAuditDetailValue(before[key], language, t), after: formatAuditDetailValue(after[key], language, t) }));
+    return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((key) => !isAuditHiddenKey(key) && !key.startsWith("_")).map((key) => ({ field: auditDetailLabel(key, language, t), before: formatAuditDetailValue(before[key], language, t), after: formatAuditDetailValue(after[key], language, t) }));
   };
   const filterChipItems = ([
     ["search", t("audit.search")], ["action", t("audit.action")], ["userId", t("audit.systemUser")], ["actorRole", t("audit.role")], ["entityType", t("audit.targetType")], ["outcome", t("audit.outcome")], ["student", t("audit.studentSearch")], ["groupId", t("audit.group")], ["dateFrom", t("audit.dateFrom")], ["dateTo", t("audit.dateTo")]
@@ -9553,7 +9824,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
     <div className="audit-summary-grid"><article className="audit-summary-card audit-summary-total"><span>{t("audit.totalActivities")}</span><strong>{total.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.title")}</small></article><article className="audit-summary-card audit-summary-success"><span>{t("audit.successfulActivities")}</span><strong>{stats.success_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.success")}</small></article><article className="audit-summary-card audit-summary-failure"><span>{t("audit.failedActivities")}</span><strong>{stats.failure_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.failure")}</small></article><article className="audit-summary-card audit-summary-users"><span>{t("audit.activeUsers")}</span><strong>{stats.user_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.systemUser")}</small></article></div>
     <form className="audit-filter-panel" onSubmit={applyFilters}><div className="audit-filter-heading"><button className="audit-filter-collapse-button" type="button" aria-expanded={filtersOpen} aria-controls="audit-filter-controls" aria-label={filtersOpen ? t("audit.collapseFilters") : t("audit.expandFilters")} onClick={() => setFiltersOpen((current) => !current)}><span aria-hidden="true">⌄</span></button><span className="audit-filter-hint">{loading ? t("audit.refreshing") : total.toLocaleString(language === "ar" ? "ar-EG" : "en-US") + " · " + t("audit.title")}</span></div><div id="audit-filter-controls" className={"audit-filter-collapse-content " + (filtersOpen ? "is-open" : "is-collapsed")}><div className="audit-filter-collapse-inner"><div className="audit-filter-grid"><label className="audit-filter-search">{t("audit.search")}<input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder={t("audit.studentSearchPlaceholder")} /></label><label>{t("audit.systemUser")}<select value={filters.userId} onChange={(event) => updateFilter("userId", event.target.value)}><option value="">{t("audit.allUsers")}</option>{filterOptions.users.map((user) => <option key={user.id} value={user.id}>{user.name || user.username || user.email}</option>)}</select></label><label>{t("audit.role")}<select value={filters.actorRole} onChange={(event) => updateFilter("actorRole", event.target.value)}><option value="">{t("audit.allRoles")}</option><option value="owner">{t("audit.role.owner")}</option><option value="admin">{t("audit.role.admin")}</option><option value="staff">{t("audit.role.staff")}</option></select></label><label>{t("audit.targetType")}<select value={filters.entityType} onChange={(event) => updateFilter("entityType", event.target.value)}><option value="">{t("audit.allTargetTypes")}</option>{["students", "groups", "attendance", "fees", "exams", "whatsapp", "settings", "login"].map((target) => <option key={target} value={target}>{targetLabel(target)}</option>)}</select></label><label>{t("audit.action")}<select value={filters.action} onChange={(event) => updateFilter("action", event.target.value)}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.outcome")}<select value={filters.outcome} onChange={(event) => updateFilter("outcome", event.target.value)}><option value="">{t("audit.allOutcomes")}</option><option value="success">{t("audit.success")}</option><option value="failure">{t("audit.failure")}</option></select></label><label>{t("audit.studentSearch")}<input list="audit-student-options" value={filters.student} onChange={(event) => { updateFilter("student", event.target.value); if (event.target.value.length >= 3) void loadFilterOptions(accessToken, event.target.value); }} placeholder={t("audit.studentSearchPlaceholder")} /></label><datalist id="audit-student-options">{filterOptions.students.map((student) => <option key={student.id} value={student.student_code || student.student_serial || student.full_name}>{student.full_name}{student.student_code ? " · " + student.student_code : ""}</option>)}</datalist><label>{t("audit.group")}<select value={filters.groupId} onChange={(event) => updateFilter("groupId", event.target.value)}><option value="">{t("audit.allGroups")}</option>{filterOptions.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>{t("audit.dateFrom")}<input type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} /></label></div>{filterChipItems.length ? <div className="audit-filter-chips"><span>{t("audit.activeFilters")}</span>{filterChipItems.map((chip) => <button key={String(chip.key)} type="button" onClick={() => { const next = { ...appliedFilters, [chip.key]: "" }; setFilters(next); setAppliedFilters(next); void loadLogs(1, accessToken, next); }} title={t("audit.removeFilter")}>{chip.label}: {chip.value} <b aria-hidden="true">×</b></button>)}</div> : null}<div className="audit-filter-actions"><button className="primary-button compact-button" type="submit" disabled={loading}>{loading ? t("audit.refreshing") : t("audit.applyFilters")}</button><button className="secondary-button compact-button" type="button" onClick={clearFilters} disabled={loading}>{t("audit.clearFilters")}</button></div></div></div></form>
     <div className="audit-toolbar"><div><strong>{t("audit.title")}</strong><span>{t("audit.activityCenterDescription")}</span></div>{canExport ? <div className="audit-export-actions"><span>{t("audit.exportCurrent")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "current")}>{exportButtonLabel("csv", "current")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "current")}>{exportButtonLabel("xlsx", "current")}</button><span>{t("audit.exportAll")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "all")}>{exportButtonLabel("csv", "all")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "all")}>{exportButtonLabel("xlsx", "all")}</button></div> : null}</div>
-    {logs.length ? <div className="audit-table-wrap"><table className="audit-activity-table"><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.target")}</th><th>{t("audit.outcome")}</th><th><span className="sr-only">{t("audit.viewDetails")}</span></th></tr></thead><tbody>{logs.map((log) => { const tone = eventTone(log); return <tr key={log.id} className={"audit-event-row audit-event-" + tone}><td data-label={t("audit.date")}><time dateTime={String(log.created_at)}>{formatAuditDate(log.created_at)}</time></td><td data-label={t("audit.user")}><strong>{log.actor_name || log.actor_username || t("audit.role.system")}</strong><small>{roleLabelForAudit(log.actor_role)}</small></td><td data-label={t("audit.action")}><span className={"audit-event-badge audit-event-badge-" + tone}>{actionLabel(log)}</span></td><td data-label={t("audit.target")}><strong>{log.student_name || log.group_name || log.payment_id ? (log.student_name || log.group_name || t("audit.payment") + " #" + log.payment_id) : t("audit.noTarget")}</strong><small>{targetLabel(log.entity_type)}{log.student_code ? " · " + log.student_code : ""}{log.group_name && log.student_name ? " · " + log.group_name : ""}</small></td><td data-label={t("audit.outcome")}><span className={"audit-outcome audit-outcome-" + tone}>{String(log.outcome) === "failure" ? t("audit.failure") : t("audit.success")}</span></td><td data-label=""><button className="secondary-button compact-button audit-view-button" type="button" onClick={() => setSelectedLog(log)}>{t("audit.viewDetails")}</button></td></tr>; })}</tbody></table></div> : <p className="empty-state audit-empty-state">{t("audit.noLogs")}</p>}
+    {logs.length ? <div className="audit-table-wrap"><table className="audit-activity-table"><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.target")}</th><th>{t("audit.outcome")}</th><th><span className="sr-only">{t("audit.viewDetails")}</span></th></tr></thead><tbody>{logs.map((log) => { const tone = eventTone(log); return <tr key={log.id} className={"audit-event-row audit-event-" + tone}><td data-label={t("audit.date")}><time dateTime={String(log.created_at)}>{formatAuditDate(log.created_at)}</time></td><td data-label={t("audit.user")}><strong>{log.actor_name || log.actor_username || t("audit.role.system")}</strong><small>{roleLabelForAudit(log.actor_role)}</small></td><td data-label={t("audit.action")}><span className={"audit-event-badge audit-event-badge-" + tone}>{actionLabel(log)}</span><small className="audit-action-description">{auditNarrativeFromDetails(String(log.action || "system_action"), log.details || {}, language, t, log.actor_name || log.actor_username || t("audit.role.system"))}</small></td><td data-label={t("audit.target")}><strong>{log.student_name || log.group_name || log.payment_id ? (log.student_name || log.group_name || t("audit.payment") + " #" + log.payment_id) : t("audit.noTarget")}</strong><small>{targetLabel(log.entity_type)}{log.student_code ? " · " + log.student_code : ""}{log.group_name && log.student_name ? " · " + log.group_name : ""}</small></td><td data-label={t("audit.outcome")}><span className={"audit-outcome audit-outcome-" + tone}>{String(log.outcome) === "failure" ? t("audit.failure") : t("audit.success")}</span></td><td data-label=""><button className="secondary-button compact-button audit-view-button" type="button" onClick={() => setSelectedLog(log)}>{t("audit.viewDetails")}</button></td></tr>; })}</tbody></table></div> : <p className="empty-state audit-empty-state">{t("audit.noLogs")}</p>}
     <div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={currentPage <= 1 || loading} onClick={() => void loadLogs(currentPage - 1)}>{"‹"}</button><span className="audit-pagination-label" dir={language === "ar" ? "rtl" : "ltr"}><span>{t("audit.page")}</span><b dir="ltr">{currentPage}</b><span>{t("audit.of")}</span><b dir="ltr">{totalPages}</b></span><button className="secondary-button compact-button" type="button" disabled={currentPage >= totalPages || loading} onClick={() => void loadLogs(currentPage + 1)}>{"›"}</button></div>
     {maintenancePanelForCenter}
     {status ? <p className="form-error">{status}</p> : null}
@@ -11060,7 +11331,9 @@ function StudentNavIcon({ name }: { name: StudentNavIconName }) {
 
 function studentAttendanceRate(rows: Array<Record<string, any>>) {
   if (!rows.length) return null;
-  return (rows.filter((row) => row.status === "present" || row.status === "late").length / rows.length) * 100;
+  const counted = rows.filter((row) => row.status === "present" || row.status === "late" || row.status === "absent");
+  if (!counted.length) return null;
+  return (counted.filter((row) => row.status === "present" || row.status === "late").length / counted.length) * 100;
 }
 
 function studentTodayAttendance(rows: Array<Record<string, any>>) {
@@ -11371,7 +11644,7 @@ function StudentDashboard({
           </article>
           <article className={`student-vital-card ${todayAttendanceIsPresent ? "is-success" : todayAttendanceStatus === "pending_review" ? "is-warning" : todayAttendanceStatus === "absent" ? "is-warning" : "is-muted"}`}>
             <span className="student-vital-icon"><StudentNavIcon name="schedule" /></span>
-            <div><span>{t("dashboard.vitals.todayClass")}</span><strong>{todayAttendanceIsPresent ? t("dashboard.vitals.presentToday") : todayAttendanceStatus === "pending_review" ? t("dashboard.vitals.pendingToday") : todayAttendanceStatus === "absent" ? t("attendance.absent") : data.today_session ? t("dashboard.notCheckedIn") : t("dashboard.vitals.noMovement")}</strong><small>{todayAttendance?.checkin_time || data.attendance_record?.checkin_time ? formatDateTime(todayAttendance?.checkin_time || data.attendance_record?.checkin_time, language, t("dashboard.notCheckedIn")) : t("dashboard.todayClass", { subject: displayValue(data.today_session?.subject || student.subject, language), group: displayValue(data.today_session?.group_name || student.group_name, language) })}</small></div>
+            <div><span>{t("dashboard.vitals.todayClass")}</span><strong>{todayAttendanceIsPresent ? t("dashboard.vitals.presentToday") : todayAttendanceStatus === "pending_review" ? t("dashboard.vitals.pendingToday") : todayAttendanceStatus === "absent" ? t("attendance.absent") : todayAttendanceStatus === "excused" ? t("attendance.excused") : data.today_session ? t("dashboard.notCheckedIn") : t("dashboard.vitals.noMovement")}</strong><small>{todayAttendance?.checkin_time || data.attendance_record?.checkin_time ? formatDateTime(todayAttendance?.checkin_time || data.attendance_record?.checkin_time, language, t("dashboard.notCheckedIn")) : t("dashboard.todayClass", { subject: displayValue(data.today_session?.subject || student.subject, language), group: displayValue(data.today_session?.group_name || student.group_name, language) })}</small></div>
           </article>
         </section>
 
@@ -11482,8 +11755,9 @@ function StudentAnalyticsPanel({
   const highestScore = chartData.length
     ? chartData.reduce((highest, row) => row.score > highest.score ? row : highest, chartData[0])
     : null;
-  const attendanceRate = attendanceRows.length
-    ? (attendanceRows.filter((row) => row.status === "present" || row.status === "late").length / attendanceRows.length) * 100
+  const countedAttendanceRows = attendanceRows.filter((row) => row.status === "present" || row.status === "late" || row.status === "absent");
+  const attendanceRate = countedAttendanceRows.length
+    ? (countedAttendanceRows.filter((row) => row.status === "present" || row.status === "late").length / countedAttendanceRows.length) * 100
     : null;
   const formatPercentage = (value: number | null) => value == null ? "—" : `${percentageFormatter.format(value)}%`;
   const formatScore = (value: number) => numberFormatter.format(value);
