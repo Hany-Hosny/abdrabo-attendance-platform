@@ -315,6 +315,16 @@ export async function recordWhatsAppConnectionNotification({
 }
 
 export async function listNotificationsForUser(teacher, { limit = 10, db = query } = {}) {
+  await db(
+    `UPDATE notifications
+     SET resolved_at = NOW(), is_read = TRUE, updated_at = NOW()
+     WHERE recipient_user_id = $1
+       AND type = 'whatsapp_disconnected'
+       AND resolved_at IS NULL
+       AND dedupe_key LIKE 'whatsapp_connection:%'
+       AND dedupe_key NOT IN ('whatsapp_connection:connection_closed', 'whatsapp_connection:logged_out', 'whatsapp_connection:manual_disconnect')`,
+    [teacher.id]
+  );
   await syncNotificationsForUser(teacher, db);
   const safeLimit = Math.min(100, Math.max(1, Number(limit) || 10));
   const result = await db(
