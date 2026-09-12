@@ -111,7 +111,7 @@ function ChevronIcon({ open }: { open: boolean }) {
   return <svg className={`whatsapp-template-accordion-icon ${open ? "is-open" : ""}`} viewBox="0 0 24 24" aria-hidden="true"><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>;
 }
 
-function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "language" | "t">) {
+function WhatsAppMessageHistory({ token, language, canManage = false, t }: Pick<Props, "token" | "language" | "canManage" | "t">) {
   const [messages, setMessages] = useState<WhatsAppHistoryRow[]>([]);
   const [stats, setStats] = useState<WhatsAppHistoryStats>({ total: 0, sent: 0, failed: 0, pending: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
@@ -125,6 +125,8 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
   const [error, setError] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [retryFeedback, setRetryFeedback] = useState<{ id: number; kind: "success" | "error"; key: string } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -174,6 +176,42 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
   const statusLabel = (value: string) => t(`whatsapp.historyStatus.${value}`);
   const formatDate = (value: string) => new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Cairo" }).format(new Date(value));
   const formatCount = (value: number) => value.toLocaleString(language === "ar" ? "ar-EG" : "en-US");
+  const retryNotEligibleStatuses = new Set(["student_inactive", "whatsapp_opted_out", "invalid_phone", "attendance_excused", "attendance_no_longer_eligible", "absence_no_longer_eligible", "grade_no_longer_exists", "payment_no_longer_exists"]);
+
+  async function retryFailedMessage(message: WhatsAppHistoryRow) {
+    if (!canManage || message.status !== "failed" || retryingId !== null) return;
+    setRetryingId(message.id);
+    setRetryFeedback(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/whatsapp/jobs/${message.id}/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reason: t("whatsapp.historyRetryReason") })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        const errorKey = retryNotEligibleStatuses.has(String(payload.status))
+          ? "whatsapp.historyRetryNotEligible"
+          : "whatsapp.historyRetryFailed";
+        throw new Error(errorKey);
+      }
+      setMessages((current) => current.map((item) => item.id === message.id
+        ? { ...item, status: payload.status || "pending", attempts: 0, last_error: null, sent_at: null }
+        : item));
+      setStats((current) => ({ ...current, failed: Math.max(0, current.failed - 1), pending: current.pending + 1 }));
+      setRetryFeedback({ id: message.id, kind: "success", key: "whatsapp.historyRetryQueued" });
+      window.setTimeout(() => setRetryFeedback((current) => current?.id === message.id ? null : current), 2400);
+    } catch (error) {
+      setRetryFeedback({
+        id: message.id,
+        kind: "error",
+        key: error instanceof Error && error.message.startsWith("whatsapp.") ? error.message : "whatsapp.historyRetryFailed"
+      });
+    } finally {
+      setRetryingId(null);
+    }
+  }
+
   const statCards = [
     { key: "total", label: "whatsapp.historyStatsTotal", tone: "total", icon: "◉" },
     { key: "sent", label: "whatsapp.historyStatsSent", tone: "sent", icon: "✓" },
@@ -212,6 +250,12 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
             <dl><div><dt>{t("whatsapp.historyStudent")}</dt><dd>{message.student_name || "—"}{message.student_code ? ` (${message.student_code})` : ""}</dd></div><div><dt>{t("whatsapp.historyRecipient")}</dt><dd>{message.phone_number || "—"}</dd></div><div><dt>{t("whatsapp.historyReference")}</dt><dd>{message.ref_code}</dd></div><div><dt>{t("whatsapp.historyTemplate")}</dt><dd>{message.template_index == null ? "—" : `#${message.template_index + 1}`}</dd></div><div><dt>{t("whatsapp.historyCreated")}</dt><dd>{formatDate(message.created_at)}</dd></div>{message.sent_at ? <div><dt>{t("whatsapp.historySent")}</dt><dd>{formatDate(message.sent_at)}</dd></div> : null}</dl>
             <div><span className="whatsapp-history-label">{t("whatsapp.historyMessage")}</span><pre className="whatsapp-history-message" dir="auto">{message.rendered_message || "—"}</pre></div>
             {message.last_error ? <div className="whatsapp-history-error"><span className="whatsapp-history-label">{t("whatsapp.historyError")}</span><p>{message.last_error}</p></div> : null}
+            {canManage && (message.status === "failed" || retryFeedback?.id === message.id) ? <div className="whatsapp-history-retry-row">
+              {message.status === "failed" ? <button className={`primary-button compact-button whatsapp-history-retry-button ${retryingId === message.id ? "is-loading" : ""}`} type="button" onClick={() => void retryFailedMessage(message)} disabled={retryingId !== null}>
+                {retryingId === message.id ? t("whatsapp.historyRetrying") : t("whatsapp.historyRetry")}
+              </button> : null}
+              {retryFeedback?.id === message.id ? <span className={`whatsapp-history-retry-feedback ${retryFeedback.kind}`} role="status">{t(retryFeedback.key)}</span> : null}
+            </div> : null}
           </div> : null}
         </article>;
       })}
@@ -498,7 +542,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
         <button className={activeTab === "history" ? "active" : ""} type="button" role="tab" aria-selected={activeTab === "history"} onClick={() => setActiveTab("history")}>{t("whatsapp.historyTab")}</button>
       </div>
       <div className="settings-section-heading">{activeTab === "templates" ? <span>03–07</span> : null}<div><h3>{t(activeTab === "templates" ? "whatsapp.templatesTitle" : "whatsapp.messageHistoryTitle")}</h3><p>{t(activeTab === "templates" ? "whatsapp.templatesDescription" : "whatsapp.messageHistoryDescription")}</p></div></div>
-      {activeTab === "history" ? <WhatsAppMessageHistory token={token} language={language} t={t} /> : <>
+      {activeTab === "history" ? <WhatsAppMessageHistory token={token} language={language} canManage={canManage} t={t} /> : <>
         <div className="whatsapp-template-groups">
         {memoizedTemplateGroups.map((group) => {
           const isOpen = openTemplateGroups[group.key];

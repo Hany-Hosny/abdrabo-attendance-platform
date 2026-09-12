@@ -3156,6 +3156,12 @@ textarea {
 .whatsapp-history-message { max-height: 280px; margin: 6px 0 0; padding: 12px; overflow: auto; border: 1px solid rgba(128, 170, 211, 0.14); border-radius: 8px; color: var(--text); background: var(--surface-input); font: inherit; font-size: 12px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .whatsapp-history-error { padding: 10px 12px; border: 1px solid rgba(244, 63, 94, 0.2); border-radius: 8px; background: rgba(244, 63, 94, 0.08); }
 .whatsapp-history-error p { margin: 5px 0 0; color: #fda4af; font-size: 11px; overflow-wrap: anywhere; }
+.whatsapp-history-retry-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.whatsapp-history-retry-button { min-height: 44px; }
+.whatsapp-history-retry-button.is-loading { cursor: wait; opacity: .72; }
+.whatsapp-history-retry-feedback { font-size: 11px; font-weight: 800; }
+.whatsapp-history-retry-feedback.success { color: #86efac; }
+.whatsapp-history-retry-feedback.error { color: #fda4af; }
 
 @media (max-width: 900px) {
   .whatsapp-automation-grid,

@@ -38,6 +38,12 @@ Docker keeps the backend service on the internal port `4000` and the frontend on
 Railway deploys the services separately with Railpack, so the backend public domain must target
 the Railway-assigned backend port, and the frontend must run the production preview command.
 
+For safety, Docker uses the private `postgres` service and keeps WhatsApp disabled by default.
+This prevents local development from touching production data or competing for the production
+WhatsApp session. To test WhatsApp locally, use an isolated database and explicitly set
+`WHATSAPP_ENABLED=true`; local WhatsApp uses the separate `local_docker` session by default.
+Do not point `DOCKER_DATABASE_URL` at the production database.
+
 ## Railway Deployment Settings
 
 Keep these settings aligned with the repository:

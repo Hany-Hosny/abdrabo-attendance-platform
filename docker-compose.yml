@@ -51,12 +51,19 @@ services:
       dockerfile: backend/Dockerfile
 
     environment:
-      NODE_ENV: production
+      NODE_ENV: development
       PORT: 4000
 
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      # Use the private local Postgres service by default. A remote database must
+      # be opted into explicitly through DOCKER_DATABASE_URL.
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://${POSTGRES_USER:-abdrabo}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-abdrabo_attendance}}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+
+      # Keep local development disconnected from every production WhatsApp
+      # socket, queue worker, and session by default.
+      WHATSAPP_ENABLED: ${WHATSAPP_ENABLED:-false}
+      WHATSAPP_SESSION_ID: ${WHATSAPP_SESSION_ID:-local_docker}
 
       TOKEN_SECRET: ${TOKEN_SECRET:?TOKEN_SECRET is required}
       RESEND_API_KEY: ${RESEND_API_KEY:-}

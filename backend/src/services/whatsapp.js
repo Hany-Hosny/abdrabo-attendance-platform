@@ -50,8 +50,12 @@ const publicAppUrl = String(
   (process.env.NODE_ENV === "production" ? "https://abdrabo.up.railway.app" : "http://localhost:3000")
 ).replace(/\/+$/, "");
 
-// التعديل السحري: فصل الجلسة بين اللوكال وسيرفر الإنتاج عشان يمنع الطرد والتهنيج
-const WHATSAPP_AUTH_SESSION_ID = process.env.NODE_ENV === "production" ? "primary" : "local_dev";
+const WHATSAPP_ENABLED = !["0", "false", "no", "off"].includes(
+  String(process.env.WHATSAPP_ENABLED ?? "true").trim().toLowerCase()
+);
+const WHATSAPP_AUTH_SESSION_ID = String(
+  process.env.WHATSAPP_SESSION_ID || (process.env.NODE_ENV === "production" ? "primary" : "local_dev")
+).trim() || "local_dev";
 
 const QR_RENDER_TIMEOUT_MS = 5000;
 // WhatsApp can take several seconds to return the first QR reference, especially
@@ -652,6 +656,11 @@ function armConnectedWatchdog(socket) {
 }
 
 export async function connectWhatsApp() {
+  if (!WHATSAPP_ENABLED) {
+    state.status = "disabled";
+    state.qr = null;
+    return getWhatsAppStatus();
+  }
   state.manuallyDisconnected = false;
   try {
     if (!await acquireWhatsAppOwnership()) return getWhatsAppStatus();
@@ -777,10 +786,11 @@ export async function connectWhatsApp() {
 }
 
 export function getWhatsAppStatus() {
-  return { status: state.status, phone_number: state.phoneNumber, has_qr: Boolean(state.qr) };
+  return { enabled: WHATSAPP_ENABLED, status: state.status, phone_number: state.phoneNumber, has_qr: Boolean(state.qr) };
 }
 
 export async function getWhatsAppQr() {
+  if (!WHATSAPP_ENABLED) return { ...getWhatsAppStatus(), qr: null };
   if (state.status === "connected") return { ...getWhatsAppStatus(), qr: null };
   await connectWhatsApp();
   const deadline = Date.now() + QR_WAIT_TIMEOUT_MS;
@@ -789,6 +799,7 @@ export async function getWhatsAppQr() {
 }
 
 export async function disconnectWhatsApp() {
+  if (!WHATSAPP_ENABLED) return getWhatsAppStatus();
   if (!state.ownsWhatsAppSession && !state.socket) return getWhatsAppStatus();
   if (!isLocallyWithinConfirmedLease()) {
     await handleWhatsAppOwnershipLost("whatsapp_disconnect_unverified");
@@ -2162,10 +2173,12 @@ async function processWhatsAppJob() {
 }
 
 export function wakeWhatsAppWorker() {
+  if (!WHATSAPP_ENABLED) return;
   if (!state.workerTimer) void processWhatsAppJob();
 }
 
 export function startWhatsAppWorker() {
+  if (!WHATSAPP_ENABLED) return;
   if (state.workerTimer) return;
   void recoverStaleWhatsAppJobs().catch((error) => console.error("Failed to recover WhatsApp notification jobs", safeWorkerError(error)));
   state.workerRecoveryTimer = setInterval(() => {
@@ -2176,6 +2189,10 @@ export function startWhatsAppWorker() {
 }
 
 export async function startWhatsAppService() {
+  if (!WHATSAPP_ENABLED) {
+    state.status = "disabled";
+    return getWhatsAppStatus();
+  }
   startWhatsAppWorker();
   try {
     if (await hasWhatsAppAuthState()) await connectWhatsApp();
