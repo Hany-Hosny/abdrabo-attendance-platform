@@ -1199,11 +1199,16 @@ export async function enqueueAdvancePaymentNotificationInTransaction(client, { p
   return enqueuePaymentNotificationWithDb({ paymentId, paymentType: "advance", notificationType: "advance_payment", referencePrefix: "ADV", db: client.query.bind(client), wake: false });
 }
 
-async function claimNextJob(dbClient = null) {
-  const client = dbClient || await pool.connect();
-  const ownsClient = !dbClient;
+async function claimNextJob() {
+  const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const lockResult = await client.query("SELECT pg_try_advisory_xact_lock($1::bigint) AS locked", [284951237]);
+    if (lockResult.rows[0]?.locked !== true) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
     const result = await client.query(`SELECT * FROM whatsapp_notification_jobs
       WHERE status = 'pending' AND next_attempt_at <= NOW()
       ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`);
@@ -1217,7 +1222,7 @@ async function claimNextJob(dbClient = null) {
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
-  } finally { if (ownsClient) client.release(); }
+  } finally { client.release(); }
 }
 
 async function updateJob(id, status, fields = {}) {
@@ -1306,14 +1311,8 @@ async function processWhatsAppJob() {
   if (state.workerRunning) return;
   state.workerRunning = true;
   let job = null;
-  let lockClient = null;
   try {
-    // A process-local flag prevents duplicate work in one instance. The
-    // advisory lock extends that guarantee across multiple API instances.
-    lockClient = await pool.connect();
-    const lockResult = await lockClient.query("SELECT pg_try_advisory_lock($1::bigint) AS locked", [284951237]);
-    if (lockResult.rows[0]?.locked !== true) return;
-    job = await claimNextJob(lockClient);
+    job = await claimNextJob();
     if (!job) return;
     const settings = await getWhatsAppSettings();
     const type = notificationTypeForJob(job);
@@ -1445,10 +1444,6 @@ async function processWhatsAppJob() {
       await auditWhatsAppJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason: String(error.message || error) }).catch((auditError) => console.error("Failed to audit WhatsApp worker error", auditError));
     }
   } finally {
-    if (lockClient) {
-      await lockClient.query("SELECT pg_advisory_unlock($1::bigint)", [284951237]).catch(() => undefined);
-      lockClient.release();
-    }
     state.workerRunning = false;
   }
 }
