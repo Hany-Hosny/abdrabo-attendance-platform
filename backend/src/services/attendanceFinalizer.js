@@ -269,17 +269,22 @@ async function processSession(sessionId, now = null) {
  * its own transaction so a failed bulk insert leaves that session retryable.
  */
 export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
-  const lockClient = await pool.connect();
-  let locked = false;
+  const client = await pool.connect();
+  let transactionStarted = false;
   try {
-    const lockResult = await lockClient.query(
-      "SELECT pg_try_advisory_lock(hashtext($1)) AS locked",
+    await client.query("BEGIN");
+    transactionStarted = true;
+    const lockResult = await client.query(
+      "SELECT pg_try_advisory_xact_lock(hashtext($1)) AS locked",
       [FINALIZER_LOCK_KEY]
     );
-    locked = lockResult.rows[0]?.locked === true;
-    if (!locked) return { finalized_sessions: [], skipped: true, reason: "already_running" };
+    if (lockResult.rows[0]?.locked !== true) {
+      await client.query("ROLLBACK");
+      transactionStarted = false;
+      return { finalized_sessions: [], skipped: true, reason: "already_running" };
+    }
 
-    const candidates = await lockClient.query(
+    const candidates = await client.query(
       `SELECT s.id, s.status
        FROM attendance_sessions s
        JOIN groups g ON g.id = s.group_id
@@ -302,12 +307,14 @@ export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
       const result = await processSession(candidate.id, now);
       if (result?.session_id) finalized.push(result);
     }
+    await client.query("COMMIT");
+    transactionStarted = false;
     return { finalized_sessions: finalized };
   } catch (error) {
+    if (transactionStarted) await client.query("ROLLBACK").catch(() => undefined);
     console.error("Failed to run attendance finalizer", error.stack || error);
     throw error;
   } finally {
-    if (locked) await lockClient.query("SELECT pg_advisory_unlock(hashtext($1))", [FINALIZER_LOCK_KEY]).catch(() => undefined);
-    lockClient.release();
+    client.release();
   }
 }
