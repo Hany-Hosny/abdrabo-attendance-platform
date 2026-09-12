@@ -7,6 +7,7 @@ import { auditLog } from "../services/audit.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { ipKeyGenerator } from "express-rate-limit";
 import { requestPasswordReset, resetPassword, verifyPasswordResetCode, GENERIC_RESET_MESSAGE, INVALID_CODE_MESSAGE, PasswordRecoveryUnavailableError } from "../services/passwordRecovery.js";
+import { normalizeGroupIds } from "../services/groupAccess.js";
 
 export const teacherRouter = express.Router();
 export const loginRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, key: (req) => `teacher-login:${ipKeyGenerator(req.ip || "unknown")}` });
@@ -45,7 +46,12 @@ teacherRouter.post("/login", loginRateLimit, async (req, res, next) => {
 
     const result = await query(
       `
-        SELECT id, name, email, username, password_hash, role, permissions, auth_version
+        SELECT id, name, email, username, password_hash, role, permissions, auth_version,
+          COALESCE((
+            SELECT array_agg(tga.group_id ORDER BY tga.group_id)
+            FROM teacher_group_access tga
+            WHERE tga.teacher_id = teachers.id
+          ), '{}') AS group_ids
         FROM teachers
         WHERE is_active = TRUE
           AND deleted_at IS NULL
@@ -75,7 +81,8 @@ teacherRouter.post("/login", loginRateLimit, async (req, res, next) => {
         email: teacher.email,
         username: teacher.username,
         role: teacher.role,
-        permissions: Array.isArray(teacher.permissions) ? teacher.permissions : []
+        permissions: Array.isArray(teacher.permissions) ? teacher.permissions : [],
+        group_ids: normalizeGroupIds(teacher.group_ids)
       }
     });
   } catch (error) {
@@ -102,7 +109,8 @@ teacherRouter.get("/me", requireTeacher, async (req, res) => {
       email: teacher.email,
       username: teacher.username,
       role: teacher.role,
-      permissions: Array.isArray(teacher.permissions) ? teacher.permissions : []
+      permissions: Array.isArray(teacher.permissions) ? teacher.permissions : [],
+      group_ids: normalizeGroupIds(teacher.group_ids)
     }
   });
 });

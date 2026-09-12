@@ -8,7 +8,7 @@ adminSearchRouter.use(requireTeacher, requireAnyPermission("students.view", "pay
 
 adminSearchRouter.get("/", async (req, res, next) => {
   try {
-    const results = await searchStudents(req.query.q, { limit: req.query.limit });
+    const results = await searchStudents(req.query.q, { limit: req.query.limit, user: req.teacher });
     return res.json({ ok: true, results });
   } catch (error) {
     return next(error);

@@ -20,7 +20,8 @@ adminDashboardRouter.get("/summary", async (req, res, next) => {
       period: String(req.query.period || "current"),
       from: normalizeDigits(req.query.from || "").trim(),
       to: normalizeDigits(req.query.to || "").trim(),
-      groupId
+      groupId,
+      user: req.teacher
     }, {
       financial: hasPermission(req.teacher, "dashboard.financial.view"),
       groupPerformance: hasPermission(req.teacher, "dashboard.group_performance.view"),
@@ -41,7 +42,8 @@ adminDashboardRouter.get("/attention", requirePermission("dashboard.alerts.view"
     }
     const result = await listStudentsNeedingAttention({
       groupId: groupIdValue ? Number(groupIdValue) : null,
-      includePayment: hasPermission(req.teacher, "payments.reports.view")
+      includePayment: hasPermission(req.teacher, "payments.reports.view"),
+      user: req.teacher
     });
     return res.json({ ok: true, thresholds: result.thresholds, students: result.students });
   } catch (error) {

@@ -135,6 +135,7 @@ type TeacherSession = {
     username?: string;
     role: string;
     permissions?: string[];
+    group_ids?: number[];
   };
 };
 
@@ -152,6 +153,7 @@ type AdminUser = {
   max_label_reprints?: number;
   can_use_inbox?: boolean;
   permissions?: PermissionKey[];
+  group_ids?: number[];
   is_owner?: boolean;
 };
 
@@ -829,6 +831,9 @@ const translations = {
     "fees.reversalAlreadyReversed": "تم عكس هذه الدفعة مسبقاً.",
     "fees.reversalPaymentNotFound": "الدفعة غير موجودة أو لم تعد متاحة.",
     "fees.reversalInvalidReason": "يرجى إدخال سبب صحيح لعكس الدفعة.",
+    "fees.reversalGroupAccess": "لا يمكنك عكس دفعة خارج نطاق مجموعاتك.",
+    "fees.reversalNotReversible": "هذه الدفعة غير قابلة للعكس لأنها لا تحتوي على مبلغ مدفوع صالح.",
+    "fees.reversalUnavailable": "خدمة عكس الدفعات غير متاحة مؤقتاً. لم يتم اعتماد أي تغيير.",
     "fees.securityCode": "رمز الحماية",
     "fees.securityCodeHint": "أدخل رمز الحماية المكون من 4 أرقام لتأكيد العملية.",
     "fees.securityCodeRequired": "يرجى إدخال رمز الحماية.",
@@ -971,6 +976,7 @@ const translations = {
     "audit.action.systemRequest": "إجراء عام على النظام",
     "audit.action.userCreated": "تم إنشاء مستخدم",
     "audit.action.userUpdated": "تم تعديل مستخدم",
+    "audit.action.userGroupAccessChanged": "تم تعديل نطاق مجموعات المستخدم",
     "audit.action.permissionsChanged": "تم تعديل صلاحيات مستخدم",
     "audit.action.roleChanged": "تم تغيير دور مستخدم",
     "audit.action.ownershipTransferred": "تم نقل ملكية النظام",
@@ -1443,6 +1449,11 @@ const translations = {
     "admin.currentPassword": "كلمة المرور الحالية",
     "admin.ownerProtected": "هذا هو مالك النظام ولا يمكن للمديرين تعديل دوره أو صلاحياته أو تعطيله أو حذفه.",
     "admin.permissionGrantForbidden": "لا يمكنك منح صلاحيات لا تملكها.",
+    "admin.groupAccess": "نطاق المجموعات",
+    "admin.groupAccessHint": "اختر المجموعات التي يمكن لهذا المستخدم الوصول إليها. المالك والمدير لهما وصول كامل.",
+    "admin.allGroupsAccess": "وصول كامل لكل المجموعات",
+    "admin.noGroupsAssigned": "لم يتم تعيين مجموعات؛ لن تظهر بيانات تشغيلية لهذا المستخدم.",
+    "admin.groupAccessForbidden": "لا يمكنك تعيين مجموعات خارج نطاقك.",
     "admin.ownerOnly": "هذا الإجراء متاح لمالك النظام فقط.",
     "admin.role.teacher": "موظف",
     "admin.role.assistant": "موظف",
@@ -2367,6 +2378,9 @@ const translations = {
     "fees.reversalAlreadyReversed": "This payment has already been reversed.",
     "fees.reversalPaymentNotFound": "The payment was not found or is no longer available.",
     "fees.reversalInvalidReason": "Please enter a valid reversal reason.",
+    "fees.reversalGroupAccess": "You cannot reverse a payment outside your assigned groups.",
+    "fees.reversalNotReversible": "This payment cannot be reversed because it has no valid paid amount.",
+    "fees.reversalUnavailable": "Payment reversal is temporarily unavailable. No change was committed.",
     "fees.securityCode": "Security code",
     "fees.securityCodeHint": "Enter the 4-digit security code to confirm this action.",
     "fees.securityCodeRequired": "Please enter the security code.",
@@ -2509,6 +2523,7 @@ const translations = {
     "audit.action.systemRequest": "General system action",
     "audit.action.userCreated": "User created",
     "audit.action.userUpdated": "User updated",
+    "audit.action.userGroupAccessChanged": "User group scope updated",
     "audit.action.permissionsChanged": "User permissions changed",
     "audit.action.roleChanged": "User role changed",
     "audit.action.ownershipTransferred": "System ownership transferred",
@@ -2981,6 +2996,11 @@ const translations = {
     "admin.currentPassword": "Current password",
     "admin.ownerProtected": "This is the system owner. Admins cannot change the owner role or permissions, disable, or delete this account.",
     "admin.permissionGrantForbidden": "You cannot grant permissions that you do not have.",
+    "admin.groupAccess": "Group access scope",
+    "admin.groupAccessHint": "Select the groups this user can access. Owners and admins have full access.",
+    "admin.allGroupsAccess": "Full access to all groups",
+    "admin.noGroupsAssigned": "No groups assigned; operational data will not be visible to this user.",
+    "admin.groupAccessForbidden": "You cannot assign groups outside your own scope.",
     "admin.ownerOnly": "This action is available only to the system owner.",
     "admin.role.teacher": "Staff",
     "admin.role.assistant": "Staff",
@@ -3660,7 +3680,8 @@ function saveTeacherSession(data: TeacherSession) {
         email: data.teacher.email,
         username: data.teacher.username,
         role: data.teacher.role,
-        permissions: data.teacher.permissions || []
+        permissions: data.teacher.permissions || [],
+        group_ids: Array.isArray(data.teacher.group_ids) ? data.teacher.group_ids : []
       }
     })
   );
@@ -6338,6 +6359,7 @@ const emptyUserForm = {
   max_label_reprints: 2,
   can_use_inbox: false,
   permissions: [] as PermissionKey[],
+  group_ids: [] as number[],
   permissionPreset: "custom"
 };
 
@@ -6351,6 +6373,7 @@ function UsersTeamManager({
   t: Translator;
 }) {
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [groupOptions, setGroupOptions] = useState<Array<{ id: number; name: string; grade_level?: string }>>([]);
   const [form, setForm] = useState(emptyUserForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [resetPasswordId, setResetPasswordId] = useState<number | null>(null);
@@ -6370,6 +6393,7 @@ function UsersTeamManager({
   const [transferPassword, setTransferPassword] = useState("");
   const editorFormRef = useRef<HTMLFormElement>(null);
   const isOwner = session.teacher.role === "owner";
+  const canManageGroupAccess = isOwner || sessionHasPermission(session, "users.edit");
 
   async function loadUsers() {
     const response = await fetch(`${API_BASE_URL}/admin/users?status=${statusFilter}`, {
@@ -6379,9 +6403,17 @@ function UsersTeamManager({
     if (response.ok && data.ok) setUsers(data.users || []);
   }
 
+  async function loadGroupOptions() {
+    const response = await fetch(`${API_BASE_URL}/admin/users/group-options`, {
+      headers: { Authorization: `Bearer ${session.token}` }
+    });
+    const data = (await response.json()) as { ok: boolean; groups?: Array<{ id: number; name: string; grade_level?: string }> };
+    if (response.ok && data.ok) setGroupOptions(data.groups || []);
+  }
+
   useEffect(() => {
-    loadUsers().catch(() => setStatus(t("errors.loginFailed")));
-  }, [statusFilter]);
+    Promise.all([loadUsers(), canManageGroupAccess ? loadGroupOptions() : Promise.resolve()]).catch(() => setStatus(t("errors.loginFailed")));
+  }, [statusFilter, canManageGroupAccess]);
 
   useEffect(() => () => {
     Object.values(userActionTimers.current).forEach((timer) => window.clearTimeout(timer));
@@ -6433,6 +6465,7 @@ function UsersTeamManager({
       max_label_reprints: user.max_label_reprints ?? 2,
       can_use_inbox: user.can_use_inbox ?? false,
       permissions: editorPermissions(user.permissions || []),
+      group_ids: Array.isArray(user.group_ids) ? user.group_ids : [],
       permissionPreset: "custom"
     });
     window.requestAnimationFrame(() => editorFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
@@ -6467,6 +6500,15 @@ function UsersTeamManager({
     }));
   }
 
+  function toggleGroupAccess(groupId: number) {
+    setForm((value) => ({
+      ...value,
+      group_ids: value.group_ids.includes(groupId)
+        ? value.group_ids.filter((item) => item !== groupId)
+        : [...value.group_ids, groupId].sort((left, right) => left - right)
+    }));
+  }
+
   async function saveUser(event: React.FormEvent) {
     event.preventDefault();
     setStatus("");
@@ -6497,10 +6539,24 @@ function UsersTeamManager({
           body: JSON.stringify(form)
         }
       );
-      const data = (await response.json()) as { ok: boolean; status?: string };
+      const data = (await response.json()) as { ok: boolean; status?: string; user?: AdminUser };
 
       if (!response.ok || !data.ok) {
         throw new Error(adminApiErrorMessage(data.status, t));
+      }
+
+      const groupAccessUserId = data.user?.id || savedUserId;
+      if (groupAccessUserId && canManageGroupAccess && !(data.user?.is_owner || form.role === "owner")) {
+        const groupAccessResponse = await fetch(`${API_BASE_URL}/admin/users/${groupAccessUserId}/group-access`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.token}`
+          },
+          body: JSON.stringify({ group_ids: form.group_ids })
+        });
+        const groupAccessData = (await groupAccessResponse.json()) as { ok: boolean; status?: string };
+        if (!groupAccessResponse.ok || !groupAccessData.ok) throw new Error(groupAccessData.status === "group_access_grant_forbidden" ? t("admin.groupAccessForbidden") : adminApiErrorMessage(groupAccessData.status, t));
       }
 
       await loadUsers();
@@ -6763,6 +6819,30 @@ function UsersTeamManager({
                 ))}
               </div>
               {!isOwner ? <p className="form-hint">{t("admin.permissionGrantForbidden")}</p> : null}
+            </section>
+          ) : null}
+
+          {form.role !== "owner" && canManageGroupAccess ? (
+            <section className="group-access-editor" aria-labelledby="user-group-access-title">
+              <div className="section-heading">
+                <p className="eyebrow">{t("admin.groupAccess")}</p>
+                <h3 id="user-group-access-title">{t("admin.groupAccess")}</h3>
+              </div>
+              <p className="form-hint">{t("admin.groupAccessHint")}</p>
+              {form.role === "admin" ? (
+                <p className="group-access-full">{t("admin.allGroupsAccess")}</p>
+              ) : groupOptions.length ? (
+                <div className="group-access-options">
+                  {groupOptions.map((group) => (
+                    <label key={group.id} className="checkbox-label group-access-option">
+                      <input type="checkbox" checked={form.group_ids.includes(group.id)} onChange={() => toggleGroupAccess(group.id)} />
+                      <span>{group.name}{group.grade_level ? ` · ${group.grade_level}` : ""}</span>
+                    </label>
+                  ))}
+                  </div>
+              ) : (
+                <p className="form-hint">{t("admin.noGroupsAssigned")}</p>
+              )}
             </section>
           ) : null}
         </section>
@@ -9376,6 +9456,7 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     user_created: "audit.action.userCreated",
     user_updated: "audit.action.userUpdated",
     user_changed: "audit.action.userUpdated",
+    user_group_access_changed: "audit.action.userGroupAccessChanged",
     permissions_changed: "audit.action.permissionsChanged",
     role_changed: "audit.action.roleChanged",
     ownership_transferred: "audit.action.ownershipTransferred",
@@ -9525,6 +9606,7 @@ const auditActionOptions: Array<{ value: string; label: TranslationKey }> = [
   { value: "message_action", label: "audit.action.messageAction" },
   { value: "user_created", label: "audit.action.userCreated" },
   { value: "user_updated", label: "audit.action.userUpdated" },
+  { value: "user_group_access_changed", label: "audit.action.userGroupAccessChanged" },
   { value: "user_changed", label: "audit.action.userUpdated" },
   { value: "permissions_changed", label: "audit.action.permissionsChanged" },
   { value: "role_changed", label: "audit.action.roleChanged" },
@@ -10175,6 +10257,9 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     if (code === "already_reversed" || code === "http_409") return t("fees.reversalAlreadyReversed");
     if (code === "payment_not_found" || code === "http_404") return t("fees.reversalPaymentNotFound");
     if (code === "invalid_reason" || code === "http_400") return t("fees.reversalInvalidReason");
+    if (code === "group_access_forbidden") return t("fees.reversalGroupAccess");
+    if (code === "payment_not_reversible") return t("fees.reversalNotReversible");
+    if (code === "reversal_unavailable" || code === "security_check_unavailable") return t("fees.reversalUnavailable");
     if (code === "security_code_required") return t("fees.securityCodeRequired");
     if (code === "invalid_audit_pin") return t("fees.securityCodeInvalid");
     if (code === "audit_pin_locked") return t("fees.securityCodeLocked");

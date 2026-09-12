@@ -4,6 +4,7 @@ import { pool, query } from "../db/pool.js";
 import { hashPassword, verifyPassword } from "../services/auth.js";
 import { auditLog, changedFields } from "../services/audit.js";
 import { DEFAULT_ADMIN_PERMISSIONS, DEFAULT_STAFF_PERMISSIONS, canGrantPermissions, canManageUser, isOwner, normalizePermissions } from "../services/rbac.js";
+import { canAssignGroups, normalizeGroupIds, parseGroupIds } from "../services/groupAccess.js";
 
 export const adminUsersRouter = express.Router();
 
@@ -36,6 +37,7 @@ function publicUser(row) {
     max_label_reprints: row.max_label_reprints,
     can_use_inbox: row.can_use_inbox,
     permissions: normalizePermissions(row.permissions),
+    group_ids: normalizeGroupIds(row.group_ids),
     is_owner: row.role === "owner",
     created_at: row.created_at,
     updated_at: row.updated_at
@@ -122,7 +124,9 @@ adminUsersRouter.get("/", requirePermission("users.view"), async (req, res, next
   try {
     const result = await query(
       `
-        SELECT id, name, username, email, role, permissions, is_active, deleted_at, print_student_labels, max_label_reprints, can_use_inbox, created_at, updated_at
+        SELECT id, name, username, email, role, permissions, is_active, deleted_at, print_student_labels, max_label_reprints, can_use_inbox,
+          COALESCE((SELECT array_agg(tga.group_id ORDER BY tga.group_id) FROM teacher_group_access tga WHERE tga.teacher_id = teachers.id), '{}') AS group_ids,
+          created_at, updated_at
         FROM teachers
         WHERE ($1 = 'all') OR ($1 = 'deleted' AND deleted_at IS NOT NULL) OR ($1 = 'active' AND deleted_at IS NULL AND is_active = TRUE) OR ($1 = 'disabled' AND deleted_at IS NULL AND is_active = FALSE)
         ORDER BY created_at ASC
@@ -132,6 +136,84 @@ adminUsersRouter.get("/", requirePermission("users.view"), async (req, res, next
     return res.json({ ok: true, users: result.rows.map(publicUser) });
   } catch (error) {
     next(error);
+  }
+});
+
+adminUsersRouter.get("/group-options", requirePermission("users.edit"), async (req, res, next) => {
+  try {
+    const values = [];
+    const filters = ["g.deleted_at IS NULL", "g.is_active = TRUE"];
+    if (req.teacher.role === "manager") {
+      values.push(normalizeGroupIds(req.teacher.group_ids));
+      filters.push(`g.id = ANY($${values.length}::int[])`);
+    }
+    const result = await query(
+      `SELECT g.id, COALESCE(g.display_name, g.name) AS name, COALESCE(g.grade_level, g.grade) AS grade_level
+       FROM groups g WHERE ${filters.join(" AND ")} ORDER BY name`,
+      values
+    );
+    return res.json({ ok: true, groups: result.rows });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+adminUsersRouter.put("/:id/group-access", requirePermission("users.edit"), async (req, res, next) => {
+  const targetUserId = Number(req.params.id);
+  const parsed = parseGroupIds(req.body?.group_ids);
+  if (!Number.isSafeInteger(targetUserId) || targetUserId <= 0) return res.status(400).json({ ok: false, status: "invalid_user_id" });
+  if (!parsed.ok) return res.status(400).json({ ok: false, status: parsed.status });
+  if (!canAssignGroups(req.teacher, parsed.groupIds)) return res.status(403).json({ ok: false, status: "group_access_grant_forbidden" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const targetResult = await client.query(
+      "SELECT id, name, username, email, role FROM teachers WHERE id = $1 AND deleted_at IS NULL FOR UPDATE",
+      [targetUserId]
+    );
+    if (!targetResult.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ ok: false, status: "not_found" });
+    }
+    if (targetResult.rows[0].role === "owner") {
+      await client.query("ROLLBACK");
+      return res.status(403).json({ ok: false, status: "owner_protected" });
+    }
+    const groups = parsed.groupIds.length
+      ? await client.query("SELECT id FROM groups WHERE id = ANY($1::int[]) AND deleted_at IS NULL AND is_active = TRUE", [parsed.groupIds])
+      : { rows: [] };
+    if (groups.rows.length !== parsed.groupIds.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ ok: false, status: "invalid_group_ids" });
+    }
+    const previous = await client.query("SELECT group_id FROM teacher_group_access WHERE teacher_id = $1 ORDER BY group_id FOR UPDATE", [targetUserId]);
+    await client.query("DELETE FROM teacher_group_access WHERE teacher_id = $1", [targetUserId]);
+    if (parsed.groupIds.length) {
+      await client.query(
+        "INSERT INTO teacher_group_access (teacher_id, group_id) SELECT $1, UNNEST($2::int[])",
+        [targetUserId, parsed.groupIds]
+      );
+    }
+    await auditLog({
+      db: client,
+      action: "user_group_access_changed",
+      actorId: req.teacher.id,
+      details: {
+        target_user_id: targetUserId,
+        previous_group_ids: previous.rows.map((row) => Number(row.group_id)),
+        new_group_ids: parsed.groupIds,
+        changes: [{ field: "group_ids", before: previous.rows.map((row) => Number(row.group_id)), after: parsed.groupIds }]
+      },
+      request: req
+    });
+    await client.query("COMMIT");
+    return res.json({ ok: true, group_ids: parsed.groupIds });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return next(error);
+  } finally {
+    client.release();
   }
 });
 

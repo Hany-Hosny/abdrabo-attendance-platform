@@ -1,5 +1,6 @@
 import { query } from "../db/pool.js";
 import { getDashboardAlertThresholds } from "./systemSettings.js";
+import { isGroupScopeRestricted, normalizeGroupIds } from "./groupAccess.js";
 
 export const DASHBOARD_THRESHOLDS = Object.freeze({
   attendanceAlert: 70,
@@ -112,10 +113,17 @@ export function changePercentage(current, previous) {
   return ((currentValue - previousValue) / Math.abs(previousValue)) * 100;
 }
 
-function groupClause(groupId, alias, values) {
-  if (!groupId) return "";
-  values.push(groupId);
-  return ` AND ${alias}.group_id = $${values.length}`;
+function groupClause(groupId, alias, values, allowedGroupIds = null, field = "group_id") {
+  const clauses = [];
+  if (groupId) {
+    values.push(groupId);
+    clauses.push(`${alias}.${field} = $${values.length}`);
+  }
+  if (Array.isArray(allowedGroupIds)) {
+    values.push(normalizeGroupIds(allowedGroupIds));
+    clauses.push(`${alias}.${field} = ANY($${values.length}::int[])`);
+  }
+  return clauses.length ? ` AND ${clauses.join(" AND ")}` : "";
 }
 
 function dueEndForEndExclusive(value) {
@@ -156,23 +164,25 @@ export function scopeDashboardPayload(payload, permissions = {}) {
   return scoped;
 }
 
-export async function getExecutiveDashboard({ period, from, to, groupId } = {}, permissions = {}) {
+export async function getExecutiveDashboard({ period, from, to, groupId, user = null } = {}, permissions = {}) {
   const bounds = getDashboardPeriod(period, from, to);
   const selectedGroupId = Number.isSafeInteger(Number(groupId)) && Number(groupId) > 0 ? Number(groupId) : null;
   const canFinancial = Boolean(permissions.financial);
   const canGroups = Boolean(permissions.groupPerformance);
   const canAlerts = Boolean(permissions.alerts);
   const canActivity = Boolean(permissions.activity && permissions.financial);
+  const allowedGroupIds = isGroupScopeRestricted(user) ? normalizeGroupIds(user.group_ids) : null;
   const thresholds = canAlerts ? await getDashboardAlertThresholds() : DASHBOARD_THRESHOLDS;
 
+  const groupValues = [];
   const groupsPromise = query(`
     SELECT g.id, COALESCE(g.display_name, g.name) AS name,
       COALESCE(g.grade_level, g.grade) AS grade_level,
       (SELECT COUNT(*)::int FROM students st WHERE st.group_id = g.id AND st.is_active = TRUE AND st.deleted_at IS NULL) AS active_students
     FROM groups g
-    WHERE g.is_active = TRUE AND g.deleted_at IS NULL
+    WHERE g.is_active = TRUE AND g.deleted_at IS NULL${groupClause(null, "g", groupValues, allowedGroupIds, "id")}
     ORDER BY COALESCE(g.display_name, g.name)
-  `);
+  `, groupValues);
 
   const groups = (await groupsPromise).rows.map((row) => ({
     id: Number(row.id),
@@ -183,9 +193,9 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
 
   const financialPromise = canFinancial ? (async () => {
     const values = [bounds.from, bounds.dueEndExclusive, bounds.previousFrom, bounds.previousDueEndExclusive, bounds.from, bounds.endExclusive, bounds.previousFrom, bounds.previousEndExclusive];
-    const selectedClause = groupClause(selectedGroupId, "s", values);
-    const previousSelectedClause = groupClause(selectedGroupId, "s", values);
-    const paymentSelectedClause = groupClause(selectedGroupId, "p", values);
+    const selectedClause = groupClause(selectedGroupId, "s", values, allowedGroupIds);
+    const previousSelectedClause = groupClause(selectedGroupId, "s", values, allowedGroupIds);
+    const paymentSelectedClause = groupClause(selectedGroupId, "p", values, allowedGroupIds);
     const result = await query(`
       WITH current_dues AS (
         SELECT fd.student_id, SUM(fd.amount) AS required_amount,
@@ -256,6 +266,8 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
     };
   })() : Promise.resolve(null);
 
+  const groupPerformanceValues = [bounds.from, bounds.endExclusive, bounds.from, bounds.dueEndExclusive];
+  const groupPerformanceClause = groupClause(selectedGroupId, "g", groupPerformanceValues, allowedGroupIds, "id");
   const groupPerformancePromise = canGroups ? query(`
     WITH student_counts AS (
       SELECT group_id, COUNT(*)::int AS student_count
@@ -303,13 +315,21 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
     LEFT JOIN attendance att ON att.group_id = g.id
     LEFT JOIN evaluations ev ON ev.group_id = g.id
     LEFT JOIN dues d ON d.group_id = g.id
-    WHERE g.is_active = TRUE AND g.deleted_at IS NULL ${selectedGroupId ? "AND g.id = $5" : ""}
+    WHERE g.is_active = TRUE AND g.deleted_at IS NULL ${groupPerformanceClause}
     ORDER BY COALESCE(g.display_name, g.name)
-  `, selectedGroupId ? [bounds.from, bounds.endExclusive, bounds.from, bounds.dueEndExclusive, selectedGroupId] : [bounds.from, bounds.endExclusive, bounds.from, bounds.dueEndExclusive]) : Promise.resolve(null);
+  `, groupPerformanceValues) : Promise.resolve(null);
 
   const alertValues = [bounds.from, bounds.endExclusive];
-  const alertGroupClause = selectedGroupId ? "AND s.group_id = $3" : "";
-  if (selectedGroupId) alertValues.push(selectedGroupId);
+  const alertGroupFilters = [];
+  if (selectedGroupId) {
+    alertValues.push(selectedGroupId);
+    alertGroupFilters.push(`s.group_id = $${alertValues.length}`);
+  }
+  if (Array.isArray(allowedGroupIds)) {
+    alertValues.push(normalizeGroupIds(allowedGroupIds));
+    alertGroupFilters.push(`s.group_id = ANY($${alertValues.length}::int[])`);
+  }
+  const alertGroupClause = alertGroupFilters.length ? `AND ${alertGroupFilters.join(" AND ")}` : "";
   const attendanceThresholdParam = `$${alertValues.length + 1}`;
   alertValues.push(thresholds.attendanceAlert / 100);
   const evaluationThresholdParam = `$${alertValues.length + 1}`;
@@ -343,6 +363,8 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
       (SELECT count FROM low_evaluations) AS low_evaluation_count
   `, alertValues) : Promise.resolve(null);
 
+  const revenueValues = [];
+  const revenueGroupClause = groupClause(selectedGroupId, "p", revenueValues, allowedGroupIds);
   const revenueTrendPromise = canFinancial ? query(`
     WITH months AS (
       SELECT generate_series(date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')) - INTERVAL '5 months', date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')), INTERVAL '1 month')::date AS month
@@ -353,10 +375,12 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
       ON COALESCE(p.paid_at, p.payment_date) >= (months.month AT TIME ZONE 'Africa/Cairo')
       AND COALESCE(p.paid_at, p.payment_date) < ((months.month + INTERVAL '1 month') AT TIME ZONE 'Africa/Cairo')
       AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
-      ${selectedGroupId ? "AND p.group_id = $1" : ""}
+      ${revenueGroupClause}
     GROUP BY months.month ORDER BY months.month
-  `, selectedGroupId ? [selectedGroupId] : []) : Promise.resolve(null);
+  `, revenueValues) : Promise.resolve(null);
 
+  const recentPaymentValues = [bounds.from, bounds.endExclusive];
+  const recentPaymentGroupClause = groupClause(selectedGroupId, "p", recentPaymentValues, allowedGroupIds);
   const recentPaymentsPromise = canActivity ? query(`
     SELECT p.id, p.student_id, p.amount, COALESCE(p.paid_at, p.payment_date) AS paid_at,
       p.payment_method, COALESCE(p.student_name_snapshot, s.full_name) AS student_name,
@@ -365,9 +389,9 @@ export async function getExecutiveDashboard({ period, from, to, groupId } = {}, 
     WHERE COALESCE(p.paid_at, p.payment_date) >= ($1::date AT TIME ZONE 'Africa/Cairo')
       AND COALESCE(p.paid_at, p.payment_date) < ($2::date AT TIME ZONE 'Africa/Cairo')
       AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
-      ${selectedGroupId ? "AND p.group_id = $3" : ""}
+      ${recentPaymentGroupClause}
     ORDER BY COALESCE(p.paid_at, p.payment_date) DESC LIMIT 6
-  `, selectedGroupId ? [bounds.from, bounds.endExclusive, selectedGroupId] : [bounds.from, bounds.endExclusive]) : Promise.resolve(null);
+  `, recentPaymentValues) : Promise.resolve(null);
 
   const [financial, groupPerformance, alerts, revenueTrend, recentPayments] = await Promise.all([
     financialPromise,

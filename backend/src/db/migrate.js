@@ -154,6 +154,15 @@ export async function migrate() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS teacher_group_access (
+      teacher_id INTEGER NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
+      group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (teacher_id, group_id)
+    );
+    CREATE INDEX IF NOT EXISTS teacher_group_access_group_idx
+      ON teacher_group_access(group_id, teacher_id);
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS audit_pin_hash TEXT;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS audit_pin_failed_attempts INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS audit_pin_locked_until TIMESTAMPTZ;
@@ -1042,58 +1051,62 @@ export async function migrate() {
     (await query("SELECT id FROM groups WHERE name = $1 LIMIT 1", ["مجموعة السبت 6 مساء"])).rows[0]
       .id;
 
-  const student = await query(
-    `
-      INSERT INTO students (group_id, student_code, full_name, phone, guardian_phone, national_id_hash)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (student_code) DO UPDATE SET
-        group_id = EXCLUDED.group_id,
-        full_name = EXCLUDED.full_name,
-        phone = EXCLUDED.phone,
-        guardian_phone = EXCLUDED.guardian_phone,
-        national_id_hash = EXCLUDED.national_id_hash,
-        is_active = TRUE
-      RETURNING id
-    `,
-    [groupId, "A-1001", "أحمد محمد", "01000000000", "01012345678", hashValue("29901011234567")]
-  );
+  // Demo student, schedule, and exam data are for local development only.
+  // Production migrations must never recreate a deleted student on restart.
+  if (process.env.NODE_ENV !== "production") {
+    const student = await query(
+      `
+        INSERT INTO students (group_id, student_code, full_name, phone, guardian_phone, national_id_hash)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (student_code) DO UPDATE SET
+          group_id = EXCLUDED.group_id,
+          full_name = EXCLUDED.full_name,
+          phone = EXCLUDED.phone,
+          guardian_phone = EXCLUDED.guardian_phone,
+          national_id_hash = EXCLUDED.national_id_hash,
+          is_active = TRUE
+        RETURNING id
+      `,
+      [groupId, "A-1001", "أحمد محمد", "01000000000", "01012345678", hashValue("29901011234567")]
+    );
 
-  const studentId = student.rows[0].id;
-  const schedule = await query(
-    `
-      INSERT INTO class_schedules (group_id, day_of_week, start_time, end_time, opens_before_minutes, closes_after_minutes)
-      VALUES ($1, EXTRACT(DOW FROM NOW())::INTEGER, $2::time, $3::time, 3, 20)
-      ON CONFLICT DO NOTHING
-      RETURNING id
-    `,
-    [groupId, "18:00:00", "19:30:00"]
-  );
+    const studentId = student.rows[0].id;
+    await query(
+      `
+        INSERT INTO class_schedules (group_id, day_of_week, start_time, end_time, opens_before_minutes, closes_after_minutes)
+        VALUES ($1, EXTRACT(DOW FROM NOW())::INTEGER, $2::time, $3::time, 3, 20)
+        ON CONFLICT DO NOTHING
+        RETURNING id
+      `,
+      [groupId, "18:00:00", "19:30:00"]
+    );
 
-  const exam = await query(
-    `
-      INSERT INTO exams (group_id, title, max_score, exam_date)
-      SELECT $1, $2, 50, CURRENT_DATE - INTERVAL '7 days'
-      WHERE NOT EXISTS (SELECT 1 FROM exams WHERE group_id = $1 AND title = $2)
-      RETURNING id
-    `,
-    [groupId, "امتحان الوحدة الأولى"]
-  );
+    const exam = await query(
+      `
+        INSERT INTO exams (group_id, title, max_score, exam_date)
+        SELECT $1, $2, 50, CURRENT_DATE - INTERVAL '7 days'
+        WHERE NOT EXISTS (SELECT 1 FROM exams WHERE group_id = $1 AND title = $2)
+        RETURNING id
+      `,
+      [groupId, "امتحان الوحدة الأولى"]
+    );
 
-  const examId =
-    exam.rows[0]?.id ||
-    (await query("SELECT id FROM exams WHERE group_id = $1 AND title = $2 LIMIT 1", [
-      groupId,
-      "امتحان الوحدة الأولى"
-    ])).rows[0].id;
+    const examId =
+      exam.rows[0]?.id ||
+      (await query("SELECT id FROM exams WHERE group_id = $1 AND title = $2 LIMIT 1", [
+        groupId,
+        "امتحان الوحدة الأولى"
+      ])).rows[0].id;
 
-  await query(
-    `
-      INSERT INTO exam_results (exam_id, student_id, score, note)
-      VALUES ($1, $2, 42, 'مستوى جيد جدا')
-      ON CONFLICT (exam_id, student_id) DO UPDATE SET score = EXCLUDED.score, note = EXCLUDED.note
-    `,
-    [examId, studentId]
-  );
+    await query(
+      `
+        INSERT INTO exam_results (exam_id, student_id, score, note)
+        VALUES ($1, $2, 42, 'مستوى جيد جدا')
+        ON CONFLICT (exam_id, student_id) DO UPDATE SET score = EXCLUDED.score, note = EXCLUDED.note
+      `,
+      [examId, studentId]
+    );
+  }
 
   const adminName = process.env.ADMIN_NAME || "Ahmed Abdrabo";
   const adminUsername = process.env.ADMIN_USERNAME || "admin";

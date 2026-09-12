@@ -18,6 +18,7 @@ import { ipKeyGenerator } from "express-rate-limit";
 import { enqueueAttendanceNotificationInTransaction, settleAbsenceNotificationJobsForCorrection, wakeWhatsAppWorker } from "../services/whatsapp.js";
 import { MANUAL_ATTENDANCE_STATUSES } from "../utils/attendanceStatus.js";
 import { missingPaymentIdempotencyMessage, readRequiredPaymentIdempotencyKey } from "../utils/paymentIdempotency.js";
+import { appendGroupScope, hasGroupAccess, isGroupScopeRestricted, normalizeGroupIds } from "../services/groupAccess.js";
 
 export const operationsRouter = express.Router();
 operationsRouter.use(requireTeacher);
@@ -28,6 +29,23 @@ operationsRouter.use("/fees/overdue", requirePermission("payments.view"));
 const scannerRateLimit = createRateLimiter({ windowMs: 60_000, max: 600, key: (req) => `scanner:${req.teacher?.id || ipKeyGenerator(req.ip || "unknown")}` });
 const paymentRateLimit = createRateLimiter({ windowMs: 60_000, max: 30, key: (req) => `payment:${req.teacher?.id || ipKeyGenerator(req.ip || "unknown")}` });
 const recentScannerRequests = new Map();
+
+function groupAccessDenied(res) {
+  return res.status(403).json({ ok: false, status: "group_access_forbidden" });
+}
+
+function paymentReversalFailure(res, error) {
+  const code = String(error?.code || "");
+  if (code === "23505") return res.status(409).json({ ok: false, status: "already_reversed" });
+  if (code === "23514") return res.status(400).json({ ok: false, status: "payment_not_reversible" });
+  if (code === "42P01" || code === "42703") return res.status(503).json({ ok: false, status: "reversal_unavailable" });
+  return res.status(500).json({ ok: false, status: "reversal_failed", message: "The reversal could not be completed. No change was committed. / تعذر اعتماد عكس الدفعة. لم يتم اعتماد أي تغيير." });
+}
+
+async function checkStudentGroupAccess(studentId, user) {
+  const result = await query("SELECT group_id FROM students WHERE id = $1", [studentId]);
+  return { found: result.rowCount > 0, allowed: result.rowCount > 0 && hasGroupAccess(user, result.rows[0].group_id) };
+}
 
 function isRecentScannerDuplicate(teacherId, token, idempotencyKey = null) {
   const now = Date.now();
@@ -154,7 +172,7 @@ function auditGroupIdSql() {
     THEN COALESCE(s.group_id::text, a.details->>'group_id')::bigint END`;
 }
 
-function buildAuditLogQuery(queryParams = {}, { includePagination = true } = {}) {
+function buildAuditLogQuery(queryParams = {}, { includePagination = true, user = null } = {}) {
   const values = [];
   const filters = ["TRUE"];
   const add = (sql, value) => {
@@ -209,6 +227,10 @@ function buildAuditLogQuery(queryParams = {}, { includePagination = true } = {})
     const paymentId = Number(normalizeDigits(queryParams.payment_id));
     if (Number.isSafeInteger(paymentId) && paymentId > 0) add("a.payment_id = ?", paymentId);
   }
+  if (isGroupScopeRestricted(user)) {
+    values.push(normalizeGroupIds(user.group_ids));
+    filters.push(`${auditGroupIdSql()} = ANY($${values.length}::bigint[])`);
+  }
   if (queryParams.log_id) {
     const logId = Number(normalizeDigits(queryParams.log_id));
     if (Number.isSafeInteger(logId) && logId > 0) add("a.id = ?", logId);
@@ -235,7 +257,7 @@ const auditActionLabels = {
     group_created: "تم إنشاء مجموعة", group_updated: "تم تعديل المجموعة", group_changed: "تم تعديل المجموعة", group_status_changed: "تم تغيير حالة المجموعة", group_archived: "تمت أرشفة المجموعة",
     exam_result_created: "تم تسجيل نتيجة امتحان", exam_result_updated: "تم تعديل نتيجة امتحان", exam_result_changed: "تم تعديل نتيجة امتحان", exam_result_deleted: "تم حذف نتيجة امتحان", homework_created: "تم إنشاء واجب", homework_updated: "تم تعديل واجب", homework_deleted: "تم حذف واجب",
     message_sent: "تم إرسال رسالة", message_deleted: "تم حذف رسالة", message_action: "تم تنفيذ إجراء على رسالة", message_read_status_changed: "تم تحديث حالة قراءة الرسالة", note_created: "تمت إضافة ملاحظة", note_updated: "تم تعديل ملاحظة", note_deleted: "تم حذف ملاحظة",
-    user_created: "تم إنشاء مستخدم", user_updated: "تم تعديل مستخدم", user_changed: "تم تعديل مستخدم", permissions_changed: "تم تعديل صلاحيات مستخدم", role_changed: "تم تغيير دور مستخدم", ownership_transferred: "تم نقل ملكية النظام", user_password_reset: "تم تغيير كلمة مرور مستخدم", user_status_changed: "تم تغيير حالة مستخدم", user_archived: "تمت أرشفة مستخدم", user_restored: "تم استرجاع مستخدم", user_permanently_deleted: "تم حذف مستخدم نهائيًا", login_succeeded: "تم تسجيل الدخول", login_failed: "فشلت محاولة تسجيل الدخول", logout: "تم تسجيل الخروج", audit_logs_unlocked: "تم فتح سجل النشاط", audit_pin_changed: "تم تغيير رقم سجل النشاط", audit_pin_failed: "فشلت محاولة فتح سجل النشاط", audit_logs_exported: "تم تصدير سجل النشاط", system_settings_changed: "تم تعديل إعدادات النظام", whatsapp_settings_changed: "تحديث إعدادات وقوالب الواتساب", whatsapp_settings_updated: "تحديث إعدادات وقوالب الواتساب", whatsapp_disconnected: "تم فصل اتصال واتساب", whatsapp_template_created: "تم إنشاء قالب واتساب", site_content_updated: "تم تحديث محتوى الموقع", exam_results_bulk_imported: "تم استيراد نتائج امتحانات جماعياً", email_provider_tested: "تم اختبار مزود البريد الإلكتروني", advanced_settings_updated: "تم تحديث الإعدادات المتقدمة", system_admin_action: "إجراء إداري عام على النظام", system_action: "إجراء إداري عام على النظام", system_request: "إجراء عام على النظام"
+    user_created: "تم إنشاء مستخدم", user_updated: "تم تعديل مستخدم", user_changed: "تم تعديل مستخدم", user_group_access_changed: "تم تعديل نطاق مجموعات المستخدم", permissions_changed: "تم تعديل صلاحيات مستخدم", role_changed: "تم تغيير دور مستخدم", ownership_transferred: "تم نقل ملكية النظام", user_password_reset: "تم تغيير كلمة مرور مستخدم", user_status_changed: "تم تغيير حالة مستخدم", user_archived: "تمت أرشفة مستخدم", user_restored: "تم استرجاع مستخدم", user_permanently_deleted: "تم حذف مستخدم نهائيًا", login_succeeded: "تم تسجيل الدخول", login_failed: "فشلت محاولة تسجيل الدخول", logout: "تم تسجيل الخروج", audit_logs_unlocked: "تم فتح سجل النشاط", audit_pin_changed: "تم تغيير رقم سجل النشاط", audit_pin_failed: "فشلت محاولة فتح سجل النشاط", audit_logs_exported: "تم تصدير سجل النشاط", system_settings_changed: "تم تعديل إعدادات النظام", whatsapp_settings_changed: "تحديث إعدادات وقوالب الواتساب", whatsapp_settings_updated: "تحديث إعدادات وقوالب الواتساب", whatsapp_disconnected: "تم فصل اتصال واتساب", whatsapp_template_created: "تم إنشاء قالب واتساب", site_content_updated: "تم تحديث محتوى الموقع", exam_results_bulk_imported: "تم استيراد نتائج امتحانات جماعياً", email_provider_tested: "تم اختبار مزود البريد الإلكتروني", advanced_settings_updated: "تم تحديث الإعدادات المتقدمة", system_admin_action: "إجراء إداري عام على النظام", system_action: "إجراء إداري عام على النظام", system_request: "إجراء عام على النظام"
   },
   en: {
     payment_created: "Payment recorded", advance_payment_created: "Advance payment recorded", payment_reversed: "Payment reversed",
@@ -244,7 +266,7 @@ const auditActionLabels = {
     group_created: "Group created", group_updated: "Group updated", group_changed: "Group updated", group_status_changed: "Group status changed", group_archived: "Group archived",
     exam_result_created: "Exam result recorded", exam_result_updated: "Exam result updated", exam_result_changed: "Exam result updated", exam_result_deleted: "Exam result deleted", homework_created: "Homework created", homework_updated: "Homework updated", homework_deleted: "Homework deleted",
     message_sent: "Message sent", message_deleted: "Message deleted", message_action: "Message action", message_read_status_changed: "Message read status updated", note_created: "Note added", note_updated: "Note updated", note_deleted: "Note deleted",
-    user_created: "User created", user_updated: "User updated", user_changed: "User updated", permissions_changed: "User permissions changed", role_changed: "User role changed", ownership_transferred: "System ownership transferred", user_password_reset: "User password changed", user_status_changed: "User status changed", user_archived: "User archived", user_restored: "User restored", user_permanently_deleted: "User permanently deleted", login_succeeded: "Login successful", login_failed: "Login attempt failed", logout: "Logged out", audit_logs_unlocked: "Audit logs unlocked", audit_pin_changed: "Audit PIN changed", audit_pin_failed: "Audit PIN attempt failed", audit_logs_exported: "Audit log exported", system_settings_changed: "System settings changed", whatsapp_settings_changed: "WhatsApp settings and templates updated", whatsapp_settings_updated: "WhatsApp settings and templates updated", whatsapp_disconnected: "WhatsApp disconnected", whatsapp_template_created: "WhatsApp template created", site_content_updated: "Site content updated", exam_results_bulk_imported: "Exam results imported in bulk", email_provider_tested: "Email provider tested", advanced_settings_updated: "Advanced settings updated", system_admin_action: "General administrative system action", system_action: "General administrative system action", system_request: "General system action"
+    user_created: "User created", user_updated: "User updated", user_changed: "User updated", user_group_access_changed: "User group scope updated", permissions_changed: "User permissions changed", role_changed: "User role changed", ownership_transferred: "System ownership transferred", user_password_reset: "User password changed", user_status_changed: "User status changed", user_archived: "User archived", user_restored: "User restored", user_permanently_deleted: "User permanently deleted", login_succeeded: "Login successful", login_failed: "Login attempt failed", logout: "Logged out", audit_logs_unlocked: "Audit logs unlocked", audit_pin_changed: "Audit PIN changed", audit_pin_failed: "Audit PIN attempt failed", audit_logs_exported: "Audit log exported", system_settings_changed: "System settings changed", whatsapp_settings_changed: "WhatsApp settings and templates updated", whatsapp_settings_updated: "WhatsApp settings and templates updated", whatsapp_disconnected: "WhatsApp disconnected", whatsapp_template_created: "WhatsApp template created", site_content_updated: "Site content updated", exam_results_bulk_imported: "Exam results imported in bulk", email_provider_tested: "Email provider tested", advanced_settings_updated: "Advanced settings updated", system_admin_action: "General administrative system action", system_action: "General administrative system action", system_request: "General system action"
   }
 };
 
@@ -303,6 +325,7 @@ operationsRouter.get("/payments/report", requirePermission("payments.view"), req
       else add("COALESCE(g.display_name,g.name) ILIKE ?", `%${groupValue}%`);
     }
     if (req.query.grade_level) add("COALESCE(g.grade_level,g.grade) ILIKE ?", `%${normalizeDigits(req.query.grade_level).trim()}%`);
+    appendGroupScope(filters, values, req.teacher, "p.group_id");
     const result = await query(`SELECT p.id, ${paymentTimestamp} AS paid_at, p.amount, p.payment_months, p.payment_type, p.whatsapp_notified,
         COALESCE(p.student_name_snapshot,s.full_name) AS full_name,
         COALESCE(p.student_code_snapshot,s.student_code) AS student_code,
@@ -331,7 +354,7 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("pa
     pinCheck = await verifyAuditPin({ teacherId: req.teacher.id, pin: securityPin, purpose: "payment_reversal", request: req });
   } catch (error) {
     console.error("Payment reversal security check failed", { code: error?.code || "unknown" });
-    return res.status(500).json({ ok: false, status: "reversal_failed", message: "The reversal could not be completed. No change was committed. / تعذر اعتماد عكس الدفعة. لم يتم اعتماد أي تغيير." });
+    return res.status(503).json({ ok: false, status: "security_check_unavailable", message: "The security check is temporarily unavailable. No change was committed. / تعذر التحقق من رمز الحماية مؤقتاً. لم يتم اعتماد أي تغيير." });
   }
   if (!pinCheck.ok) {
     const messages = {
@@ -361,6 +384,14 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("pa
       return res.status(404).json({ ok: false, status: "payment_not_found" });
     }
     const payment = paymentResult.rows[0];
+    if (!Number.isFinite(Number(payment.amount)) || Number(payment.amount) <= 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ ok: false, status: "payment_not_reversible" });
+    }
+    if (!hasGroupAccess(req.teacher, payment.group_id)) {
+      await client.query("ROLLBACK");
+      return groupAccessDenied(res);
+    }
     const existing = await client.query("SELECT id, created_at FROM payment_reversals WHERE payment_id = $1", [paymentId]);
     if (existing.rowCount) {
       await client.query("ROLLBACK");
@@ -406,7 +437,7 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("pa
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     console.error("Payment reversal failed", { code: error?.code || "unknown" });
-    return res.status(500).json({ ok: false, status: "reversal_failed", message: "The reversal could not be completed. No change was committed. / تعذر اعتماد عكس الدفعة. لم يتم اعتماد أي تغيير." });
+    return paymentReversalFailure(res, error);
   } finally {
     client.release();
   }
@@ -581,11 +612,17 @@ function resolveAuditLogRow(row) {
 operationsRouter.get("/audit-logs/filters", requirePermission("activity_log.view"), requireAuditAccess, async (req, res, next) => {
   try {
     const studentSearch = normalizedSearch(req.query.student_search);
-    const studentValues = studentSearch ? [`%${studentSearch}%`] : [];
-    const studentWhere = studentSearch ? `WHERE LOWER(s.full_name) ILIKE $1 OR LOWER(s.student_code) ILIKE $1 OR LOWER(s.student_serial) ILIKE $1 OR LOWER(s.scan_serial) ILIKE $1 OR LOWER(s.phone) ILIKE $1 OR LOWER(s.guardian_phone) ILIKE $1` : "";
+    const groupValues = [];
+    const groupFilters = [];
+    appendGroupScope(groupFilters, groupValues, req.teacher, "g.id");
+    const studentValues = studentSearch ? [`%${studentSearch}%`, ...groupValues] : [...groupValues];
+    const studentFilters = studentSearch ? ["(LOWER(s.full_name) ILIKE $1 OR LOWER(s.student_code) ILIKE $1 OR LOWER(s.student_serial) ILIKE $1 OR LOWER(s.scan_serial) ILIKE $1 OR LOWER(s.phone) ILIKE $1 OR LOWER(s.guardian_phone) ILIKE $1)"] : [];
+    if (groupValues.length) studentFilters.push(`s.group_id = ANY($${studentValues.length}::int[])`);
+    const studentWhere = studentFilters.length ? `WHERE ${studentFilters.join(" AND ")}` : "";
+    const groupWhere = groupFilters.length ? `WHERE ${groupFilters.join(" AND ")}` : "";
     const [users, groups, students] = await Promise.all([
       query("SELECT id, name, username, email, role FROM teachers WHERE deleted_at IS NULL ORDER BY name, username LIMIT 500"),
-      query("SELECT id, COALESCE(display_name, name) AS name, COALESCE(grade_level, grade) AS grade_level FROM groups ORDER BY COALESCE(display_name, name) LIMIT 500"),
+      query(`SELECT id, COALESCE(display_name, name) AS name, COALESCE(grade_level, grade) AS grade_level FROM groups g ${groupWhere} ORDER BY COALESCE(display_name, name) LIMIT 500`, groupValues),
       query(`SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial, s.phone, s.guardian_phone, s.group_id, COALESCE(g.display_name, g.name) AS group_name FROM students s LEFT JOIN groups g ON g.id=s.group_id ${studentWhere} ORDER BY s.full_name LIMIT 500`, studentValues)
     ]);
     res.json({ ok: true, users: users.rows, groups: groups.rows, students: students.rows });
@@ -594,8 +631,8 @@ operationsRouter.get("/audit-logs/filters", requirePermission("activity_log.view
 
 operationsRouter.get("/audit-logs", requirePermission("activity_log.view"), requireAuditAccess, async (req, res, next) => {
   try {
-    const builder = buildAuditLogQuery(req.query);
-    const countBuilder = buildAuditLogQuery(req.query, { includePagination: false });
+    const builder = buildAuditLogQuery(req.query, { user: req.teacher });
+    const countBuilder = buildAuditLogQuery(req.query, { includePagination: false, user: req.teacher });
     const result = await query(auditLogSelectSql(builder), builder.values);
     const countResult = await query(`SELECT COUNT(*)::int AS total ${auditLogJoins} WHERE ${countBuilder.filters.join(" AND ")}`, countBuilder.values);
     const statsResult = await query(`
@@ -683,6 +720,7 @@ operationsRouter.get("/payments/late", requirePermission("payments.view"), requi
     }
     if (req.query.grade_level) add("COALESCE(g.grade_level,g.grade) ILIKE ?", `%${normalizeDigits(req.query.grade_level).trim()}%`);
     if (req.query.include_disabled !== "true") filters.push("s.is_active = TRUE");
+    appendGroupScope(filters, values, req.teacher, "s.group_id");
     const from = normalizeDigits(req.query.date_from || "").trim() || null;
     const to = normalizeDigits(req.query.date_to || "").trim() || null;
     values.push(from, to);
@@ -719,8 +757,12 @@ operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"
     const date = normalizeDigits(req.query.date || cairoDateString()).trim();
     const timing = await getAttendanceTimingDefaults();
     const groupId = req.query.group_id ? Number(normalizeDigits(req.query.group_id)) : null;
-    let groupFilter = "";
-    if (groupId) groupFilter = " AND s.group_id=$2";
+    if (groupId && !hasGroupAccess(req.teacher, groupId)) return groupAccessDenied(res);
+    const scopedGroupIds = isGroupScopeRestricted(req.teacher) ? normalizeGroupIds(req.teacher.group_ids) : null;
+    const sessionScopeClause = scopedGroupIds ? `AND cs.group_id = ANY($${groupId ? 5 : 4}::int[])` : "";
+    const sessionInsertValues = groupId
+      ? [date, timing.openBeforeMinutes, timing.closeAfterMinutes, groupId, ...(scopedGroupIds ? [scopedGroupIds] : [])]
+      : [date, timing.openBeforeMinutes, timing.closeAfterMinutes, ...(scopedGroupIds ? [scopedGroupIds] : [])];
     await query(`
       INSERT INTO attendance_sessions (group_id, schedule_id, occurrence_key, session_date, starts_at, opens_at, closes_at, ends_at,
         original_starts_at, original_opens_at, original_closes_at, original_ends_at, status)
@@ -738,17 +780,19 @@ operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"
       JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM $1::date)::INTEGER
         ${groupId ? "AND cs.group_id=$4" : ""}
+        ${sessionScopeClause}
       ON CONFLICT (group_id, occurrence_key, session_date) DO NOTHING
-    `, groupId ? [date, timing.openBeforeMinutes, timing.closeAfterMinutes, groupId] : [date, timing.openBeforeMinutes, timing.closeAfterMinutes]);
+    `, sessionInsertValues);
     await finalizeExpiredAttendanceSessions();
-    const resultParams = groupId ? [date, groupId] : [date];
+    const resultParams = groupId ? [date, groupId] : (scopedGroupIds ? [date, scopedGroupIds] : [date]);
+    const resultScopeClause = groupId ? " AND s.group_id=$2" : (scopedGroupIds ? " AND s.group_id=ANY($2::int[])" : "");
     const result = await query(`SELECT s.*, g.name AS group_name, COALESCE(g.grade_level,g.grade) AS grade_level,
       cs.day_of_week, cs.start_time, cs.end_time
       FROM attendance_sessions s
       JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
         AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER
-      WHERE s.session_date=$1${groupFilter} ORDER BY cs.start_time`, resultParams);
+      WHERE s.session_date=$1${resultScopeClause} ORDER BY cs.start_time`, resultParams);
     res.json({ ok: true, sessions: result.rows });
   } catch (error) { next(error); }
 });
@@ -758,6 +802,7 @@ operationsRouter.post("/attendance/sessions", requirePermission("attendance.mana
     const groupId = Number(normalizeDigits(req.body?.group_id)), scheduleId = Number(normalizeDigits(req.body?.schedule_id));
     const date = String(req.body?.session_date || cairoDateString());
     if (!groupId || !scheduleId) return res.status(400).json({ ok:false, status:"invalid_session_payload" });
+    if (!hasGroupAccess(req.teacher, groupId)) return groupAccessDenied(res);
     const timing = await getAttendanceTimingDefaults();
     const result = await query(`INSERT INTO attendance_sessions (group_id,schedule_id,occurrence_key,session_date,starts_at,opens_at,closes_at,ends_at,
       original_starts_at,original_opens_at,original_closes_at,original_ends_at,status)
@@ -779,23 +824,25 @@ operationsRouter.post("/attendance/sessions", requirePermission("attendance.mana
 });
 
 operationsRouter.get("/attendance/sessions/:id/records", requirePermission("attendance.view"), async (req, res, next) => {
-  try { await finalizeExpiredAttendanceSessions(); const result = await query(`SELECT ar.*, s.full_name, s.student_serial, COALESCE(g.grade_level,g.grade) AS grade_level, g.name AS group_name
+  try { await finalizeExpiredAttendanceSessions(); const access = await query("SELECT group_id FROM attendance_sessions WHERE id=$1", [req.params.id]); if (!access.rowCount) return res.status(404).json({ ok: false, status: "not_found" }); if (!hasGroupAccess(req.teacher, access.rows[0].group_id)) return groupAccessDenied(res); const result = await query(`SELECT ar.*, s.full_name, s.student_serial, COALESCE(g.grade_level,g.grade) AS grade_level, g.name AS group_name
     FROM attendance_records ar JOIN students s ON s.id=ar.student_id JOIN groups g ON g.id=s.group_id WHERE ar.session_id=$1 ORDER BY s.full_name`, [req.params.id]); res.json({ok:true,records:result.rows}); }
   catch (error) { next(error); }
 });
 
 operationsRouter.get("/scanner/students", requirePermission("attendance.manage"), async (req, res, next) => {
   try {
+    const values = [];
+    const filters = ["s.deleted_at IS NULL", "s.is_active = TRUE", "g.deleted_at IS NULL", "g.is_active = TRUE"];
+    appendGroupScope(filters, values, req.teacher, "s.group_id");
     const result = await query(`
       SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial, s.qr_token,
         s.group_id, COALESCE(g.display_name, g.name) AS group_name,
         COALESCE(g.grade_level, g.grade) AS grade_level, s.is_active
       FROM students s
       JOIN groups g ON g.id = s.group_id
-      WHERE s.deleted_at IS NULL AND s.is_active = TRUE
-        AND g.deleted_at IS NULL AND g.is_active = TRUE
+      WHERE ${filters.join(" AND ")}
       ORDER BY s.id
-    `);
+    `, values);
     res.set("Cache-Control", "no-store");
     res.json({ ok: true, students: result.rows });
   } catch (error) { next(error); }
@@ -806,6 +853,12 @@ operationsRouter.post("/scanner/student-lookup", requireAnyPermission("students.
     const value = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
     const lookupValues = scanLookupValues(value).map((candidate) => candidate.toLowerCase());
     if (!isValidScanValue(value) || !lookupValues.length) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
+    const values = [lookupValues];
+    const filters = [`(LOWER(COALESCE(s.qr_token, '')) = ANY($1::text[])
+         OR LOWER(COALESCE(s.scan_serial, '')) = ANY($1::text[])
+         OR LOWER(COALESCE(s.student_serial, '')) = ANY($1::text[])
+         OR LOWER(COALESCE(s.student_code, '')) = ANY($1::text[]))`];
+    appendGroupScope(filters, values, req.teacher, "s.group_id");
     const result = await query(`
       SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
         s.group_id, s.is_active, s.deleted_at,
@@ -813,13 +866,10 @@ operationsRouter.post("/scanner/student-lookup", requireAnyPermission("students.
         g.is_active AS group_active
       FROM students s
       LEFT JOIN groups g ON g.id = s.group_id
-      WHERE LOWER(COALESCE(s.qr_token, '')) = ANY($1::text[])
-         OR LOWER(COALESCE(s.scan_serial, '')) = ANY($1::text[])
-         OR LOWER(COALESCE(s.student_serial, '')) = ANY($1::text[])
-         OR LOWER(COALESCE(s.student_code, '')) = ANY($1::text[])
+      WHERE ${filters.join(" AND ")}
       ORDER BY s.deleted_at NULLS FIRST, s.is_active DESC
       LIMIT 1
-    `, [lookupValues]);
+    `, values);
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "student_not_found" });
     const student = result.rows[0];
     const status = student.deleted_at ? "deleted_student" : !student.is_active || student.group_active === false ? "inactive_student" : "student_found";
@@ -847,16 +897,17 @@ operationsRouter.post("/fees/scan-lookup", requirePermission("payments.view"), a
     const value = normalizeScanValue(req.body?.value ?? req.body?.qr_token);
     const lookupValues = scanLookupValues(value).map((candidate) => candidate.toLowerCase());
     if (!isValidScanValue(value) || !lookupValues.length) return res.status(400).json({ ok: false, status: "invalid_scan_value" });
+    const values = [lookupValues];
+    const filters = ["s.deleted_at IS NULL", "s.is_active=TRUE", "g.deleted_at IS NULL", "g.is_active=TRUE", `(LOWER(COALESCE(s.qr_token,''))=ANY($1::text[]) OR LOWER(COALESCE(s.scan_serial,''))=ANY($1::text[]) OR LOWER(COALESCE(s.student_serial,''))=ANY($1::text[]) OR LOWER(COALESCE(s.student_code,''))=ANY($1::text[]))`];
+    appendGroupScope(filters, values, req.teacher, "s.group_id");
     const studentResult = await query(`
       SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
         s.is_active, s.deleted_at, g.name AS group_name,
         COALESCE(g.grade_level, g.grade) AS grade_level, g.is_active AS group_active
       FROM students s JOIN groups g ON g.id=s.group_id
-      WHERE s.deleted_at IS NULL AND s.is_active=TRUE AND g.deleted_at IS NULL AND g.is_active=TRUE
-        AND (LOWER(COALESCE(s.qr_token,''))=ANY($1::text[]) OR LOWER(COALESCE(s.scan_serial,''))=ANY($1::text[])
-          OR LOWER(COALESCE(s.student_serial,''))=ANY($1::text[]) OR LOWER(COALESCE(s.student_code,''))=ANY($1::text[]))
+      WHERE ${filters.join(" AND ")}
       LIMIT 1
-    `, [lookupValues]);
+    `, values);
     if (!studentResult.rowCount) return res.status(404).json({ ok: false, status: "student_not_found" });
     const studentId = studentResult.rows[0].id;
     const mode = req.body?.mode === "advance" ? "advance" : "new";
@@ -869,11 +920,15 @@ operationsRouter.post("/fees/scan-lookup", requirePermission("payments.view"), a
   } catch (error) { next(error); }
 });
 
-async function recordAttendance({ sessionId, studentId, actorId, method = "scanner", status = "present", ip, deviceId, idempotencyKey = null, whatsappNotified = false, request }) {
+async function recordAttendance({ sessionId, studentId, actorId, method = "scanner", status = "present", ip, deviceId, idempotencyKey = null, whatsappNotified = false, request, user = null }) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    const lockedSession = await client.query("SELECT id, group_id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    if (lockedSession.rowCount && !hasGroupAccess(user, lockedSession.rows[0].group_id)) {
+      await client.query("ROLLBACK");
+      return { groupAccessForbidden: true };
+    }
     const result = await client.query(`INSERT INTO attendance_records (session_id,student_id,status,method,ip_address,device_id,idempotency_key,whatsapp_notified)
     SELECT $1,$2,$3,$4,$5,$6,$7,$8
     WHERE EXISTS (
@@ -1129,11 +1184,15 @@ async function resolveImplicitAttendanceSession({ groupId, actorId, request }) {
   }
 }
 
-async function correctSystemAbsence({ sessionId, studentId, actorId, ip, deviceId, idempotencyKey, whatsappNotified, request }) {
+async function correctSystemAbsence({ sessionId, studentId, actorId, ip, deviceId, idempotencyKey, whatsappNotified, request, user = null }) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    const lockedSession = await client.query("SELECT id, group_id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    if (lockedSession.rowCount && !hasGroupAccess(user, lockedSession.rows[0].group_id)) {
+      await client.query("ROLLBACK");
+      return null;
+    }
     const corrected = await client.query(`
       UPDATE attendance_records
       SET status='present', method='scanner', checkin_time=NOW(), ip_address=$3, device_id=$4,
@@ -1183,7 +1242,7 @@ async function correctSystemAbsence({ sessionId, studentId, actorId, ip, deviceI
   }
 }
 
-async function correctManualAttendance({ sessionId, studentId, actorId, status, ip, deviceId, whatsappNotified, request }) {
+async function correctManualAttendance({ sessionId, studentId, actorId, status, ip, deviceId, whatsappNotified, request, user = null }) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -1191,6 +1250,10 @@ async function correctManualAttendance({ sessionId, studentId, actorId, status, 
     if (!session.rowCount) {
       await client.query("ROLLBACK");
       return null;
+    }
+    if (!hasGroupAccess(user, session.rows[0].group_id)) {
+      await client.query("ROLLBACK");
+      return { groupAccessForbidden: true };
     }
     const membership = await client.query(
       "SELECT 1 FROM students WHERE id=$1 AND group_id=$2 AND deleted_at IS NULL FOR SHARE",
@@ -1259,10 +1322,15 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
     if (!sessionId || !studentId || !MANUAL_ATTENDANCE_STATUSES.includes(status)) return res.status(400).json({ok:false,status:"invalid_attendance_payload"});
     const check = await query("SELECT 1 FROM attendance_sessions s JOIN students st ON st.group_id=s.group_id WHERE s.id=$1 AND st.id=$2", [sessionId,studentId]);
     if (!check.rowCount) return res.status(400).json({ok:false,status:"wrong_group"});
-    const corrected = await correctManualAttendance({ sessionId, studentId, actorId: req.teacher.id, status, ip: req.ip, whatsappNotified, request: req });
+    const access = await checkStudentGroupAccess(studentId, req.teacher);
+    if (!access.found) return res.status(404).json({ ok: false, status: "not_found" });
+    if (!access.allowed) return groupAccessDenied(res);
+    const corrected = await correctManualAttendance({ sessionId, studentId, actorId: req.teacher.id, status, ip: req.ip, whatsappNotified, request: req, user: req.teacher });
+    if (corrected?.groupAccessForbidden) return groupAccessDenied(res);
     if (corrected?.wrongGroup) return res.status(400).json({ok:false,status:"wrong_group"});
     if (corrected) return res.status(200).json({ok:true,record:corrected,corrected:true});
-    const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,whatsappNotified,request:req});
+    const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,whatsappNotified,request:req,user:req.teacher});
+    if (saved.groupAccessForbidden) return groupAccessDenied(res);
     if (saved.corrected) return res.status(200).json({ok:true,record:saved.record,corrected:true});
     if (saved.duplicate) return res.status(409).json({ok:false,status:"duplicate_attendance"});
     res.status(201).json({ok:true,record:saved.record});
@@ -1345,11 +1413,12 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
       return res.status(200).json({ ok: true, status: "ignored_hardware_bounce" });
     }
     const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
-    const corrected = await correctSystemAbsence({ sessionId: sessionResult.rows[0].id, studentId: student.id, actorId: req.teacher.id, ip: req.ip, deviceId, idempotencyKey, whatsappNotified, request: req });
+    const corrected = await correctSystemAbsence({ sessionId: sessionResult.rows[0].id, studentId: student.id, actorId: req.teacher.id, ip: req.ip, deviceId, idempotencyKey, whatsappNotified, request: req, user: req.teacher });
     if (corrected) {
       return res.json({ ok: true, status: "attendance_recorded", student: publicStudent, record: corrected, corrected: true });
     }
-    const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,whatsappNotified,request:req});
+    const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,whatsappNotified,request:req,user:req.teacher});
+    if (saved.groupAccessForbidden) return groupAccessDenied(res);
     if (saved.windowClosed) return res.status(409).json({ ok: false, error: "attendance_window_closed", status: "attendance_window_closed", message: "Attendance window closed.", student: publicStudent });
     if (saved.replay) return res.status(200).json({ ok: true, status: "attendance_recorded", student: publicStudent, record: saved.record, replayed: true });
     if (saved.duplicate) { await auditLog({ action: "suspicious_scan", actorId: req.teacher.id, studentId: student.id, sessionId: sessionResult.rows[0].id, details: { reason: saved.idempotencyConflict ? "idempotency_key_conflict" : "duplicate_student_scan", student_name: student.full_name, student_code: student.student_code }, request: req }); return res.status(409).json({ok:false,status:saved.idempotencyConflict ? "idempotency_conflict" : "duplicate_attendance",student: publicStudent,record:saved.record}); }
@@ -1369,6 +1438,7 @@ operationsRouter.get("/fees/payments", requirePermission("payments.view"), requi
     }
     if (req.query.from) { values.push(String(req.query.from)); filters.push(`COALESCE(p.paid_at,p.payment_date) >= $${values.length}::date`); }
     if (req.query.to) { values.push(String(req.query.to)); filters.push(`COALESCE(p.paid_at,p.payment_date) < ($${values.length}::date + INTERVAL '1 day')`); }
+    appendGroupScope(filters, values, req.teacher, "p.group_id");
     const result = await query(`SELECT p.*, COALESCE(p.student_name_snapshot,s.full_name) AS full_name,
       COALESCE(p.student_serial_snapshot,s.student_serial) AS student_serial,
       COALESCE(p.student_code_snapshot,s.student_code) AS student_code,
@@ -1405,10 +1475,14 @@ operationsRouter.get("/fees/overdue", requirePermission("payments.view"), requir
   } catch (error) { next(error); }
 });
 
-operationsRouter.get("/fees/summary/:studentId", requirePermission("payments.view"), async (req,res,next)=>{ try { const summary = await getFeeSummary(req.params.studentId); if(!summary)return res.status(404).json({ok:false,status:"not_found"}); res.json({ok:true,summary: collectionSummary(summary)}); }catch(e){next(e);} });
+operationsRouter.get("/fees/summary/:studentId", requirePermission("payments.view"), async (req,res,next)=>{ try { const studentId = Number(normalizeDigits(req.params.studentId)); const access = await checkStudentGroupAccess(studentId, req.teacher); if (!access.found) return res.status(404).json({ ok: false, status: "not_found" }); if (!access.allowed) return groupAccessDenied(res); const summary = await getFeeSummary(studentId); if(!summary)return res.status(404).json({ok:false,status:"not_found"}); res.json({ok:true,summary: collectionSummary(summary)}); }catch(e){next(e);} });
 operationsRouter.get("/fees/advance-options/:studentId", requirePermission("payments.view"), requirePermission("payments.advance"), async (req, res, next) => {
   try {
-    const options = await getAdvanceOptions(Number(normalizeDigits(req.params.studentId)));
+    const studentId = Number(normalizeDigits(req.params.studentId));
+    const access = await checkStudentGroupAccess(studentId, req.teacher);
+    if (!access.found) return res.status(404).json({ ok: false, status: "student_not_found" });
+    if (!access.allowed) return groupAccessDenied(res);
+    const options = await getAdvanceOptions(studentId);
     if (!options) return res.status(404).json({ ok: false, status: "student_not_found" });
     res.json({ ok: true, ...options });
   } catch (error) { next(error); }
@@ -1421,6 +1495,9 @@ operationsRouter.post("/fees/advance-payments", paymentRateLimit, requirePermiss
     const studentId = Number(normalizeDigits(req.body?.student_id));
     const paymentMethod = String(req.body?.payment_method || "cash").trim().toLowerCase();
     if (!Number.isSafeInteger(studentId) || studentId <= 0) return res.status(400).json({ ok: false, status: "invalid_student" });
+    const access = await checkStudentGroupAccess(studentId, req.teacher);
+    if (!access.found) return res.status(404).json({ ok: false, status: "student_not_found" });
+    if (!access.allowed) return groupAccessDenied(res);
     if (!paymentMethods.has(paymentMethod)) return res.status(400).json({ ok: false, status: "invalid_payment_method" });
     const { idempotencyKey } = idempotency;
     const sendWhatsApp = req.body?.send_whatsapp === true;
@@ -1453,6 +1530,9 @@ operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("pay
     if (idempotency.error) return res.status(400).json({ ok: false, status: idempotency.error });
     const studentId = Number(normalizeDigits(req.body?.student_id));
     if (!Number.isSafeInteger(studentId) || studentId <= 0) return res.status(400).json({ ok: false, status: "invalid_student", message: "الطالب غير موجود. / Student was not found." });
+    const access = await checkStudentGroupAccess(studentId, req.teacher);
+    if (!access.found) return res.status(404).json({ ok: false, status: "not_found", message: "الطالب غير موجود. / Student was not found." });
+    if (!access.allowed) return groupAccessDenied(res);
     const paymentMethod = String(req.body?.payment_method || "cash").trim().toLowerCase();
     if (!paymentMethods.has(paymentMethod)) return res.status(400).json({ ok: false, status: "invalid_payment_method" });
     const { idempotencyKey } = idempotency;

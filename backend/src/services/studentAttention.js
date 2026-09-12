@@ -1,5 +1,6 @@
 import { query } from "../db/pool.js";
 import { getDashboardAlertThresholds } from "./systemSettings.js";
+import { isGroupScopeRestricted, normalizeGroupIds } from "./groupAccess.js";
 
 function finiteNumber(value, fallback = 0) {
   const number = Number(value);
@@ -38,17 +39,25 @@ export function buildStudentAttention({
   return { attendanceRate, evaluationRate, reasons };
 }
 
-export async function listStudentsNeedingAttention({ groupId = null, includePayment = false, limit = 25, db = query } = {}) {
+export async function listStudentsNeedingAttention({ groupId = null, includePayment = false, limit = 25, db = query, user = null } = {}) {
   const thresholds = await getDashboardAlertThresholds(db);
   const safeLimit = Math.min(50, Math.max(1, Number(limit) || 25));
   const values = [thresholds.attendanceAlert, thresholds.evaluationAlert];
-  const groupFilter = groupId ? "AND s.group_id = $3" : "";
+  const groupFilters = [];
+  if (groupId) {
+    values.push(groupId);
+    groupFilters.push(`s.group_id = $${values.length}`);
+  }
+  if (isGroupScopeRestricted(user)) {
+    values.push(normalizeGroupIds(user.group_ids));
+    groupFilters.push(`s.group_id = ANY($${values.length}::int[])`);
+  }
+  const groupFilter = groupFilters.length ? `AND ${groupFilters.join(" AND ")}` : "";
   const attentionFilter = `AND (
       (COALESCE(a.attendance_sessions, 0) > 0 AND COALESCE(a.attendance_attended, 0) / a.attendance_sessions::numeric * 100 < $1)
       OR (e.evaluation_average IS NOT NULL AND e.evaluation_average < $2)
       ${includePayment ? "OR COALESCE(f.payment_overdue, FALSE)" : ""}
     )`;
-  if (groupId) values.push(groupId);
   values.push(safeLimit);
   const limitParam = `$${values.length}`;
   const result = await db(`

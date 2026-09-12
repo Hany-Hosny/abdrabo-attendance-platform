@@ -11,6 +11,7 @@ import { auditLog, changedFields, verifyAuditPin } from "../services/audit.js";
 import { parseStudentRetention, permanentlyDeleteStudents } from "../services/studentDeletion.js";
 import { enqueueGradeNotificationInTransaction, wakeWhatsAppWorker } from "../services/whatsapp.js";
 import { attendanceRateFromStatuses } from "../utils/attendanceStatus.js";
+import { appendGroupScope, hasGroupAccess, isGroupScopeRestricted } from "../services/groupAccess.js";
 
 export const adminAcademicRouter = express.Router();
 adminAcademicRouter.use(requireTeacher);
@@ -24,6 +25,10 @@ const supportedGradeLevels = new Set([
   "Secondary 1", "Secondary 2", "Secondary 3", "Support Groups"
 ]);
 export const MAX_PERMANENT_DELETE_BATCH = 100;
+
+function groupAccessDenied(res) {
+  return res.status(403).json({ ok: false, status: "group_access_forbidden" });
+}
 
 export function parseStudentIdsPayload(body) {
   const rawIds = Array.isArray(body?.studentIds) ? body.studentIds : body?.student_ids;
@@ -254,10 +259,13 @@ const groupSelect = `
   ) cs ON TRUE
 `;
 
-adminAcademicRouter.get("/groups", requireAnyPermission("schedule.view", "students.view"), async (_req, res, next) => {
+adminAcademicRouter.get("/groups", requireAnyPermission("schedule.view", "students.view"), async (req, res, next) => {
   try {
+    const groupValues = [];
+    const groupFilters = ["g.deleted_at IS NULL"];
+    appendGroupScope(groupFilters, groupValues, req.teacher, "g.id");
     const [groups, centers] = await Promise.all([
-      query(`${groupSelect} WHERE g.deleted_at IS NULL ORDER BY g.created_at DESC`),
+      query(`${groupSelect} WHERE ${groupFilters.join(" AND ")} ORDER BY g.created_at DESC`, groupValues),
       query("SELECT id, name, address FROM centers ORDER BY id ASC LIMIT 1")
     ]);
     res.json({ ok: true, groups: groups.rows, centers: centers.rows });
@@ -268,6 +276,7 @@ adminAcademicRouter.get("/groups", requireAnyPermission("schedule.view", "studen
 
 adminAcademicRouter.post("/groups", requirePermission("schedule.manage"), async (req, res, next) => {
   try {
+    if (isGroupScopeRestricted(req.teacher)) return groupAccessDenied(res);
     const data = groupPayload(req.body);
     if (data.schedules.length > 3) return res.status(400).json({ ok: false, status: "too_many_schedules" });
     if (!data.centerId) data.centerId = (await query("SELECT id FROM centers ORDER BY id LIMIT 1")).rows[0]?.id;
@@ -294,6 +303,7 @@ adminAcademicRouter.put("/groups/:id", requirePermission("schedule.manage"), asy
     const data = groupPayload(req.body);
     if (data.schedules.length > 3) return res.status(400).json({ ok: false, status: "too_many_schedules" });
     const groupId = Number(req.params.id);
+    if (!hasGroupAccess(req.teacher, groupId)) return groupAccessDenied(res);
     client = await pool.connect();
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`attendance-group:${groupId}`]);
@@ -538,6 +548,7 @@ adminAcademicRouter.patch("/groups/:id/status", requirePermission("schedule.mana
   try {
     const isActive = parseBoolean(req.body?.is_active, false);
     const groupId = Number(req.params.id);
+    if (!hasGroupAccess(req.teacher, groupId)) return groupAccessDenied(res);
     client = await pool.connect();
     await client.query("BEGIN");
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`attendance-group:${groupId}`]);
@@ -567,6 +578,7 @@ adminAcademicRouter.patch("/groups/:id/status", requirePermission("schedule.mana
 adminAcademicRouter.delete("/groups/:id", requirePermission("schedule.manage"), async (req, res, next) => {
   try {
     const groupId = Number(req.params.id);
+    if (!hasGroupAccess(req.teacher, groupId)) return groupAccessDenied(res);
     const submittedPin = String(req.body?.audit_pin || "").trim();
     const studentCount = await query("SELECT COUNT(*)::int AS count FROM students WHERE group_id=$1 AND deleted_at IS NULL", [groupId]);
     const hasStudents = Number(studentCount.rows[0]?.count || 0) > 0;
@@ -607,6 +619,7 @@ adminAcademicRouter.delete("/groups/:id", requirePermission("schedule.manage"), 
 adminAcademicRouter.get("/groups/:id/details", requirePermission("schedule.view"), async (req, res, next) => {
   try {
     const groupId = Number(req.params.id);
+    if (!hasGroupAccess(req.teacher, groupId)) return groupAccessDenied(res);
     const group = await query(`${groupSelect} WHERE g.id=$1`, [groupId]);
     if (!group.rowCount) return res.status(404).json({ok:false,status:"not_found"});
     const schedules = await query("SELECT id,day_of_week,start_time,end_time,opens_before_minutes,closes_after_minutes,is_active FROM class_schedules WHERE group_id=$1 AND deleted_at IS NULL ORDER BY day_of_week,start_time", [groupId]);
@@ -620,6 +633,22 @@ const studentSelect = `
     s.billing_start_month::text AS billing_start_month, s.is_active, s.deleted_at, s.purge_after, s.created_at, g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
   FROM students s JOIN groups g ON g.id = s.group_id
 `;
+
+async function requireScopedStudent(req, res, next) {
+  const match = String(req.path || "").match(/^\/students\/(\d+)(?:\/|$)/);
+  if (!match) return next();
+  try {
+    const result = await query("SELECT group_id FROM students WHERE id = $1", [Number(match[1])]);
+    if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    if (!hasGroupAccess(req.teacher, result.rows[0].group_id)) return groupAccessDenied(res);
+    req.scopedStudentGroupId = Number(result.rows[0].group_id);
+    return next();
+  } catch (error) {
+    return next(error);
+  }
+}
+
+adminAcademicRouter.use(requireScopedStudent);
 
 function collectionProfileSummary(summary) {
   if (!summary) return null;
@@ -669,6 +698,7 @@ adminAcademicRouter.get("/students", requirePermission("students.view"), async (
       values.push(groupId);
       filters.push(`s.group_id = $${values.length}`);
     }
+    appendGroupScope(filters, values, req.teacher, "s.group_id");
     const result = await query(`${studentSelect} WHERE ${filters.join(" AND ")} ORDER BY s.created_at DESC`, values);
     res.json({ ok: true, students: result.rows });
   } catch (error) {
@@ -682,6 +712,7 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
     const studentResult = await query(`${studentSelect} WHERE s.id = $1`, [studentId]);
     if (!studentResult.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const student = studentResult.rows[0];
+    if (!hasGroupAccess(req.teacher, student.group_id)) return groupAccessDenied(res);
     const canViewAttendance = hasPermission(req.teacher, "attendance.view");
     const canViewEvaluations = hasPermission(req.teacher, "exams.view");
     const canViewNotes = hasPermission(req.teacher, "notes.view");
@@ -785,6 +816,7 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
     }
     if (Number.isInteger(groupId) && groupId > 0) { values.push(groupId); filters.push(`s.group_id = $${values.length}`); }
     if (Number.isInteger(studentId) && studentId > 0) { values.push(studentId); filters.push(`s.id = $${values.length}`); }
+    appendGroupScope(filters, values, req.teacher, "s.group_id");
     if (date) { values.push(date); filters.push(`e.exam_date = $${values.length}::date`); }
     if (search) {
       values.push(`%${search}%`);
@@ -840,6 +872,10 @@ adminAcademicRouter.post("/exams/results", requirePermission("exams.manage"), as
     if (!student.rowCount) {
       await client.query("ROLLBACK");
       return res.status(404).json({ ok: false, status: "not_found" });
+    }
+    if (!hasGroupAccess(req.teacher, student.rows[0].group_id)) {
+      await client.query("ROLLBACK");
+      return groupAccessDenied(res);
     }
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`exam:${student.rows[0].group_id}:${title}:${examDate}`]);
     const existingExam = await client.query(`
@@ -924,6 +960,11 @@ adminAcademicRouter.post(["/exams/results/bulk", "/exams/results/bulk-sheet"], r
         throw error;
       }
       const studentRecord = student.rows[0];
+      if (!hasGroupAccess(req.teacher, studentRecord.group_id)) {
+        const accessError = new Error("group_access_forbidden");
+        accessError.rowNumber = index + 1;
+        throw accessError;
+      }
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`exam:${studentRecord.group_id}:${row.title}:${row.examDate}`]);
       const existingExam = await client.query(`
         SELECT id FROM exams
@@ -966,6 +1007,7 @@ adminAcademicRouter.post(["/exams/results/bulk", "/exams/results/bulk-sheet"], r
     });
   } catch (error) {
     if (client) await client.query("ROLLBACK").catch(() => undefined);
+    if (error?.message === "group_access_forbidden") return res.status(403).json({ ok: false, status: error.message, row_number: error.rowNumber || null });
     if (error?.message === "invalid_bulk_exam_row" || error?.message === "bulk_student_not_found") {
       return res.status(400).json({ ok: false, status: error.message, row_number: error.rowNumber || null });
     }
@@ -980,6 +1022,10 @@ adminAcademicRouter.delete("/exams/results/:id", requirePermission("exams.manage
     const resultId = Number(normalizeDigits(req.params.id));
     if (!Number.isInteger(resultId) || resultId <= 0) return res.status(400).json({ ok: false, status: "invalid_exam_result" });
     const existing = await query(`SELECT er.id, er.exam_id, er.student_id, er.score, er.note, e.title, e.exam_date, s.full_name, s.student_code FROM exam_results er JOIN exams e ON e.id=er.exam_id JOIN students s ON s.id=er.student_id WHERE er.id=$1`, [resultId]);
+    if (existing.rowCount) {
+      const studentGroup = await query("SELECT group_id FROM students WHERE id=$1", [existing.rows[0].student_id]);
+      if (!hasGroupAccess(req.teacher, studentGroup.rows[0]?.group_id)) return groupAccessDenied(res);
+    }
     const result = await query("DELETE FROM exam_results WHERE id = $1 RETURNING id", [resultId]);
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     await auditLog({ action: "exam_result_deleted", actorId: req.teacher.id, studentId: existing.rows[0]?.student_id || null, details: { result_id: resultId, exam_id: existing.rows[0]?.exam_id || null, student_name: existing.rows[0]?.full_name, student_code: existing.rows[0]?.student_code, title: existing.rows[0]?.title, exam_date: existing.rows[0]?.exam_date, before: existing.rows[0], after: null }, request: req });
@@ -1056,6 +1102,7 @@ adminAcademicRouter.post("/students", requirePermission("students.manage"), asyn
     }
     const group = await query("SELECT id FROM groups WHERE id = $1 AND is_active = TRUE", [groupId]);
     if (!group.rowCount) return res.status(400).json({ ok: false, status: "invalid_group" });
+    if (!hasGroupAccess(req.teacher, groupId)) return groupAccessDenied(res);
     const result = await query(
       `INSERT INTO students (group_id, student_code, student_serial, scan_serial, qr_token, full_name, phone, guardian_phone, whatsapp_opted_out, national_id_hash, gender, billing_start_month, is_active)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12::date, ${defaultBillingStartMonthSql}), $13) RETURNING id`,
@@ -1117,6 +1164,7 @@ adminAcademicRouter.put("/students/:id", requirePermission("students.manage"), a
     }
     const before = await query("SELECT id, group_id, student_code, student_serial, scan_serial, full_name, phone, guardian_phone, whatsapp_opted_out, gender, billing_start_month, is_active FROM students WHERE id=$1", [studentId]);
     if (!before.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    if (!hasGroupAccess(req.teacher, before.rows[0].group_id) || !hasGroupAccess(req.teacher, groupId)) return groupAccessDenied(res);
     const result = await query(
       `UPDATE students SET group_id = $1, student_code = $2, student_serial = $3, full_name = $4, phone = $5,
         guardian_phone = $6, whatsapp_opted_out = $7, national_id_hash = COALESCE($8, national_id_hash), gender = $9,
@@ -1189,6 +1237,10 @@ adminAcademicRouter.post("/students/bulk-delete", requirePermission("students.de
       await client.query("ROLLBACK");
       return res.status(404).json({ ok: false, status: "student_not_found", missing_student_ids: missingIds });
     }
+    if (beforeResult.rows.some((row) => !hasGroupAccess(req.teacher, row.group_id))) {
+      await client.query("ROLLBACK");
+      return groupAccessDenied(res);
+    }
     const alreadyDeleted = beforeResult.rows.filter((row) => row.deleted_at).map((row) => Number(row.id));
     if (alreadyDeleted.length) {
       await client.query("ROLLBACK");
@@ -1240,6 +1292,11 @@ adminAcademicRouter.delete("/students/bulk-permanent", requirePermission("studen
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const scopedStudents = await client.query("SELECT id, group_id FROM students WHERE id = ANY($1::int[]) FOR SHARE", [parsed.studentIds]);
+    if (scopedStudents.rows.length !== parsed.studentIds.length || scopedStudents.rows.some((row) => !hasGroupAccess(req.teacher, row.group_id))) {
+      await client.query("ROLLBACK");
+      return groupAccessDenied(res);
+    }
     const result = await permanentlyDeleteStudents({ client, studentIds: parsed.studentIds, retain: retention.retain, actorId: req.teacher.id, request: req });
     await client.query("COMMIT");
     return res.json({ ok: true, deleted_count: result.deletedCount, students: result.students, retain: retention.retain });
