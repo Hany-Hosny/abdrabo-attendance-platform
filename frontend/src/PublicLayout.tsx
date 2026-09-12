@@ -8,6 +8,7 @@ export interface PublicLayoutProps {
   language: PublicLanguage;
   theme: PublicTheme;
   labels: PublicHeaderLabels;
+  downloadUrl: string;
   onLanguageChange: (language: PublicLanguage) => void;
   onToggleTheme: () => void;
   onNavigate?: (path: string) => void;
@@ -21,6 +22,7 @@ export function PublicLayout({
   language,
   theme,
   labels,
+  downloadUrl,
   onLanguageChange,
   onToggleTheme,
   onNavigate,
@@ -39,6 +41,7 @@ export function PublicLayout({
           language={language}
           theme={theme}
           labels={labels}
+          downloadUrl={downloadUrl}
           onLanguageChange={onLanguageChange}
           onToggleTheme={onToggleTheme}
           onNavigate={onNavigate}

@@ -20,6 +20,7 @@ COPY shared/package.json ./shared/package.json
 RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --chown=appuser:appgroup backend/src ./backend/src
+COPY --chown=appuser:appgroup backend/public ./backend/public
 COPY --chown=appuser:appgroup shared ./shared
 
 WORKDIR /app/backend

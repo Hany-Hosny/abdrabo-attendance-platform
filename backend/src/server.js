@@ -4,7 +4,7 @@ import express from "express";
 import helmet from "helmet";
 import { migrate } from "./db/migrate.js";
 import { pool, query } from "./db/pool.js";
-import { studentRouter } from "./routes/student.js";
+import { downloadApp, studentRouter } from "./routes/student.js";
 import { teacherRouter } from "./routes/teacher.js";
 import { adminSiteRouter, siteContentRouter, siteRouter } from "./routes/site.js";
 import { adminUsersRouter } from "./routes/adminUsers.js";
@@ -87,6 +87,7 @@ app.get("/metrics", async (req, res, next) => {
 });
 
 app.use("/api/student", studentRouter);
+app.get("/api/app/download", downloadApp);
 app.use("/api", inboxRouter);
 app.use("/api/teacher", teacherRouter);
 app.use("/api/site", siteRouter);

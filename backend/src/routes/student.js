@@ -15,6 +15,8 @@ import path from "node:path";
 import fs from "node:fs";
 
 export const studentRouter = express.Router();
+const appDownloadPath = path.resolve(process.cwd(), "public/downloads/app-debug.apk");
+const appDownloadFilename = "app-debug.apk";
 const studentCodePattern = /^A-\d{4}$/;
 const studentLoginRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, key: (req) => `student-login:${ipKeyGenerator(req.ip || "unknown")}` });
 const studentLookupRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 10, key: (req) => `student-lookup:${ipKeyGenerator(req.ip || "unknown")}` });
@@ -22,6 +24,19 @@ const studentPortalAccessRateLimit = createRateLimiter({ windowMs: 15 * 60_000, 
 
 function hashValue(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+export function downloadApp(_req, res) {
+  if (!fs.existsSync(appDownloadPath) || !fs.statSync(appDownloadPath).isFile()) {
+    return res.status(404).json({ ok: false, status: "app_file_not_found" });
+  }
+
+  res.setHeader("Content-Type", "application/vnd.android.package-archive");
+  return res.download(appDownloadPath, appDownloadFilename, (error) => {
+    if (error && !res.headersSent) {
+      res.status(500).json({ ok: false, status: "app_download_failed" });
+    }
+  });
 }
 
 studentRouter.post("/portal-access", studentPortalAccessRateLimit, async (req, res, next) => {
@@ -337,19 +352,4 @@ studentRouter.get("/:id/exams", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-});
-    // مسار تحميل مباشر للأبلكيشن
-router.get("/app/download", (_req, res) => {
-  const filePath = path.resolve(process.cwd(), "public/downloads/Mr_Abdrabo_Edu.apk");
-
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ ok: false, status: "file_not_found" });
-  }
-
-  // يرسل الملف ويبدأ التحميل فوراً مع فرض اسم الملف
-  res.download(filePath, "Mr_Abdrabo_Edu.apk", (err) => {
-    if (err && !res.headersSent) {
-      res.status(500).json({ ok: false, status: "download_failed" });
-    }
-  });
 });

@@ -23,6 +23,7 @@ import { registerServiceWorker } from "./registerServiceWorker";
 registerServiceWorker();
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
+const APP_DOWNLOAD_URL = `${API_BASE_URL.replace(/\/$/, "")}/app/download`;
 const LANGUAGE_STORAGE_KEY = "abdrabo_language";
 const THEME_STORAGE_KEY = "abdrabo_theme";
 const STUDENT_SESSION_STORAGE_KEY = "student_session";
@@ -271,6 +272,7 @@ const translations = {
     "nav.language": "اللغة",
     "nav.theme": "المظهر",
     "nav.notifications": "الإشعارات",
+    "nav.downloadApp": "تحميل التطبيق",
     "nav.mobileNavigation": "التنقل",
     "nav.mobileMenu": "فتح القائمة",
     "nav.closeMobileMenu": "إغلاق القائمة",
@@ -1780,6 +1782,7 @@ const translations = {
     "nav.language": "Language",
     "nav.theme": "Theme",
     "nav.notifications": "Notifications",
+    "nav.downloadApp": "Download app",
     "nav.mobileNavigation": "Navigation",
     "nav.mobileMenu": "Open menu",
     "nav.closeMobileMenu": "Close menu",
@@ -4050,6 +4053,10 @@ function MenuIcon() {
   return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>;
 }
 
+function DownloadIcon() {
+  return <svg className="header-control-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11" /><path d="m7.5 10 4.5 4.5 4.5-4.5" /><path d="M5 19.5h14" /></svg>;
+}
+
 function HomeIcon() {
   return <svg className="header-tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" /></svg>;
 }
@@ -4305,6 +4312,7 @@ function App() {
     studentLogin: t("nav.studentLogin"),
     aboutTeacher: t("landing.nav.aboutTeacher"),
     contact: t("nav.contact"),
+    downloadApp: t("nav.downloadApp"),
     mainNavigation: t("nav.mobileNavigation"),
     languageSelector: t("nav.language"),
     themeToLight: t("theme.switchToLight"),
@@ -4315,6 +4323,7 @@ function App() {
     language: language as PublicLanguage,
     theme: theme as PublicTheme,
     labels: publicLabels,
+    downloadUrl: APP_DOWNLOAD_URL,
     background: publicBackground,
     onLanguageChange: setLanguage,
     onToggleTheme: toggleTheme,
@@ -11291,6 +11300,7 @@ function Shell({
         </nav>
         <div className="header-controls" aria-label={language === "ar" ? "إجراءات الرأس" : "Header actions"}>
           {studentNotifications ? <StudentNotificationBell {...studentNotifications} language={language} t={t} /> : <GuestNotificationButton t={t} />}
+          {isStudentAuthenticated ? <a className="student-app-download-button" href={APP_DOWNLOAD_URL} download aria-label={t("nav.downloadApp")} title={t("nav.downloadApp")}><DownloadIcon /></a> : null}
           <ThemeToggle t={t} />
           <button
             className="mobile-header-menu-toggle"

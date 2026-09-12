@@ -18,6 +18,7 @@ export interface PublicHeaderLabels {
   studentLogin: string;
   aboutTeacher: string;
   contact: string;
+  downloadApp: string;
   mainNavigation: string;
   languageSelector: string;
   themeToLight: string;
@@ -29,6 +30,7 @@ export interface PublicHeaderProps {
   language: PublicLanguage;
   theme: PublicTheme;
   labels: PublicHeaderLabels;
+  downloadUrl: string;
   onLanguageChange: (language: PublicLanguage) => void;
   onToggleTheme: () => void;
   onNavigate?: (path: string) => void;
@@ -49,11 +51,16 @@ function ThemeIcon({ theme }: { theme: PublicTheme }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" /></svg>;
 }
 
+function DownloadIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11" /><path d="m7.5 10 4.5 4.5 4.5-4.5" /><path d="M5 19.5h14" /></svg>;
+}
+
 export function PublicHeader({
   currentPath,
   language,
   theme,
   labels,
+  downloadUrl,
   onLanguageChange,
   onToggleTheme,
   onNavigate
@@ -127,6 +134,9 @@ export function PublicHeader({
         </nav>
 
         <div className="landing-header-actions public-header-actions">
+          <a className="public-app-download" href={downloadUrl} download aria-label={labels.downloadApp} title={labels.downloadApp}>
+            <DownloadIcon />
+          </a>
           <div className="landing-language-switcher" aria-label={labels.languageSelector}>
             <button type="button" tabIndex={0} className={language === "ar" ? "is-active" : ""} onClick={() => onLanguageChange("ar")} aria-pressed={language === "ar"}>AR</button>
             <button type="button" tabIndex={0} className={language === "en" ? "is-active" : ""} onClick={() => onLanguageChange("en")} aria-pressed={language === "en"}>EN</button>
