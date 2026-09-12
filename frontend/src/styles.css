@@ -15329,6 +15329,17 @@ body,
   box-shadow: 0 28px 80px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
+@media (min-width: 981px) {
+  .public-layout-landing .landing-hero-art {
+    width: min(100%, 38rem);
+    max-width: 100%;
+    min-height: 0;
+    aspect-ratio: 1.28 / 1;
+    justify-self: center;
+    align-self: center;
+  }
+}
+
 .landing-hero-art::before {
   position: absolute;
   inset: 14%;
