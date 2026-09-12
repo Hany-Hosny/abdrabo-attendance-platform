@@ -9,7 +9,7 @@ import { finalizeExpiredAttendanceSessions } from "../services/attendanceFinaliz
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { cairoDateString } from "../utils/time.js";
 import { assertAttendanceWindow } from "../utils/attendanceWindow.js";
-import { auditLog } from "../services/audit.js";
+import { auditLog, verifyAuditPin } from "../services/audit.js";
 import { getAttendanceTimingDefaults } from "../services/systemSettings.js";
 import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue, scanLookupValues } from "../utils/scan.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
@@ -84,7 +84,8 @@ function collectionSummary(summary) {
   const allowedFields = [
     "id", "full_name", "student_serial", "student_code", "group_name", "grade_level",
     "required_amount", "paid_amount", "remaining_balance", "current_cycle_fee",
-    "current_cycle_paid", "current_cycle_outstanding", "payment_status", "monthly_dues"
+    "current_cycle_paid", "current_cycle_outstanding", "payment_status", "billing_start_month",
+    "billing_stage", "critical_alert_active", "monthly_dues"
   ];
   return Object.fromEntries(allowedFields.filter((field) => Object.prototype.hasOwnProperty.call(summary, field)).map((field) => [field, summary[field]]));
 }
@@ -320,8 +321,27 @@ operationsRouter.get("/payments/report", requirePermission("payments.view"), req
 operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("payments.view"), requirePermission("payments.reverse"), async (req, res, next) => {
   const paymentId = Number(req.params.paymentId);
   const reason = String(req.body?.reason || "").trim();
+  const securityPin = normalizeDigits(req.body?.security_pin || req.body?.audit_pin || "").trim();
   if (!Number.isSafeInteger(paymentId) || paymentId <= 0) return res.status(400).json({ ok: false, status: "invalid_payment" });
   if (reason.length < 3 || reason.length > 500) return res.status(400).json({ ok: false, status: "invalid_reason", message: "A reversal reason is required. / يجب إدخال سبب عكس الدفعة." });
+  if (!/^\d{4}$/.test(securityPin)) return res.status(400).json({ ok: false, status: "security_code_required", message: "A 4-digit security code is required. / يجب إدخال رمز الحماية المكون من 4 أرقام." });
+
+  let pinCheck;
+  try {
+    pinCheck = await verifyAuditPin({ teacherId: req.teacher.id, pin: securityPin, purpose: "payment_reversal", request: req });
+  } catch (error) {
+    console.error("Payment reversal security check failed", { code: error?.code || "unknown" });
+    return res.status(500).json({ ok: false, status: "reversal_failed", message: "The reversal could not be completed. No change was committed. / تعذر اعتماد عكس الدفعة. لم يتم اعتماد أي تغيير." });
+  }
+  if (!pinCheck.ok) {
+    const messages = {
+      audit_pin_not_configured: "Security code is not configured. / لم يتم إعداد رمز الحماية.",
+      audit_pin_locked: "Security code is temporarily locked. / رمز الحماية موقوف مؤقتاً.",
+      invalid_audit_pin: "Invalid security code. / رمز الحماية غير صحيح."
+    };
+    const statusCode = pinCheck.status === "audit_pin_locked" ? 429 : pinCheck.status === "audit_pin_not_configured" ? 409 : 401;
+    return res.status(statusCode).json({ ok: false, status: pinCheck.status, message: messages[pinCheck.status] || messages.invalid_audit_pin });
+  }
 
   const client = await pool.connect();
   try {
@@ -384,8 +404,9 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("pa
     await client.query("COMMIT");
     return res.status(201).json({ ok: true, reversal: reversal.rows[0] });
   } catch (error) {
-    await client.query("ROLLBACK");
-    next(error);
+    await client.query("ROLLBACK").catch(() => undefined);
+    console.error("Payment reversal failed", { code: error?.code || "unknown" });
+    return res.status(500).json({ ok: false, status: "reversal_failed", message: "The reversal could not be completed. No change was committed. / تعذر اعتماد عكس الدفعة. لم يتم اعتماد أي تغيير." });
   } finally {
     client.release();
   }

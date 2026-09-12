@@ -47,6 +47,7 @@ export async function migrate() {
       guardian_phone TEXT,
       whatsapp_opted_out BOOLEAN NOT NULL DEFAULT FALSE,
       national_id_hash TEXT,
+      billing_start_month DATE,
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
       purge_after TIMESTAMPTZ,
       deleted_at TIMESTAMPTZ,
@@ -306,6 +307,7 @@ export async function migrate() {
     ALTER TABLE students ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
     ALTER TABLE students ADD COLUMN IF NOT EXISTS purge_after TIMESTAMPTZ;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS billing_start_month DATE;
     ALTER TABLE students DROP CONSTRAINT IF EXISTS students_gender_check;
     ALTER TABLE students ADD CONSTRAINT students_gender_check CHECK (gender IN ('male', 'female', 'unknown'));
 
@@ -783,6 +785,8 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS receipt_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS advance_payment_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
   await query("ALTER TABLE students ADD COLUMN IF NOT EXISTS whatsapp_opted_out BOOLEAN NOT NULL DEFAULT FALSE");
+  await query("COMMENT ON COLUMN students.billing_start_month IS 'First effective fee due month, normalized to YYYY-MM-01.'");
+  await query("CREATE INDEX IF NOT EXISTS students_billing_start_month_idx ON students (billing_start_month)");
   await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_min_delay_seconds_check");
   await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_max_delay_seconds_check");
   await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_min_delay_seconds_check CHECK (min_delay_seconds BETWEEN 2 AND 60)");

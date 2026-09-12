@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { absenceCorrectionTransition, applyTemplate, buildStudentPortalLink, enqueueGradeNotificationInTransaction, formatWhatsAppMonthList, gradeQueuePreviewPayload, normalizeEgyptianPhone, normalizeManualRetryReason, validateWhatsAppSettings } from "../src/services/whatsapp.js";
+import { absenceCorrectionTransition, applyTemplate, buildStudentPortalLink, enqueueGradeNotificationInTransaction, formatWhatsAppMonthList, gradeQueuePreviewPayload, normalizeEgyptianPhone, normalizeManualRetryReason, paymentMonthsValue, validateWhatsAppSettings } from "../src/services/whatsapp.js";
 import { hasPermission } from "../src/services/rbac.js";
 import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "../src/services/auth.js";
 
@@ -94,6 +94,14 @@ test("formats one and multiple advance-payment months for both locales", () => {
   assert.equal(formatWhatsAppMonthList("2026-10, 2026-11", "en-US"), "October 2026, November 2026");
   assert.match(formatWhatsAppMonthList("2026-10, 2026-11", "ar-EG"), /٢٠٢٦|2026/);
   assert.equal(applyTemplate("{months}", { months: formatWhatsAppMonthList("2026-10, 2026-11", "en-US") }), "October 2026, November 2026");
+});
+
+test("normalizes payment months from arrays, JSON, PostgreSQL arrays, and fallback dates", () => {
+  assert.equal(paymentMonthsValue([{ month: "2026-10-01" }, { month: "2026-11-01" }]), "2026-10, 2026-11");
+  assert.equal(paymentMonthsValue('[{"month":"2026-10-01"},{"month":"2026-11-01"}]'), "2026-10, 2026-11");
+  assert.equal(paymentMonthsValue("{2026-10-01,2026-11-01}"), "2026-10, 2026-11");
+  assert.equal(paymentMonthsValue(null, null, "2026-12-15T12:00:00Z"), "2026-12");
+  assert.match(formatWhatsAppMonthList(null, "ar-EG", "2026-12-15T12:00:00Z"), /ديسمبر/);
 });
 
 test("single-grade enqueue rejects opted-out, inactive, and invalid-phone students before creating a job", async () => {

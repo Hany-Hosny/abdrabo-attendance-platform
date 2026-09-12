@@ -75,6 +75,19 @@ function isValidIsoDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+function normalizeBillingStartMonth(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const normalized = /^\d{4}-\d{2}$/.test(text) ? `${text}-01` : text;
+  return isValidIsoDate(normalized) && normalized.endsWith("-01") ? normalized : undefined;
+}
+
+const defaultBillingStartMonthSql = `CASE
+  WHEN EXTRACT(DAY FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')) > 10
+    THEN date_trunc('month', (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') + INTERVAL '1 month')::date
+  ELSE date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+END`;
+
 function normalizeBulkExamRow(raw, index) {
   const row = raw && typeof raw === "object" ? raw : {};
   const studentIdValue = row.student_id ?? row.studentId;
@@ -597,14 +610,14 @@ adminAcademicRouter.get("/groups/:id/details", requirePermission("schedule.view"
     const group = await query(`${groupSelect} WHERE g.id=$1`, [groupId]);
     if (!group.rowCount) return res.status(404).json({ok:false,status:"not_found"});
     const schedules = await query("SELECT id,day_of_week,start_time,end_time,opens_before_minutes,closes_after_minutes,is_active FROM class_schedules WHERE group_id=$1 AND deleted_at IS NULL ORDER BY day_of_week,start_time", [groupId]);
-    const students = await query("SELECT id,full_name,student_serial,student_code,phone,guardian_phone,is_active,deleted_at,purge_after FROM students WHERE group_id=$1 ORDER BY full_name", [groupId]);
+    const students = await query("SELECT id,full_name,student_serial,student_code,phone,guardian_phone,billing_start_month,is_active,deleted_at,purge_after FROM students WHERE group_id=$1 ORDER BY full_name", [groupId]);
     res.json({ok:true,group:group.rows[0],schedules:schedules.rows,students:students.rows});
   } catch (error) { next(error); }
 });
 
 const studentSelect = `
   SELECT s.id, s.group_id, s.student_code, s.student_serial, s.scan_serial, s.qr_token, s.full_name, s.phone, s.guardian_phone, s.whatsapp_opted_out, s.gender,
-    s.is_active, s.deleted_at, s.purge_after, s.created_at, g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
+    s.billing_start_month::text AS billing_start_month, s.is_active, s.deleted_at, s.purge_after, s.created_at, g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
   FROM students s JOIN groups g ON g.id = s.group_id
 `;
 
@@ -612,7 +625,7 @@ function collectionProfileSummary(summary) {
   if (!summary) return null;
   const fields = [
     "fees_amount", "required_amount", "paid_amount", "remaining_balance", "current_cycle_fee",
-    "current_cycle_paid", "current_cycle_outstanding", "payment_status", "monthly_dues"
+    "current_cycle_paid", "current_cycle_outstanding", "payment_status", "billing_start_month", "billing_stage", "critical_alert_active", "monthly_dues"
   ];
   return Object.fromEntries(fields.filter((field) => Object.prototype.hasOwnProperty.call(summary, field)).map((field) => [field, summary[field]]));
 }
@@ -1021,6 +1034,7 @@ adminAcademicRouter.post("/students", requirePermission("students.manage"), asyn
     const groupId = Number(normalizeDigits(req.body?.group_id));
     const phone = normalizeDigits(req.body?.phone || "").trim() || null;
     const nationalId = normalizeDigits(req.body?.national_id || "").trim();
+    const billingStartMonth = normalizeBillingStartMonth(req.body?.billing_start_month);
     const whatsappOptedOut = req.body?.whatsapp_opted_out === true;
     const isActive = parseBoolean(req.body?.is_active);
     if (!isPhoneNumber(guardianPhone) || (phone && !isPhoneNumber(phone))) {
@@ -1029,6 +1043,7 @@ adminAcademicRouter.post("/students", requirePermission("students.manage"), asyn
     if (nationalId && !isNationalId(nationalId)) {
       return res.status(400).json({ ok: false, status: "invalid_national_id", message: "يجب إدخال ١٤ رقمًا للرقم القومي. / National ID must contain exactly 14 digits." });
     }
+    if (billingStartMonth === undefined) return res.status(400).json({ ok: false, status: "invalid_billing_start_month" });
     const studentCode = requestedCode || (await generateStudentCode());
     const studentSerial = studentCode.replace(/^A(\d{4})$/, "A-$1");
     const requestedScanSerial = normalizeDigits(req.body?.scan_serial || "").trim().toUpperCase();
@@ -1042,9 +1057,9 @@ adminAcademicRouter.post("/students", requirePermission("students.manage"), asyn
     const group = await query("SELECT id FROM groups WHERE id = $1 AND is_active = TRUE", [groupId]);
     if (!group.rowCount) return res.status(400).json({ ok: false, status: "invalid_group" });
     const result = await query(
-      `INSERT INTO students (group_id, student_code, student_serial, scan_serial, qr_token, full_name, phone, guardian_phone, whatsapp_opted_out, national_id_hash, gender, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-      [groupId, studentCode, studentSerial, scanSerial, crypto.randomBytes(24).toString("hex"), fullName, phone, guardianPhone, whatsappOptedOut, nationalId ? hashNationalId(nationalId) : null, gender, isActive]
+      `INSERT INTO students (group_id, student_code, student_serial, scan_serial, qr_token, full_name, phone, guardian_phone, whatsapp_opted_out, national_id_hash, gender, billing_start_month, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12::date, ${defaultBillingStartMonthSql}), $13) RETURNING id`,
+      [groupId, studentCode, studentSerial, scanSerial, crypto.randomBytes(24).toString("hex"), fullName, phone, guardianPhone, whatsappOptedOut, nationalId ? hashNationalId(nationalId) : null, gender, billingStartMonth, isActive]
     );
     const student = await query(`${studentSelect} WHERE s.id = $1`, [result.rows[0].id]);
     await auditLog({ action: "student_created", actorId: req.teacher.id, studentId: result.rows[0].id, details: { student_id: result.rows[0].id, after: student.rows[0], changes: [{ field: "record", before: null, after: "created" }] }, request: req });
@@ -1082,6 +1097,7 @@ adminAcademicRouter.put("/students/:id", requirePermission("students.manage"), a
     const groupId = Number(normalizeDigits(req.body?.group_id));
     const phone = normalizeDigits(req.body?.phone || "").trim() || null;
     const nationalId = normalizeDigits(req.body?.national_id || "").trim();
+    const billingStartMonth = normalizeBillingStartMonth(req.body?.billing_start_month);
     const whatsappOptedOut = req.body?.whatsapp_opted_out === true;
     const isActive = parseBoolean(req.body?.is_active);
     if (!isPhoneNumber(guardianPhone) || (phone && !isPhoneNumber(phone))) {
@@ -1090,6 +1106,7 @@ adminAcademicRouter.put("/students/:id", requirePermission("students.manage"), a
     if (nationalId && !isNationalId(nationalId)) {
       return res.status(400).json({ ok: false, status: "invalid_national_id", message: "يجب إدخال ١٤ رقمًا للرقم القومي. / National ID must contain exactly 14 digits." });
     }
+    if (billingStartMonth === undefined) return res.status(400).json({ ok: false, status: "invalid_billing_start_month" });
     const studentCode = requestedCode || (await generateStudentCode());
     const studentSerial = studentCode.replace(/^A(\d{4})$/, "A-$1");
     if (!fullName || !guardianPhone || !Number.isInteger(groupId) || groupId <= 0) {
@@ -1098,12 +1115,13 @@ adminAcademicRouter.put("/students/:id", requirePermission("students.manage"), a
     if (!studentCodePattern.test(studentCode)) {
       return res.status(400).json({ ok: false, status: "invalid_student_code" });
     }
-    const before = await query("SELECT id, group_id, student_code, student_serial, scan_serial, full_name, phone, guardian_phone, whatsapp_opted_out, gender, is_active FROM students WHERE id=$1", [studentId]);
+    const before = await query("SELECT id, group_id, student_code, student_serial, scan_serial, full_name, phone, guardian_phone, whatsapp_opted_out, gender, billing_start_month, is_active FROM students WHERE id=$1", [studentId]);
     if (!before.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const result = await query(
       `UPDATE students SET group_id = $1, student_code = $2, student_serial = $3, full_name = $4, phone = $5,
-        guardian_phone = $6, whatsapp_opted_out = $7, national_id_hash = COALESCE($8, national_id_hash), gender = $9, is_active = $10, updated_at=NOW() WHERE id = $11 RETURNING id`,
-      [groupId, studentCode, studentSerial, fullName, phone, guardianPhone, whatsappOptedOut, nationalId ? hashNationalId(nationalId) : null, gender, isActive, studentId]
+        guardian_phone = $6, whatsapp_opted_out = $7, national_id_hash = COALESCE($8, national_id_hash), gender = $9,
+        billing_start_month = COALESCE($10::date, billing_start_month, ${defaultBillingStartMonthSql}), is_active = $11, updated_at=NOW() WHERE id = $12 RETURNING id`,
+      [groupId, studentCode, studentSerial, fullName, phone, guardianPhone, whatsappOptedOut, nationalId ? hashNationalId(nationalId) : null, gender, billingStartMonth, isActive, studentId]
     );
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     const student = await query(`${studentSelect} WHERE s.id = $1`, [studentId]);

@@ -32,8 +32,8 @@ export function paymentRequestMatches(existing, { studentId, paymentType, paymen
   return true;
 }
 
-// Creates any missing monthly dues up to the current month. The unique key on
-// fee_dues makes this safe to run at startup, on the first day, or on demand.
+// Creates any missing monthly dues up to the current month.
+// Respects s.billing_start_month so newly registered students don't accrue past or current-month dues prematurely.
 export async function ensureMonthlyFees(studentId = null, executor = query) {
   await resolveExecutor(executor)(`
     INSERT INTO fee_dues (student_id, group_id, due_month, amount)
@@ -41,7 +41,10 @@ export async function ensureMonthlyFees(studentId = null, executor = query) {
     FROM students s
     JOIN groups g ON g.id = s.group_id
     CROSS JOIN LATERAL generate_series(
-      date_trunc('month', s.created_at AT TIME ZONE 'Africa/Cairo')::date,
+      COALESCE(
+        date_trunc('month', s.billing_start_month)::date,
+        date_trunc('month', s.created_at AT TIME ZONE 'Africa/Cairo')::date
+      ),
       date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo'))::date,
       INTERVAL '1 month'
     ) AS months(due_month)
@@ -60,7 +63,8 @@ export async function getFeeSummary(studentId, { ensure = true, db = query } = {
       SELECT date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo'))::date AS current_month,
         (date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')) + INTERVAL '1 month')::date AS upcoming_month,
         (date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')) + INTERVAL '2 months' - INTERVAL '1 day')::date AS month_end,
-        (NOW() AT TIME ZONE 'Africa/Cairo')::date AS today
+        (NOW() AT TIME ZONE 'Africa/Cairo')::date AS today,
+        EXTRACT(DAY FROM (NOW() AT TIME ZONE 'Africa/Cairo'))::integer AS current_day
     ), current_due AS (
       SELECT COALESCE(SUM(fd.amount), 0) AS amount, COALESCE(SUM(fd.paid_amount), 0) AS paid_amount
       FROM fee_dues fd CROSS JOIN bounds
@@ -73,10 +77,19 @@ export async function getFeeSummary(studentId, { ensure = true, db = query } = {
       SELECT COALESCE(SUM(fd.amount), 0) AS required_amount,
         COALESCE(SUM(fd.paid_amount), 0) AS paid_amount,
         COALESCE(SUM(fd.amount - fd.paid_amount), 0) AS remaining_balance,
-        BOOL_OR(fd.due_month < (SELECT current_month FROM bounds) AND fd.amount > fd.paid_amount) AS has_overdue
+        COALESCE(BOOL_OR(
+          fd.amount > fd.paid_amount AND (
+            fd.due_month < (SELECT current_month FROM bounds)
+            OR (
+              fd.due_month = (SELECT current_month FROM bounds)
+              AND (SELECT current_day FROM bounds) >= 6
+            )
+          )
+        ), FALSE) AS has_overdue
       FROM fee_dues fd WHERE fd.student_id = $1
     )
     SELECT s.id, s.full_name, s.student_serial, s.student_code,
+      COALESCE(s.billing_start_month, date_trunc('month', s.created_at AT TIME ZONE 'Africa/Cairo')::date)::text AS billing_start_month,
       COALESCE(g.grade_level, g.grade) AS grade_level, g.name AS group_name,
       g.fees_amount,
       totals.required_amount, totals.paid_amount, totals.remaining_balance,
@@ -101,8 +114,18 @@ export async function getFeeSummary(studentId, { ensure = true, db = query } = {
       COALESCE((SELECT SUM(p.amount) FROM payments p
         WHERE p.student_id = s.id
           AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)), 0) AS total_historical_payments,
-      CASE WHEN totals.remaining_balance <= 0 THEN 'paid'
-        WHEN totals.has_overdue THEN 'overdue' ELSE 'unpaid' END AS payment_status,
+      CASE
+        WHEN totals.remaining_balance <= 0 THEN 'paid'
+        WHEN totals.has_overdue THEN 'overdue'
+        ELSE 'unpaid'
+      END AS payment_status,
+      CASE
+        WHEN totals.remaining_balance <= 0 THEN 'none'
+        WHEN bounds.current_day > 10 THEN 'critical'
+        WHEN bounds.current_day >= 6 THEN 'late'
+        ELSE 'grace'
+      END AS billing_stage,
+      (totals.remaining_balance > 0 AND (totals.has_overdue OR bounds.current_day > 10)) AS critical_alert_active,
       COALESCE(jsonb_agg(
         jsonb_build_object('month', fd.due_month, 'amount', fd.amount,
           'paid_amount', fd.paid_amount,
@@ -117,7 +140,7 @@ export async function getFeeSummary(studentId, { ensure = true, db = query } = {
     CROSS JOIN totals
     LEFT JOIN fee_dues fd ON fd.student_id = s.id
     WHERE s.id = $1
-    GROUP BY s.id, g.id, bounds.current_month, bounds.upcoming_month, bounds.month_end, bounds.today,
+    GROUP BY s.id, s.billing_start_month, g.id, bounds.current_month, bounds.upcoming_month, bounds.month_end, bounds.today, bounds.current_day,
       current_due.amount, current_due.paid_amount, upcoming_due.amount, upcoming_due.paid_amount,
       totals.required_amount, totals.paid_amount, totals.remaining_balance, totals.has_overdue
   `, [studentId]);
@@ -142,9 +165,6 @@ export async function getStudentPaymentHistory(studentId, { db = query } = {}) {
 
 export async function getStudentFeePortalData(studentId, { dbPool = pool } = {}) {
   const normalizedStudentId = Number(studentId);
-  // Monthly-dues initialization is intentionally committed before the read-only
-  // snapshot. The portal must not mutate data inside its REPEATABLE READ READ ONLY
-  // transaction, and both reads below still share one consistent snapshot.
   await ensureMonthlyFees(normalizedStudentId, dbPool);
   const client = await dbPool.connect();
   try {
@@ -311,7 +331,7 @@ function advanceMonthKeys(currentMonth, count = 6) {
 export async function getAdvanceOptions(studentId) {
   await ensureMonthlyFees(Number(studentId));
   const result = await query(`
-    SELECT s.id, s.full_name, s.student_code, s.student_serial,
+    SELECT s.id, s.full_name, s.student_code, s.student_serial, s.billing_start_month,
       g.id AS group_id, g.name AS group_name, g.fees_amount,
       to_char(date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')), 'YYYY-MM') AS current_month,
       COALESCE((SELECT SUM(fd.amount - fd.paid_amount) FROM fee_dues fd
@@ -341,6 +361,7 @@ export async function getAdvanceOptions(studentId) {
       full_name: student.full_name,
       student_code: student.student_code,
       student_serial: student.student_serial,
+      billing_start_month: student.billing_start_month,
       group_id: student.group_id,
       group_name: student.group_name,
       fees_amount: student.fees_amount

@@ -981,14 +981,64 @@ export function buildStudentPortalLink(studentId, _studentCode, accessToken) {
 }
 
 function formatMonthLabel(value, locale) {
-  const month = String(value || "").trim().slice(0, 7);
-  if (!/^\d{4}-\d{2}$/.test(month)) return "";
+  const month = paymentMonthKey(value);
+  if (!month) return "";
   const date = new Date(`${month}-01T12:00:00Z`);
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "Africa/Cairo" }).format(date);
 }
 
-export function formatWhatsAppMonthList(value, locale) {
-  return String(value || "")
+function paymentMonthKey(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const parts = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", timeZone: "Africa/Cairo" }).formatToParts(value);
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    return year && month ? `${year}-${month}` : null;
+  }
+  const text = String(value ?? "").trim();
+  const match = text.match(/^(\d{4})-(\d{1,2})(?:-\d{1,2})?(?:$|T|\s)/) || text.match(/^(\d{4})-(\d{1,2})$/);
+  if (!match) return null;
+  const month = Number(match[2]);
+  if (!Number.isInteger(month) || month < 1 || month > 12) return null;
+  return `${match[1]}-${String(month).padStart(2, "0")}`;
+}
+
+function paymentMonthTokens(value) {
+  if (value == null || value === "") return [];
+  if (Array.isArray(value)) return value.flatMap((item) => paymentMonthTokens(item));
+  if (typeof value === "object") return paymentMonthTokens(value.month ?? value.due_month ?? value.date ?? value.value);
+
+  const text = String(value).trim();
+  if (!text) return [];
+  if (text.startsWith("[") && text.endsWith("]")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return paymentMonthTokens(parsed);
+    } catch (_error) {
+      // Continue with delimiter parsing for malformed legacy values.
+    }
+  }
+  const postgresArray = text.startsWith("{") && text.endsWith("}") ? text.slice(1, -1) : text;
+  return postgresArray.split(/[,;\n]/).map((item) => item.trim().replace(/^"|"$/g, "")).filter(Boolean);
+}
+
+function cairoCurrentMonthKey() {
+  return paymentMonthKey(new Date()) || "1970-01";
+}
+
+export function paymentMonthsValue(paymentMonths, ...fallbackDates) {
+  const months = paymentMonthTokens(paymentMonths)
+    .map((value) => paymentMonthKey(value))
+    .filter(Boolean);
+  const uniqueMonths = [...new Set(months)];
+  if (!uniqueMonths.length) {
+    const fallbackMonth = fallbackDates.map((value) => paymentMonthKey(value)).find(Boolean);
+    uniqueMonths.push(fallbackMonth || cairoCurrentMonthKey());
+  }
+  return uniqueMonths.join(", ");
+}
+
+export function formatWhatsAppMonthList(value, locale, ...fallbackDates) {
+  return paymentMonthsValue(value, ...fallbackDates)
     .split(",")
     .map((month) => formatMonthLabel(month, locale))
     .filter(Boolean)
@@ -1612,8 +1662,9 @@ export async function enqueueGradeNotification({ resultId }) {
 async function enqueuePaymentNotificationWithDb({ paymentId, paymentType, notificationType, referencePrefix, db = query, wake = true }) {
   const execute = typeof db === "function" ? db : db.query.bind(db);
   const result = await execute(`
-    SELECT p.id AS payment_id, p.amount, p.paid_amount, p.discount_amount, p.is_exempt, p.payment_reference, p.payment_months,
-      p.payment_date, s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
+    SELECT p.id AS payment_id, p.amount, p.paid_amount, p.discount_amount, p.is_exempt, p.payment_reference,
+      p.payment_months, p.payment_date, p.paid_at,
+      s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
     FROM payments p
     JOIN students s ON s.id = p.student_id
     WHERE p.id = $1 AND p.payment_type = $2 AND s.is_active = TRUE AND s.deleted_at IS NULL AND s.whatsapp_opted_out = FALSE`, [paymentId, paymentType]);
@@ -1621,13 +1672,13 @@ async function enqueuePaymentNotificationWithDb({ paymentId, paymentType, notifi
   if (!row) return { queued: false, reason: "not_found" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
   if (!phone) return { queued: false, reason: "invalid_phone" };
-  const month = paymentMonthsValue(row.payment_months);
+  const month = paymentMonthsValue(row.payment_months, row.payment_date, row.paid_at);
   const refCode = notificationRefCode(referencePrefix, row.payment_date, row.payment_id, true);
   const queue = await enqueueJob({ notificationType, sourceId: row.payment_id, studentId: row.student_id, phone, refCode, dedupeCompleted: true, db: execute, wake, payload: {
     student_name: row.student_name, student_code: row.student_code, amount_paid: Number(row.paid_amount ?? row.amount).toFixed(2),
     discount_amount: Number(row.discount_amount || 0).toFixed(2), is_exempt: row.is_exempt === true,
     payment_status: row.is_exempt ? "exempt" : Number(row.discount_amount || 0) > 0 ? "discounted" : "paid",
-    month, months: month, receipt_number: row.payment_reference || refCode, event_time: row.payment_date
+    month, months: month, receipt_number: row.payment_reference || refCode, event_time: row.paid_at || row.payment_date
   } });
   return { ...queue, ref_code: queue.ref_code || refCode };
 }
@@ -1762,13 +1813,6 @@ async function auditWhatsAppJob(job, action, details = {}) {
   });
 }
 
-function paymentMonthsValue(paymentMonths) {
-  const months = Array.isArray(paymentMonths)
-    ? paymentMonths.map((item) => String(item?.month || "").slice(0, 7)).filter((month) => /^\d{4}-\d{2}$/.test(month))
-    : [];
-  return months.join(", ");
-}
-
 function gradePercentage(score, maxScore) {
   const numericScore = Number(score);
   const numericMaxScore = Number(maxScore);
@@ -1834,13 +1878,13 @@ async function revalidateWhatsAppJob(job, type, db = query) {
   } else if (type === "receipt" || type === "advance_payment") {
     const source = await execute(`
       SELECT amount, paid_amount, discount_amount, is_exempt, payment_reference,
-        payment_months, payment_date, payment_type
+        payment_months, payment_date, paid_at, payment_type
       FROM payments WHERE id = $1 AND student_id = $2 AND payment_type = $3`,
       [job.source_id, student.id, type === "receipt" ? "normal" : "advance"]
     );
     if (!source.rowCount) return { ok: false, reason: "payment_no_longer_exists" };
     const payment = source.rows[0];
-    const months = paymentMonthsValue(payment.payment_months);
+    const months = paymentMonthsValue(payment.payment_months, payment.payment_date, payment.paid_at);
     payload = {
       ...payload,
       amount_paid: Number(payment.paid_amount ?? payment.amount).toFixed(2),
@@ -1850,7 +1894,7 @@ async function revalidateWhatsAppJob(job, type, db = query) {
       month: months,
       months,
       receipt_number: payment.payment_reference || job.ref_code,
-      event_time: payment.payment_date
+      event_time: payment.paid_at || payment.payment_date
     };
   }
 
@@ -2027,8 +2071,16 @@ async function processWhatsAppJob() {
     const formattedPayload = {
       ...payload,
       amount_paid: payload.amount_paid == null ? payload.amount_paid : Number(payload.amount_paid).toFixed(2),
-      month: payload.month ? formatWhatsAppMonthList(payload.month, locale) : payload.month,
-      months: payload.months ? formatWhatsAppMonthList(payload.months, locale) : payload.months
+      ...(type === "receipt" || type === "advance_payment" ? (() => {
+        const monthValue = paymentMonthsValue(
+          payload.payment_months ?? payload.months ?? payload.month,
+          payload.payment_date,
+          payload.paid_at,
+          payload.event_time
+        );
+        const formattedMonths = formatWhatsAppMonthList(monthValue, locale);
+        return { month: formattedMonths, months: formattedMonths };
+      })() : {})
     };
     const templateValues = { ...formattedPayload, ...parts, ref_code: job.ref_code, student_code: studentCode, portal_link: portalLink };
     const renderedBody = compileWhatsAppMessage(type, template, templateValues).trim();

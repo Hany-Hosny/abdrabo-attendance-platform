@@ -202,6 +202,7 @@ type AdminStudent = {
   qr_token?: string;
   grade?: string;
   grade_level?: string;
+  billing_start_month?: string | null;
   deleted_at?: string | null;
   purge_after?: string | null;
 };
@@ -723,6 +724,13 @@ const translations = {
     "inbox.permission": "السماح للمساعد باستخدام الرسائل",
     "attendance.noRealSessions": "لا توجد حصص حقيقية لهذا اليوم.",
     "fees.title": "المصروفات",
+    "fees.billingStageGrace": "مطلوب السداد",
+    "fees.billingStageLate": "متأخر",
+    "fees.billingStageCritical": "إنذار متأخرات",
+    "fees.billingStageNone": "لا توجد مستحقات",
+    "fees.billingStartLabel": "بداية المحاسبة المالية",
+    "fees.billingStageLabel": "المرحلة المالية",
+    "fees.billingCriticalAlert": "يوجد رصيد مستحق متأخر عن السداد ويحتاج إلى متابعة.",
     "fees.newPayment": "دفع جديد",
     "fees.advancePayment": "دفع مقدما",
     "fees.advanceTitle": "دفع مقدما",
@@ -815,6 +823,12 @@ const translations = {
     "fees.reversalAlreadyReversed": "تم عكس هذه الدفعة مسبقاً.",
     "fees.reversalPaymentNotFound": "الدفعة غير موجودة أو لم تعد متاحة.",
     "fees.reversalInvalidReason": "يرجى إدخال سبب صحيح لعكس الدفعة.",
+    "fees.securityCode": "رمز الحماية",
+    "fees.securityCodeHint": "أدخل رمز الحماية المكون من 4 أرقام لتأكيد العملية.",
+    "fees.securityCodeRequired": "يرجى إدخال رمز الحماية.",
+    "fees.securityCodeInvalid": "رمز الحماية غير صحيح.",
+    "fees.securityCodeLocked": "تم إيقاف رمز الحماية مؤقتاً. حاول لاحقاً.",
+    "fees.securityCodeNotConfigured": "لم يتم إعداد رمز الحماية لهذا المستخدم.",
     "fees.reversalServerError": "تعذر تنفيذ العكس بسبب خطأ في الخادم. لم يتم اعتماد العملية.",
     "fees.reversalNetworkError": "تعذر الاتصال بالخادم. لم يتم اعتماد العملية.",
     "fees.showDeleted": "إظهار الطلاب المحذوفين",
@@ -876,11 +890,11 @@ const translations = {
     "audit.target.whatsapp": "واتساب والرسائل",
     "audit.target.settings": "الإعدادات",
     "audit.target.login": "الدخول والخروج",
-    "audit.pin": "الرقم السري المكون من 4 أرقام",
+    "audit.pin": "رمز الحماية المكون من 4 أرقام",
     "audit.adminPassword": "كلمة مرور المدير",
     "audit.unlock": "فتح سجل النشاط",
-    "audit.setup": "إعداد الرقم السري",
-    "audit.changePin": "تغيير الرقم السري",
+    "audit.setup": "إعداد رمز الحماية",
+    "audit.changePin": "تغيير رمز الحماية",
     "audit.reason": "السبب",
     "audit.search": "بحث في السجل",
     "audit.action": "الإجراء",
@@ -897,7 +911,7 @@ const translations = {
     "audit.maintenanceWarning": "حذف سجل النشاط نهائي ولا يمكن التراجع عنه.",
     "audit.maintenanceFrom": "من تاريخ",
     "audit.maintenanceTo": "إلى تاريخ",
-    "audit.maintenancePin": "رقم سجل النشاط",
+    "audit.maintenancePin": "رمز الحماية",
     "audit.maintenancePassword": "كلمة مرور المدير",
     "audit.maintenanceReason": "سبب الحذف",
     "audit.maintenanceReasonPlaceholder": "اكتب سبب حذف السجلات",
@@ -917,15 +931,15 @@ const translations = {
     "audit.maintenancePasswordRequired": "اكتب كلمة مرور المدير.",
     "audit.maintenanceInvalidConfirmation": "اكتب DELETE AUDIT LOGS كما هو للتأكيد.",
     "audit.maintenanceReasonRequired": "اكتب سبب الحذف (3 أحرف على الأقل).",
-    "audit.maintenancePinNotConfigured": "يجب إعداد رقم سجل النشاط أولاً.",
+    "audit.maintenancePinNotConfigured": "يجب إعداد رمز الحماية أولاً.",
     "audit.date": "التاريخ والوقت",
     "audit.details": "التفاصيل",
     "audit.page": "صفحة",
     "audit.of": "من",
     "audit.noLogs": "لا توجد سجلات.",
-    "audit.pinSaved": "تم حفظ الرقم السري.",
+    "audit.pinSaved": "تم حفظ رمز الحماية.",
     "audit.locked": "تم إيقاف المحاولة مؤقتاً بسبب محاولات فاشلة.",
-    "audit.invalidPin": "الرقم السري غير صحيح.",
+    "audit.invalidPin": "رمز الحماية غير صحيح.",
     "audit.action.paymentCreated": "تم تسجيل دفع المصروفات",
     "audit.action.advancePaymentCreated": "تم تسجيل دفع مقدم",
     "audit.action.paymentReversed": "تم عكس دفعة",
@@ -945,7 +959,7 @@ const translations = {
     "audit.action.attendanceAbsenceNotificationsQueued": "تجهيز إشعارات الغياب",
     "audit.action.messageAction": "تم تنفيذ إجراء على رسالة",
     "audit.action.noteAction": "تم تنفيذ إجراء على ملاحظة",
-    "audit.action.pinChanged": "تم تغيير رقم سجل النشاط",
+    "audit.action.pinChanged": "تم تغيير رمز الحماية",
     "audit.action.logsUnlocked": "تم فتح سجل النشاط",
     "audit.action.pinFailed": "فشلت محاولة فتح سجل النشاط",
     "audit.action.systemRequest": "إجراء عام على النظام",
@@ -1472,14 +1486,14 @@ const translations = {
     "admin.groupSaved": "تم حفظ المجموعة.",
     "admin.groupHasStudents": "لا يمكن حذف مجموعة بها طلاب. قم بنقل الطلاب أو تعطيل المجموعة.",
     "admin.groupDeletePinTitle": "حذف مجموعة بها طلاب",
-    "admin.groupDeletePinDescription": "تحتوي هذه المجموعة على {{count}} طلاب. أدخل الرمز السري لسجل النشاطات للسماح بالحذف. سيتم أرشفة المجموعة فقط ولن يتم حذف سجلات الطلاب.",
-    "admin.groupDeletePin": "الرمز السري لسجل النشاطات",
+    "admin.groupDeletePinDescription": "تحتوي هذه المجموعة على {{count}} طلاب. أدخل رمز الحماية للسماح بالحذف. سيتم أرشفة المجموعة فقط ولن يتم حذف سجلات الطلاب.",
+    "admin.groupDeletePin": "رمز الحماية",
     "admin.groupDeletePinAction": "تأكيد حذف المجموعة",
     "admin.groupDeletePinLoading": "جاري حذف المجموعة...",
-    "admin.groupDeletePinRequired": "أدخل الرمز السري لسجل النشاطات.",
-    "admin.groupDeletePinInvalid": "الرمز السري لسجل النشاطات غير صحيح.",
-    "admin.groupDeletePinLocked": "تم قفل الرمز السري مؤقتًا. حاول مرة أخرى لاحقًا.",
-    "admin.groupDeletePinNotConfigured": "لم يتم إعداد الرمز السري لسجل النشاطات.",
+    "admin.groupDeletePinRequired": "أدخل رمز الحماية.",
+    "admin.groupDeletePinInvalid": "رمز الحماية غير صحيح.",
+    "admin.groupDeletePinLocked": "تم قفل رمز الحماية مؤقتًا. حاول مرة أخرى لاحقًا.",
+    "admin.groupDeletePinNotConfigured": "لم يتم إعداد رمز الحماية.",
     "admin.studentSaved": "تم حفظ الطالب. الكود: {{code}}",
     "admin.noGroups": "لا توجد مجموعات بعد.",
     "admin.noStudents": "لا يوجد طلاب بعد.",
@@ -1538,6 +1552,13 @@ const translations = {
     "admin.deleteNote": "حذف الملاحظة",
     "admin.notePlaceholder": "اكتب ملاحظة عن الطالب",
     "admin.feesSummary": "ملخص المصروفات",
+    "admin.billingStartMonth": "بداية المحاسبة المالية",
+    "admin.currentBillingMonth": "الشهر الحالي: {{month}}",
+    "admin.nextBillingMonth": "الشهر القادم: {{month}}",
+    "admin.selectedBillingMonth": "الاختيار الحالي: {{month}}",
+    "admin.billingStartHint": "يُختار الشهر القادم تلقائياً بعد يوم ١٠، ويمكن تغييره.",
+    "admin.invalidBillingStartMonth": "اختر شهراً صحيحاً لبداية المحاسبة المالية.",
+    "admin.billingStage": "مرحلة السداد",
     "admin.monthlyFee": "المصروف الشهري",
     "admin.requiredFees": "إجمالي المطلوب",
     "admin.paidFees": "إجمالي المدفوع",
@@ -1714,6 +1735,8 @@ const translations = {
     "studentFees.paid": "إجمالي المدفوع",
     "studentFees.remaining": "المتبقي",
     "studentFees.status": "حالة السداد",
+    "studentFees.billingStartMonth": "بداية المحاسبة المالية",
+    "studentFees.billingStage": "مرحلة السداد",
     "studentFees.paidStatus": "مدفوع",
     "studentFees.unpaidStatus": "غير مدفوع",
     "studentFees.overdueStatus": "متأخر",
@@ -2233,6 +2256,13 @@ const translations = {
     "inbox.permission": "Allow assistant to use Inbox",
     "attendance.noRealSessions": "No real class sessions for this date.",
     "fees.title": "Fees",
+    "fees.billingStageGrace": "Payment due",
+    "fees.billingStageLate": "Late",
+    "fees.billingStageCritical": "Arrears warning",
+    "fees.billingStageNone": "No dues",
+    "fees.billingStartLabel": "Financial billing start",
+    "fees.billingStageLabel": "Financial stage",
+    "fees.billingCriticalAlert": "A past-due balance requires follow-up.",
     "fees.newPayment": "New Payment",
     "fees.advancePayment": "Advance Payment",
     "fees.advanceTitle": "Advance Payment",
@@ -2325,6 +2355,12 @@ const translations = {
     "fees.reversalAlreadyReversed": "This payment has already been reversed.",
     "fees.reversalPaymentNotFound": "The payment was not found or is no longer available.",
     "fees.reversalInvalidReason": "Please enter a valid reversal reason.",
+    "fees.securityCode": "Security code",
+    "fees.securityCodeHint": "Enter the 4-digit security code to confirm this action.",
+    "fees.securityCodeRequired": "Please enter the security code.",
+    "fees.securityCodeInvalid": "The security code is incorrect.",
+    "fees.securityCodeLocked": "The security code is temporarily locked. Try again later.",
+    "fees.securityCodeNotConfigured": "A security code has not been configured for this user.",
     "fees.reversalServerError": "The server could not complete the reversal. No change was committed.",
     "fees.reversalNetworkError": "The server could not be reached. No change was committed.",
     "fees.showDeleted": "Show deleted students",
@@ -2386,11 +2422,11 @@ const translations = {
     "audit.target.whatsapp": "WhatsApp and messages",
     "audit.target.settings": "Settings",
     "audit.target.login": "Login and logout",
-    "audit.pin": "4-digit audit PIN",
+    "audit.pin": "4-digit security code",
     "audit.adminPassword": "Admin password",
     "audit.unlock": "Unlock audit logs",
-    "audit.setup": "Set audit PIN",
-    "audit.changePin": "Change PIN",
+    "audit.setup": "Set security code",
+    "audit.changePin": "Change security code",
     "audit.reason": "Reason",
     "audit.search": "Search logs",
     "audit.action": "Action",
@@ -2407,7 +2443,7 @@ const translations = {
     "audit.maintenanceWarning": "Deleting audit logs is permanent and cannot be undone.",
     "audit.maintenanceFrom": "Date from",
     "audit.maintenanceTo": "Date to",
-    "audit.maintenancePin": "Audit PIN",
+    "audit.maintenancePin": "Security code",
     "audit.maintenancePassword": "Admin password",
     "audit.maintenanceReason": "Deletion reason",
     "audit.maintenanceReasonPlaceholder": "Write the reason for deleting these records",
@@ -2427,15 +2463,15 @@ const translations = {
     "audit.maintenancePasswordRequired": "Enter the admin password.",
     "audit.maintenanceInvalidConfirmation": "Type DELETE AUDIT LOGS exactly to confirm.",
     "audit.maintenanceReasonRequired": "Write a deletion reason (at least 3 characters).",
-    "audit.maintenancePinNotConfigured": "Set up the audit PIN first.",
+    "audit.maintenancePinNotConfigured": "Set up the security code first.",
     "audit.date": "Date and time",
     "audit.details": "Details",
     "audit.page": "Page",
     "audit.of": "of",
     "audit.noLogs": "No audit logs found.",
-    "audit.pinSaved": "PIN saved.",
+    "audit.pinSaved": "Security code saved.",
     "audit.locked": "Access is temporarily locked after failed attempts.",
-    "audit.invalidPin": "The PIN is incorrect.",
+    "audit.invalidPin": "The security code is incorrect.",
     "audit.action.paymentCreated": "Payment recorded",
     "audit.action.advancePaymentCreated": "Advance payment recorded",
     "audit.action.paymentReversed": "Payment reversed",
@@ -2455,7 +2491,7 @@ const translations = {
     "audit.action.attendanceAbsenceNotificationsQueued": "Absence notifications prepared",
     "audit.action.messageAction": "Message action",
     "audit.action.noteAction": "Note action",
-    "audit.action.pinChanged": "Audit PIN changed",
+    "audit.action.pinChanged": "Security code changed",
     "audit.action.logsUnlocked": "Audit logs unlocked",
     "audit.action.pinFailed": "Audit PIN attempt failed",
     "audit.action.systemRequest": "General system action",
@@ -2983,14 +3019,14 @@ const translations = {
     "admin.groupSaved": "Group saved.",
     "admin.groupHasStudents": "Cannot delete a group that has students. Move students or disable the group.",
     "admin.groupDeletePinTitle": "Delete group with students",
-    "admin.groupDeletePinDescription": "This group contains {{count}} students. Enter the Activity Log PIN to allow deletion. Only the group will be archived; student records will not be deleted.",
-    "admin.groupDeletePin": "Activity Log PIN",
+    "admin.groupDeletePinDescription": "This group contains {{count}} students. Enter the security code to allow deletion. Only the group will be archived; student records will not be deleted.",
+    "admin.groupDeletePin": "Security code",
     "admin.groupDeletePinAction": "Confirm group deletion",
     "admin.groupDeletePinLoading": "Deleting group...",
-    "admin.groupDeletePinRequired": "Enter the Activity Log PIN.",
-    "admin.groupDeletePinInvalid": "The Activity Log PIN is incorrect.",
-    "admin.groupDeletePinLocked": "The PIN is temporarily locked. Try again later.",
-    "admin.groupDeletePinNotConfigured": "Set up the Activity Log PIN first.",
+    "admin.groupDeletePinRequired": "Enter the security code.",
+    "admin.groupDeletePinInvalid": "The security code is incorrect.",
+    "admin.groupDeletePinLocked": "The security code is temporarily locked. Try again later.",
+    "admin.groupDeletePinNotConfigured": "Set up the security code first.",
     "admin.studentSaved": "Student saved. Code: {{code}}",
     "admin.noGroups": "No groups yet.",
     "admin.noStudents": "No students yet.",
@@ -3048,6 +3084,13 @@ const translations = {
     "admin.deleteNote": "Delete note",
     "admin.notePlaceholder": "Write a note about this student",
     "admin.feesSummary": "Fees summary",
+    "admin.billingStartMonth": "Financial billing start",
+    "admin.currentBillingMonth": "Current month: {{month}}",
+    "admin.nextBillingMonth": "Next month: {{month}}",
+    "admin.selectedBillingMonth": "Current selection: {{month}}",
+    "admin.billingStartHint": "Next month is selected automatically after the 10th; staff can change it.",
+    "admin.invalidBillingStartMonth": "Choose a valid first day of a billing month.",
+    "admin.billingStage": "Billing stage",
     "admin.monthlyFee": "Monthly fee",
     "admin.requiredFees": "Total required",
     "admin.paidFees": "Total paid",
@@ -3224,6 +3267,8 @@ const translations = {
     "studentFees.paid": "Total paid",
     "studentFees.remaining": "Remaining",
     "studentFees.status": "Payment status",
+    "studentFees.billingStartMonth": "Financial billing start",
+    "studentFees.billingStage": "Billing stage",
     "studentFees.paidStatus": "Paid",
     "studentFees.unpaidStatus": "Unpaid",
     "studentFees.overdueStatus": "Overdue",
@@ -3861,6 +3906,7 @@ function adminApiErrorMessage(status: string | undefined, t: Translator) {
   if (status === "invalid_student_code") return t("admin.invalidStudentCode");
   if (status === "invalid_phone") return t("errors.phoneLength");
   if (status === "invalid_national_id") return t("errors.nationalIdLength");
+  if (status === "invalid_billing_start_month") return t("admin.invalidBillingStartMonth");
   if (status === "invalid_group" || status === "invalid_group_payload" || status === "invalid_student_payload") {
     return t("admin.invalidPayload");
   }
@@ -6955,6 +7001,36 @@ function gradeLevelLabel(value: unknown, language: Language) {
   return match ? (language === "en" ? match[1] : match[0]) : text;
 }
 
+function cairoMonthInputValue(monthOffset = 0, date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return new Date(Date.UTC(Number(values.year), Number(values.month) - 1 + monthOffset, 1)).toISOString().slice(0, 10);
+}
+
+function defaultBillingStartMonth(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Cairo", day: "numeric" }).formatToParts(date);
+  const day = Number(parts.find((part) => part.type === "day")?.value || 1);
+  return cairoMonthInputValue(day > 10 ? 1 : 0, date);
+}
+
+function formatBillingMonth(value: unknown, language: Language) {
+  const month = String(value || "").slice(0, 7);
+  const date = new Date(`${month}-01T12:00:00Z`);
+  return month && !Number.isNaN(date.getTime())
+    ? new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { month: "long", year: "numeric", timeZone: "UTC" }).format(date)
+    : "—";
+}
+
+function billingStageLabel(stage: unknown, t: Translator) {
+  const value = String(stage || "");
+  return value === "critical" ? t("fees.billingStageCritical") : value === "late" ? t("fees.billingStageLate") : value === "grace" ? t("fees.billingStageGrace") : t("fees.billingStageNone");
+}
+
+function billingStageClass(stage: unknown) {
+  const value = String(stage || "");
+  return value === "critical" ? "billing-stage-badge is-critical" : value === "late" ? "billing-stage-badge is-late" : value === "grace" ? "billing-stage-badge is-grace" : "billing-stage-badge is-none";
+}
+
 const emptyStudentForm: {
   full_name: string;
   student_code: string;
@@ -6965,6 +7041,7 @@ const emptyStudentForm: {
   gender: "male" | "female" | "unknown";
   national_id: string;
   group_id: string;
+  billing_start_month: string;
   is_active: boolean;
 } = {
   full_name: "",
@@ -6976,6 +7053,7 @@ const emptyStudentForm: {
   gender: "unknown" as const,
   national_id: "",
   group_id: "",
+  billing_start_month: defaultBillingStartMonth(),
   is_active: true
 };
 
@@ -7491,7 +7569,7 @@ function AcademicManager({
     setStatus("");
     setFieldErrors({});
     setGroupForm({ ...emptyGroupForm, center_id: centers[0] ? String(centers[0].id) : "" });
-    setStudentForm(emptyStudentForm);
+    setStudentForm({ ...emptyStudentForm, billing_start_month: defaultBillingStartMonth() });
     setScheduleRows([]);
   }
 
@@ -7555,6 +7633,7 @@ function AcademicManager({
       gender: student.gender || "unknown",
       national_id: "",
       group_id: String(student.group_id),
+      billing_start_month: student.billing_start_month ? String(student.billing_start_month).slice(0, 10) : defaultBillingStartMonth(),
       is_active: student.is_active
     });
   }
@@ -7981,6 +8060,7 @@ function AcademicManager({
             <label>{t("admin.guardianPhone")}<input required type="text" inputMode="numeric" value={studentForm.guardian_phone} onChange={(e) => updateStudentField("guardian_phone", normalizeDigits(e.target.value))} />{fieldErrors.guardian_phone ? <small className="field-error">{fieldErrors.guardian_phone}</small> : null}</label>
             <label>{t("admin.nationalId")}<input type="text" inputMode="numeric" value={studentForm.national_id} onChange={(e) => updateStudentField("national_id", normalizeDigits(e.target.value))} />{fieldErrors.national_id ? <small className="field-error">{fieldErrors.national_id}</small> : null}</label>
             <label>{t("admin.selectGroup")}<select required value={studentForm.group_id} onChange={(e) => updateStudentField("group_id", e.target.value)}><option value="">{t("admin.selectGroup")}</option>{groups.filter((group) => group.is_active).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select>{fieldErrors.group_id ? <small className="field-error">{fieldErrors.group_id}</small> : null}</label>
+            <label>{t("admin.billingStartMonth")}<select required value={studentForm.billing_start_month} onChange={(e) => updateStudentField("billing_start_month", e.target.value)}><option value={cairoMonthInputValue(0)}>{t("admin.currentBillingMonth", { month: formatBillingMonth(cairoMonthInputValue(0), language) })}</option><option value={cairoMonthInputValue(1)}>{t("admin.nextBillingMonth", { month: formatBillingMonth(cairoMonthInputValue(1), language) })}</option>{studentForm.billing_start_month && ![cairoMonthInputValue(0), cairoMonthInputValue(1)].includes(studentForm.billing_start_month) ? <option value={studentForm.billing_start_month}>{t("admin.selectedBillingMonth", { month: formatBillingMonth(studentForm.billing_start_month, language) })}</option> : null}</select><small className="field-hint">{t("admin.billingStartHint")}</small></label>
             <label className="checkbox-label"><input type="checkbox" checked={studentForm.is_active} onChange={(e) => setStudentForm({ ...studentForm, is_active: e.target.checked })} />{t("admin.active")}</label>
             <label className="checkbox-label"><input type="checkbox" checked={studentForm.whatsapp_opted_out} onChange={(e) => setStudentForm({ ...studentForm, whatsapp_opted_out: e.target.checked })} />{t("admin.whatsappOptedOut")}</label>
           </div>
@@ -8327,13 +8407,13 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
         <article className="student360-attention-card"><span>{t("dashboard.needsAttention")}</span>{profile.summary?.attention?.length ? <ul>{profile.summary.attention.map((reason: any, index: number) => <li key={`${reason.type}-${index}`}>{attentionReasonLabel(reason)}</li>)}</ul> : <strong className="student360-ok">{t("dashboard.noCurrentAttention")}</strong>}</article>
       </section>
       <section className="profile-section"><h3>{t("admin.basicInfo")}</h3><div className="profile-info-grid">
-        <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b><strong className="profile-student-code-value" dir="ltr">{profile.student.student_code || "—"}<button className="profile-copy-button" type="button" onClick={() => void handleCopy()} aria-label={t("admin.copyStudentCode")} title={t("admin.copyStudentCodeTitle")} disabled={!profile.student.student_code}>{isCopied ? <svg className="profile-copy-icon is-copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg> : <svg className="profile-copy-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /></svg>}</button></strong></span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
+        <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b><strong className="profile-student-code-value" dir="ltr">{profile.student.student_code || "—"}<button className="profile-copy-button" type="button" onClick={() => void handleCopy()} aria-label={t("admin.copyStudentCode")} title={t("admin.copyStudentCodeTitle")} disabled={!profile.student.student_code}>{isCopied ? <svg className="profile-copy-icon is-copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg> : <svg className="profile-copy-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /></svg>}</button></strong></span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.billingStartMonth")}</b>{formatBillingMonth(profile.student.billing_start_month, language)}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
       </div></section>
       <section className="profile-section profile-label-section"><h3>{t("admin.labelDetails")}</h3><div className="profile-label-card"><StudentLabelPreview student={profile.student} />{sessionHasPermission(session, "students.manage") ? <div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printProfileLabel} disabled={labelPrinting || !labelScanSerial(profile.student)}>{labelPrinting ? t("admin.printingLabel") : t("admin.printLabel")}</button><button className="secondary-button compact-button" type="button" onClick={regenerateProfileScanSerial} disabled={serialRegenerating}>{serialRegenerating ? t("admin.updating") : t("admin.regenerateScanSerial")}</button></div> : null}</div></section>
       {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.excusedCount")}</b>{profile.attendance.excused_count || 0}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{profileSessionTimeRange(row, language)}</span></small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
       {profile.exams ? <section className="profile-section" id="student360-evaluations"><h3>{t("admin.examHistory")}</h3>{profile.exams?.length ? <div className="profile-record-list profile-exam-list">{profile.exams.map((row: any) => { const evaluation = scoreEvaluation(row.score, row.max_score, t); return <div className="profile-exam-record" key={row.id}><div className="profile-exam-details"><strong>{displayValue(row.title, language)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small>{t("dashboard.latestExamDate")}: {formatDateOnly(String(row.exam_date || ""), language, "—")}</small>{row.note ? <small>{t("admin.assessment")}: {displayValue(row.note, language)}</small> : null}</div><div className="profile-exam-score">{row.score == null ? <strong>—</strong> : <><strong className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</strong>{evaluation ? <small className={`profile-exam-evaluation score-${evaluation.tone}`}>{evaluation.percentage.toFixed(0)}% — {evaluation.label}</small> : null}</>}</div></div>; })}</div> : <p className="empty-state">{t("admin.noProfileExams")}</p>}</section> : null}
       {profile.notes ? <section className="profile-section" id="student360-notes"><h3>{t("admin.notes")}</h3>{sessionHasPermission(session, "notes.manage") ? <form className="profile-note-form" onSubmit={saveNote}><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder={t("admin.notePlaceholder")} rows={3} /><button className="secondary-button compact-button" type="submit">{editingNoteId ? t("admin.editNote") : t("admin.addNote")}</button></form> : null}{profile.notes?.length ? <div className="profile-record-list">{profile.notes.map((note: any) => <div key={note.id}><span>{note.body}<small>{note.author_name} · {new Date(note.created_at).toLocaleString()}</small></span>{sessionHasPermission(session, "notes.manage") ? <div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setEditingNoteId(Number(note.id)); setNoteBody(note.body); }}>{t("admin.editNote")}</button><button className="secondary-button compact-button" type="button" onClick={() => deleteNote(Number(note.id))}>{t("admin.deleteNote")}</button></div> : null}</div>)}</div> : <p className="empty-state">{t("admin.noProfileNotes")}</p>}</section> : null}
-      {profile.fees ? <section className="profile-section" id="student360-payments"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p>{profile.fees.payments ? <><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div className="profile-payment-record" key={row.id}><div className="profile-payment-amount"><strong>{money(row.amount)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><span>{row.payment_method || t("fees.normalPayment")}</span></div><div className="profile-record-primary"><span><b>{t("fees.paidBy")}:</b> {row.paid_by || "—"}</span><small><b>{t("fees.paymentDate")}:</b> {formatDateTime(String(row.paid_at || row.payment_date || ""), language, "—")}</small></div></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</> : null}</section> : null}
+      {profile.fees ? <section className="profile-section" id="student360-payments"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.billingStartMonth")}</b>{formatBillingMonth(profile.fees.billing_start_month || profile.student.billing_start_month, language)}</span><span><b>{t("admin.billingStage")}</b><strong className={billingStageClass(profile.fees.billing_stage)}>{billingStageLabel(profile.fees.billing_stage, t)}</strong></span><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p>{profile.fees.payments ? <><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div className="profile-payment-record" key={row.id}><div className="profile-payment-amount"><strong>{money(row.amount)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><span>{row.payment_method || t("fees.normalPayment")}</span></div><div className="profile-record-primary"><span><b>{t("fees.paidBy")}:</b> {row.paid_by || "—"}</span><small><b>{t("fees.paymentDate")}:</b> {formatDateTime(String(row.paid_at || row.payment_date || ""), language, "—")}</small></div></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</> : null}</section> : null}
       {profile.inbox ? <section className="profile-section" id="student360-messages"><h3>{t("admin.profileMessages")}</h3>{profile.inbox?.length ? <div className="profile-record-list">{profile.inbox.map((row: any) => <div key={row.id}><span>{row.subject}<small>{row.last_message || "—"}</small></span><strong>{row.message_count}</strong></div>)}</div> : <p className="empty-state">{t("admin.noProfileMessages")}</p>}</section> : null}
     </> : <p className="form-error">{status || t("admin.profileLoadFailed")}</p>}
     {status && profile ? <p className="form-error">{status}</p> : null}
@@ -8897,6 +8977,17 @@ function isDeterministicPaymentResponse(status: unknown) {
   ].includes(String(status || ""));
 }
 
+function CashierBillingMeta({ data, language, t }: { data: Record<string, any>; language: Language; t: Translator }) {
+  const critical = data.critical_alert_active === true;
+  return <>
+    <div className="student-fees-billing-meta cashier-billing-meta">
+      <span><b>{t("fees.billingStartLabel")}</b>{formatBillingMonth(data.billing_start_month, language)}</span>
+      <span><b>{t("fees.billingStageLabel")}</b><strong className={billingStageClass(data.billing_stage)}>{billingStageLabel(data.billing_stage, t)}</strong></span>
+    </div>
+    {critical ? <p className="status-panel warning cashier-billing-critical" role="alert"><strong>{t("fees.billingCriticalAlert")}</strong></p> : null}
+  </>;
+}
+
 function FeesPanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
   const canCollect = sessionHasPermission(session, "payments.collect");
   const canAdvance = sessionHasPermission(session, "payments.advance");
@@ -9214,7 +9305,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
       {canAdvance ? <button className={mode === "advance" ? "active" : ""} type="button" onClick={() => { setMode("advance"); setSummary(null); setAdvanceData(null); setSelectedMonths([]); setSendReceipt(true); setStatus(""); }}>{t("fees.advancePayment")}</button> : null}
     </div>
     <form onSubmit={lookup}><label>{t("fees.scanStudent")}<input ref={inputRef} autoFocus dir="ltr" type="text" value={code} onChange={(event) => { hardwareScanBufferRef.current = event.target.value; setCode(event.target.value); }} placeholder="A-2303" autoComplete="off" disabled={lookupLoading} /></label><button className="primary-button" type="submit" disabled={lookupLoading || !code.trim()}>{lookupLoading ? t("dashboard.refreshing") : t("fees.find")}</button></form>
-    {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span>{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>{canCollect ? <><div className="fee-checkout-panel"><label className="fee-discount-field"><span>{t("fees.discountAmount")}</span><input className={isExempt ? "opacity-50 cursor-not-allowed" : "focus:ring-2 focus:ring-orange-500"} type="number" min="0" step="0.01" value={discountInput} disabled={isExempt || paymentLoading} onChange={(event) => setDiscountInput(normalizeDigits(event.target.value))} placeholder="0.00" /><small>{t("fees.discountHint")}</small></label><label className="fee-exemption-toggle"><span><strong>{t("fees.fullExemption")}</strong><small>{t("fees.exemptionHint")}</small></span><input className="peer" type="checkbox" checked={isExempt} disabled={paymentLoading} onChange={(event) => setIsExempt(event.target.checked)} /><i className="peer-checked:bg-orange-500" aria-hidden="true" /></label><span className="fee-checkout-total">{isExempt ? <><del>{outstandingAmount.toFixed(2)} EGP</del>{t("fees.exemptAmount")}</> : t("fees.confirmAmount", { amount: calculatedPayment.toFixed(2) })}</span></div>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="primary-button fee-checkout-cta py-3.5 rounded-xl font-bold text-lg" type="button" onClick={pay} disabled={paymentLoading || (!isExempt && (!Number.isFinite(requestedDiscount) || requestedDiscount > outstandingAmount))}>{paymentLoading ? t("dashboard.refreshing") : isExempt ? t("fees.applyExemption") : t("fees.confirmPayment", { amount: calculatedPayment.toFixed(2) })}</button></> : null}</div> : null}
+    {mode === "new" && summary ? Number(summary.remaining_balance || 0) <= 0 && Number(summary.current_cycle_outstanding || 0) <= 0 ? <div className="status-panel success paid-summary"><strong>{t("fees.paidStudentName", { name: summary.full_name })}</strong><span className="paid-summary-status">{t("fees.paidStudentStatus")}</span><CashierBillingMeta data={summary} language={language} t={t} /></div> : <div className="status-panel success"><strong>{summary.full_name}</strong><span>{summary.student_serial} · {summary.group_name} · {summary.grade_level}</span><CashierBillingMeta data={summary} language={language} t={t} />{dueMonths ? <span>{t(dueMonthsKey, { months: dueMonths })}</span> : null}<span>{t("studentFees.currentCycleFee")}: {Number(summary.current_cycle_fee || 0).toFixed(2)} EGP · {t("studentFees.currentCyclePaid")}: {Number(summary.current_cycle_paid || 0).toFixed(2)} EGP · {t("studentFees.currentCycleOutstanding")}: {Number(summary.current_cycle_outstanding || 0).toFixed(2)} EGP</span><span>{t("fees.required")}: {Number(summary.required_amount || 0).toFixed(2)} EGP · {t("fees.paid")}: {Number(summary.paid_amount || 0).toFixed(2)} EGP · {t("fees.remaining")}: {Number(summary.remaining_balance || 0).toFixed(2)} EGP</span>{canCollect ? <><div className="fee-checkout-panel"><label className="fee-discount-field"><span>{t("fees.discountAmount")}</span><input className={isExempt ? "opacity-50 cursor-not-allowed" : "focus:ring-2 focus:ring-orange-500"} type="number" min="0" step="0.01" value={discountInput} disabled={isExempt || paymentLoading} onChange={(event) => setDiscountInput(normalizeDigits(event.target.value))} placeholder="0.00" /><small>{t("fees.discountHint")}</small></label><label className="fee-exemption-toggle"><span><strong>{t("fees.fullExemption")}</strong><small>{t("fees.exemptionHint")}</small></span><input className="peer" type="checkbox" checked={isExempt} disabled={paymentLoading} onChange={(event) => setIsExempt(event.target.checked)} /><i className="peer-checked:bg-orange-500" aria-hidden="true" /></label><span className="fee-checkout-total">{isExempt ? <><del>{outstandingAmount.toFixed(2)} EGP</del>{t("fees.exemptAmount")}</> : t("fees.confirmAmount", { amount: calculatedPayment.toFixed(2) })}</span></div>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="primary-button fee-checkout-cta py-3.5 rounded-xl font-bold text-lg" type="button" onClick={pay} disabled={paymentLoading || (!isExempt && (!Number.isFinite(requestedDiscount) || requestedDiscount > outstandingAmount))}>{paymentLoading ? t("dashboard.refreshing") : isExempt ? t("fees.applyExemption") : t("fees.confirmPayment", { amount: calculatedPayment.toFixed(2) })}</button></> : null}</div> : null}
     {mode === "advance" && canAdvance && advanceData ? <div className="advance-payment-panel"><div className="status-panel success"><strong>{advanceData.student.full_name}</strong><span>{advanceData.student.student_code} · {advanceData.student.group_name}</span><span>{t("studentFees.monthlyFee")}: {monthlyFee.toFixed(2)} EGP</span></div>{Number(advanceData.current_cycle_outstanding || 0) > 0 ? <p className="form-error advance-lock-message">{t("fees.advanceCurrentMonthUnpaid")}</p> : monthlyFee <= 0 ? <p className="empty-state">{t("fees.advanceFeeNotConfigured")}</p> : <><div className="advance-sequence-heading"><div><span className="advance-section-kicker">{t("fees.advancePayment")}</span><h3>{t("fees.advanceMonths")}</h3><p>{t("fees.advanceSequenceHint")}</p></div><div className="advance-selection-summary"><span className="advance-sequence-count"><strong>{selectedMonths.length}</strong><small>{t("fees.advanceSelected")}</small></span><span className="advance-available-count"><strong>{availableMonthsCount}</strong><small>{t("fees.advanceAvailableMonth")}</small></span></div></div><div className="advance-month-legend" aria-label={t("fees.advanceMonths")}><span className="advance-legend-item is-next"><i aria-hidden="true" />{t("fees.advanceAvailableMonth")}</span><span className="advance-legend-item is-paid"><i aria-hidden="true" />{t("fees.advancePaidMonth")}</span><span className="advance-legend-item is-locked"><i aria-hidden="true" />{t("fees.advanceLockedStatus")}</span></div><div className="advance-month-grid">{advanceMonths.map((month: any, index: number) => { const key = monthKey(month); const paid = isMonthPaid(month); const selected = selectedMonthSet.has(key); const unlocked = isMonthUnlocked(index); const locked = !paid && !unlocked; const stateLabel = paid ? t("fees.advancePaidMonth") : locked ? t("fees.advanceLockedMonth") : selected ? t("fees.advanceSelectedStatus") : t("fees.advanceAvailableMonth"); return <label className={`advance-month-option ${paid ? "is-paid" : unlocked ? "is-next" : "is-locked"} ${selected ? "is-selected" : ""}`} key={month.month} title={locked ? t("fees.advanceLockedMonth") : stateLabel}><span className="advance-month-card-top"><span className={`advance-month-state-icon ${paid ? "is-paid" : locked ? "is-locked" : "is-next"}`} aria-hidden="true">{paid ? "✓" : String(index + 1).padStart(2, "0")}</span><span className="advance-month-status">{stateLabel}</span></span><span className="advance-month-content"><strong>{monthLabel(month.month)}</strong><small>{locked ? t("fees.advanceLockedMonth") : t("fees.advancePaymentLabel")}</small></span><span className="advance-month-footer"><b>{Number(month.remaining_amount || month.amount || 0).toFixed(2)} EGP</b>{paid ? <span className="advance-month-paid-mark" aria-label={t("fees.advancePaidMonth")}>✓</span> : <input type="checkbox" checked={selected} disabled={!unlocked && !selected} aria-label={`${monthLabel(month.month)} — ${stateLabel}`} onChange={(event) => toggleAdvanceMonth(month, index, event.target.checked)} />}</span></label>; })}</div>{!advanceMonths.some((month: any) => month.available) ? <p className="empty-state">{t("fees.advanceNoMonths")}</p> : <><p className="advance-total"><span>{t("fees.advanceSelected")}: <strong>{selectedMonths.length}</strong></span><span>{t("fees.advanceTotal")}: <strong>{totalAdvance.toFixed(2)} EGP</strong></span></p>{canSendReceipts ? <label className="whatsapp-receipt-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendReceipt} onChange={(event) => setSendReceipt(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendReceipt")}</span></label> : null}<button className="primary-button" type="button" disabled={!selectedMonths.length || advanceLoading} onClick={saveAdvance}>{advanceLoading ? t("dashboard.refreshing") : t("fees.advancePayment")}</button></>}</>}</div> : null}
     {status ? <p className="lookup-result">{status}</p> : null}
     <MobileScannerModal open={cameraOpen} onClose={() => setCameraOpen(false)} session={session} language={language} t={t} onScan={lookupFromCamera} />
@@ -9959,21 +10050,6 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><div className="report-filters payment-report-filters"><label>{t("audit.search")}<input value={search} onChange={(event) => setSearch(event.target.value)} /></label><label>{t("audit.action")}<select value={action} onChange={(event) => { setAction(event.target.value); setPage(1); }}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.user")}<input value={userId} onChange={(event) => setUserId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.student")}<input value={studentId} onChange={(event) => setStudentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.dateFrom")}<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={refreshLogs}>{refreshLabel}</button><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div><p className="report-total">{total} · {t("audit.title")}</p>{logs.length ? <div className="table-wrap"><table><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.student")}</th><th>{t("audit.payment")}</th><th>{t("audit.details")}</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td>{new Date(log.created_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</td><td>{log.actor_name || log.actor_username || "—"}</td><td>{t(auditActionKey(log.action))}</td><td><strong>{log.student_name || "—"}</strong>{log.student_code ? <small className="audit-student-code">{log.student_code}</small> : log.student_id ? <small className="audit-student-code">ID: {log.student_id}</small> : null}</td><td>{log.payment_id ? `${log.payment_id}${log.payment_amount ? ` · ${log.payment_amount} EGP` : ""}` : "—"}</td><td><details><summary>{t("audit.details")}</summary><div className="audit-detail-list">{formatAuditDetails(log.details || {}, language, t, log.actor_name || log.actor_username || "").map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}{log.reversal_reason ? <div className="audit-detail-item"><b>{t("audit.reason")}</b><span>{log.reversal_reason}</span></div> : null}</div></details></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("audit.noLogs")}</p>}<div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => loadLogs(page - 1)}>{"‹"}</button><span>{page} / {Math.max(1, Math.ceil(total / 50))}</span><button className="secondary-button compact-button" type="button" disabled={page >= Math.max(1, Math.ceil(total / 50)) || loading} onClick={() => loadLogs(page + 1)}>{"›"}</button></div>{maintenancePanel}{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
-function formatBillingMonth(value: unknown, language: Language) {
-  const raw = String(value ?? "").trim();
-  const match = raw.match(/^(\d{4})-(\d{2})/);
-  if (!match) return raw;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const date = new Date(Date.UTC(year, month - 1, 1));
-  if (!Number.isFinite(date.getTime()) || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1) return raw;
-  const monthName = new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", {
-    month: language === "ar" ? "long" : "short",
-    timeZone: "UTC"
-  }).format(date);
-  return `${monthName} ${match[1].slice(-2)}`;
-}
-
 function FinanceReportsPanel({ session, language, t, canReverse }: { session: TeacherSession; language: Language; t: Translator; canReverse: boolean }) {
   const [view, setView] = useState<"payments" | "overdue">("payments");
 
@@ -10006,6 +10082,7 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
   const [noResults, setNoResults] = useState(false);
   const [reverseTarget, setReverseTarget] = useState<any>(null);
   const [reverseReason, setReverseReason] = useState("");
+  const [reversePin, setReversePin] = useState("");
   const [reversing, setReversing] = useState(false);
   const [reverseError, setReverseError] = useState(false);
   const searchFeedback = useActionFeedback();
@@ -10074,6 +10151,7 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
   function openReverseDialog(row: any) {
     setReverseTarget(row);
     setReverseReason("");
+    setReversePin("");
     setReverseError(false);
     setStatus("");
   }
@@ -10085,6 +10163,10 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     if (code === "already_reversed" || code === "http_409") return t("fees.reversalAlreadyReversed");
     if (code === "payment_not_found" || code === "http_404") return t("fees.reversalPaymentNotFound");
     if (code === "invalid_reason" || code === "http_400") return t("fees.reversalInvalidReason");
+    if (code === "security_code_required") return t("fees.securityCodeRequired");
+    if (code === "invalid_audit_pin") return t("fees.securityCodeInvalid");
+    if (code === "audit_pin_locked") return t("fees.securityCodeLocked");
+    if (code === "audit_pin_not_configured") return t("fees.securityCodeNotConfigured");
     if (error instanceof TypeError || code === "TypeError" || code === "Failed to fetch" || code === "fetch failed" || code === "network_error") return t("fees.reversalNetworkError");
     return t("fees.reversalServerError");
   }
@@ -10093,12 +10175,13 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     event?.preventDefault();
     const paymentId = Number(reverseTarget?.id);
     const reason = reverseReason.trim();
-    if (!canReverse || !reverseTarget || !Number.isSafeInteger(paymentId) || paymentId <= 0 || reason.length < 3 || reversing) return;
+    const securityPin = normalizeDigits(reversePin).trim();
+    if (!canReverse || !reverseTarget || !Number.isSafeInteger(paymentId) || paymentId <= 0 || reason.length < 3 || !/^\d{4}$/.test(securityPin) || reversing) return;
     setReversing(true);
     setReverseError(false);
     setStatus("");
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/fees/payments/${paymentId}/reverse`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ reason }) });
+      const response = await fetch(`${API_BASE_URL}/admin/fees/payments/${paymentId}/reverse`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ reason, security_pin: securityPin }) });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.ok) {
         const errorCode = String(data?.status || (response.status ? `http_${response.status}` : "reverse_failed"));
@@ -10107,6 +10190,7 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
 
       setReverseTarget(null);
       setReverseReason("");
+      setReversePin("");
       setStatus(t("fees.reversalSaved"));
       // The reversal is already committed. A failed refresh must not turn a
       // successful financial action into a misleading failure message.
@@ -10139,7 +10223,7 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     <p className="report-total">{t("fees.totalPaid")}: {totalPaid.toFixed(2)} EGP · {t("fees.paymentCount")}: {paymentCount}</p>
     {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td>{row.amount} EGP</td><td><span className="payment-type-cell">{formatPaymentType(row)}</span></td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td>{canReverse ? <td><button className="secondary-button compact-button" type="button" disabled={reversing} onClick={() => openReverseDialog(row)}>{t("fees.reversePayment")}</button></td> : null}</tr>)}</tbody></table></div> : null}
     {status ? <p className="form-error">{status}</p> : null}
-    {reverseTarget ? <div className="modal-backdrop"><form className="modal-card" role="dialog" aria-modal="true" onSubmit={reversePayment}><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(false); }} rows={4} autoFocus required /></label>{reverseError ? <p className="form-error" role="alert">{status || t("fees.reversalFailed")}</p> : null}<div className="report-actions"><button className="primary-button" type="submit" disabled={reversing || reverseReason.trim().length < 3}>{reverseButtonLabel}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></form></div> : null}
+    {reverseTarget ? <div className="modal-backdrop"><form className="modal-card" role="dialog" aria-modal="true" onSubmit={reversePayment}><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(false); }} rows={4} autoFocus required /></label><label>{t("fees.securityCode")}<input value={reversePin} onChange={(event) => { setReversePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4)); setReverseError(false); }} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" placeholder={t("fees.securityCodeHint")} required /></label>{reverseError ? <p className="form-error" role="alert">{status || t("fees.reversalFailed")}</p> : null}<div className="report-actions"><button className="primary-button" type="submit" disabled={reversing || reverseReason.trim().length < 3 || !/^\d{4}$/.test(normalizeDigits(reversePin).trim())}>{reverseButtonLabel}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></form></div> : null}
     </section>
   </div>;
 }
@@ -12087,6 +12171,7 @@ function StudentFeesPanel({
       <span><b>{t("studentFees.totalRemaining")}</b>: {amount(summary.remaining_balance)}</span>
       <span><b>{t("studentFees.currentMonth")}</b>: {amount(summary.current_cycle_fee)} · {t("studentFees.currentCycleOutstanding")}: {amount(summary.current_cycle_outstanding)}</span>
     </div> : null}
+    <div className="student-fees-billing-meta"><span><b>{t("studentFees.billingStartMonth")}</b>{formatBillingMonth(summary.billing_start_month, language)}</span><span><b>{t("studentFees.billingStage")}</b><strong className={billingStageClass(summary.billing_stage)}>{billingStageLabel(summary.billing_stage, t)}</strong></span></div>
     <p className="student-fees-status"><span>{t("studentFees.status")}</span><strong className={statusClass}>{statusText}</strong></p>
     <h3>{t("studentFees.history")}</h3>
     <div className="table-wrap"><table><thead><tr><th>{t("studentFees.date")}</th><th>{t("studentFees.time")}</th><th>{t("studentFees.amount")}</th><th>{t("studentFees.paidBy")}</th><th>{t("studentFees.coveredCycle")}</th><th>{t("studentFees.notes")}</th></tr></thead><tbody>{(data.payments || []).map((payment: any) => { const paidAt = payment.paid_at || payment.payment_date; const date = paidAt ? new Date(paidAt) : null; const isReversed = Boolean(payment.is_reversed); return <tr key={payment.id}><td>{date ? date.toLocaleDateString(language === "ar" ? "ar-EG" : "en-US") : "—"}{payment.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{date ? date.toLocaleTimeString(language === "ar" ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" }) : "—"}</td><td><span className={isReversed ? "student-fee-payment-reversed" : undefined}>{amount(payment.amount)}</span>{isReversed ? <span className="student-fee-reversed-badge" role="status">{t("studentFees.reversedPayment")}</span> : null}</td><td>{payment.paid_by || "—"}</td><td>{coveredMonths(payment)}</td><td>{payment.notes || "—"}</td></tr>; })}{!data.payments?.length ? <EmptyRow columns={6} t={t} /> : null}</tbody></table></div>
