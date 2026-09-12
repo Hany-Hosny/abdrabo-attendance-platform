@@ -2,10 +2,40 @@ import { pool, query } from "../db/pool.js";
 import { auditLog } from "./audit.js";
 import { enqueueAdvancePaymentNotificationInTransaction, enqueueReceiptNotificationInTransaction } from "./whatsapp.js";
 
+function resolveExecutor(executor = query) {
+  if (typeof executor === "function") return executor;
+  if (executor && typeof executor.query === "function") return executor.query.bind(executor);
+  return query;
+}
+
+function roundedAmount(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
+function normalizedPaymentMonths(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((item) => String(item?.month || item || "").slice(0, 7))
+    .filter((month) => /^\d{4}-\d{2}$/.test(month))
+    .sort();
+}
+
+export function paymentRequestMatches(existing, { studentId, paymentType, paymentMethod, discountAmount = 0, isExempt = false, months = null }) {
+  if (Number(existing.student_id) !== Number(studentId)) return false;
+  if ((existing.payment_type || "normal") !== paymentType) return false;
+  if (existing.payment_method !== paymentMethod) return false;
+  if (Boolean(existing.is_exempt) !== Boolean(isExempt)) return false;
+  if (!isExempt && roundedAmount(existing.discount_amount) !== roundedAmount(discountAmount)) return false;
+  if (paymentType === "advance") {
+    const requestedMonths = normalizedPaymentMonths(months);
+    if (requestedMonths.join(",") !== normalizedPaymentMonths(existing.payment_months).join(",")) return false;
+  }
+  return true;
+}
+
 // Creates any missing monthly dues up to the current month. The unique key on
 // fee_dues makes this safe to run at startup, on the first day, or on demand.
-export async function ensureMonthlyFees(studentId = null) {
-  await query(`
+export async function ensureMonthlyFees(studentId = null, executor = query) {
+  await resolveExecutor(executor)(`
     INSERT INTO fee_dues (student_id, group_id, due_month, amount)
     SELECT s.id, s.group_id, months.due_month::date, g.fees_amount
     FROM students s
@@ -22,9 +52,10 @@ export async function ensureMonthlyFees(studentId = null) {
   `, [studentId]);
 }
 
-export async function getFeeSummary(studentId, { ensure = true } = {}) {
-  if (ensure) await ensureMonthlyFees(Number(studentId));
-  const result = await query(`
+export async function getFeeSummary(studentId, { ensure = true, db = query } = {}) {
+  const execute = resolveExecutor(db);
+  if (ensure) await ensureMonthlyFees(Number(studentId), execute);
+  const result = await execute(`
     WITH bounds AS (
       SELECT date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo'))::date AS current_month,
         (date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo')) + INTERVAL '1 month')::date AS upcoming_month,
@@ -93,6 +124,44 @@ export async function getFeeSummary(studentId, { ensure = true } = {}) {
   return result.rows[0] || null;
 }
 
+export async function getStudentPaymentHistory(studentId, { db = query } = {}) {
+  const result = await resolveExecutor(db)(
+    `SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes, p.payment_months, p.whatsapp_notified,
+        (pr.id IS NOT NULL) AS is_reversed,
+        pr.created_at AS reversed_at,
+        COALESCE(t.name, t.username, t.email, 'Staff') AS paid_by
+       FROM payments p
+       LEFT JOIN payment_reversals pr ON pr.payment_id = p.id
+       LEFT JOIN teachers t ON t.id = COALESCE(p.paid_by, p.recorded_by)
+       WHERE p.student_id=$1
+       ORDER BY COALESCE(p.paid_at, p.payment_date) DESC`,
+    [studentId]
+  );
+  return result.rows;
+}
+
+export async function getStudentFeePortalData(studentId, { dbPool = pool } = {}) {
+  const normalizedStudentId = Number(studentId);
+  // Monthly-dues initialization is intentionally committed before the read-only
+  // snapshot. The portal must not mutate data inside its REPEATABLE READ READ ONLY
+  // transaction, and both reads below still share one consistent snapshot.
+  await ensureMonthlyFees(normalizedStudentId, dbPool);
+  const client = await dbPool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const db = client.query.bind(client);
+    const summary = await getFeeSummary(normalizedStudentId, { ensure: false, db });
+    const payments = await getStudentPaymentHistory(normalizedStudentId, { db });
+    await client.query("COMMIT");
+    return { summary, payments, payment_status: summary?.payment_status || "unpaid" };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function recordFullPayment({ studentId, actorId, paymentMethod = "cash", notes = null, idempotencyKey = null, whatsappNotified = false, discountAmount = 0, isExempt = false, request = null }) {
   await ensureMonthlyFees(Number(studentId));
   const client = await pool.connect();
@@ -102,7 +171,7 @@ export async function recordFullPayment({ studentId, actorId, paymentMethod = "c
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [idempotencyKey]);
       const existing = await client.query("SELECT * FROM payments WHERE idempotency_key = $1 FOR UPDATE", [idempotencyKey]);
       if (existing.rowCount) {
-        if (Number(existing.rows[0].student_id) !== Number(studentId) || existing.rows[0].payment_type !== "normal" || existing.rows[0].payment_method !== paymentMethod) {
+        if (!paymentRequestMatches(existing.rows[0], { studentId, paymentType: "normal", paymentMethod, discountAmount, isExempt })) {
           await client.query("ROLLBACK");
           return { idempotency_conflict: true };
         }
@@ -297,7 +366,7 @@ export async function recordAdvancePayment({ studentId, actorId, months, payment
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [idempotencyKey]);
       const existing = await client.query("SELECT * FROM payments WHERE idempotency_key = $1 FOR UPDATE", [idempotencyKey]);
       if (existing.rowCount) {
-        if (Number(existing.rows[0].student_id) !== Number(studentId) || existing.rows[0].payment_type !== "advance" || existing.rows[0].payment_method !== paymentMethod) {
+        if (!paymentRequestMatches(existing.rows[0], { studentId, paymentType: "advance", paymentMethod, months })) {
           await client.query("ROLLBACK");
           return { error: "idempotency_conflict" };
         }

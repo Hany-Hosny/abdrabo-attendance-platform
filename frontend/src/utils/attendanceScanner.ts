@@ -417,7 +417,7 @@ export function useAttendanceScanner({ apiBaseUrl, authToken, messages, deviceId
       commitInput();
       return;
     }
-    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
+    if (event.nativeEvent.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.key.length !== 1) return;
     const now = Date.now();
     if (lastInputKeyAtRef.current && now - lastInputKeyAtRef.current <= SCANNER_BURST_THRESHOLD_MS) inputBurstRef.current = true;
     lastInputKeyAtRef.current = now;

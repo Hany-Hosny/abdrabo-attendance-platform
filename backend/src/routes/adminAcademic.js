@@ -153,6 +153,62 @@ function validGroup(data) {
   );
 }
 
+function timeValue(value) {
+  return String(value || "").slice(0, 8);
+}
+
+function scheduleChanged(before, after) {
+  return Number(before?.day_of_week) !== Number(after?.day_of_week) ||
+    timeValue(before?.start_time) !== timeValue(after?.start_time) ||
+    timeValue(before?.end_time) !== timeValue(after?.end_time) ||
+    Number(before?.opens_before_minutes) !== Number(after?.opens_before_minutes) ||
+    Number(before?.closes_after_minutes) !== Number(after?.closes_after_minutes);
+}
+
+async function reconcileAbsenceJobsForReschedule({ client, sessionId, actorId, request }) {
+  const jobs = await client.query(`
+    SELECT j.id, j.status, j.send_started_at
+    FROM whatsapp_notification_jobs j
+    JOIN attendance_records ar ON ar.id = j.attendance_record_id
+    WHERE j.notification_type = 'absence'
+      AND ar.session_id = $1
+      AND j.status IN ('pending', 'processing', 'failed', 'sent', 'delivery_unknown')
+    FOR UPDATE OF j`, [sessionId]);
+
+  const deliveryStarted = jobs.rows.find((job) =>
+    job.status === "sent" || job.status === "delivery_unknown" ||
+    (job.status === "processing" && job.send_started_at)
+  );
+  if (deliveryStarted) return { ok: false, status: "session_reschedule_delivery_started" };
+
+  const pendingJobs = jobs.rows.filter((job) => ["pending", "processing", "failed"].includes(job.status));
+  if (!pendingJobs.length) return { ok: true, reconciledCount: 0 };
+
+  await client.query(`
+    UPDATE whatsapp_notification_jobs
+    SET status = 'skipped', last_error = 'attendance_session_rescheduled',
+        next_attempt_at = NULL, lease_expires_at = NULL, claim_token = NULL,
+        updated_at = NOW()
+    WHERE id = ANY($1::bigint[])`, [pendingJobs.map((job) => job.id)]);
+
+  for (const job of pendingJobs) {
+    await auditLog({
+      db: client,
+      action: "whatsapp_job_skipped",
+      actorId,
+      sessionId,
+      details: {
+        job_id: Number(job.id),
+        notification_type: "absence",
+        reason: "attendance_session_rescheduled",
+        status_before: job.status
+      },
+      request
+    });
+  }
+  return { ok: true, reconciledCount: pendingJobs.length };
+}
+
 const groupSelect = `
   SELECT g.id, g.center_id, g.name, g.grade, g.subject, g.is_active, g.created_at,
     c.name AS center_name, g.grade_level, g.display_name, g.fees_amount,
@@ -239,6 +295,94 @@ adminAcademicRouter.put("/groups/:id", requirePermission("schedule.manage"), asy
       await client.query("ROLLBACK");
       return res.status(400).json({ ok: false, status: "invalid_group_payload" });
     }
+
+    const legacyScheduleFieldsPresent = ["day_of_week", "start_time", "end_time"].some((field) =>
+      Object.prototype.hasOwnProperty.call(req.body || {}, field)
+    );
+    if (!data.hasSchedules && legacyScheduleFieldsPresent && beforeSchedules.rowCount) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({
+        ok: false,
+        status: "schedule_identity_required",
+        message: "Schedule updates must include the existing schedule ID. / يجب أن يتضمن تعديل الجدول معرّف الجدول الحالي."
+      });
+    }
+
+    const todaySessions = await client.query(`
+      SELECT s.id, s.schedule_id, s.status, s.absence_dispatched,
+        s.starts_at, s.opens_at, s.closes_at, s.ends_at,
+        cs.day_of_week, cs.start_time, cs.end_time,
+        cs.opens_before_minutes, cs.closes_after_minutes, cs.is_active, cs.deleted_at
+      FROM attendance_sessions s
+      JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
+      WHERE s.group_id = $1
+        AND s.session_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+      FOR UPDATE OF s`, [groupId]);
+
+    if (data.hasSchedules) {
+      if (todaySessions.rows.some((session) => session.is_active !== true || session.deleted_at)) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          ok: false,
+          status: "schedule_session_identity_locked",
+          message: "Today’s attendance session is detached from an active schedule and needs review. / جلسة حضور اليوم غير مرتبطة بجدول نشط وتحتاج إلى مراجعة."
+        });
+      }
+      const schedulesById = new Map(beforeSchedules.rows.map((schedule) => [Number(schedule.id), schedule]));
+      const incomingIds = new Set();
+      const unkeyedSchedules = [];
+      for (const schedule of data.schedules) {
+        if (Number.isInteger(schedule.id) && schedule.id > 0) {
+          if (!schedulesById.has(schedule.id) || incomingIds.has(schedule.id)) {
+            await client.query("ROLLBACK");
+            return res.status(409).json({ ok: false, status: "schedule_identity_required" });
+          }
+          incomingIds.add(schedule.id);
+        } else {
+          unkeyedSchedules.push(schedule);
+        }
+      }
+
+      const removedSchedules = beforeSchedules.rows.filter((schedule) => !incomingIds.has(Number(schedule.id)));
+      const todayScheduleIds = new Set(todaySessions.rows.map((session) => Number(session.schedule_id)));
+      if (removedSchedules.some((schedule) => todayScheduleIds.has(Number(schedule.id)))) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          ok: false,
+          status: "schedule_session_identity_locked",
+          message: "Today’s attendance session must be rescheduled by identity. / يجب تعديل جلسة حضور اليوم باستخدام هويتها الحالية."
+        });
+      }
+      if (unkeyedSchedules.length && removedSchedules.length) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          ok: false,
+          status: "schedule_identity_required",
+          message: "Existing schedule IDs are required for replacement updates. / يجب استخدام معرّفات الجداول الحالية عند الاستبدال."
+        });
+      }
+
+      for (const session of todaySessions.rows) {
+        const incoming = data.schedules.find((schedule) => Number(schedule.id) === Number(session.schedule_id));
+        if (incoming && parseBoolean(incoming.is_active, true) === false) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            ok: false,
+            status: "schedule_session_identity_locked",
+            message: "Today’s attendance session cannot be disabled through the recurring schedule editor. / لا يمكن تعطيل جلسة حضور اليوم من خلال تعديل الجدول العام."
+          });
+        }
+        if (incoming && Number(incoming.day_of_week) !== Number(session.day_of_week)) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            ok: false,
+            status: "schedule_day_change_requires_review",
+            message: "A session scheduled today cannot change weekday identity. / لا يمكن تغيير هوية يوم جلسة اليوم."
+          });
+        }
+      }
+    }
+
     const updated = await client.query(
       `UPDATE groups SET center_id = $1, name = $2, display_name = $3, grade = $4, grade_level = $5, subject = $6, fees_amount = $7, is_active = $8, updated_at=NOW()
        WHERE id = $9 AND deleted_at IS NULL RETURNING id`,
@@ -287,20 +431,83 @@ adminAcademicRouter.put("/groups/:id", requirePermission("schedule.manage"), asy
         [groupId, keptScheduleIds]
       );
     }
-    // Existing sessions keep their occurrence identity, but their derived
-    // timestamps must follow an in-day schedule edit so finalizers and the UI
-    // never use a stale cached boundary.
-    await client.query(`
-      UPDATE attendance_sessions s
-      SET starts_at=((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
-          opens_at=(((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-          closes_at=(((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-          ends_at=((((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time)) AT TIME ZONE 'Africa/Cairo')
-      FROM class_schedules cs
-      WHERE s.group_id=$1 AND s.schedule_id=cs.id AND cs.group_id=s.group_id
+
+    // Keep the dated session identity and preserve its original planned
+    // boundaries. A same-day time edit is a controlled reschedule.
+    const currentTodaySessions = await client.query(`
+      SELECT s.id, s.schedule_id, s.session_date, s.status, s.absence_dispatched,
+        s.starts_at, s.opens_at, s.closes_at, s.ends_at,
+        cs.day_of_week, cs.start_time, cs.end_time,
+        cs.opens_before_minutes, cs.closes_after_minutes
+      FROM attendance_sessions s
+      JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
+      WHERE s.group_id = $1
+        AND s.session_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
         AND cs.deleted_at IS NULL
-        AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
-    `, [groupId]);
+      FOR UPDATE OF s`, [groupId]);
+    const beforeSessionsById = new Map(todaySessions.rows.map((session) => [Number(session.id), session]));
+    for (const session of currentTodaySessions.rows) {
+      const beforeSession = beforeSessionsById.get(Number(session.id));
+      if (!beforeSession || !scheduleChanged(beforeSession, session)) continue;
+
+      if (beforeSession.status === "closed") {
+        const reconciliation = await reconcileAbsenceJobsForReschedule({
+          client,
+          sessionId: session.id,
+          actorId: req.teacher.id,
+          request: req
+        });
+        if (!reconciliation.ok) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            ok: false,
+            status: reconciliation.status,
+            message: "This session has a delivered or in-flight absence notification and needs review. / تم إرسال إشعار غياب لهذه الجلسة أو بدأ إرساله وتحتاج العملية إلى مراجعة."
+          });
+        }
+      }
+
+      const rescheduled = await client.query(`
+        UPDATE attendance_sessions s
+        SET starts_at=((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
+            opens_at=(((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+            closes_at=(((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+            ends_at=((((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time)) AT TIME ZONE 'Africa/Cairo'),
+            status=CASE WHEN s.status = 'closed' THEN 'open' ELSE s.status END,
+            absence_dispatched=CASE WHEN s.status = 'closed' THEN FALSE ELSE s.absence_dispatched END,
+            rescheduled_at=NOW(), rescheduled_by=$2
+        FROM class_schedules cs
+        WHERE s.id=$1 AND cs.id=s.schedule_id AND cs.group_id=s.group_id
+        RETURNING s.*`, [session.id, req.teacher.id]);
+      if (!rescheduled.rowCount) throw new Error("attendance_session_reschedule_conflict");
+      const nextSession = rescheduled.rows[0];
+      await client.query(`
+        INSERT INTO attendance_session_reschedules
+          (session_id, actor_id, previous_starts_at, previous_opens_at, previous_closes_at, previous_ends_at,
+           next_starts_at, next_opens_at, next_closes_at, next_ends_at, reason)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'schedule_updated')`, [
+        session.id, req.teacher.id,
+        beforeSession.starts_at, beforeSession.opens_at, beforeSession.closes_at, beforeSession.ends_at,
+        nextSession.starts_at, nextSession.opens_at, nextSession.closes_at, nextSession.ends_at
+      ]);
+      await auditLog({
+        db: client,
+        action: "attendance_session_rescheduled",
+        actorId: req.teacher.id,
+        sessionId: session.id,
+        details: {
+          group_id: groupId,
+          schedule_id: session.schedule_id,
+          session_date: session.session_date,
+          previous: { starts_at: beforeSession.starts_at, opens_at: beforeSession.opens_at, closes_at: beforeSession.closes_at, ends_at: beforeSession.ends_at },
+          next: { starts_at: nextSession.starts_at, opens_at: nextSession.opens_at, closes_at: nextSession.closes_at, ends_at: nextSession.ends_at },
+          status_before: beforeSession.status,
+          status_after: nextSession.status
+        },
+        request: req
+      });
+    }
+
     const result = await client.query(`${groupSelect} WHERE g.id = $1`, [groupId]);
     await auditLog({ db: client, action: "group_updated", actorId: req.teacher.id, details: { group_id: groupId, changes: changedFields(beforeGroup.rows[0], result.rows[0]), before: { group: beforeGroup.rows[0], schedules: beforeSchedules.rows }, after: { group: result.rows[0], schedules: result.rows[0]?.schedules || data.schedules } }, request: req });
     await client.query("COMMIT");
@@ -332,19 +539,7 @@ adminAcademicRouter.patch("/groups/:id/status", requirePermission("schedule.mana
       return res.status(404).json({ ok: false, status: "not_found" });
     }
     await client.query("UPDATE class_schedules SET is_active = $1, updated_at=NOW() WHERE group_id = $2", [isActive, groupId]);
-    if (isActive) {
-      await client.query(`
-        UPDATE attendance_sessions s
-        SET starts_at=((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
-            opens_at=(((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-            closes_at=(((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-            ends_at=((((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time)) AT TIME ZONE 'Africa/Cairo')
-        FROM class_schedules cs
-        WHERE s.group_id=$1 AND s.schedule_id=cs.id AND cs.group_id=s.group_id
-          AND cs.is_active=TRUE AND cs.deleted_at IS NULL
-          AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
-      `, [groupId]);
-    }
+
     await auditLog({ db: client, action: "group_status_changed", actorId: req.teacher.id, details: { group_id: groupId, changes: [{ field: "is_active", before: before.rows[0].is_active, after: isActive }], before: { is_active: before.rows[0].is_active }, after: { is_active: isActive } }, request: req });
     await client.query("COMMIT");
     res.json({ ok: true });
@@ -482,7 +677,8 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
     const canViewPaymentReports = hasPermission(req.teacher, "payments.reports.view");
     const canViewAttention = hasPermission(req.teacher, "dashboard.alerts.view");
     const [attendance, exams, notes, payments, threads, feeSummary] = await Promise.all([
-      canViewAttendance ? query(`SELECT s.id AS session_id, s.session_date, s.starts_at, s.closes_at, cs.start_time, cs.end_time,
+      canViewAttendance ? query(`SELECT s.id AS session_id, s.session_date, s.starts_at, s.closes_at,
+          s.original_starts_at, s.original_ends_at, s.rescheduled_at, cs.start_time, cs.end_time,
           g.name AS group_name, COALESCE(NULLIF(TRIM(g.subject), ''), g.name) AS session_name, ar.status, ar.checkin_time, ar.whatsapp_notified
         FROM attendance_sessions s
         JOIN groups g ON g.id = s.group_id

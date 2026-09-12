@@ -15,8 +15,9 @@ import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue, scanLook
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { hasPermission } from "../services/rbac.js";
 import { ipKeyGenerator } from "express-rate-limit";
-import { enqueueAttendanceNotification, enqueueAttendanceNotificationInTransaction, settleAbsenceNotificationJobsForCorrection, wakeWhatsAppWorker } from "../services/whatsapp.js";
+import { enqueueAttendanceNotificationInTransaction, settleAbsenceNotificationJobsForCorrection, wakeWhatsAppWorker } from "../services/whatsapp.js";
 import { MANUAL_ATTENDANCE_STATUSES } from "../utils/attendanceStatus.js";
+import { missingPaymentIdempotencyMessage, readRequiredPaymentIdempotencyKey } from "../utils/paymentIdempotency.js";
 
 export const operationsRouter = express.Router();
 operationsRouter.use(requireTeacher);
@@ -229,7 +230,7 @@ const auditActionLabels = {
   ar: {
     payment_created: "تم تسجيل دفع المصروفات", advance_payment_created: "تم تسجيل دفع مقدم", payment_reversed: "تم عكس دفعة",
     student_created: "تم إنشاء طالب", student_updated: "تم تعديل بيانات طالب", student_changed: "تم تعديل الطالب", student_status_changed: "تم تغيير حالة طالب", student_restored: "تم استرجاع طالب", student_archived: "تمت أرشفة طالب", students_bulk_archived: "تمت أرشفة طلاب محددون", students_bulk_permanently_deleted: "تم حذف طلاب نهائيًا", student_label_printed: "تمت طباعة ليبل الطالب", student_scan_serial_regenerated: "تم تجديد سريال مسح الطالب",
-    attendance_recorded: "تم تسجيل الحضور", attendance_changed: "تم تغيير الحضور", attendance_scanned: "تم تنفيذ مسح الحضور", attendance_session_created: "تم إنشاء جلسة حضور", attendance_session_auto_finalized: "إغلاق جلسة الحضور أوتوماتيكياً", attendance_session_auto_reopened: "إعادة فتح جلسة الحضور أوتوماتيكياً", attendance_absence_notifications_queued: "تجهيز إشعارات الغياب", suspicious_scan: "تم تسجيل محاولة مسح مشبوهة",
+    attendance_recorded: "تم تسجيل الحضور", attendance_changed: "تم تغيير الحضور", attendance_scanned: "تم تنفيذ مسح الحضور", attendance_session_created: "تم إنشاء جلسة حضور", attendance_session_rescheduled: "تم تعديل موعد جلسة الحضور", attendance_session_auto_finalized: "إغلاق جلسة الحضور أوتوماتيكياً", attendance_session_auto_reopened: "إعادة فتح جلسة الحضور أوتوماتيكياً", attendance_absence_notifications_queued: "تجهيز إشعارات الغياب", suspicious_scan: "تم تسجيل محاولة مسح مشبوهة",
     group_created: "تم إنشاء مجموعة", group_updated: "تم تعديل المجموعة", group_changed: "تم تعديل المجموعة", group_status_changed: "تم تغيير حالة المجموعة", group_archived: "تمت أرشفة المجموعة",
     exam_result_created: "تم تسجيل نتيجة امتحان", exam_result_updated: "تم تعديل نتيجة امتحان", exam_result_changed: "تم تعديل نتيجة امتحان", exam_result_deleted: "تم حذف نتيجة امتحان", homework_created: "تم إنشاء واجب", homework_updated: "تم تعديل واجب", homework_deleted: "تم حذف واجب",
     message_sent: "تم إرسال رسالة", message_deleted: "تم حذف رسالة", message_action: "تم تنفيذ إجراء على رسالة", message_read_status_changed: "تم تحديث حالة قراءة الرسالة", note_created: "تمت إضافة ملاحظة", note_updated: "تم تعديل ملاحظة", note_deleted: "تم حذف ملاحظة",
@@ -238,7 +239,7 @@ const auditActionLabels = {
   en: {
     payment_created: "Payment recorded", advance_payment_created: "Advance payment recorded", payment_reversed: "Payment reversed",
     student_created: "Student created", student_updated: "Student updated", student_changed: "Student changed", student_status_changed: "Student status changed", student_restored: "Student restored", student_archived: "Student archived", students_bulk_archived: "Students archived in bulk", students_bulk_permanently_deleted: "Students permanently deleted in bulk", student_label_printed: "Student label printed", student_scan_serial_regenerated: "Student scan serial regenerated",
-    attendance_recorded: "Attendance recorded", attendance_changed: "Attendance changed", attendance_scanned: "Attendance scan processed", attendance_session_created: "Attendance session created", attendance_session_auto_finalized: "Attendance session closed automatically", attendance_session_auto_reopened: "Attendance session reopened automatically", attendance_absence_notifications_queued: "Absence notifications prepared", suspicious_scan: "Suspicious scan recorded",
+    attendance_recorded: "Attendance recorded", attendance_changed: "Attendance changed", attendance_scanned: "Attendance scan processed", attendance_session_created: "Attendance session created", attendance_session_rescheduled: "Attendance session rescheduled", attendance_session_auto_finalized: "Attendance session closed automatically", attendance_session_auto_reopened: "Attendance session reopened automatically", attendance_absence_notifications_queued: "Absence notifications prepared", suspicious_scan: "Suspicious scan recorded",
     group_created: "Group created", group_updated: "Group updated", group_changed: "Group updated", group_status_changed: "Group status changed", group_archived: "Group archived",
     exam_result_created: "Exam result recorded", exam_result_updated: "Exam result updated", exam_result_changed: "Exam result updated", exam_result_deleted: "Exam result deleted", homework_created: "Homework created", homework_updated: "Homework updated", homework_deleted: "Homework deleted",
     message_sent: "Message sent", message_deleted: "Message deleted", message_action: "Message action", message_read_status_changed: "Message read status updated", note_created: "Note added", note_updated: "Note updated", note_deleted: "Note deleted",
@@ -700,18 +701,23 @@ operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"
     let groupFilter = "";
     if (groupId) groupFilter = " AND s.group_id=$2";
     await query(`
-      INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, ends_at, status)
-      SELECT cs.group_id, cs.id, $1::date,
+      INSERT INTO attendance_sessions (group_id, schedule_id, occurrence_key, session_date, starts_at, opens_at, closes_at, ends_at,
+        original_starts_at, original_opens_at, original_closes_at, original_ends_at, status)
+      SELECT cs.group_id, cs.id, cs.slot_key, $1::date,
+        ${cairoSessionTimeSql("$1", "cs.start_time")},
         ${cairoSessionTimeSql("$1", "cs.start_time")},
         (($1::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+        (($1::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
         ${cairoSessionCloseSql("$1", "$3")},
+        ${cairoSessionCloseSql("$1", "$3")},
+        ${cairoSessionEndTimeSql("$1")},
         ${cairoSessionEndTimeSql("$1")},
         'open'
       FROM class_schedules cs
       JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM $1::date)::INTEGER
         ${groupId ? "AND cs.group_id=$4" : ""}
-      ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING
+      ON CONFLICT (group_id, occurrence_key, session_date) DO NOTHING
     `, groupId ? [date, timing.openBeforeMinutes, timing.closeAfterMinutes, groupId] : [date, timing.openBeforeMinutes, timing.closeAfterMinutes]);
     await finalizeExpiredAttendanceSessions();
     const resultParams = groupId ? [date, groupId] : [date];
@@ -732,9 +738,14 @@ operationsRouter.post("/attendance/sessions", requirePermission("attendance.mana
     const date = String(req.body?.session_date || cairoDateString());
     if (!groupId || !scheduleId) return res.status(400).json({ ok:false, status:"invalid_session_payload" });
     const timing = await getAttendanceTimingDefaults();
-    const result = await query(`INSERT INTO attendance_sessions (group_id,schedule_id,session_date,starts_at,opens_at,closes_at,ends_at,status)
-      SELECT $1, cs.id, $3::date, ${cairoSessionTimeSql("$3", "cs.start_time")}, (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+    const result = await query(`INSERT INTO attendance_sessions (group_id,schedule_id,occurrence_key,session_date,starts_at,opens_at,closes_at,ends_at,
+      original_starts_at,original_opens_at,original_closes_at,original_ends_at,status)
+      SELECT $1, cs.id, cs.slot_key, $3::date, ${cairoSessionTimeSql("$3", "cs.start_time")}, ${cairoSessionTimeSql("$3", "cs.start_time")},
+      (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+      (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
       ${cairoSessionCloseSql("$3", "$5")},
+      ${cairoSessionCloseSql("$3", "$5")},
+      ${cairoSessionEndTimeSql("$3")},
       ${cairoSessionEndTimeSql("$3")}, 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.id=$2 AND cs.group_id=$1 AND cs.is_active=TRUE
@@ -1155,7 +1166,19 @@ async function correctManualAttendance({ sessionId, studentId, actorId, status, 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    const session = await client.query("SELECT id, group_id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    if (!session.rowCount) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const membership = await client.query(
+      "SELECT 1 FROM students WHERE id=$1 AND group_id=$2 AND deleted_at IS NULL FOR SHARE",
+      [studentId, session.rows[0].group_id]
+    );
+    if (!membership.rowCount) {
+      await client.query("ROLLBACK");
+      return { wrongGroup: true };
+    }
     const existing = await client.query(
       "SELECT * FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1 FOR UPDATE",
       [sessionId, studentId]
@@ -1216,6 +1239,7 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
     const check = await query("SELECT 1 FROM attendance_sessions s JOIN students st ON st.group_id=s.group_id WHERE s.id=$1 AND st.id=$2", [sessionId,studentId]);
     if (!check.rowCount) return res.status(400).json({ok:false,status:"wrong_group"});
     const corrected = await correctManualAttendance({ sessionId, studentId, actorId: req.teacher.id, status, ip: req.ip, whatsappNotified, request: req });
+    if (corrected?.wrongGroup) return res.status(400).json({ok:false,status:"wrong_group"});
     if (corrected) return res.status(200).json({ok:true,record:corrected,corrected:true});
     const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,whatsappNotified,request:req});
     if (saved.corrected) return res.status(200).json({ok:true,record:saved.record,corrected:true});
@@ -1276,15 +1300,20 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
       sessionResult = { rows: [resolved.session], rowCount: 1 };
     } else {
       const timing = await getAttendanceTimingDefaults();
-      await query(`INSERT INTO attendance_sessions (group_id, schedule_id, session_date, starts_at, opens_at, closes_at, ends_at, status)
-      SELECT cs.group_id, cs.id, (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date,
+      await query(`INSERT INTO attendance_sessions (group_id, schedule_id, occurrence_key, session_date, starts_at, opens_at, closes_at, ends_at,
+        original_starts_at, original_opens_at, original_closes_at, original_ends_at, status)
+      SELECT cs.group_id, cs.id, cs.slot_key, (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date,
+        ${cairoSessionTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "cs.start_time")},
         ${cairoSessionTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "cs.start_time")},
         ((((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+        ((((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
         ${cairoSessionCloseSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "$3")},
+        ${cairoSessionCloseSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "$3")},
+        ${cairoSessionEndTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')")},
         ${cairoSessionEndTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')")}, 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
-      ON CONFLICT (group_id, schedule_id, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
+      ON CONFLICT (group_id, occurrence_key, session_date) DO NOTHING`, [student.group_id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
       const resolved = await resolveImplicitAttendanceSession({ groupId: student.group_id, actorId: req.teacher.id, request: req });
       if (resolved.status !== "ok") return res.status(409).json({ ok: false, error: resolved.status, status: resolved.status, message: resolved.status === "closed_session" ? "لا توجد حصة مفتوحة لهذه المجموعة الآن" : attendanceWindowMessage(resolved.status), student: publicStudent });
       sessionResult = { rows: [resolved.session], rowCount: 1 };
@@ -1297,8 +1326,6 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
     const corrected = await correctSystemAbsence({ sessionId: sessionResult.rows[0].id, studentId: student.id, actorId: req.teacher.id, ip: req.ip, deviceId, idempotencyKey, whatsappNotified, request: req });
     if (corrected) {
-      if (whatsappNotified) void enqueueAttendanceNotification({ attendanceRecordId: corrected.id, studentId: student.id })
-        .catch((error) => console.error("Failed to queue WhatsApp attendance notification", error));
       return res.json({ ok: true, status: "attendance_recorded", student: publicStudent, record: corrected, corrected: true });
     }
     const saved=await recordAttendance({sessionId:sessionResult.rows[0].id,studentId:student.id,actorId:req.teacher.id,ip:req.ip,deviceId,idempotencyKey,whatsappNotified,request:req});
@@ -1367,13 +1394,14 @@ operationsRouter.get("/fees/advance-options/:studentId", requirePermission("paym
 });
 operationsRouter.post("/fees/advance-payments", paymentRateLimit, requirePermission("payments.view"), requirePermission("payments.advance"), async (req, res, next) => {
   try {
+    const idempotency = readRequiredPaymentIdempotencyKey(req);
+    if (idempotency.error === "missing_idempotency_key") return res.status(400).json({ ok: false, status: idempotency.error, message: missingPaymentIdempotencyMessage });
+    if (idempotency.error) return res.status(400).json({ ok: false, status: idempotency.error });
     const studentId = Number(normalizeDigits(req.body?.student_id));
     const paymentMethod = String(req.body?.payment_method || "cash").trim().toLowerCase();
     if (!Number.isSafeInteger(studentId) || studentId <= 0) return res.status(400).json({ ok: false, status: "invalid_student" });
     if (!paymentMethods.has(paymentMethod)) return res.status(400).json({ ok: false, status: "invalid_payment_method" });
-    const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
-    const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
-    if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
+    const { idempotencyKey } = idempotency;
     const sendWhatsApp = req.body?.send_whatsapp === true;
     if (sendWhatsApp && !hasPermission(req.teacher, "whatsapp.send_receipts")) return res.status(403).json({ ok: false, status: "permission_required", permission: "whatsapp.send_receipts" });
     const result = await recordAdvancePayment({
@@ -1399,32 +1427,30 @@ operationsRouter.post("/fees/advance-payments", paymentRateLimit, requirePermiss
 });
 operationsRouter.post("/fees/payments", paymentRateLimit, requirePermission("payments.view"), requirePermission("payments.collect"), async (req, res, next) => {
   try {
+    const idempotency = readRequiredPaymentIdempotencyKey(req);
+    if (idempotency.error === "missing_idempotency_key") return res.status(400).json({ ok: false, status: idempotency.error, message: missingPaymentIdempotencyMessage });
+    if (idempotency.error) return res.status(400).json({ ok: false, status: idempotency.error });
     const studentId = Number(normalizeDigits(req.body?.student_id));
     if (!Number.isSafeInteger(studentId) || studentId <= 0) return res.status(400).json({ ok: false, status: "invalid_student", message: "الطالب غير موجود. / Student was not found." });
     const paymentMethod = String(req.body?.payment_method || "cash").trim().toLowerCase();
     if (!paymentMethods.has(paymentMethod)) return res.status(400).json({ ok: false, status: "invalid_payment_method" });
-    const rawIdempotencyKey = req.get("Idempotency-Key") || req.body?.idempotency_key;
-    const idempotencyKey = normalizeIdempotencyKey(rawIdempotencyKey);
-    if (rawIdempotencyKey && !idempotencyKey) return res.status(400).json({ ok: false, status: "invalid_idempotency_key" });
+    const { idempotencyKey } = idempotency;
     const sendWhatsApp = req.body?.send_whatsapp === true;
     const isExempt = req.body?.is_exempt === true;
     const discountAmount = Number(normalizeDigits(req.body?.discount_amount ?? 0));
     if (!Number.isFinite(discountAmount) || discountAmount < 0) return res.status(400).json({ ok: false, status: "invalid_discount" });
     if (sendWhatsApp && !hasPermission(req.teacher, "whatsapp.send_receipts")) return res.status(403).json({ ok: false, status: "permission_required", permission: "whatsapp.send_receipts" });
-    if (!idempotencyKey) {
-      const summary = await getFeeSummary(studentId);
-      if (!summary) return res.status(404).json({ ok: false, status: "not_found", message: "الطالب غير موجود. / Student was not found." });
-      if (Number(summary.remaining_balance) <= 0) {
-        const status = Number(summary.required_amount) > 0 ? "already_paid" : "no_outstanding_fees";
-        const message = status === "already_paid" ? "تم سداد المصروفات بالفعل. / Fees already paid." : "لا توجد مصروفات مستحقة لهذا الطالب. / No outstanding fees for this student.";
-        return res.status(409).json({ ok: false, status, message });
-      }
-    }
     const paymentResult = await recordFullPayment({ studentId, actorId: req.teacher.id, paymentMethod, notes: req.body?.notes || null, idempotencyKey, whatsappNotified: sendWhatsApp, discountAmount, isExempt, request: req });
     if (paymentResult?.error === "invalid_discount") return res.status(400).json({ ok: false, status: paymentResult.error });
     if (paymentResult?.idempotency_conflict) return res.status(409).json({ ok: false, status: "idempotency_conflict" });
     const payment = paymentResult?.payment;
-    if (!payment) return res.status(409).json({ ok: false, status: "already_paid", message: "تم سداد المصروفات بالفعل. / Fees already paid." });
+    if (!payment) {
+      const summary = await getFeeSummary(studentId);
+      if (!summary) return res.status(404).json({ ok: false, status: "not_found", message: "الطالب غير موجود. / Student was not found." });
+      const status = Number(summary.required_amount) > 0 ? "already_paid" : "no_outstanding_fees";
+      const message = status === "already_paid" ? "تم سداد المصروفات بالفعل. / Fees already paid." : "لا توجد مصروفات مستحقة لهذا الطالب. / No outstanding fees for this student.";
+      return res.status(409).json({ ok: false, status, message });
+    }
     const whatsapp = paymentResult.whatsapp || null;
     return res.status(paymentResult.replayed ? 200 : 201).json({ ok: true, payment, paid_amount: payment.paid_amount ?? payment.amount, discount_amount: payment.discount_amount ?? 0, is_exempt: payment.is_exempt === true, whatsapp, replayed: Boolean(paymentResult.replayed) });
   } catch (error) {

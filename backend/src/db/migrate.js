@@ -10,7 +10,7 @@ function hashValue(value) {
 }
 
 export async function migrate() {
-  // 1. تحديد الـ Schema وإنشاء الجداول الأساسية
+  // 1. Define the schema and create the core tables.
   await query(`
     CREATE SCHEMA IF NOT EXISTS public;
     SET search_path TO public;
@@ -57,6 +57,7 @@ export async function migrate() {
     CREATE TABLE IF NOT EXISTS class_schedules (
       id SERIAL PRIMARY KEY,
       group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      slot_key TEXT NOT NULL DEFAULT md5(random()::text || clock_timestamp()::text),
       day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
       start_time TIME NOT NULL,
       end_time TIME NOT NULL,
@@ -71,11 +72,18 @@ export async function migrate() {
       id SERIAL PRIMARY KEY,
       group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
       schedule_id INTEGER REFERENCES class_schedules(id) ON DELETE SET NULL,
+      occurrence_key TEXT NOT NULL,
       session_date DATE NOT NULL,
       starts_at TIMESTAMPTZ NOT NULL,
       opens_at TIMESTAMPTZ NOT NULL,
       closes_at TIMESTAMPTZ NOT NULL,
       ends_at TIMESTAMPTZ NOT NULL,
+      original_starts_at TIMESTAMPTZ NOT NULL,
+      original_opens_at TIMESTAMPTZ NOT NULL,
+      original_closes_at TIMESTAMPTZ NOT NULL,
+      original_ends_at TIMESTAMPTZ NOT NULL,
+      rescheduled_at TIMESTAMPTZ,
+      rescheduled_by INTEGER,
       status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed', 'cancelled')),
       absence_dispatched BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -253,7 +261,7 @@ export async function migrate() {
       ON password_reset_requests(expires_at);
   `);
 
-  // 2. تحديث وتعديل الأعمدة (ALTERs & Constraints) لضمان التوافق
+  // 2. Add compatible columns and constraints for existing installations.
   await query(`
     SET search_path TO public;
 
@@ -289,6 +297,7 @@ export async function migrate() {
 
     ALTER TABLE class_schedules ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     ALTER TABLE class_schedules ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE class_schedules ADD COLUMN IF NOT EXISTS slot_key TEXT;
 
     ALTER TABLE students ADD COLUMN IF NOT EXISTS student_serial TEXT;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS scan_serial TEXT;
@@ -308,6 +317,13 @@ export async function migrate() {
     ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS ends_at TIMESTAMPTZ;
     ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS absence_dispatched BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS occurrence_key TEXT;
+    ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS original_starts_at TIMESTAMPTZ;
+    ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS original_opens_at TIMESTAMPTZ;
+    ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS original_closes_at TIMESTAMPTZ;
+    ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS original_ends_at TIMESTAMPTZ;
+    ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS rescheduled_at TIMESTAMPTZ;
+    ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS rescheduled_by INTEGER;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_name_snapshot TEXT;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS student_code_snapshot TEXT;
     ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS whatsapp_notified BOOLEAN NOT NULL DEFAULT FALSE;
@@ -316,7 +332,55 @@ export async function migrate() {
     UPDATE groups SET grade_level = COALESCE(grade_level, grade), display_name = COALESCE(display_name, name);
   `);
 
-  // 3. تحديث السجلات وصيغ الأرقام والـ Serials
+  // Stable schedule-slot and attendance-occurrence identities. A recurring
+  // schedule can change its wall-clock time, but a dated attendance session
+  // must remain the same occurrence for records and outbox jobs.
+  await query(`
+    SET search_path TO public;
+
+    UPDATE class_schedules
+    SET slot_key = md5('class-schedule-slot:' || id::text)
+    WHERE slot_key IS NULL;
+
+    ALTER TABLE class_schedules
+      ALTER COLUMN slot_key SET DEFAULT md5(random()::text || clock_timestamp()::text);
+    ALTER TABLE class_schedules ALTER COLUMN slot_key SET NOT NULL;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'attendance_sessions_rescheduled_by_fkey'
+      ) THEN
+        ALTER TABLE attendance_sessions
+          ADD CONSTRAINT attendance_sessions_rescheduled_by_fkey
+          FOREIGN KEY (rescheduled_by) REFERENCES teachers(id) ON DELETE SET NULL;
+      END IF;
+    END $$;
+
+  `);
+
+  await query(`
+    SET search_path TO public;
+    CREATE TABLE IF NOT EXISTS attendance_session_reschedules (
+      id BIGSERIAL PRIMARY KEY,
+      session_id INTEGER NOT NULL REFERENCES attendance_sessions(id) ON DELETE RESTRICT,
+      actor_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      previous_starts_at TIMESTAMPTZ NOT NULL,
+      previous_opens_at TIMESTAMPTZ NOT NULL,
+      previous_closes_at TIMESTAMPTZ NOT NULL,
+      previous_ends_at TIMESTAMPTZ NOT NULL,
+      next_starts_at TIMESTAMPTZ NOT NULL,
+      next_opens_at TIMESTAMPTZ NOT NULL,
+      next_closes_at TIMESTAMPTZ NOT NULL,
+      next_ends_at TIMESTAMPTZ NOT NULL,
+      reason TEXT NOT NULL DEFAULT 'schedule_updated',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS attendance_session_reschedules_session_idx
+      ON attendance_session_reschedules(session_id, created_at DESC);
+  `);
+
+  // 3. Normalize records and serial formats.
   await query(`
     SET search_path TO public;
 
@@ -352,7 +416,8 @@ export async function migrate() {
     CREATE UNIQUE INDEX IF NOT EXISTS students_qr_token_unique ON students(qr_token);
     CREATE UNIQUE INDEX IF NOT EXISTS class_schedules_group_day_time_unique ON class_schedules(group_id, day_of_week, start_time, end_time);
 
-    DELETE FROM attendance_sessions WHERE schedule_id IS NULL;
+    -- Keep sessions whose recurring schedule was physically removed. Their
+    -- occurrence and attendance history must remain auditable.
     -- Older releases capped custom attendance windows at the class end and
     -- finalized sessions using ends_at. Repair only sessions that were closed
     -- by that rule and had no real attendance activity, so the new window can
@@ -399,29 +464,41 @@ export async function migrate() {
     FROM class_schedules cs
     WHERE cs.id = s.schedule_id AND cs.group_id = s.group_id;
 
+    UPDATE attendance_sessions s
+    SET occurrence_key = COALESCE(cs.slot_key, 'legacy-attendance-session:' || s.id::text),
+        original_starts_at = COALESCE(s.original_starts_at, s.starts_at),
+        original_opens_at = COALESCE(s.original_opens_at, s.opens_at),
+        original_closes_at = COALESCE(s.original_closes_at, s.closes_at),
+        original_ends_at = COALESCE(s.original_ends_at, s.ends_at)
+    FROM class_schedules cs
+    WHERE cs.id = s.schedule_id AND cs.group_id = s.group_id;
+
+    UPDATE attendance_sessions
+    SET occurrence_key = COALESCE(occurrence_key, 'legacy-attendance-session:' || id::text),
+        original_starts_at = COALESCE(original_starts_at, starts_at),
+        original_opens_at = COALESCE(original_opens_at, opens_at),
+        original_closes_at = COALESCE(original_closes_at, closes_at),
+        original_ends_at = COALESCE(original_ends_at, ends_at)
+    WHERE occurrence_key IS NULL
+       OR original_starts_at IS NULL
+       OR original_opens_at IS NULL
+       OR original_closes_at IS NULL
+       OR original_ends_at IS NULL;
+
     ALTER TABLE attendance_sessions ALTER COLUMN ends_at SET NOT NULL;
+    ALTER TABLE attendance_sessions ALTER COLUMN occurrence_key SET NOT NULL;
+    ALTER TABLE attendance_sessions ALTER COLUMN original_starts_at SET NOT NULL;
+    ALTER TABLE attendance_sessions ALTER COLUMN original_opens_at SET NOT NULL;
+    ALTER TABLE attendance_sessions ALTER COLUMN original_closes_at SET NOT NULL;
+    ALTER TABLE attendance_sessions ALTER COLUMN original_ends_at SET NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS class_schedules_slot_key_unique ON class_schedules(slot_key);
+    ALTER TABLE attendance_sessions DROP CONSTRAINT IF EXISTS attendance_sessions_group_schedule_date_unique;
+    CREATE UNIQUE INDEX IF NOT EXISTS attendance_sessions_group_occurrence_date_unique
+      ON attendance_sessions(group_id, occurrence_key, session_date);
 
-    DELETE FROM attendance_sessions duplicate
-    USING attendance_sessions keeper
-    WHERE duplicate.id < keeper.id
-      AND duplicate.group_id = keeper.group_id
-      AND duplicate.schedule_id = keeper.schedule_id
-      AND duplicate.session_date = keeper.session_date;
-
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'attendance_sessions_group_schedule_date_unique'
-      ) THEN
-        ALTER TABLE attendance_sessions
-          ADD CONSTRAINT attendance_sessions_group_schedule_date_unique
-          UNIQUE (group_id, schedule_id, session_date);
-      END IF;
-    END $$;
   `);
 
-  // 4. جداول الـ Inbox والـ Audit والـ Payments
+  // 4. Create inbox, audit, and payment tables.
   await query(`
     SET search_path TO public;
 
@@ -932,7 +1009,7 @@ export async function migrate() {
     ALTER TABLE fee_dues ADD CONSTRAINT fee_dues_student_id_fkey FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE SET NULL;
   `);
 
-  // 5. إدخال البيانات الافتراضية (Initial Seeding)
+  // 5. Seed default data.
   const center = await query(
     `
       INSERT INTO centers (name, address, latitude, longitude, allowed_radius_meters)
@@ -1202,6 +1279,31 @@ export async function migrate() {
      ON CONFLICT (key) DO NOTHING`,
     [JSON.stringify(DEFAULT_HOME_CONTENT)]
   );
+
+  // Attendance history is immutable: a session with records must not be
+  // deleted through a cascading foreign key.
+  await query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'attendance_records_session_id_fkey'
+          AND conrelid = 'public.attendance_records'::regclass
+          AND confdeltype <> 'r'
+      ) THEN
+        ALTER TABLE attendance_records DROP CONSTRAINT attendance_records_session_id_fkey;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'attendance_records_session_id_fkey'
+          AND conrelid = 'public.attendance_records'::regclass
+      ) THEN
+        ALTER TABLE attendance_records
+          ADD CONSTRAINT attendance_records_session_id_fkey
+          FOREIGN KEY (session_id) REFERENCES attendance_sessions(id) ON DELETE RESTRICT;
+      END IF;
+    END $$;
+  `);
 
   // Keep existing local seed data aligned with the current Arabic branding.
   await query("UPDATE groups SET subject = $1 WHERE subject = $2", ["العلوم", "العلوم المتكاملة"]);

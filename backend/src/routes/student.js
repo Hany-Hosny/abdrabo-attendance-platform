@@ -1,7 +1,7 @@
 import express from "express";
 import crypto from "node:crypto";
 import { query } from "../db/pool.js";
-import { getFeeSummary } from "../services/fees.js";
+import { getStudentFeePortalData } from "../services/fees.js";
 import { getDashboardData } from "../services/dashboard.js";
 import { normalizeDigits, normalizeStudentCode } from "../utils/normalizeDigits.js";
 import { normalizeScanValue } from "../utils/scan.js";
@@ -11,6 +11,8 @@ import { createStudentToken, hashStudentPortalAccessToken } from "../services/au
 import { authenticatedStudent } from "../services/studentAuth.js";
 import { ipKeyGenerator } from "express-rate-limit";
 import { requireActiveSessionAttendance } from "../middleware/requireActiveSessionAttendance.js";
+import path from "node:path";
+import fs from "node:fs";
 
 export const studentRouter = express.Router();
 const studentCodePattern = /^A-\d{4}$/;
@@ -211,21 +213,18 @@ studentRouter.get("/me/profile", async (req, res, next) => {
 });
 
 studentRouter.get("/me/fees", async (req, res, next) => {
+  res.set({
+    "Cache-Control": "private, no-store, max-age=0",
+    Pragma: "no-cache",
+    Expires: "0"
+  });
   try {
     const student = await authenticatedStudent(req);
     if (!student) {
       return res.status(401).json({ ok: false, status: "unauthorized", message: "بيانات الطالب غير صالحة. / Invalid student session." });
     }
-    const summary = await getFeeSummary(student.id);
-    const payments = await query(
-      `SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes, p.payment_months, p.whatsapp_notified,
-        COALESCE(t.name, t.username, t.email, 'Staff') AS paid_by
-       FROM payments p LEFT JOIN teachers t ON t.id = COALESCE(p.paid_by, p.recorded_by)
-       WHERE p.student_id=$1 ORDER BY COALESCE(p.paid_at, p.payment_date) DESC`,
-      [student.id]
-    );
-    const paymentStatus = summary?.payment_status || "unpaid";
-    return res.json({ ok: true, summary, payments: payments.rows, payment_status: paymentStatus });
+    const portalData = await getStudentFeePortalData(student.id);
+    return res.json({ ok: true, ...portalData });
   } catch (error) {
     next(error);
   }
@@ -338,4 +337,19 @@ studentRouter.get("/:id/exams", async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+    // مسار تحميل مباشر للأبلكيشن
+router.get("/app/download", (_req, res) => {
+  const filePath = path.resolve(process.cwd(), "public/downloads/Mr_Abdrabo_Edu.apk");
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ ok: false, status: "file_not_found" });
+  }
+
+  // يرسل الملف ويبدأ التحميل فوراً مع فرض اسم الملف
+  res.download(filePath, "Mr_Abdrabo_Edu.apk", (err) => {
+    if (err && !res.headersSent) {
+      res.status(500).json({ ok: false, status: "download_failed" });
+    }
+  });
 });

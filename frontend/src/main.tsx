@@ -1440,6 +1440,10 @@ const translations = {
     "admin.fieldRequired": "هذا الحقل مطلوب.",
     "admin.scheduleRequired": "اختر يوم حصة واحدًا على الأقل.",
     "admin.scheduleTimeRequired": "اختر وقت البداية والنهاية.",
+    "admin.scheduleIdentityRequired": "لاستبدال أو تعديل جدول قائم، يجب الاحتفاظ بمعرّف الجدول الحالي.",
+    "admin.scheduleSessionIdentityLocked": "جلسة حضور اليوم مرتبطة بسجل حضور ولا يمكن استبدال هوية جدولها.",
+    "admin.scheduleDayChangeRequiresReview": "لا يمكن تغيير يوم جلسة اليوم من خلال تعديل الجدول العام.",
+    "admin.sessionRescheduleDeliveryStarted": "بدأ إرسال إشعار غياب لهذه الجلسة؛ راجع العملية قبل تغيير موعدها.",
     "admin.invalidNumber": "أدخل قيمة رقمية صحيحة.",
     "admin.studentCodeFormat": "كود الطالب يجب أن يكون مثل A1234",
     "admin.generateCodeSerial": "توليد الكود والسريال",
@@ -1718,6 +1722,7 @@ const translations = {
     "studentFees.paidBy": "تم الدفع بواسطة",
     "studentFees.coveredCycle": "الشهر / دورة الفوترة",
     "studentFees.notes": "ملاحظات",
+    "studentFees.reversedPayment": "تم الإلغاء",
     "studentFees.noHistory": "لا توجد مدفوعات مسجلة.",
     "studentFees.loadError": "تعذر تحميل بيانات المصروفات.",
     "dashboard.currentTime": "الوقت الحالي",
@@ -2944,6 +2949,10 @@ const translations = {
     "admin.fieldRequired": "This field is required.",
     "admin.scheduleRequired": "Select at least one class day.",
     "admin.scheduleTimeRequired": "Select both a start and end time.",
+    "admin.scheduleIdentityRequired": "Existing schedule IDs must be retained when replacing or editing schedules.",
+    "admin.scheduleSessionIdentityLocked": "Today’s attendance session cannot be detached from its schedule identity.",
+    "admin.scheduleDayChangeRequiresReview": "Today’s session weekday cannot be changed through the recurring schedule editor.",
+    "admin.sessionRescheduleDeliveryStarted": "An absence notification has started or was delivered for this session; review is required before rescheduling.",
     "admin.invalidNumber": "Enter a valid number.",
     "admin.studentCodeFormat": "Student code must look like A1234",
     "admin.generateCodeSerial": "Generate Code & Serial",
@@ -3222,6 +3231,7 @@ const translations = {
     "studentFees.paidBy": "Paid by",
     "studentFees.coveredCycle": "Covered month / billing cycle",
     "studentFees.notes": "Notes",
+    "studentFees.reversedPayment": "Reversed",
     "studentFees.noHistory": "No payments recorded.",
     "studentFees.loadError": "Could not load fee data.",
     "dashboard.currentTime": "Current Time",
@@ -3655,6 +3665,19 @@ function profileSessionTitle(row: Record<string, any>) {
   return sessionName || groupName || "—";
 }
 
+function profileSessionTimeRange(row: Record<string, any>, language: Language) {
+  const originalStart = row.original_starts_at
+    ? formatLocalTime(String(row.original_starts_at), language)
+    : formatTimeOfDay(row.start_time, language);
+  const originalEnd = row.original_ends_at
+    ? formatLocalTime(String(row.original_ends_at), language)
+    : formatTimeOfDay(row.end_time, language);
+  if (!row.rescheduled_at) return `${originalStart}–${originalEnd}`;
+  const currentStart = formatTimeOfDay(row.start_time, language);
+  const currentEnd = formatTimeOfDay(row.end_time, language);
+  return `${originalStart}–${originalEnd} → ${currentStart}–${currentEnd}`;
+}
+
 function formatSessionWindow(session: Record<string, any>, language: Language) {
   const start = session.start_time
     ? formatTimeOfDay(String(session.start_time), language)
@@ -3810,6 +3833,10 @@ function roleLabel(role: string, t: Translator) {
 
 function adminApiErrorMessage(status: string | undefined, t: Translator) {
   if (status === "too_many_schedules") return "يمكن اختيار 3 أيام فقط كحد أقصى / You can select up to 3 days only.";
+  if (status === "schedule_identity_required") return t("admin.scheduleIdentityRequired");
+  if (status === "schedule_session_identity_locked") return t("admin.scheduleSessionIdentityLocked");
+  if (status === "schedule_day_change_requires_review") return t("admin.scheduleDayChangeRequiresReview");
+  if (status === "session_reschedule_delivery_started") return t("admin.sessionRescheduleDeliveryStarted");
   if (status === "user_exists") return t("errors.userExists");
   if (status === "password_too_short") return t("errors.passwordLength");
   if (status === "self_disable_forbidden") return t("errors.selfDisable");
@@ -8294,7 +8321,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
         <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b><strong className="profile-student-code-value" dir="ltr">{profile.student.student_code || "—"}<button className="profile-copy-button" type="button" onClick={() => void handleCopy()} aria-label={t("admin.copyStudentCode")} title={t("admin.copyStudentCodeTitle")} disabled={!profile.student.student_code}>{isCopied ? <svg className="profile-copy-icon is-copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg> : <svg className="profile-copy-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /></svg>}</button></strong></span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
       </div></section>
       <section className="profile-section profile-label-section"><h3>{t("admin.labelDetails")}</h3><div className="profile-label-card"><StudentLabelPreview student={profile.student} />{sessionHasPermission(session, "students.manage") ? <div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printProfileLabel} disabled={labelPrinting || !labelScanSerial(profile.student)}>{labelPrinting ? t("admin.printingLabel") : t("admin.printLabel")}</button><button className="secondary-button compact-button" type="button" onClick={regenerateProfileScanSerial} disabled={serialRegenerating}>{serialRegenerating ? t("admin.updating") : t("admin.regenerateScanSerial")}</button></div> : null}</div></section>
-      {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.excusedCount")}</b>{profile.attendance.excused_count || 0}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{formatTimeOfDay(row.start_time, language)}–{formatTimeOfDay(row.end_time, language)}</span></small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
+      {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.excusedCount")}</b>{profile.attendance.excused_count || 0}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{profileSessionTimeRange(row, language)}</span></small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
       {profile.exams ? <section className="profile-section" id="student360-evaluations"><h3>{t("admin.examHistory")}</h3>{profile.exams?.length ? <div className="profile-record-list profile-exam-list">{profile.exams.map((row: any) => { const evaluation = scoreEvaluation(row.score, row.max_score, t); return <div className="profile-exam-record" key={row.id}><div className="profile-exam-details"><strong>{displayValue(row.title, language)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small>{t("dashboard.latestExamDate")}: {formatDateOnly(String(row.exam_date || ""), language, "—")}</small>{row.note ? <small>{t("admin.assessment")}: {displayValue(row.note, language)}</small> : null}</div><div className="profile-exam-score">{row.score == null ? <strong>—</strong> : <><strong className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</strong>{evaluation ? <small className={`profile-exam-evaluation score-${evaluation.tone}`}>{evaluation.percentage.toFixed(0)}% — {evaluation.label}</small> : null}</>}</div></div>; })}</div> : <p className="empty-state">{t("admin.noProfileExams")}</p>}</section> : null}
       {profile.notes ? <section className="profile-section" id="student360-notes"><h3>{t("admin.notes")}</h3>{sessionHasPermission(session, "notes.manage") ? <form className="profile-note-form" onSubmit={saveNote}><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder={t("admin.notePlaceholder")} rows={3} /><button className="secondary-button compact-button" type="submit">{editingNoteId ? t("admin.editNote") : t("admin.addNote")}</button></form> : null}{profile.notes?.length ? <div className="profile-record-list">{profile.notes.map((note: any) => <div key={note.id}><span>{note.body}<small>{note.author_name} · {new Date(note.created_at).toLocaleString()}</small></span>{sessionHasPermission(session, "notes.manage") ? <div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setEditingNoteId(Number(note.id)); setNoteBody(note.body); }}>{t("admin.editNote")}</button><button className="secondary-button compact-button" type="button" onClick={() => deleteNote(Number(note.id))}>{t("admin.deleteNote")}</button></div> : null}</div>)}</div> : <p className="empty-state">{t("admin.noProfileNotes")}</p>}</section> : null}
       {profile.fees ? <section className="profile-section" id="student360-payments"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p>{profile.fees.payments ? <><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div className="profile-payment-record" key={row.id}><div className="profile-payment-amount"><strong>{money(row.amount)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><span>{row.payment_method || t("fees.normalPayment")}</span></div><div className="profile-record-primary"><span><b>{t("fees.paidBy")}:</b> {row.paid_by || "—"}</span><small><b>{t("fees.paymentDate")}:</b> {formatDateTime(String(row.paid_at || row.payment_date || ""), language, "—")}</small></div></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</> : null}</section> : null}
@@ -8853,6 +8880,14 @@ const FEE_HARDWARE_SCAN_IDLE_MS = 160;
 const FEE_HARDWARE_DEDUPE_WINDOW_MS = 1_500;
 const FEE_HARDWARE_SCAN_KEY_GAP_MS = 90;
 
+function isDeterministicPaymentResponse(status: unknown) {
+  return [
+    "invalid_student", "invalid_payment_method", "invalid_idempotency_key", "missing_idempotency_key",
+    "invalid_discount", "student_not_found", "not_found", "already_paid", "no_outstanding_fees",
+    "current_month_unpaid", "invalid_months", "month_already_paid", "idempotency_conflict"
+  ].includes(String(status || ""));
+}
+
 function FeesPanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
   const canCollect = sessionHasPermission(session, "payments.collect");
   const canAdvance = sessionHasPermission(session, "payments.advance");
@@ -8880,6 +8915,8 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
   const hardwareScanLastKeyAtRef = React.useRef(0);
   const hardwareScanLikelyRef = React.useRef(false);
   const lastHardwareScanRef = React.useRef({ value: "", at: 0 });
+  const normalPaymentKeyRef = React.useRef<string | null>(null);
+  const advancePaymentKeyRef = React.useRef<string | null>(null);
   const lookupValueRef = React.useRef<(value: string, options?: { preserveInput?: boolean }) => Promise<{ ok: boolean; error?: string }>>(async () => ({ ok: false }));
   useEffect(() => () => requestAbortRef.current?.abort(), []);
   useEffect(() => {
@@ -8893,7 +8930,17 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     setLookupLoading(false);
   }, [mode]);
 
+  useEffect(() => {
+    normalPaymentKeyRef.current = null;
+  }, [summary?.id, discountInput, isExempt, sendReceipt]);
+
+  useEffect(() => {
+    advancePaymentKeyRef.current = null;
+  }, [advanceData?.student?.id, selectedMonths.join(",")]);
+
   async function lookupValue(rawValue: string, options: { preserveInput?: boolean } = {}): Promise<{ ok: boolean; error?: string }> {
+    normalPaymentKeyRef.current = null;
+    advancePaymentKeyRef.current = null;
     setStatus("");
     setSummary(null);
     setAdvanceData(null);
@@ -9056,12 +9103,20 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     if (!summary) return;
     if (paymentLoading) return;
     setPaymentLoading(true);
+    const idempotencyKey = normalPaymentKeyRef.current || createIdempotencyKey();
+    normalPaymentKeyRef.current = idempotencyKey;
+    const discountAmount = isExempt ? 0 : Number(normalizeDigits(discountInput || "0"));
     try {
       const response = await fetch(`${API_BASE_URL}/admin/fees/payments`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey(), ...auth }, body: JSON.stringify({ student_id: summary.id, discount_amount: isExempt ? 0 : Number(normalizeDigits(discountInput || "0")), is_exempt: isExempt, send_whatsapp: canSendReceipts && sendReceipt })
+        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey, ...auth }, body: JSON.stringify({ student_id: summary.id, discount_amount: discountAmount, is_exempt: isExempt, send_whatsapp: canSendReceipts && sendReceipt })
       });
       const data = await response.json();
-      if (!response.ok || !data.ok) { setStatus(paymentErrorMessage(data.status, data.message, t)); return; }
+      if (!response.ok || !data.ok) {
+        if (isDeterministicPaymentResponse(data.status)) normalPaymentKeyRef.current = null;
+        setStatus(paymentErrorMessage(data.status, data.message, t));
+        return;
+      }
+      normalPaymentKeyRef.current = null;
       setStatus(data.whatsapp?.reason === "invalid_phone" ? `${t("fees.paymentRecorded")} — ${t("whatsapp.invalidPhone")}` : data.whatsapp?.queued ? `${t("fees.paymentRecorded")} — ${t("whatsapp.receiptQueued")}` : t("fees.paymentRecorded"));
       setSummary({ ...summary, paid_amount: summary.required_amount, remaining_balance: 0, current_cycle_paid: summary.current_cycle_fee, current_cycle_outstanding: 0 });
       setDiscountInput("");
@@ -9080,15 +9135,19 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
       const orderedMonths = (advanceData.months || [])
         .map((month: any) => month.month.slice(0, 7))
         .filter((month: string) => selectedMonths.includes(month));
+      const idempotencyKey = advancePaymentKeyRef.current || createIdempotencyKey();
+      advancePaymentKeyRef.current = idempotencyKey;
       const response = await fetch(`${API_BASE_URL}/admin/fees/advance-payments`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": createIdempotencyKey(), ...auth },
+        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey, ...auth },
         body: JSON.stringify({ student_id: advanceData.student.id, months: orderedMonths, send_whatsapp: canSendReceipts && sendReceipt })
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
+        if (isDeterministicPaymentResponse(data.status)) advancePaymentKeyRef.current = null;
         setStatus(data.status === "month_already_paid" ? t("fees.advanceAlreadyPaid") : t("fees.advanceFailed"));
         return;
       }
+      advancePaymentKeyRef.current = null;
       setStatus(data.whatsapp?.reason === "invalid_phone" ? `${t("fees.advanceSaved")} — ${t("whatsapp.invalidPhone")}` : data.whatsapp?.queued ? `${t("fees.advanceSaved")} — ${t("whatsapp.receiptQueued")}` : t("fees.advanceSaved"));
       setSelectedMonths([]);
       setSendReceipt(canSendReceipts);
@@ -11556,7 +11615,7 @@ function StudentDashboard({
     let cancelled = false;
     setFeesLoading(true);
     setFeesError("");
-    fetch(`${API_BASE_URL}/student/me/fees`, { headers: studentAuthHeaders(student.student_code) })
+    fetch(`${API_BASE_URL}/student/me/fees`, { cache: "no-store", headers: studentAuthHeaders(student.student_code) })
       .then(async (response) => {
         const result = await response.json();
         if (!response.ok || !result.ok) throw new Error(result.message || t("studentFees.loadError"));
@@ -12020,7 +12079,7 @@ function StudentFeesPanel({
     </div> : null}
     <p className="student-fees-status"><span>{t("studentFees.status")}</span><strong className={statusClass}>{statusText}</strong></p>
     <h3>{t("studentFees.history")}</h3>
-    <div className="table-wrap"><table><thead><tr><th>{t("studentFees.date")}</th><th>{t("studentFees.time")}</th><th>{t("studentFees.amount")}</th><th>{t("studentFees.paidBy")}</th><th>{t("studentFees.coveredCycle")}</th><th>{t("studentFees.notes")}</th></tr></thead><tbody>{(data.payments || []).map((payment: any) => { const paidAt = payment.paid_at || payment.payment_date; const date = paidAt ? new Date(paidAt) : null; return <tr key={payment.id}><td>{date ? date.toLocaleDateString(language === "ar" ? "ar-EG" : "en-US") : "—"}{payment.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{date ? date.toLocaleTimeString(language === "ar" ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" }) : "—"}</td><td>{amount(payment.amount)}</td><td>{payment.paid_by || "—"}</td><td>{coveredMonths(payment)}</td><td>{payment.notes || "—"}</td></tr>; })}{!data.payments?.length ? <EmptyRow columns={6} t={t} /> : null}</tbody></table></div>
+    <div className="table-wrap"><table><thead><tr><th>{t("studentFees.date")}</th><th>{t("studentFees.time")}</th><th>{t("studentFees.amount")}</th><th>{t("studentFees.paidBy")}</th><th>{t("studentFees.coveredCycle")}</th><th>{t("studentFees.notes")}</th></tr></thead><tbody>{(data.payments || []).map((payment: any) => { const paidAt = payment.paid_at || payment.payment_date; const date = paidAt ? new Date(paidAt) : null; const isReversed = Boolean(payment.is_reversed); return <tr key={payment.id}><td>{date ? date.toLocaleDateString(language === "ar" ? "ar-EG" : "en-US") : "—"}{payment.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{date ? date.toLocaleTimeString(language === "ar" ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" }) : "—"}</td><td><span className={isReversed ? "student-fee-payment-reversed" : undefined}>{amount(payment.amount)}</span>{isReversed ? <span className="student-fee-reversed-badge" role="status">{t("studentFees.reversedPayment")}</span> : null}</td><td>{payment.paid_by || "—"}</td><td>{coveredMonths(payment)}</td><td>{payment.notes || "—"}</td></tr>; })}{!data.payments?.length ? <EmptyRow columns={6} t={t} /> : null}</tbody></table></div>
   </div>;
 }
 
