@@ -805,6 +805,13 @@ const translations = {
     "fees.reversing": "جاري عكس الدفعة...",
     "fees.reversalSaved": "تم عكس الدفعة وتسجيل العملية.",
     "fees.reversalFailed": "تعذر عكس الدفعة.",
+    "fees.reversalUnauthorized": "انتهت جلسة الدخول، يرجى تسجيل الدخول مرة أخرى.",
+    "fees.reversalPermission": "ليست لديك صلاحية عكس هذه الدفعة.",
+    "fees.reversalAlreadyReversed": "تم عكس هذه الدفعة مسبقاً.",
+    "fees.reversalPaymentNotFound": "الدفعة غير موجودة أو لم تعد متاحة.",
+    "fees.reversalInvalidReason": "يرجى إدخال سبب صحيح لعكس الدفعة.",
+    "fees.reversalServerError": "تعذر تنفيذ العكس بسبب خطأ في الخادم. لم يتم اعتماد العملية.",
+    "fees.reversalNetworkError": "تعذر الاتصال بالخادم. لم يتم اعتماد العملية.",
     "fees.showDeleted": "إظهار الطلاب المحذوفين",
     "audit.title": "سجل النشاط الكامل",
     "audit.activityCenter": "مركز النشاط",
@@ -2299,6 +2306,13 @@ const translations = {
     "fees.reversing": "Reversing payment...",
     "fees.reversalSaved": "Payment reversed and recorded.",
     "fees.reversalFailed": "Could not reverse the payment.",
+    "fees.reversalUnauthorized": "Your session expired. Please sign in again.",
+    "fees.reversalPermission": "You do not have permission to reverse this payment.",
+    "fees.reversalAlreadyReversed": "This payment has already been reversed.",
+    "fees.reversalPaymentNotFound": "The payment was not found or is no longer available.",
+    "fees.reversalInvalidReason": "Please enter a valid reversal reason.",
+    "fees.reversalServerError": "The server could not complete the reversal. No change was committed.",
+    "fees.reversalNetworkError": "The server could not be reached. No change was committed.",
     "fees.showDeleted": "Show deleted students",
     "audit.title": "Complete Audit Logs",
     "audit.activityCenter": "Activity Center",
@@ -9990,6 +10004,17 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     setStatus("");
   }
 
+  function reversalErrorMessage(error: unknown) {
+    const code = error instanceof Error ? error.message : "";
+    if (code === "unauthorized" || code === "http_401") return t("fees.reversalUnauthorized");
+    if (code === "permission_required" || code === "http_403") return t("fees.reversalPermission");
+    if (code === "already_reversed" || code === "http_409") return t("fees.reversalAlreadyReversed");
+    if (code === "payment_not_found" || code === "http_404") return t("fees.reversalPaymentNotFound");
+    if (code === "invalid_reason" || code === "http_400") return t("fees.reversalInvalidReason");
+    if (error instanceof TypeError || code === "TypeError" || code === "Failed to fetch" || code === "fetch failed" || code === "network_error") return t("fees.reversalNetworkError");
+    return t("fees.reversalServerError");
+  }
+
   async function reversePayment(event?: React.FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     const paymentId = Number(reverseTarget?.id);
@@ -10001,7 +10026,10 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     try {
       const response = await fetch(`${API_BASE_URL}/admin/fees/payments/${paymentId}/reverse`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ reason }) });
       const data = await response.json().catch(() => null);
-      if (!response.ok || !data?.ok) throw new Error(data?.status || "reverse_failed");
+      if (!response.ok || !data?.ok) {
+        const errorCode = String(data?.status || (response.status ? `http_${response.status}` : "reverse_failed"));
+        throw new Error(errorCode);
+      }
 
       setReverseTarget(null);
       setReverseReason("");
@@ -10010,9 +10038,9 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
       // successful financial action into a misleading failure message.
       await searchReport().catch(() => undefined);
       window.dispatchEvent(new Event("fees-updated"));
-    } catch {
+    } catch (error) {
       setReverseError(true);
-      setStatus(t("fees.reversalFailed"));
+      setStatus(reversalErrorMessage(error));
     }
     finally { setReversing(false); }
   }
