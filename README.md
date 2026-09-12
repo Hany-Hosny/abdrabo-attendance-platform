@@ -5,8 +5,7 @@ Self-hosted attendance platform for Mr. Ahmed Abdrabo, Science teacher. V1 focus
 ## Dashboard Preview
 
 <p align="center">
-<img width="1470" height="719" alt="Screenshot 2026-09-12 at 13 46 07" src="https://github.com/user-attachments/assets/1168ee9a-3802-4493-a6e0-7bc2305f44d9" />
-  <img src="homepage.png" alt="Abdrabo Attendance homepage" width="49%">
+<img width="1470" height="719" alt="Screenshot 2026-09-12 at 13 46 07" src="https://github.com/user-attachments/assets/1168ee9a-3802-4493-a6e0-7bc2305f44d9"  width="49%" />
 </p>
 
 ## Run With Docker
