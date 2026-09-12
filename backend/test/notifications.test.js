@@ -25,14 +25,15 @@ test("records WhatsApp disconnect alerts only for active users with WhatsApp vie
   });
 
   assert.equal(result.recorded, 2);
-  assert.equal(inserts.length, 2);
-  assert.deepEqual(JSON.parse(inserts[0].params[1]), {
+  const notificationInserts = inserts.filter(({ sql }) => sql.includes("INSERT INTO notifications"));
+  assert.equal(notificationInserts.length, 2);
+  assert.deepEqual(JSON.parse(notificationInserts[0].params[1]), {
     status: "disconnected",
     reason: "logged_out",
     phoneNumber: "+201012345678"
   });
-  assert.equal(inserts[0].params[0], 1);
-  assert.equal(inserts[1].params[0], 2);
+  assert.equal(notificationInserts[0].params[0], 1);
+  assert.equal(notificationInserts[1].params[0], 2);
 });
 
 test("emails every active user with a valid email for an unexpected WhatsApp disconnect", async () => {
@@ -94,4 +95,36 @@ test("does not email users for a deliberate WhatsApp logout", async () => {
   assert.equal(result.recorded, 1);
   assert.equal(result.sent, 0);
   assert.equal(emailCount, 0);
+});
+
+test("suppresses repeated WhatsApp disconnect notifications and emails during the cooldown", async () => {
+  let gateClaimed = false;
+  let emailCount = 0;
+  const db = async (sql) => {
+    if (sql.startsWith("SELECT id, role, permissions, email")) {
+      return { rows: [{ id: 1, role: "owner", permissions: [], email: "owner@example.com" }] };
+    }
+    if (sql.includes("RETURNING id")) {
+      if (gateClaimed) return { rowCount: 0, rows: [] };
+      gateClaimed = true;
+      return { rowCount: 1, rows: [{ id: 1 }] };
+    }
+    return { rowCount: 1, rows: [] };
+  };
+  const options = {
+    reason: "connection_closed",
+    db,
+    getEmailConfig: async () => ({ providerConfigured: true, provider: "resend", fromEmail: "no-reply@example.com", senderName: "Abdrabo System", apiKey: "re_test" }),
+    sendEmail: async () => { emailCount += 1; }
+  };
+
+  const first = await recordWhatsAppConnectionNotification(options);
+  const second = await recordWhatsAppConnectionNotification(options);
+
+  assert.equal(first.recorded, 1);
+  assert.equal(first.sent, 1);
+  assert.equal(second.recorded, 0);
+  assert.equal(second.sent, 0);
+  assert.equal(second.suppressed, true);
+  assert.equal(emailCount, 1);
 });

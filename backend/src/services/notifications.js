@@ -1,9 +1,10 @@
-import crypto from "node:crypto";
 import { query } from "../db/pool.js";
 import { hasPermission } from "./rbac.js";
 import { listStudentsNeedingAttention } from "./studentAttention.js";
 import { sendPasswordRecoveryEmail } from "./email.js";
 import { getPasswordRecoveryConfig } from "./passwordRecoveryConfig.js";
+
+const WHATSAPP_CONNECTION_ALERT_COOLDOWN_MINUTES = 30;
 
 function cairoMonth() {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit" }).formatToParts(new Date());
@@ -243,21 +244,74 @@ export async function recordWhatsAppConnectionNotification({
   const recipients = await db(
     "SELECT id, role, permissions, email FROM teachers WHERE is_active = TRUE AND deleted_at IS NULL"
   );
-  const dedupeKey = `whatsapp_connection:${crypto.randomUUID()}`;
+  const dedupeKey = `whatsapp_connection:${reason}`;
   const payload = { status, reason, phoneNumber: phoneNumber || null };
+  const notificationRecipients = (recipients.rows || []).filter((recipient) => hasPermission(recipient, "whatsapp.view"));
   let recorded = 0;
-  for (const recipient of recipients.rows || []) {
-    if (!hasPermission(recipient, "whatsapp.view")) continue;
-    await db(
+  let shouldSendEmail = false;
+
+  // The deterministic key plus the conditional upsert forms an atomic,
+  // database-backed cooldown across every API instance.
+  const gateRecipient = notificationRecipients[0];
+  if (gateRecipient) {
+    const gate = await db(
       `INSERT INTO notifications (recipient_user_id, type, entity_type, entity_id, target_section, payload, dedupe_key, is_read, resolved_at)
        VALUES ($1, 'whatsapp_disconnected', 'whatsapp', NULL, 'whatsapp', $2::jsonb, $3, FALSE, NULL)
-       ON CONFLICT (recipient_user_id, dedupe_key) DO NOTHING`,
-      [recipient.id, JSON.stringify(payload), dedupeKey]
+       ON CONFLICT (recipient_user_id, dedupe_key) DO UPDATE SET
+         payload = EXCLUDED.payload,
+         is_read = FALSE,
+         resolved_at = NULL,
+         created_at = NOW(),
+         updated_at = NOW()
+       WHERE notifications.created_at < NOW() - ($4 * INTERVAL '1 minute')
+       RETURNING id`,
+      [gateRecipient.id, JSON.stringify(payload), dedupeKey, WHATSAPP_CONNECTION_ALERT_COOLDOWN_MINUTES]
     );
-    recorded += 1;
+    shouldSendEmail = Boolean(gate.rowCount);
   }
-  const emails = await sendWhatsAppDisconnectEmails(recipients.rows || [], { reason, phoneNumber, db, sendEmail, getEmailConfig });
-  return { recorded, status, reason, ...emails };
+
+  if (shouldSendEmail) {
+    await db(
+      `UPDATE notifications
+       SET resolved_at = NOW(), is_read = TRUE, updated_at = NOW()
+       WHERE recipient_user_id = ANY($1::int[])
+         AND type = 'whatsapp_disconnected'
+         AND resolved_at IS NULL
+         AND dedupe_key LIKE 'whatsapp_connection:%'
+         AND dedupe_key <> $2`,
+      [notificationRecipients.map((recipient) => recipient.id), dedupeKey]
+    );
+  }
+
+  if (shouldSendEmail) {
+    for (const recipient of notificationRecipients) {
+      if (recipient.id === gateRecipient.id) {
+        recorded += 1;
+        continue;
+      }
+      await db(
+        `INSERT INTO notifications (recipient_user_id, type, entity_type, entity_id, target_section, payload, dedupe_key, is_read, resolved_at)
+         VALUES ($1, 'whatsapp_disconnected', 'whatsapp', NULL, 'whatsapp', $2::jsonb, $3, FALSE, NULL)
+         ON CONFLICT (recipient_user_id, dedupe_key) DO UPDATE SET
+           payload = EXCLUDED.payload,
+           is_read = FALSE,
+           resolved_at = NULL,
+           created_at = NOW(),
+           updated_at = NOW()`,
+        [recipient.id, JSON.stringify(payload), dedupeKey]
+      );
+      recorded += 1;
+    }
+  }
+
+  const emails = shouldSendEmail
+    ? await sendWhatsAppDisconnectEmails(recipients.rows || [], { reason, phoneNumber, db, sendEmail, getEmailConfig })
+    : {
+      sent: 0,
+      failed: 0,
+      skipped: (recipients.rows || []).filter((recipient) => validEmail(recipient.email)).length
+    };
+  return { recorded, status, reason, suppressed: !shouldSendEmail, ...emails };
 }
 
 export async function listNotificationsForUser(teacher, { limit = 10, db = query } = {}) {
