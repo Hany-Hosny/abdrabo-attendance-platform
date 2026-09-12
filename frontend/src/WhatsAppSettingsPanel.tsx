@@ -35,6 +35,12 @@ type WhatsAppHistoryRow = {
   student_name: string | null;
   student_code: string | null;
 };
+type WhatsAppHistoryStats = {
+  total: number;
+  sent: number;
+  failed: number;
+  pending: number;
+};
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
 const TEMPLATE_TOKEN_PATTERN = /\{\{?\s*([a-zA-Z0-9_-]+)\s*\}\}?/gi;
@@ -107,7 +113,8 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "language" | "t">) {
   const [messages, setMessages] = useState<WhatsAppHistoryRow[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
+  const [stats, setStats] = useState<WhatsAppHistoryStats>({ total: 0, sent: 0, failed: 0, pending: 0 });
+  const [statsLoading, setStatsLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [type, setType] = useState("");
   const [status, setStatus] = useState("");
@@ -135,7 +142,6 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
         if (!response.ok || !payload.ok) throw new Error("history_failed");
         const nextMessages = Array.isArray(payload.messages) ? payload.messages : [];
         setMessages(nextMessages);
-        setTotalCount(Number.isSafeInteger(Number(payload.total)) ? Number(payload.total) : nextMessages.length);
         setError(false);
         setPermissionDenied(false);
       })
@@ -144,12 +150,47 @@ function WhatsAppMessageHistory({ token, language, t }: Pick<Props, "token" | "l
     return () => controller.abort();
   }, [from, refreshKey, search, status, to, token, type]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    setStatsLoading(true);
+    fetch(`${API_BASE_URL}/whatsapp/history/stats`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) throw new Error("history_stats_failed");
+        const nextStats = payload.stats || {};
+        setStats({
+          total: Number(nextStats.total) || 0,
+          sent: Number(nextStats.sent) || 0,
+          failed: Number(nextStats.failed) || 0,
+          pending: Number(nextStats.pending) || 0
+        });
+      })
+      .catch((reason) => { if (reason?.name !== "AbortError") setStats({ total: 0, sent: 0, failed: 0, pending: 0 }); })
+      .finally(() => { if (!controller.signal.aborted) setStatsLoading(false); });
+    return () => controller.abort();
+  }, [refreshKey, token]);
+
   const typeLabel = (value: string) => t(`whatsapp.historyType.${value}`);
   const statusLabel = (value: string) => t(`whatsapp.historyStatus.${value}`);
   const formatDate = (value: string) => new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Cairo" }).format(new Date(value));
+  const formatCount = (value: number) => value.toLocaleString(language === "ar" ? "ar-EG" : "en-US");
+  const statCards = [
+    { key: "total", label: "whatsapp.historyStatsTotal", tone: "total", icon: "◉" },
+    { key: "sent", label: "whatsapp.historyStatsSent", tone: "sent", icon: "✓" },
+    { key: "failed", label: "whatsapp.historyStatsFailed", tone: "failed", icon: "!" },
+    { key: "pending", label: "whatsapp.historyStatsPending", tone: "pending", icon: "◌" }
+  ] as const;
 
   return <div className="whatsapp-history-panel">
-    <div className="whatsapp-history-toolbar"><span className="whatsapp-history-count">{t("whatsapp.historyCount", { count: String(totalCount) })}</span><button className={`secondary-button compact-button whatsapp-history-refresh ${loading ? "is-loading" : ""}`} type="button" onClick={() => setRefreshKey((current) => current + 1)} disabled={loading}><span className="whatsapp-history-refresh-icon" aria-hidden="true">↻</span><span>{loading ? t("whatsapp.historyRefreshing") : t("whatsapp.historyRefresh")}</span></button></div>
+    <div className="whatsapp-history-toolbar"><button className={`secondary-button compact-button whatsapp-history-refresh ${loading ? "is-loading" : ""}`} type="button" onClick={() => setRefreshKey((current) => current + 1)} disabled={loading}><span className="whatsapp-history-refresh-icon" aria-hidden="true">↻</span><span>{loading ? t("whatsapp.historyRefreshing") : t("whatsapp.historyRefresh")}</span></button></div>
+    <div className="whatsapp-history-stats" aria-label={t("whatsapp.messageHistoryTitle")}>
+      {statCards.map((card) => {
+        const content = <><span className="whatsapp-history-stat-icon" aria-hidden="true">{card.icon}</span><span className="whatsapp-history-stat-copy"><strong>{statsLoading ? "—" : formatCount(stats[card.key])}</strong><small>{t(card.label)}</small></span></>;
+        return card.key === "failed"
+          ? <button className={`whatsapp-history-stat-card ${card.tone} is-clickable ${status === "failed" ? "is-active" : ""}`} type="button" key={card.key} onClick={() => { setStatus("failed"); setExpandedId(null); }} aria-pressed={status === "failed"}>{content}</button>
+          : <div className={`whatsapp-history-stat-card ${card.tone}`} key={card.key}>{content}</div>;
+      })}
+    </div>
     <div className="whatsapp-history-filters">
       <label><span>{t("whatsapp.historyTypeLabel")}</span><select value={type} onChange={(event) => setType(event.target.value)}><option value="">{t("whatsapp.historyAllTypes")}</option><option value="attendance">{typeLabel("attendance")}</option><option value="grade">{typeLabel("grade")}</option><option value="receipt">{typeLabel("receipt")}</option><option value="advance_payment">{typeLabel("advance_payment")}</option></select></label>
       <label><span>{t("whatsapp.historyStatusLabel")}</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">{t("whatsapp.historyAllStatuses")}</option><option value="sent">{statusLabel("sent")}</option><option value="pending">{statusLabel("pending")}</option><option value="processing">{statusLabel("processing")}</option><option value="failed">{statusLabel("failed")}</option><option value="skipped">{statusLabel("skipped")}</option></select></label>
@@ -456,7 +497,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
         <button className={activeTab === "templates" ? "active" : ""} type="button" role="tab" aria-selected={activeTab === "templates"} onClick={() => setActiveTab("templates")}>{t("whatsapp.templatesTab")}</button>
         <button className={activeTab === "history" ? "active" : ""} type="button" role="tab" aria-selected={activeTab === "history"} onClick={() => setActiveTab("history")}>{t("whatsapp.historyTab")}</button>
       </div>
-      <div className="settings-section-heading"><span>{activeTab === "templates" ? "03–07" : "08"}</span><div><h3>{t(activeTab === "templates" ? "whatsapp.templatesTitle" : "whatsapp.messageHistoryTitle")}</h3><p>{t(activeTab === "templates" ? "whatsapp.templatesDescription" : "whatsapp.messageHistoryDescription")}</p></div></div>
+      <div className="settings-section-heading">{activeTab === "templates" ? <span>03–07</span> : null}<div><h3>{t(activeTab === "templates" ? "whatsapp.templatesTitle" : "whatsapp.messageHistoryTitle")}</h3><p>{t(activeTab === "templates" ? "whatsapp.templatesDescription" : "whatsapp.messageHistoryDescription")}</p></div></div>
       {activeTab === "history" ? <WhatsAppMessageHistory token={token} language={language} t={t} /> : <>
         <div className="whatsapp-template-groups">
         {memoizedTemplateGroups.map((group) => {

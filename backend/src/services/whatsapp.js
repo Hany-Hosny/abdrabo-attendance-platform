@@ -61,6 +61,18 @@ const QR_WAIT_TIMEOUT_MS = 25000;
 const CONNECTION_STALL_TIMEOUT_MS = 45000;
 const CONNECTION_HEALTHCHECK_INTERVAL_MS = 30000;
 const MAX_RECONNECT_DELAY_MS = 30000;
+const WHATSAPP_OWNER_ID = String(process.env.WHATSAPP_OWNER_ID || `${process.pid}-${crypto.randomUUID()}`).slice(0, 128);
+const WHATSAPP_OWNER_LEASE_KEY = WHATSAPP_AUTH_SESSION_ID;
+const WHATSAPP_OWNER_LEASE_MS = 4 * 60_000;
+const WHATSAPP_OWNER_RENEWAL_INTERVAL_MS = 30_000;
+const WHATSAPP_OWNER_RETRY_MIN_MS = 5_000;
+const WHATSAPP_OWNER_RETRY_MAX_MS = 15_000;
+const WHATSAPP_SEND_SLOT_KEY = WHATSAPP_AUTH_SESSION_ID;
+const JOB_LEASE_MS = 4 * 60_000;
+const JOB_LEASE_RENEWAL_CHUNK_MS = 30_000;
+const JOB_PROVIDER_TIMEOUT_MS = 45_000;
+const GRADE_PORTAL_PREVIEW_MARKER = "[secure-link-generated-at-send]";
+const RETRY_REASON_MAX_LENGTH = 500;
 const state = {
   status: "disconnected",
   phoneNumber: null,
@@ -79,6 +91,16 @@ const state = {
   reconnectAttempt: 0,
   connectionWatchdog: null,
   connectionHealthcheckClosing: false,
+  whatsappOwnerToken: null,
+  whatsappOwnershipRetryTimer: null,
+  whatsappOwnerRenewalTimer: null,
+  whatsappOwnerRenewalRetryTimer: null,
+  whatsappOwnerLeaseExpiryTimer: null,
+  whatsappOwnerRenewalFailures: 0,
+  confirmedWhatsAppLeaseExpiresAt: null,
+  ownsWhatsAppSession: false,
+  whatsappOwnershipPromise: null,
+  whatsappOwnershipLostPromise: null,
 };
 
 let authWriteTail = Promise.resolve();
@@ -102,6 +124,7 @@ async function writeAuthRows(rows) {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      await assertWhatsAppOwnershipOnClient(client);
       for (const row of rows) {
         if (row.deleted) {
           await client.query(
@@ -120,6 +143,7 @@ async function writeAuthRows(rows) {
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
+      if (error?.code === "whatsapp_ownership_lost") await handleWhatsAppOwnershipLost("credential_write_rejected");
       throw error;
     } finally {
       client.release();
@@ -153,7 +177,7 @@ async function usePostgresAuthState() {
       keys: {
         get: async (type, ids) => {
           if (!ids.length) return {};
-          const keyIds = ids.map((id) => `\({type}-\){id}`);
+          const keyIds = ids.map((id) => `${type}-${id}`);
           const result = await query(
             "SELECT key_id, key_data FROM whatsapp_auth_state WHERE session_id = $1 AND key_id = ANY($2::text[])",
             [WHATSAPP_AUTH_SESSION_ID, keyIds]
@@ -161,7 +185,7 @@ async function usePostgresAuthState() {
           const stored = new Map(result.rows.map((row) => [row.key_id, row.key_data]));
           const data = {};
           for (const id of ids) {
-            const value = stored.get(`\({type}-\){id}`);
+            const value = stored.get(`${type}-${id}`);
             if (value == null) {
               data[id] = null;
               continue;
@@ -177,7 +201,7 @@ async function usePostgresAuthState() {
           const rows = [];
           for (const [type, values] of Object.entries(data || {})) {
             for (const [id, value] of Object.entries(values || {})) {
-              rows.push({ keyId: `\({type}-\){id}`, value, deleted: value == null });
+              rows.push({ keyId: `${type}-${id}`, value, deleted: value == null });
             }
           }
           if (rows.length) await writeAuthRows(rows);
@@ -342,8 +366,257 @@ async function closeStaleSocket(socket, reason = "whatsapp_stale_socket") {
   try {
     await Promise.resolve().then(() => socket.end(new Error(reason)));
   } catch (error) {
-    console.warn("Failed to close stale WhatsApp socket", error);
+    console.warn("Failed to close stale WhatsApp socket", safeWorkerError(error));
   }
+}
+
+function clearWhatsAppOwnershipRetry() {
+  if (state.whatsappOwnershipRetryTimer) clearTimeout(state.whatsappOwnershipRetryTimer);
+  state.whatsappOwnershipRetryTimer = null;
+}
+
+function clearWhatsAppOwnershipRenewalRetry() {
+  if (state.whatsappOwnerRenewalRetryTimer) clearTimeout(state.whatsappOwnerRenewalRetryTimer);
+  state.whatsappOwnerRenewalRetryTimer = null;
+}
+
+function scheduleConfirmedLeaseExpiryGuard() {
+  if (state.whatsappOwnerLeaseExpiryTimer) clearTimeout(state.whatsappOwnerLeaseExpiryTimer);
+  state.whatsappOwnerLeaseExpiryTimer = null;
+  if (!Number.isFinite(state.confirmedWhatsAppLeaseExpiresAt)) return;
+  const delay = Math.max(0, state.confirmedWhatsAppLeaseExpiresAt - Date.now());
+  state.whatsappOwnerLeaseExpiryTimer = setTimeout(() => {
+    state.whatsappOwnerLeaseExpiryTimer = null;
+    if (!isLocallyWithinConfirmedLease()) void handleWhatsAppOwnershipLost("whatsapp_ownership_lease_expired");
+  }, delay);
+}
+
+function isLocallyWithinConfirmedLease(now = Date.now()) {
+  return Number.isFinite(state.confirmedWhatsAppLeaseExpiresAt)
+    && state.confirmedWhatsAppLeaseExpiresAt > now;
+}
+
+export { isLocallyWithinConfirmedLease };
+
+function scheduleWhatsAppOwnershipRetry(force = false) {
+  if (state.manuallyDisconnected || state.whatsappOwnershipRetryTimer || (!force && state.ownsWhatsAppSession)) return;
+  const delay = WHATSAPP_OWNER_RETRY_MIN_MS + randomInteger(0, WHATSAPP_OWNER_RETRY_MAX_MS - WHATSAPP_OWNER_RETRY_MIN_MS);
+  state.whatsappOwnershipRetryTimer = setTimeout(() => {
+    state.whatsappOwnershipRetryTimer = null;
+    if (state.manuallyDisconnected) return;
+    void acquireWhatsAppOwnership()
+      .then(async (acquired) => {
+        if (!acquired) {
+          scheduleWhatsAppOwnershipRetry(true);
+          return;
+        }
+        if (await hasWhatsAppAuthState()) await connectWhatsApp();
+      })
+      .catch((error) => {
+        console.error("WhatsApp ownership retry failed", safeWorkerError(error));
+        scheduleWhatsAppOwnershipRetry(true);
+      });
+  }, delay);
+}
+
+function startWhatsAppOwnerRenewal() {
+  if (state.whatsappOwnerRenewalTimer) clearInterval(state.whatsappOwnerRenewalTimer);
+  state.whatsappOwnerRenewalTimer = setInterval(() => {
+    void renewWhatsAppOwnership().catch((error) => {
+      console.error("WhatsApp ownership renewal failed", safeWorkerError(error));
+    });
+  }, WHATSAPP_OWNER_RENEWAL_INTERVAL_MS);
+}
+
+async function acquireWhatsAppOwnership() {
+  if (state.whatsappOwnershipPromise) return state.whatsappOwnershipPromise;
+  state.whatsappOwnershipPromise = acquireWhatsAppOwnershipOnce();
+  try {
+    return await state.whatsappOwnershipPromise;
+  } finally {
+    state.whatsappOwnershipPromise = null;
+  }
+}
+
+async function acquireWhatsAppOwnershipOnce() {
+  const canRenewCurrentLease = state.whatsappOwnerToken && isLocallyWithinConfirmedLease();
+  if (state.ownsWhatsAppSession && !canRenewCurrentLease) {
+    await handleWhatsAppOwnershipLost("confirmed_lease_expired");
+  }
+  const ownerToken = canRenewCurrentLease ? state.whatsappOwnerToken : crypto.randomUUID();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(
+      `INSERT INTO whatsapp_session_leases
+         (session_key, owner_id, owner_token, lease_expires_at, created_at, updated_at)
+       VALUES ($1, $2, $3, NOW() + ($4 * INTERVAL '1 millisecond'), NOW(), NOW())
+       ON CONFLICT (session_key) DO UPDATE
+       SET owner_id = EXCLUDED.owner_id,
+           owner_token = EXCLUDED.owner_token,
+           lease_expires_at = EXCLUDED.lease_expires_at,
+           updated_at = NOW()
+       WHERE whatsapp_session_leases.lease_expires_at <= NOW()
+          OR (whatsapp_session_leases.owner_id = EXCLUDED.owner_id
+              AND whatsapp_session_leases.owner_token = EXCLUDED.owner_token)
+       RETURNING owner_id, owner_token, lease_expires_at`,
+      [WHATSAPP_OWNER_LEASE_KEY, WHATSAPP_OWNER_ID, ownerToken, WHATSAPP_OWNER_LEASE_MS]
+    );
+    await client.query("COMMIT");
+    if (!result.rowCount) {
+      const wasLocalOwner = state.ownsWhatsAppSession || Boolean(state.socket);
+      state.ownsWhatsAppSession = false;
+      state.confirmedWhatsAppLeaseExpiresAt = null;
+      if (wasLocalOwner) await handleWhatsAppOwnershipLost("whatsapp_ownership_taken_over");
+      scheduleWhatsAppOwnershipRetry();
+      return false;
+    }
+    state.whatsappOwnerToken = ownerToken;
+    state.ownsWhatsAppSession = true;
+    state.confirmedWhatsAppLeaseExpiresAt = new Date(result.rows[0].lease_expires_at).getTime();
+    scheduleConfirmedLeaseExpiryGuard();
+    state.whatsappOwnerRenewalFailures = 0;
+    clearWhatsAppOwnershipRenewalRetry();
+    state.manuallyDisconnected = false;
+    clearWhatsAppOwnershipRetry();
+    startWhatsAppOwnerRenewal();
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function handleWhatsAppOwnershipLost(reason = "whatsapp_ownership_lost") {
+  if (state.whatsappOwnershipLostPromise) return state.whatsappOwnershipLostPromise;
+  state.whatsappOwnershipLostPromise = (async () => {
+    state.ownsWhatsAppSession = false;
+    state.manuallyDisconnected = true;
+    if (state.whatsappOwnerRenewalTimer) clearInterval(state.whatsappOwnerRenewalTimer);
+    state.whatsappOwnerRenewalTimer = null;
+    if (state.whatsappOwnerLeaseExpiryTimer) clearTimeout(state.whatsappOwnerLeaseExpiryTimer);
+    state.whatsappOwnerLeaseExpiryTimer = null;
+    clearWhatsAppOwnershipRenewalRetry();
+    state.whatsappOwnerToken = null;
+    state.confirmedWhatsAppLeaseExpiresAt = null;
+    const socket = state.socket;
+    state.socket = null;
+    state.connectionEstablished = false;
+    setDisconnected();
+    if (socket) await closeStaleSocket(socket, reason);
+    state.manuallyDisconnected = false;
+    scheduleWhatsAppOwnershipRetry();
+  })();
+  try {
+    await state.whatsappOwnershipLostPromise;
+  } finally {
+    state.whatsappOwnershipLostPromise = null;
+  }
+}
+
+async function renewWhatsAppOwnership() {
+  if (!state.ownsWhatsAppSession || !state.whatsappOwnerToken) return false;
+  try {
+    const result = await query(
+      `UPDATE whatsapp_session_leases
+       SET lease_expires_at = NOW() + ($4 * INTERVAL '1 millisecond'), updated_at = NOW()
+       WHERE session_key = $1 AND owner_id = $2 AND owner_token = $3 AND lease_expires_at > NOW()
+       RETURNING lease_expires_at`,
+      [WHATSAPP_OWNER_LEASE_KEY, WHATSAPP_OWNER_ID, state.whatsappOwnerToken, WHATSAPP_OWNER_LEASE_MS]
+    );
+    if (result.rowCount) {
+      state.confirmedWhatsAppLeaseExpiresAt = new Date(result.rows[0].lease_expires_at).getTime();
+      scheduleConfirmedLeaseExpiryGuard();
+      state.whatsappOwnerRenewalFailures = 0;
+      clearWhatsAppOwnershipRenewalRetry();
+      return true;
+    }
+    await handleWhatsAppOwnershipLost("whatsapp_ownership_lost");
+    return false;
+  } catch (error) {
+    state.whatsappOwnerRenewalFailures = Math.min(state.whatsappOwnerRenewalFailures + 1, 4);
+    if (isLocallyWithinConfirmedLease()) {
+      const delay = Math.min(
+        WHATSAPP_OWNER_RETRY_MAX_MS,
+        WHATSAPP_OWNER_RETRY_MIN_MS * (2 ** Math.max(0, state.whatsappOwnerRenewalFailures - 1))
+      );
+      if (!state.whatsappOwnerRenewalRetryTimer) {
+        state.whatsappOwnerRenewalRetryTimer = setTimeout(() => {
+          state.whatsappOwnerRenewalRetryTimer = null;
+          void renewWhatsAppOwnership().catch((retryError) => {
+            console.error("WhatsApp ownership renewal retry failed", safeWorkerError(retryError));
+          });
+        }, delay);
+      }
+    } else {
+      await handleWhatsAppOwnershipLost("whatsapp_ownership_lease_expired");
+    }
+    throw error;
+  }
+}
+
+async function verifyWhatsAppOwnership() {
+  if (!state.whatsappOwnerToken) return false;
+  try {
+    const result = await query(
+      `SELECT lease_expires_at
+       FROM whatsapp_session_leases
+       WHERE session_key = $1 AND owner_id = $2 AND owner_token = $3 AND lease_expires_at > NOW()
+       LIMIT 1`,
+      [WHATSAPP_OWNER_LEASE_KEY, WHATSAPP_OWNER_ID, state.whatsappOwnerToken]
+    );
+    if (!result.rowCount) {
+      await handleWhatsAppOwnershipLost("whatsapp_ownership_lost");
+      return false;
+    }
+    state.confirmedWhatsAppLeaseExpiresAt = new Date(result.rows[0].lease_expires_at).getTime();
+    scheduleConfirmedLeaseExpiryGuard();
+    return isLocallyWithinConfirmedLease();
+  } catch (error) {
+    if (!isLocallyWithinConfirmedLease()) await handleWhatsAppOwnershipLost("whatsapp_ownership_lease_expired");
+    throw error;
+  }
+}
+
+export { verifyWhatsAppOwnership };
+
+async function assertWhatsAppOwnershipOnClient(client) {
+  const result = await client.query(
+    `SELECT lease_expires_at
+     FROM whatsapp_session_leases
+     WHERE session_key = $1 AND owner_id = $2 AND owner_token = $3 AND lease_expires_at > NOW()
+     FOR UPDATE`,
+    [WHATSAPP_OWNER_LEASE_KEY, WHATSAPP_OWNER_ID, state.whatsappOwnerToken]
+  );
+  if (!result.rowCount) {
+    const error = new Error("whatsapp_ownership_lost");
+    error.code = "whatsapp_ownership_lost";
+    throw error;
+  }
+  state.confirmedWhatsAppLeaseExpiresAt = new Date(result.rows[0].lease_expires_at).getTime();
+  scheduleConfirmedLeaseExpiryGuard();
+  return true;
+}
+
+async function releaseWhatsAppOwnership() {
+  const ownerToken = state.whatsappOwnerToken;
+  if (!ownerToken) return;
+  await query(
+    `UPDATE whatsapp_session_leases
+     SET lease_expires_at = NOW(), updated_at = NOW()
+     WHERE session_key = $1 AND owner_id = $2 AND owner_token = $3`,
+    [WHATSAPP_OWNER_LEASE_KEY, WHATSAPP_OWNER_ID, ownerToken]
+  );
+  state.ownsWhatsAppSession = false;
+  state.whatsappOwnerToken = null;
+  state.confirmedWhatsAppLeaseExpiresAt = null;
+  if (state.whatsappOwnerRenewalTimer) clearInterval(state.whatsappOwnerRenewalTimer);
+  state.whatsappOwnerRenewalTimer = null;
+  clearWhatsAppOwnershipRenewalRetry();
+  if (state.whatsappOwnerLeaseExpiryTimer) clearTimeout(state.whatsappOwnerLeaseExpiryTimer);
+  state.whatsappOwnerLeaseExpiryTimer = null;
 }
 
 function armConnectionWatchdog(socket) {
@@ -352,7 +625,7 @@ function armConnectionWatchdog(socket) {
     if (state.socket !== socket || state.status === "connected" || state.manuallyDisconnected) return;
     console.warn("WhatsApp connection stalled; closing the socket so it can reconnect safely");
     void Promise.resolve(socket.end(new Error("whatsapp_connection_timeout"))).catch((error) => {
-      console.error("Failed to close stalled WhatsApp socket", error);
+      console.error("Failed to close stalled WhatsApp socket", safeWorkerError(error));
     });
   }, CONNECTION_STALL_TIMEOUT_MS);
 }
@@ -371,7 +644,7 @@ function armConnectedWatchdog(socket) {
       state.connectionHealthcheckClosing = true;
       console.warn("WhatsApp health check found a closed WebSocket; reconnecting");
       void Promise.resolve(socket.end(new Error("whatsapp_healthcheck_failed"))).catch((error) => {
-        console.error("Failed to close unhealthy WhatsApp socket", error);
+        console.error("Failed to close unhealthy WhatsApp socket", safeWorkerError(error));
       }).finally(() => { state.connectionHealthcheckClosing = false; });
     }
   }, CONNECTION_HEALTHCHECK_INTERVAL_MS);
@@ -379,6 +652,13 @@ function armConnectedWatchdog(socket) {
 }
 
 export async function connectWhatsApp() {
+  state.manuallyDisconnected = false;
+  try {
+    if (!await acquireWhatsAppOwnership()) return getWhatsAppStatus();
+  } catch (error) {
+    scheduleWhatsAppOwnershipRetry();
+    throw error;
+  }
   if (state.status === "connected" && hasUsableSocket(state.socket)) return getWhatsAppStatus();
   if (state.status === "connected" && state.socket) {
     const staleSocket = state.socket;
@@ -387,10 +667,16 @@ export async function connectWhatsApp() {
   }
   if (state.status === "connecting" && state.socket) return getWhatsAppStatus();
   if (state.connecting) await state.connecting.catch(() => undefined);
-  state.manuallyDisconnected = false;
   state.status = "connecting";
   state.connecting = (async () => {
     const { state: authState, saveCreds } = await usePostgresAuthState();
+    // Auth state loading performs database reads. Re-check immediately before
+    // creating the socket so a lease that expired while loading cannot open a
+    // stale Baileys connection.
+    if (!(await renewWhatsAppOwnership()) || !(await verifyWhatsAppOwnership())) {
+      await handleWhatsAppOwnershipLost("whatsapp_ownership_unverified_before_socket");
+      return getWhatsAppStatus();
+    }
     const socket = makeWASocket({
       auth: authState,
       browser: Browsers.ubuntu("Abdrabo Attendance"),
@@ -408,7 +694,7 @@ export async function connectWhatsApp() {
     armConnectionWatchdog(socket);
     socket.ev.on("creds.update", () => {
       void saveCreds().catch((error) => {
-        console.error("Failed to persist WhatsApp credentials", error);
+        console.error("Failed to persist WhatsApp credentials", safeWorkerError(error));
       });
     });
     socket.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
@@ -422,10 +708,26 @@ export async function connectWhatsApp() {
           const qrData = await withTimeout(QRCode.toDataURL(qr, { margin: 1, width: 320 }), QR_RENDER_TIMEOUT_MS, "qr_generation_timeout");
           if (state.socket === socket && state.status === "connecting" && state.qrGeneration === generation) state.qr = qrData;
         } catch (error) {
-          console.error("WhatsApp QR generation failed", error);
+          console.error("WhatsApp QR generation failed", safeWorkerError(error));
         }
       }
       if (connection === "open") {
+        let ownershipVerified = false;
+        try {
+          ownershipVerified = await verifyWhatsAppOwnership();
+        } catch (error) {
+          console.error("WhatsApp ownership could not be verified before connect", safeWorkerError(error));
+        }
+        if (!ownershipVerified) {
+          if (state.socket === socket) {
+            state.socket = null;
+            state.connectionEstablished = false;
+            setDisconnected();
+          }
+          await closeStaleSocket(socket, "whatsapp_ownership_unverified");
+          scheduleWhatsAppOwnershipRetry(true);
+          return;
+        }
         state.status = "connected";
         state.connectionEstablished = true;
         state.connectionHealthcheckClosing = false;
@@ -436,7 +738,7 @@ export async function connectWhatsApp() {
         state.qr = null;
         state.phoneNumber = normalizeEgyptianPhone(socket.user?.id?.split(":")[0]) || socket.user?.id?.split(":")[0] || null;
         armConnectedWatchdog(socket);
-        console.log(`WhatsApp connected\({state.phoneNumber ? ` as\){state.phoneNumber}` : ""}`);
+        console.log("WhatsApp connected");
       }
       if (connection === "close") {
         const code = lastDisconnect?.error?.output?.statusCode;
@@ -452,10 +754,10 @@ export async function connectWhatsApp() {
             phoneNumber
           }).then((result) => {
             if (result.failed) console.error(`WhatsApp disconnect alert email failures: ${result.failed}`);
-          }).catch((error) => console.error("Failed to record WhatsApp disconnect notification", error));
+          }).catch((error) => console.error("Failed to record WhatsApp disconnect notification", safeWorkerError(error)));
         }
         if (code === DisconnectReason.loggedOut) {
-          void clearWhatsAppAuthState().catch((error) => console.error("Failed to clear logged-out WhatsApp session", error));
+          void clearWhatsAppAuthState().catch((error) => console.error("Failed to clear logged-out WhatsApp session", safeWorkerError(error)));
         } else {
           scheduleReconnect();
         }
@@ -465,7 +767,7 @@ export async function connectWhatsApp() {
   })().catch((error) => {
     setDisconnected();
     scheduleReconnect();
-    console.error("WhatsApp connection failed", error);
+    console.error("WhatsApp connection failed", safeWorkerError(error));
     return getWhatsAppStatus();
   }).finally(() => {
     state.connecting = null;
@@ -487,19 +789,25 @@ export async function getWhatsAppQr() {
 }
 
 export async function disconnectWhatsApp() {
+  if (!state.ownsWhatsAppSession && !state.socket) return getWhatsAppStatus();
+  if (!isLocallyWithinConfirmedLease()) {
+    await handleWhatsAppOwnershipLost("whatsapp_disconnect_unverified");
+    return getWhatsAppStatus();
+  }
   const wasEstablished = state.connectionEstablished;
   const phoneNumber = state.phoneNumber;
   state.manuallyDisconnected = true;
   state.reconnectAttempt = 0;
   if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
   state.reconnectTimer = null;
-  try { await state.socket?.logout(); } catch (error) { console.warn("WhatsApp logout failed", error); }
+  try { await state.socket?.logout(); } catch (error) { console.warn("WhatsApp logout failed", safeWorkerError(error)); }
   setDisconnected();
   state.connectionEstablished = false;
   await clearWhatsAppAuthState();
+  await releaseWhatsAppOwnership();
   if (wasEstablished) {
     void recordWhatsAppConnectionNotification({ status: "disconnected", reason: "manual_disconnect", phoneNumber })
-      .catch((error) => console.error("Failed to record WhatsApp disconnect notification", error));
+      .catch((error) => console.error("Failed to record WhatsApp disconnect notification", safeWorkerError(error)));
   }
   return getWhatsAppStatus();
 }
@@ -656,10 +964,10 @@ export async function resolveWhatsAppTemplate({ category, values = {}, sourceId 
   if (!templates.length) throw new Error("no_whatsapp_templates");
   const rows = await activeTemplateRows(normalizeNotificationType(category), db);
   const selected = rows.length ? rows[randomInteger(0, rows.length - 1)] : { id: 0, message_body: templates[randomInteger(0, templates.length - 1)] };
-  const entropy = `\({Date.now()}-\){sourceId}-${crypto.randomUUID()}`;
+  const entropy = `${Date.now()}-${sourceId}-${crypto.randomUUID()}`;
   const uniqueHash = crypto.createHash("sha256").update(entropy).digest("hex").slice(0, 16);
-  const reference = `ABS-\({Date.now()}-\){selected.id}-${uniqueHash}`;
-  return { id: Number(selected.id), message: `\({resolveSpintax(selected.message_body || selected, { ...values, ref_code: reference })}\n\nRef:\){reference}`, reference };
+  const reference = `ABS-${Date.now()}-${selected.id}-${uniqueHash}`;
+  return { id: Number(selected.id), message: `${resolveSpintax(selected.message_body || selected, { ...values, ref_code: reference })}\n\nRef:${reference}`, reference };
 }
 
 function compileWhatsAppMessage(_type, template, values) {
@@ -669,7 +977,7 @@ function compileWhatsAppMessage(_type, template, values) {
 export function buildStudentPortalLink(studentId, _studentCode, accessToken) {
   const numericStudentId = Number(studentId);
   if (!Number.isSafeInteger(numericStudentId) || numericStudentId <= 0 || !/^[A-Za-z0-9_-]{20,64}$/.test(String(accessToken || ""))) return "";
-  return `\({publicAppUrl}/p/\){encodeURIComponent(accessToken)}`;
+  return `${publicAppUrl}/p/${encodeURIComponent(accessToken)}`;
 }
 
 function formatMonthLabel(value, locale) {
@@ -679,7 +987,7 @@ function formatMonthLabel(value, locale) {
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "Africa/Cairo" }).format(date);
 }
 
-function formatMonthList(value, locale) {
+export function formatWhatsAppMonthList(value, locale) {
   return String(value || "")
     .split(",")
     .map((month) => formatMonthLabel(month, locale))
@@ -696,9 +1004,141 @@ function redactPortalLink(value) {
 async function createPortalAccessRecord(studentId, accessToken, db = query) {
   await db(
     `INSERT INTO student_portal_access_tokens (token_hash, student_id, expires_at)
-     VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
+     VALUES ($1, $2, NOW() + INTERVAL '1 hour')
+     ON CONFLICT (token_hash) DO NOTHING`,
     [hashStudentPortalAccessToken(accessToken), studentId]
   );
+}
+
+function portalTokenFromLink(value) {
+  return String(value || "").match(/\/p\/([A-Za-z0-9_-]{20,64})(?:[?#]|$)/)?.[1] || null;
+}
+
+async function removePortalAccessRecord(accessToken) {
+  if (!accessToken) return;
+  await query("DELETE FROM student_portal_access_tokens WHERE token_hash = $1", [hashStudentPortalAccessToken(accessToken)]);
+}
+
+async function cleanupJobPortalAccess(job, extraToken = null) {
+  const tokens = [portalTokenFromLink(job?.payload?.portal_link), extraToken].filter(Boolean);
+  for (const token of tokens) await removePortalAccessRecord(token).catch(() => undefined);
+}
+
+async function scrubClaimedGradePortalLink(job) {
+  const token = portalTokenFromLink(job?.payload?.portal_link);
+  if (token) await removePortalAccessRecord(token);
+  const payload = { ...(job?.payload && typeof job.payload === "object" ? job.payload : {}), portal_link: GRADE_PORTAL_PREVIEW_MARKER };
+  const result = await query(
+    `UPDATE whatsapp_notification_jobs
+     SET payload = $2::jsonb, updated_at = NOW()
+     WHERE id = $1 AND status = 'processing' AND claim_token = $3
+     RETURNING id`,
+    [job.id, JSON.stringify(payload), job.claim_token]
+  );
+  if (!result.rowCount) return false;
+  job.payload = payload;
+  return true;
+}
+
+async function scrubGradePortalLinkInTransaction(client, job) {
+  const token = portalTokenFromLink(job?.payload?.portal_link);
+  if (token) {
+    await client.query("DELETE FROM student_portal_access_tokens WHERE token_hash = $1", [hashStudentPortalAccessToken(token)]);
+  }
+  const payload = { ...(job?.payload && typeof job.payload === "object" ? job.payload : {}) };
+  payload.portal_link = GRADE_PORTAL_PREVIEW_MARKER;
+  await client.query(
+    `UPDATE whatsapp_notification_jobs
+     SET payload = $2::jsonb, rendered_message = $3, updated_at = NOW()
+     WHERE id = $1`,
+    [job.id, JSON.stringify(payload), redactPortalLink(job.rendered_message)]
+  );
+}
+
+export function gradeQueuePreviewPayload(payload = {}) {
+  return { ...(payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {}), portal_link: GRADE_PORTAL_PREVIEW_MARKER };
+}
+
+export function absenceCorrectionTransition(status, sendStartedAt) {
+  if (status !== "pending" && status !== "processing") return null;
+  const providerStarted = status === "processing" && Boolean(sendStartedAt);
+  return {
+    status: providerStarted ? "delivery_unknown" : "skipped",
+    lastError: providerStarted ? "attendance_correction_during_send" : "attendance_corrected_before_send"
+  };
+}
+
+export async function settleAbsenceNotificationJobsForCorrection({ client, attendanceRecordId, reason = "attendance_corrected", actorId = null, studentId = null, sessionId = null, request = null }) {
+  const baseReason = reason === "attendance_excused" ? "attendance_excused" : "attendance_corrected";
+  const result = await client.query(
+    `UPDATE whatsapp_notification_jobs
+     SET status = CASE
+           WHEN status = 'processing' AND send_started_at IS NOT NULL THEN 'delivery_unknown'
+           ELSE 'skipped'
+         END,
+         last_error = CASE
+           WHEN status = 'processing' AND send_started_at IS NOT NULL THEN $2
+           ELSE $3
+         END,
+         next_attempt_at = NULL,
+         lease_expires_at = NULL,
+         claim_token = NULL,
+         updated_at = NOW()
+     WHERE notification_type = 'absence' AND attendance_record_id = $1
+       AND status IN ('pending', 'processing')
+     RETURNING id, status, send_started_at`,
+    [attendanceRecordId, `${baseReason}_during_send`, `${baseReason}_before_send`]
+  );
+  for (const job of result.rows) {
+    await auditLog({
+      db: client,
+      action: job.status === "delivery_unknown" ? "whatsapp_job_delivery_unknown" : "whatsapp_job_skipped",
+      actorId,
+      studentId,
+      sessionId,
+      details: {
+        job_id: job.id,
+        notification_type: "absence",
+        source_id: attendanceRecordId,
+        reason: job.status === "delivery_unknown" ? `${baseReason}_during_send` : `${baseReason}_before_send`,
+        send_started: job.status === "delivery_unknown"
+      },
+      request
+    });
+  }
+  return result.rows;
+}
+
+async function reserveWhatsAppSendSlot(settings) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO whatsapp_send_slots (session_key, next_available_at)
+       VALUES ($1, NULL) ON CONFLICT (session_key) DO NOTHING`,
+      [WHATSAPP_SEND_SLOT_KEY]
+    );
+    const current = await client.query(
+      "SELECT next_available_at FROM whatsapp_send_slots WHERE session_key = $1 FOR UPDATE",
+      [WHATSAPP_SEND_SLOT_KEY]
+    );
+    const now = Date.now();
+    const availableAt = current.rows[0]?.next_available_at ? new Date(current.rows[0].next_available_at).getTime() : now;
+    const waitMs = Math.max(0, availableAt - now);
+    const delayMs = randomInteger(settings.min_delay_seconds, settings.max_delay_seconds) * 1000;
+    const nextAvailableAt = new Date(Math.max(now, availableAt) + delayMs);
+    await client.query(
+      "UPDATE whatsapp_send_slots SET next_available_at = $2, updated_at = NOW() WHERE session_key = $1",
+      [WHATSAPP_SEND_SLOT_KEY, nextAvailableAt]
+    );
+    await client.query("COMMIT");
+    return waitMs;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function enqueueGradeBatchNotifications({ resultIds }) {
@@ -745,11 +1185,14 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
     }
 
     const existing = await client.query(`
-      SELECT source_id, status
+      SELECT id, source_id, status, payload, rendered_message
       FROM whatsapp_notification_jobs
       WHERE notification_type = 'grade'
         AND source_id = ANY($1::bigint[])
         AND status IN ('pending', 'processing')`, [candidates.map(({ row }) => Number(row.result_id))]);
+    for (const oldJob of existing.rows) {
+      if (oldJob.status === "pending") await scrubGradePortalLinkInTransaction(client, oldJob);
+    }
     const activeSourceIds = new Set(existing.rows.map((row) => Number(row.source_id)));
     const pendingCandidates = candidates.filter(({ row }) => {
       const resultId = Number(row.result_id);
@@ -784,12 +1227,10 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
     const queueRows = pendingCandidates.map(({ row, phone }, offset) => {
       const templateIndex = (firstTemplateIndex + offset) % templates.length;
       const template = templates[templateIndex];
-      const accessToken = createStudentPortalAccessToken();
-      const portalLink = buildStudentPortalLink(row.student_id, row.student_code, accessToken);
       const maxScore = Number(row.max_score);
       const score = Number(row.score);
       const percentage = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1).replace(/\.0$/, "") : "0";
-      const payload = {
+      const payload = gradeQueuePreviewPayload({
         type: "grade",
         student_name: row.student_name,
         student_code: row.student_code,
@@ -797,21 +1238,19 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
         score,
         max_score: maxScore,
         percentage,
-        event_time: row.exam_date,
-        portal_link: portalLink
-      };
+        event_time: row.exam_date
+      });
       const parts = cairoParts(row.exam_date);
       const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
       const refCode = notificationRefCode("GRD", row.exam_date, row.result_id, true);
       const templateValues = { ...payload, ...parts, ref_code: refCode };
       templateValues.ref_code = refCode;
       const renderedBody = compileWhatsAppMessage("grade", template, templateValues).trim();
-      const finalBody = `\({renderedBody}\n\n\){locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform"}`;
+      const finalBody = `${renderedBody}\n\n${locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform"}`;
       return {
         resultId: Number(row.result_id),
         studentId: Number(row.student_id),
         phoneNumber: phone,
-        accessToken,
         payload,
         refCode,
         templateIndex,
@@ -849,14 +1288,6 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
     }
     if (queuedResultIds.length) {
       await client.query("UPDATE exam_results SET whatsapp_notified = FALSE WHERE id = ANY($1::int[])", [queuedResultIds]);
-      const accessRows = queueRows
-        .filter((row) => queuedSet.has(row.resultId))
-        .map((row) => ({ token_hash: hashStudentPortalAccessToken(row.accessToken), student_id: row.studentId }));
-      await client.query(`
-        INSERT INTO student_portal_access_tokens (token_hash, student_id, expires_at)
-        SELECT row.token_hash, row.student_id, NOW() + INTERVAL '1 hour'
-        FROM jsonb_to_recordset($1::jsonb) AS row(token_hash text, student_id integer)
-        ON CONFLICT (token_hash) DO NOTHING`, [JSON.stringify(accessRows)]);
     }
     await client.query("COMMIT");
     if (queuedResultIds.length) wakeWhatsAppWorker();
@@ -873,7 +1304,7 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
   const hydrated = await client.query(`
     SELECT er.id AS result_id, er.score, er.note, e.title AS exam_title,
       e.max_score, e.exam_date, s.id AS student_id, s.full_name AS student_name,
-      s.student_code, s.guardian_phone, s.whatsapp_opted_out
+      s.student_code, s.guardian_phone, s.whatsapp_opted_out, s.is_active, s.deleted_at
     FROM exam_results er
     JOIN exams e ON e.id = er.exam_id
     JOIN students s ON s.id = er.student_id
@@ -881,9 +1312,13 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
     FOR UPDATE`, [resultId]);
   const row = hydrated.rows[0];
   if (!row) return { queued: false, reason: "not_found" };
+  if (!row.is_active || row.deleted_at) return { queued: false, reason: "student_inactive" };
+  if (row.whatsapp_opted_out === true) return { queued: false, reason: "whatsapp_opted_out" };
+  const normalizedPhone = normalizeEgyptianPhone(row.guardian_phone);
+  if (!normalizedPhone) return { queued: false, reason: "invalid_phone" };
 
   const active = await client.query(`
-    SELECT id, status, ref_code
+    SELECT id, status, ref_code, payload, rendered_message
     FROM whatsapp_notification_jobs
     WHERE notification_type = 'grade' AND source_id = $1
       AND status IN ('pending', 'processing')
@@ -893,6 +1328,7 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
   if (active.rows[0]?.status === "processing") {
     return { queued: false, reason: "already_queued", job_id: active.rows[0].id, status: active.rows[0].status, ref_code: active.rows[0].ref_code };
   }
+  if (active.rows[0]) await scrubGradePortalLinkInTransaction(client, active.rows[0]);
 
   const settings = await getWhatsAppSettings(client.query.bind(client));
   const templates = (await getNotificationTemplates(settings, "grade", client.query.bind(client))).filter(Boolean);
@@ -913,14 +1349,12 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
 
   const template = templates[templateIndex];
   const rawPhone = String(row.guardian_phone || "").trim();
-  const phone = normalizeEgyptianPhone(rawPhone) || rawPhone;
-  const accessToken = createStudentPortalAccessToken();
-  const portalLink = buildStudentPortalLink(row.student_id, row.student_code, accessToken);
+  const phone = normalizedPhone;
   const maxScore = Number(row.max_score);
   const score = Number(row.score);
-  const percentage = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1).replace(/\.0$/, "") : "0";
+  const percentage = gradePercentage(score, maxScore);
   const refCode = notificationRefCode("GRD", row.exam_date, row.result_id, true);
-  const payload = {
+  const payload = gradeQueuePreviewPayload({
     type: "grade",
     student_name: row.student_name,
     student_code: row.student_code,
@@ -934,14 +1368,13 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
     guardian_phone: rawPhone,
     parent_contact: { guardian_phone: rawPhone, whatsapp_phone: phone || null },
     whatsapp_opted_out: row.whatsapp_opted_out === true,
-    event_time: row.exam_date,
-    portal_link: portalLink
-  };
+    event_time: row.exam_date
+  });
   const parts = cairoParts(row.exam_date);
   const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
   const templateValues = { ...payload, ...parts, ref_code: refCode };
   const renderedBody = compileWhatsAppMessage("grade", template, templateValues).trim();
-  const finalBody = `\({renderedBody}\n\n\){locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform"}`;
+  const finalBody = `${renderedBody}\n\n${locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform"}`;
   const values = [
     row.student_id,
     phone,
@@ -970,39 +1403,68 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
       RETURNING id, status, ref_code`, [row.result_id, ...values]);
   }
   await client.query("UPDATE exam_results SET whatsapp_notified = FALSE WHERE id = $1", [row.result_id]);
-  await client.query(`
-    INSERT INTO student_portal_access_tokens (token_hash, student_id, expires_at)
-    VALUES ($1, $2, NOW() + INTERVAL '1 hour')
-    ON CONFLICT (token_hash) DO NOTHING`, [hashStudentPortalAccessToken(accessToken), row.student_id]);
   return { queued: true, job_id: job.rows[0].id, status: job.rows[0].status, ref_code: job.rows[0].ref_code, result_id: row.result_id };
 }
 
-export async function retryGradeNotificationJob({ jobId }) {
+export async function retryWhatsAppNotificationJob({ jobId, actorId = null, reason = "", allowDeliveryUnknown = false, request = null }) {
+  const normalizedReason = normalizeManualRetryReason(reason);
+  if (!normalizedReason.ok) return normalizedReason;
+  const retryReason = normalizedReason.value;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     const current = await client.query(`
-      SELECT id, status, ref_code
+      SELECT *
       FROM whatsapp_notification_jobs
-      WHERE id = $1 AND notification_type = 'grade'
+      WHERE id = $1
       FOR UPDATE`, [jobId]);
     if (!current.rowCount) {
       await client.query("ROLLBACK");
       return { ok: false, reason: "not_found" };
     }
-    if (current.rows[0].status !== "failed") {
+    const job = current.rows[0];
+    if (job.status === "delivery_unknown" && !allowDeliveryUnknown) {
       await client.query("COMMIT");
-      return { ok: true, reason: "already_active", status: current.rows[0].status, job_id: current.rows[0].id, ref_code: current.rows[0].ref_code };
+      return { ok: false, reason: "delivery_unknown_requires_confirmation", job_id: job.id, status: job.status, ref_code: job.ref_code };
+    }
+    if (job.status !== "failed" && job.status !== "delivery_unknown") {
+      await client.query("COMMIT");
+      return { ok: true, reason: "already_active", status: job.status, job_id: job.id, ref_code: job.ref_code };
+    }
+    const type = notificationTypeForJob(job);
+    if (!type) {
+      await client.query("COMMIT");
+      return { ok: false, reason: "unsupported_whatsapp_notification_type", job_id: job.id, status: job.status };
+    }
+    const eligibility = await revalidateWhatsAppJob(job, type, client.query.bind(client));
+    if (!eligibility.ok) {
+      await client.query("COMMIT");
+      return { ok: false, reason: eligibility.reason, job_id: job.id, status: job.status, ref_code: job.ref_code };
     }
     const retried = await client.query(`
       UPDATE whatsapp_notification_jobs
       SET status = 'pending', attempts = 0, last_error = NULL,
-        next_attempt_at = NOW(), sent_at = NULL, updated_at = NOW()
-      WHERE id = $1 AND status = 'failed'
+        next_attempt_at = NOW(), sent_at = NULL, claim_token = NULL,
+        send_started_at = NULL, template_index = NULL, template_text = NULL,
+        rendered_message = NULL, updated_at = NOW()
+      WHERE id = $1 AND status IN ('failed', 'delivery_unknown')
       RETURNING id, status, ref_code`, [jobId]);
+    await auditLog({
+      db: client,
+      action: "whatsapp_job_manual_retry_requested",
+      actorId,
+      details: {
+        job_id: job.id,
+        notification_type: type,
+        source_id: job.source_id,
+        reason: retryReason,
+        confirmed_delivery_unknown: Boolean(job.status === "delivery_unknown" && allowDeliveryUnknown)
+      },
+      request
+    });
     await client.query("COMMIT");
     wakeWhatsAppWorker();
-    return { ok: true, retried: true, ...retried.rows[0] };
+    return { ok: true, retried: true, notification_type: type, ...retried.rows[0] };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -1011,9 +1473,13 @@ export async function retryGradeNotificationJob({ jobId }) {
   }
 }
 
+export async function retryGradeNotificationJob(options = {}) {
+  return retryWhatsAppNotificationJob(options);
+}
+
 function notificationRefCode(prefix, dateValue, id, unique = false) {
   const date = new Date(dateValue || Date.now()).toISOString().slice(0, 10).replaceAll("-", "");
-  return `\({prefix}-\){date}-\({id}\){unique ? `-\({Date.now()}-\){randomInteger(100, 999)}` : ""}`;
+  return `${prefix}-${date}-${id}${unique ? `-${Date.now()}-${randomInteger(100, 999)}` : ""}`;
 }
 
 async function enqueueJob({ notificationType, sourceId, studentId, phone, payload, refCode, attendanceRecordId = null, db = query, wake = true, dedupeCompleted = false }) {
@@ -1033,6 +1499,9 @@ async function enqueueJob({ notificationType, sourceId, studentId, phone, payloa
   }
   if (dedupeCompleted && (previous?.status === "sent" || previous?.status === "skipped")) {
     return { queued: false, reason: previous.status === "sent" ? "already_sent" : "already_processed", job_id: previous.id, status: previous.status, ref_code: previous.ref_code };
+  }
+  if (previous?.status === "delivery_unknown") {
+    return { queued: false, reason: "delivery_unknown_requires_confirmation", job_id: previous.id, status: previous.status, ref_code: previous.ref_code };
   }
   if (previous?.status === "failed") {
     const retried = await execute(
@@ -1152,14 +1621,13 @@ async function enqueuePaymentNotificationWithDb({ paymentId, paymentType, notifi
   if (!row) return { queued: false, reason: "not_found" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
   if (!phone) return { queued: false, reason: "invalid_phone" };
-  const months = Array.isArray(row.payment_months) ? row.payment_months.map((item) => String(item.month || "").slice(0, 7)).filter(Boolean) : [];
-  const month = months.join(", ");
+  const month = paymentMonthsValue(row.payment_months);
   const refCode = notificationRefCode(referencePrefix, row.payment_date, row.payment_id, true);
   const queue = await enqueueJob({ notificationType, sourceId: row.payment_id, studentId: row.student_id, phone, refCode, dedupeCompleted: true, db: execute, wake, payload: {
     student_name: row.student_name, student_code: row.student_code, amount_paid: Number(row.paid_amount ?? row.amount).toFixed(2),
     discount_amount: Number(row.discount_amount || 0).toFixed(2), is_exempt: row.is_exempt === true,
     payment_status: row.is_exempt ? "exempt" : Number(row.discount_amount || 0) > 0 ? "discounted" : "paid",
-    month, receipt_number: row.payment_reference || refCode, event_time: row.payment_date
+    month, months: month, receipt_number: row.payment_reference || refCode, event_time: row.payment_date
   } });
   return { ...queue, ref_code: queue.ref_code || refCode };
 }
@@ -1190,10 +1658,13 @@ async function claimNextJob(dbClient = null) {
       WHERE status = 'pending' AND next_attempt_at <= NOW()
       ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`);
     if (!result.rowCount) { await client.query("COMMIT"); return null; }
+    const claimToken = crypto.randomUUID();
     const updated = await client.query(`UPDATE whatsapp_notification_jobs
       SET status = 'processing', attempts = attempts + 1,
-          lease_expires_at = NOW() + INTERVAL '2 minutes', updated_at = NOW()
-      WHERE id = $1 RETURNING *`, [result.rows[0].id]);
+          lease_expires_at = NOW() + ($2 * INTERVAL '1 millisecond'),
+          claim_token = $3, send_started_at = NULL, updated_at = NOW()
+      WHERE id = $1 AND status = 'pending' RETURNING *`, [result.rows[0].id, JOB_LEASE_MS, claimToken]);
+    if (!updated.rowCount) { await client.query("COMMIT"); return null; }
     await client.query("COMMIT");
     return updated.rows[0];
   } catch (error) {
@@ -1202,13 +1673,80 @@ async function claimNextJob(dbClient = null) {
   } finally { if (ownsClient) client.release(); }
 }
 
-async function updateJob(id, status, fields = {}) {
-  await query(`UPDATE whatsapp_notification_jobs SET status = $2, last_error = $3,
+async function updateJob(id, status, fields = {}, claimToken) {
+  if (!claimToken) return false;
+  const result = await query(`UPDATE whatsapp_notification_jobs SET status = $2, last_error = $3,
     next_attempt_at = COALESCE($4, next_attempt_at), sent_at = CASE WHEN $2 = 'sent' THEN NOW() ELSE sent_at END,
     lease_expires_at = CASE WHEN $2 = 'processing' THEN lease_expires_at ELSE NULL END,
     phone_number = COALESCE($5, phone_number), provider_message_id = COALESCE($6, provider_message_id),
     provider_accepted_at = CASE WHEN $6 IS NOT NULL THEN COALESCE(provider_accepted_at, NOW()) ELSE provider_accepted_at END,
-    updated_at = NOW() WHERE id = $1`, [id, status, fields.error || null, fields.nextAttemptAt || null, fields.phoneNumber || null, fields.providerMessageId || null]);
+    claim_token = NULL,
+    send_started_at = CASE WHEN $2 IN ('pending', 'failed', 'skipped') THEN NULL ELSE send_started_at END,
+    updated_at = NOW()
+    WHERE id = $1 AND status = 'processing' AND claim_token = $7
+    RETURNING id`, [id, status, fields.error || null, fields.nextAttemptAt || null, fields.phoneNumber || null, fields.providerMessageId || null, claimToken]);
+  return result.rowCount > 0;
+}
+
+async function extendJobLease(job, phase) {
+  if (!job?.id || !job.claim_token) return false;
+  const result = await query(
+    `UPDATE whatsapp_notification_jobs
+     SET lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
+     WHERE id = $1 AND status = 'processing' AND claim_token = $2
+     RETURNING lease_expires_at`,
+    [job.id, job.claim_token, JOB_LEASE_MS]
+  );
+  if (!result.rowCount) return false;
+  await auditWhatsAppJob(job, "whatsapp_job_lease_extended", { phase }).catch(() => undefined);
+  return true;
+}
+
+async function markSendStarted(job) {
+  const result = await query(
+    `UPDATE whatsapp_notification_jobs
+     SET send_started_at = NOW(), lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
+     WHERE id = $1 AND status = 'processing' AND claim_token = $2
+     RETURNING id`,
+    [job.id, job.claim_token, JOB_LEASE_MS]
+  );
+  return result.rowCount > 0;
+}
+
+async function completeSentJob(job, providerMessageId) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const completed = await client.query(
+      `UPDATE whatsapp_notification_jobs
+       SET status = 'sent', sent_at = NOW(), last_error = NULL,
+           lease_expires_at = NULL, claim_token = NULL,
+           provider_message_id = COALESCE($3, provider_message_id),
+           provider_accepted_at = NOW(), updated_at = NOW()
+       WHERE id = $1 AND status = 'processing' AND claim_token = $2
+       RETURNING id`,
+      [job.id, job.claim_token, providerMessageId || null]
+    );
+    if (completed.rowCount && notificationTypeForJob(job) === "grade") {
+      await client.query(
+        `UPDATE exam_results er
+         SET whatsapp_notified = TRUE
+         WHERE er.id = $1 AND EXISTS (
+           SELECT 1 FROM whatsapp_notification_jobs j
+           WHERE j.id = $2 AND j.notification_type = 'grade'
+             AND j.source_id = er.id AND j.status = 'sent'
+         )`,
+        [job.source_id, job.id]
+      );
+    }
+    await client.query("COMMIT");
+    return completed.rowCount > 0;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function auditWhatsAppJob(job, action, details = {}) {
@@ -1224,9 +1762,24 @@ async function auditWhatsAppJob(job, action, details = {}) {
   });
 }
 
-async function revalidateWhatsAppJob(job, type) {
+function paymentMonthsValue(paymentMonths) {
+  const months = Array.isArray(paymentMonths)
+    ? paymentMonths.map((item) => String(item?.month || "").slice(0, 7)).filter((month) => /^\d{4}-\d{2}$/.test(month))
+    : [];
+  return months.join(", ");
+}
+
+function gradePercentage(score, maxScore) {
+  const numericScore = Number(score);
+  const numericMaxScore = Number(maxScore);
+  if (!Number.isFinite(numericScore) || !Number.isFinite(numericMaxScore) || numericMaxScore <= 0) return "0";
+  return ((numericScore / numericMaxScore) * 100).toFixed(1).replace(/\.0$/, "");
+}
+
+async function revalidateWhatsAppJob(job, type, db = query) {
+  const execute = typeof db === "function" ? db : db.query.bind(db);
   if (!job?.student_id) return { ok: false, reason: "student_missing" };
-  const studentResult = await query(`
+  const studentResult = await execute(`
     SELECT id, full_name, student_code, guardian_phone, is_active, deleted_at, whatsapp_opted_out
     FROM students WHERE id = $1`, [job.student_id]);
   const student = studentResult.rows[0];
@@ -1235,31 +1788,77 @@ async function revalidateWhatsAppJob(job, type) {
   const phone = normalizeEgyptianPhone(student.guardian_phone);
   if (!phone) return { ok: false, reason: "invalid_phone" };
 
+  const originalPayload = job.payload && typeof job.payload === "object" && !Array.isArray(job.payload) ? job.payload : {};
+  let payload = { ...originalPayload, student_name: student.full_name, student_code: student.student_code };
   if (type === "attendance") {
-    const source = await query(`
-      SELECT 1 FROM attendance_records ar
+    const source = await execute(`
+      SELECT ar.checkin_time, ats.session_date,
+        COALESCE(NULLIF(TRIM(g.display_name), ''), NULLIF(TRIM(g.name), ''), '') AS group_name
+      FROM attendance_records ar
+      JOIN attendance_sessions ats ON ats.id = ar.session_id
+      JOIN groups g ON g.id = ats.group_id
       WHERE ar.id = $1 AND ar.student_id = $2 AND ar.status IN ('present', 'late')`, [job.attendance_record_id || job.source_id, student.id]);
     if (!source.rowCount) return { ok: false, reason: "attendance_no_longer_eligible" };
+    payload = { ...payload, group_name: source.rows[0].group_name, checkin_time: source.rows[0].checkin_time, event_time: source.rows[0].checkin_time || source.rows[0].session_date };
   } else if (type === "absence") {
-    const source = await query(`
-      SELECT ar.status, ats.status AS session_status FROM attendance_records ar
+    const source = await execute(`
+      SELECT ar.status, ats.status AS session_status, ats.session_date, ats.id AS session_id,
+        COALESCE(NULLIF(TRIM(g.display_name), ''), NULLIF(TRIM(g.name), ''), '') AS group_name
+      FROM attendance_records ar
       JOIN attendance_sessions ats ON ats.id = ar.session_id
+      JOIN groups g ON g.id = ats.group_id
       WHERE ar.id = $1 AND ar.student_id = $2`, [job.attendance_record_id || job.source_id, student.id]);
     if (source.rows[0]?.status === "excused") return { ok: false, reason: "attendance_excused" };
     if (!source.rowCount || source.rows[0].status !== "absent" || source.rows[0].session_status !== "closed") return { ok: false, reason: "absence_no_longer_eligible" };
+    payload = { ...payload, group_name: source.rows[0].group_name, session_id: source.rows[0].session_id, event_time: source.rows[0].session_date };
   } else if (type === "grade") {
-    const source = await query("SELECT 1 FROM exam_results WHERE id = $1 AND student_id = $2", [job.source_id, student.id]);
+    const source = await execute(`
+      SELECT er.score, er.note, e.title AS exam_title, e.max_score, e.exam_date
+      FROM exam_results er JOIN exams e ON e.id = er.exam_id
+      WHERE er.id = $1 AND er.student_id = $2`, [job.source_id, student.id]);
     if (!source.rowCount) return { ok: false, reason: "grade_no_longer_exists" };
+    const grade = source.rows[0];
+    const score = Number(grade.score);
+    const maxScore = Number(grade.max_score);
+    payload = {
+      ...payload,
+      exam_title: grade.exam_title,
+      exam_date: grade.exam_date,
+      event_time: grade.exam_date,
+      score,
+      max_score: maxScore,
+      percentage: gradePercentage(score, maxScore),
+      evaluation_text: grade.note || "",
+      assessment: grade.note || ""
+    };
   } else if (type === "receipt" || type === "advance_payment") {
-    const source = await query("SELECT 1 FROM payments WHERE id = $1 AND student_id = $2 AND payment_type = $3", [job.source_id, student.id, type === "receipt" ? "normal" : "advance"]);
+    const source = await execute(`
+      SELECT amount, paid_amount, discount_amount, is_exempt, payment_reference,
+        payment_months, payment_date, payment_type
+      FROM payments WHERE id = $1 AND student_id = $2 AND payment_type = $3`,
+      [job.source_id, student.id, type === "receipt" ? "normal" : "advance"]
+    );
     if (!source.rowCount) return { ok: false, reason: "payment_no_longer_exists" };
+    const payment = source.rows[0];
+    const months = paymentMonthsValue(payment.payment_months);
+    payload = {
+      ...payload,
+      amount_paid: Number(payment.paid_amount ?? payment.amount).toFixed(2),
+      discount_amount: Number(payment.discount_amount || 0).toFixed(2),
+      is_exempt: payment.is_exempt === true,
+      payment_status: payment.is_exempt ? "exempt" : Number(payment.discount_amount || 0) > 0 ? "discounted" : "paid",
+      month: months,
+      months,
+      receipt_number: payment.payment_reference || job.ref_code,
+      event_time: payment.payment_date
+    };
   }
 
   if (normalizeEgyptianPhone(job.phone_number) !== phone) {
-    await query("UPDATE whatsapp_notification_jobs SET phone_number = $2, updated_at = NOW() WHERE id = $1 AND status = 'processing'", [job.id, phone]);
+    await execute("UPDATE whatsapp_notification_jobs SET phone_number = $2, updated_at = NOW() WHERE id = $1 AND status = 'processing' AND claim_token = $3", [job.id, phone, job.claim_token || null]);
     job.phone_number = phone;
   }
-  return { ok: true, phone, student };
+  return { ok: true, phone, student, payload };
 }
 
 async function recoverStaleWhatsAppJobs() {
@@ -1267,77 +1866,128 @@ async function recoverStaleWhatsAppJobs() {
   state.workerRecoveryRunning = true;
   try {
     const result = await query(`UPDATE whatsapp_notification_jobs
-      SET status = 'pending', next_attempt_at = NOW(), last_error = 'worker_lease_expired',
-          lease_expires_at = NULL, updated_at = NOW()
+      SET status = CASE WHEN send_started_at IS NOT NULL THEN 'delivery_unknown' ELSE 'pending' END,
+          next_attempt_at = CASE WHEN send_started_at IS NOT NULL THEN next_attempt_at ELSE NOW() END,
+          last_error = CASE WHEN send_started_at IS NOT NULL THEN 'delivery_unknown' ELSE 'worker_lease_expired' END,
+          lease_expires_at = NULL, claim_token = NULL, updated_at = NOW()
       WHERE status = 'processing'
         AND (lease_expires_at <= NOW()
           OR (lease_expires_at IS NULL AND updated_at < NOW() - INTERVAL '5 minutes'))
-      RETURNING id, notification_type, source_id, attempts`);
-    for (const job of result.rows) await auditWhatsAppJob(job, "whatsapp_job_recovered", { reason: "lease_expired" });
+      RETURNING id, notification_type, source_id, attempts, status`);
+    for (const job of result.rows) {
+      await auditWhatsAppJob(job, job.status === "delivery_unknown" ? "whatsapp_job_delivery_unknown" : "whatsapp_job_expired_claim_recovered", {
+        reason: job.status === "delivery_unknown" ? "send_was_in_flight" : "lease_expired"
+      });
+    }
   } finally {
     state.workerRecoveryRunning = false;
   }
 }
 
-async function updateGradeNotificationState(job, notified) {
-  if (notificationTypeForJob(job) !== "grade" || !job?.source_id) return;
-  await query("UPDATE exam_results SET whatsapp_notified = $2 WHERE id = $1", [job.source_id, notified]);
+async function auditStaleClaim(job, phase) {
+  await auditWhatsAppJob(job, "whatsapp_job_stale_claim_rejected", { phase }).catch(() => undefined);
+}
+
+async function waitWithJobLease(job, waitMs) {
+  let remaining = Math.max(0, Number(waitMs) || 0);
+  while (remaining > 0) {
+    if (!state.ownsWhatsAppSession || !(await extendJobLease(job, "send_slot_wait"))) return false;
+    const chunk = Math.min(remaining, JOB_LEASE_RENEWAL_CHUNK_MS);
+    await sleep(chunk);
+    remaining -= chunk;
+  }
+  return extendJobLease(job, "after_send_slot_wait");
+}
+
+function safeWorkerError(error) {
+  const code = String(error?.code || error?.message || "whatsapp_worker_error");
+  return /^[A-Za-z0-9_.-]{1,80}$/.test(code) ? code : "whatsapp_worker_error";
+}
+
+export function normalizeManualRetryReason(value) {
+  const reason = String(value || "").trim();
+  if (reason.length < 3) return { ok: false, reason: "retry_reason_required" };
+  if (reason.length > RETRY_REASON_MAX_LENGTH) return { ok: false, reason: "retry_reason_too_long" };
+  return { ok: true, value: reason };
+}
+
+async function markDeliveryUnknown(job, reason, providerMessageId = null) {
+  const updated = await updateJob(job.id, "delivery_unknown", {
+    error: "delivery_unknown",
+    nextAttemptAt: null,
+    providerMessageId
+  }, job.claim_token);
+  if (updated) {
+    await auditWhatsAppJob(job, "whatsapp_job_delivery_unknown", { reason }).catch(() => undefined);
+  } else {
+    await auditStaleClaim(job, "delivery_unknown");
+  }
+  return updated;
 }
 
 async function processWhatsAppJob() {
+  if (!state.ownsWhatsAppSession) return;
   if (state.workerRunning) return;
   state.workerRunning = true;
   let job = null;
+  let portalAccessToken = null;
+  let providerAccepted = false;
+  let providerMessageId = null;
   try {
     job = await claimNextJob();
     if (!job) return;
+    await auditWhatsAppJob(job, "whatsapp_job_claimed", { lease_expires_at: job.lease_expires_at }).catch(() => undefined);
     const settings = await getWhatsAppSettings();
     const type = notificationTypeForJob(job);
     if (!type) {
-      await updateJob(job.id, "skipped", { error: "unsupported_whatsapp_notification_type" });
-      await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: "unsupported_whatsapp_notification_type" });
+      const updated = await updateJob(job.id, "skipped", { error: "unsupported_whatsapp_notification_type" }, job.claim_token);
+      if (updated) await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: "unsupported_whatsapp_notification_type" });
+      else await auditStaleClaim(job, "unsupported_type");
       return;
     }
     if (!settings.auto_send && (type === "attendance" || type === "absence")) {
-      await updateJob(job.id, "skipped", { error: "auto_send_disabled" });
-      await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: "auto_send_disabled" });
+      const updated = await updateJob(job.id, "skipped", { error: "auto_send_disabled" }, job.claim_token);
+      if (updated) await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: "auto_send_disabled" });
+      else await auditStaleClaim(job, "auto_send_disabled");
       return;
     }
     if (state.status !== "connected" || !state.socket) {
       const attempts = Number(job.attempts || 0);
       const retry = attempts < 3;
-      await updateJob(job.id, retry ? "pending" : "failed", {
+      const updated = await updateJob(job.id, retry ? "pending" : "failed", {
         error: "whatsapp_disconnected",
         nextAttemptAt: retry ? new Date(Date.now() + 10_000) : null
-      });
-      await auditWhatsAppJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason: "whatsapp_disconnected" });
+      }, job.claim_token);
+      if (updated) await auditWhatsAppJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason: "whatsapp_disconnected" });
+      else await auditStaleClaim(job, "whatsapp_disconnected");
       return;
     }
-    const lastSentResult = await query(
-      `SELECT sent_at FROM whatsapp_notification_jobs
-       WHERE status = 'sent' AND sent_at IS NOT NULL
-       ORDER BY sent_at DESC, id DESC LIMIT 1`
-    );
-    const persistedLastSentAt = lastSentResult.rows[0]?.sent_at ? new Date(lastSentResult.rows[0].sent_at).getTime() : 0;
-    const lastSentAt = Math.max(state.lastSentAt, Number.isFinite(persistedLastSentAt) ? persistedLastSentAt : 0);
-    const elapsed = Date.now() - lastSentAt;
-    const delayMs = Math.floor(
-      Math.random() * (settings.max_delay_seconds - settings.min_delay_seconds + 1) + settings.min_delay_seconds
-    ) * 1000;
-    if (lastSentAt && elapsed < delayMs) await sleep(delayMs - elapsed);
-    const payload = job.payload && typeof job.payload === "object" ? job.payload : {};
-    const eligibility = await revalidateWhatsAppJob(job, type);
+
+    const waitMs = await reserveWhatsAppSendSlot(settings);
+    if (!(await waitWithJobLease(job, waitMs))) {
+      await auditStaleClaim(job, "send_slot_wait");
+      return;
+    }
+    let eligibility = await revalidateWhatsAppJob(job, type);
     if (!eligibility.ok) {
-      await updateJob(job.id, "skipped", { error: eligibility.reason, nextAttemptAt: null });
-      if (type === "grade") await updateGradeNotificationState(job, false);
-      await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: eligibility.reason });
+      const updated = await updateJob(job.id, "skipped", { error: eligibility.reason, nextAttemptAt: null }, job.claim_token);
+      if (updated) {
+        await cleanupJobPortalAccess(job, portalAccessToken);
+        await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: eligibility.reason });
+      } else await auditStaleClaim(job, "initial_revalidation");
       return;
     }
-    const parts = cairoParts(payload.event_time || payload.checkin_time);
+    if (type === "grade" && !(await scrubClaimedGradePortalLink(job))) {
+      await auditStaleClaim(job, "grade_portal_link_scrub");
+      return;
+    }
     const templates = (await getNotificationTemplates(settings, type)).filter(Boolean);
     if (!templates.length) {
-      await updateJob(job.id, "failed", { error: "no_whatsapp_templates", nextAttemptAt: null });
-      await auditWhatsAppJob(job, "whatsapp_job_failed", { reason: "no_whatsapp_templates" });
+      const updated = await updateJob(job.id, "failed", { error: "no_whatsapp_templates", nextAttemptAt: null }, job.claim_token);
+      if (updated) {
+        await cleanupJobPortalAccess(job);
+        await auditWhatsAppJob(job, "whatsapp_job_failed", { reason: "no_whatsapp_templates" });
+      } else await auditStaleClaim(job, "no_templates");
       return;
     }
     const persistedTemplateIndex = Number(job.template_index);
@@ -1345,80 +1995,114 @@ async function processWhatsAppJob() {
     const { index: templateIndex, template } = hasPersistedTemplate
       ? { index: persistedTemplateIndex, template: String(job.template_text) }
       : await chooseTemplate(type, templates);
+
+    if (!state.ownsWhatsAppSession || !(await extendJobLease(job, "before_final_revalidation"))) {
+      await auditStaleClaim(job, "before_final_revalidation");
+      return;
+    }
+    eligibility = await revalidateWhatsAppJob(job, type);
+    if (!eligibility.ok) {
+      const updated = await updateJob(job.id, "skipped", { error: eligibility.reason, nextAttemptAt: null }, job.claim_token);
+      if (updated) {
+        await cleanupJobPortalAccess(job);
+        await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: eligibility.reason });
+      } else await auditStaleClaim(job, "final_revalidation");
+      return;
+    }
+
+    let payload = eligibility.payload || {};
+    if (type === "grade") {
+      if (!(await scrubClaimedGradePortalLink(job))) {
+        await auditStaleClaim(job, "grade_portal_link_scrub");
+        return;
+      }
+      payload = { ...payload, portal_link: GRADE_PORTAL_PREVIEW_MARKER };
+    }
+    const parts = cairoParts(payload.event_time || payload.checkin_time);
     const studentCode = String(payload.student_code || "").trim();
-    const configuredPortalLink = String(payload.portal_link || "").trim();
-    const accessToken = createStudentPortalAccessToken();
-    const portalLink = configuredPortalLink || buildStudentPortalLink(job.student_id, studentCode, accessToken);
-    if (portalLink && !configuredPortalLink) await createPortalAccessRecord(job.student_id, accessToken);
+    const configuredPortalLink = type === "grade" ? "" : String(payload.portal_link || "").trim();
+    if (type === "grade") portalAccessToken = createStudentPortalAccessToken();
+    const portalLink = configuredPortalLink || buildStudentPortalLink(job.student_id, studentCode, portalAccessToken);
     const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
     const formattedPayload = {
       ...payload,
       amount_paid: payload.amount_paid == null ? payload.amount_paid : Number(payload.amount_paid).toFixed(2),
-      month: payload.month ? formatMonthList(payload.month, locale) : payload.month,
-      months: payload.months ? formatMonthList(payload.months, locale) : payload.months
+      month: payload.month ? formatWhatsAppMonthList(payload.month, locale) : payload.month,
+      months: payload.months ? formatWhatsAppMonthList(payload.months, locale) : payload.months
     };
-    const templateValues = {
-      ...formattedPayload,
-      ...parts,
-      ref_code: job.ref_code,
-      student_code: studentCode,
-      portal_link: portalLink
-    };
+    const templateValues = { ...formattedPayload, ...parts, ref_code: job.ref_code, student_code: studentCode, portal_link: portalLink };
     const renderedBody = compileWhatsAppMessage(type, template, templateValues).trim();
-    const body = portalLink && !templateHasPlaceholder(template, "portal_link")
-      ? `\({renderedBody}\n\){portalLink}`
-      : renderedBody;
+    const body = portalLink && !templateHasPlaceholder(template, "portal_link") ? `${renderedBody}\n${portalLink}` : renderedBody;
     const adjustmentLine = type === "receipt" && (payload.is_exempt === true || Number(payload.discount_amount || 0) > 0)
       ? payload.is_exempt === true
         ? (locale === "ar-EG" ? "حالة السداد: إعفاء كامل" : "Payment status: Full exemption")
-        : (locale === "ar-EG" ? `الخصم المطبق: \({payload.discount_amount} ج.م` : `Discount applied:\){payload.discount_amount} EGP`)
+        : (locale === "ar-EG" ? `الخصم المطبق: ${payload.discount_amount} ج.م` : `Discount applied: ${payload.discount_amount} EGP`)
       : "";
-    const adjustedBody = adjustmentLine && !body.includes(adjustmentLine) ? `\({body}\n\){adjustmentLine}` : body;
+    const adjustedBody = adjustmentLine && !body.includes(adjustmentLine) ? `${body}\n${adjustmentLine}` : body;
     const footer = locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
-    const finalBody = adjustedBody.includes(footer) ? adjustedBody : `\({adjustedBody}\n\n\){footer}`;
-    await query(
+    const finalBody = adjustedBody.includes(footer) ? adjustedBody : `${adjustedBody}\n\n${footer}`;
+    const contentUpdated = await query(
       `UPDATE whatsapp_notification_jobs
        SET template_index = $2, template_text = $3, rendered_message = $4, updated_at = NOW()
-       WHERE id = $1`,
-      [job.id, templateIndex, template, redactPortalLink(finalBody)]
+       WHERE id = $1 AND status = 'processing' AND claim_token = $5
+       RETURNING id`,
+      [job.id, templateIndex, template, redactPortalLink(finalBody), job.claim_token]
     );
-    const liveJob = await query("SELECT status FROM whatsapp_notification_jobs WHERE id = $1", [job.id]);
-    if (liveJob.rows[0]?.status !== "processing") {
-      await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: "job_cancelled" });
+    if (!contentUpdated.rowCount) {
+      await auditStaleClaim(job, "rendered_content");
       return;
     }
-    const finalEligibility = await revalidateWhatsAppJob(job, type);
-    if (!finalEligibility.ok) {
-      await updateJob(job.id, "skipped", { error: finalEligibility.reason, nextAttemptAt: null });
-      if (type === "grade") await updateGradeNotificationState(job, false);
-      await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: finalEligibility.reason });
+    if (!state.ownsWhatsAppSession
+      || !(await extendJobLease(job, "before_provider"))
+      || !(await renewWhatsAppOwnership())
+      || !(await verifyWhatsAppOwnership())) {
+      await auditStaleClaim(job, "before_provider");
       return;
+    }
+    if (!(await markSendStarted(job))) {
+      await auditStaleClaim(job, "send_start");
+      return;
+    }
+    if (type === "grade" && portalAccessToken) {
+      await cleanupJobPortalAccess(job);
+      await createPortalAccessRecord(job.student_id, portalAccessToken);
     }
     const messagePayload = { text: finalBody };
-    console.log(`[WhatsApp] Sending TYPE: \({type}, TEMPLATE:\){templateIndex + 1}, TEXT: ${redactPortalLink(finalBody)}`);
+    console.log(`[WhatsApp] Sending TYPE: ${type}, TEMPLATE: ${templateIndex + 1}`);
     const providerResponse = await withTimeout(
-      state.socket.sendMessage(`${finalEligibility.phone.slice(1)}@s.whatsapp.net`, messagePayload),
-      45_000,
+      state.socket.sendMessage(`${eligibility.phone.slice(1)}@s.whatsapp.net`, messagePayload),
+      JOB_PROVIDER_TIMEOUT_MS,
       "whatsapp_provider_timeout"
     );
+    providerAccepted = true;
+    providerMessageId = providerResponse?.key?.id || null;
+    if (!state.ownsWhatsAppSession || !isLocallyWithinConfirmedLease()) throw new Error("whatsapp_ownership_lost_during_send");
     state.lastSentAt = Date.now();
-    await updateJob(job.id, "sent", { providerMessageId: providerResponse?.key?.id || null });
-    await updateGradeNotificationState(job, true);
+    const completed = await completeSentJob(job, providerMessageId);
+    if (!completed) {
+      await auditStaleClaim(job, "sent_completion");
+      return;
+    }
     await auditWhatsAppJob(job, "whatsapp_job_accepted", { provider_message_id: providerResponse?.key?.id || null });
   } catch (error) {
-    console.error("WhatsApp notification worker error", error);
+    const reason = safeWorkerError(error);
+    console.error("WhatsApp notification worker error", reason);
     if (job?.id) {
-      await updateGradeNotificationState(job, false).catch((stateError) => {
-        console.error("Failed to keep exam WhatsApp state unsent", stateError);
-      });
-      const attempts = Number(job.attempts || 0);
-      const retry = attempts < 3;
-      const retryDelayMs = Math.min(15 * 60_000, 15_000 * (2 ** Math.max(0, attempts - 1)));
-      await updateJob(job.id, retry ? "pending" : "failed", {
-        error: String(error.message || error),
-        nextAttemptAt: retry ? new Date(Date.now() + retryDelayMs) : null
-      }).catch((updateError) => console.error("Failed to update WhatsApp job after worker error", updateError));
-      await auditWhatsAppJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason: String(error.message || error) }).catch((auditError) => console.error("Failed to audit WhatsApp worker error", auditError));
+      const deliveryUnknown = reason === "whatsapp_provider_timeout" || reason === "whatsapp_ownership_lost_during_send" || providerAccepted;
+      if (deliveryUnknown) {
+        await markDeliveryUnknown(job, reason, providerMessageId);
+      } else {
+        await cleanupJobPortalAccess(job, portalAccessToken);
+        const attempts = Number(job.attempts || 0);
+        const retry = attempts < 3;
+        const retryDelayMs = Math.min(15 * 60_000, 15_000 * (2 ** Math.max(0, attempts - 1)));
+        const updated = await updateJob(job.id, retry ? "pending" : "failed", {
+          error: reason,
+          nextAttemptAt: retry ? new Date(Date.now() + retryDelayMs) : null
+        }, job.claim_token);
+        if (updated) await auditWhatsAppJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason }).catch(() => undefined);
+        else await auditStaleClaim(job, "worker_error");
+      }
     }
   } finally {
     state.workerRunning = false;
@@ -1431,9 +2115,9 @@ export function wakeWhatsAppWorker() {
 
 export function startWhatsAppWorker() {
   if (state.workerTimer) return;
-  void recoverStaleWhatsAppJobs().catch((error) => console.error("Failed to recover WhatsApp notification jobs", error));
+  void recoverStaleWhatsAppJobs().catch((error) => console.error("Failed to recover WhatsApp notification jobs", safeWorkerError(error)));
   state.workerRecoveryTimer = setInterval(() => {
-    void recoverStaleWhatsAppJobs().catch((error) => console.error("Failed to recover WhatsApp notification jobs", error));
+    void recoverStaleWhatsAppJobs().catch((error) => console.error("Failed to recover WhatsApp notification jobs", safeWorkerError(error)));
   }, 60_000);
   state.workerTimer = setInterval(() => { void processWhatsAppJob(); }, 1000);
   void processWhatsAppJob();
@@ -1443,7 +2127,7 @@ export async function startWhatsAppService() {
   startWhatsAppWorker();
   try {
     if (await hasWhatsAppAuthState()) await connectWhatsApp();
-  } catch (error) { console.error("WhatsApp PostgreSQL auth state could not be loaded", error); }
+  } catch (error) { console.error("WhatsApp PostgreSQL auth state could not be loaded", safeWorkerError(error)); }
 }
 
 export async function stopWhatsAppService() {
@@ -1455,17 +2139,19 @@ export async function stopWhatsAppService() {
   state.reconnectTimer = null;
   state.workerTimer = null;
   state.workerRecoveryTimer = null;
+  clearWhatsAppOwnershipRetry();
 
   if (state.connecting) {
     await withTimeout(state.connecting, 5000, "whatsapp_connect_shutdown_timeout")
-      .catch((error) => console.warn("WhatsApp connection was still negotiating during shutdown", error));
+      .catch((error) => console.warn("WhatsApp connection was still negotiating during shutdown", safeWorkerError(error)));
   }
   const socket = state.socket;
   state.connectionEstablished = false;
   setDisconnected();
   if (socket) {
     await withTimeout(closeStaleSocket(socket, "server_shutdown"), 5000, "whatsapp_shutdown_timeout")
-      .catch((error) => console.warn("WhatsApp shutdown completed with socket close warning", error));
+      .catch((error) => console.warn("WhatsApp shutdown completed with socket close warning", safeWorkerError(error)));
   }
+  await releaseWhatsAppOwnership().catch((error) => console.warn("WhatsApp ownership release failed", safeWorkerError(error)));
   return getWhatsAppStatus();
 }

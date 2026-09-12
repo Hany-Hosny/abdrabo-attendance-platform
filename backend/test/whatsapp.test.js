@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applyTemplate, buildStudentPortalLink, normalizeEgyptianPhone, validateWhatsAppSettings } from "../src/services/whatsapp.js";
+import { absenceCorrectionTransition, applyTemplate, buildStudentPortalLink, enqueueGradeNotificationInTransaction, formatWhatsAppMonthList, gradeQueuePreviewPayload, normalizeEgyptianPhone, normalizeManualRetryReason, validateWhatsAppSettings } from "../src/services/whatsapp.js";
 import { hasPermission } from "../src/services/rbac.js";
 import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "../src/services/auth.js";
 
@@ -87,6 +87,70 @@ test("accepts and preserves isolated advance-payment templates", () => {
   });
   assert.equal(settings.advance_payment_templates[0], "دفعة {amount_paid} عن {months}");
   assert.equal(settings.advance_payment_templates.length, 3);
+});
+
+test("formats one and multiple advance-payment months for both locales", () => {
+  assert.equal(formatWhatsAppMonthList("2026-10", "en-US"), "October 2026");
+  assert.equal(formatWhatsAppMonthList("2026-10, 2026-11", "en-US"), "October 2026, November 2026");
+  assert.match(formatWhatsAppMonthList("2026-10, 2026-11", "ar-EG"), /٢٠٢٦|2026/);
+  assert.equal(applyTemplate("{months}", { months: formatWhatsAppMonthList("2026-10, 2026-11", "en-US") }), "October 2026, November 2026");
+});
+
+test("single-grade enqueue rejects opted-out, inactive, and invalid-phone students before creating a job", async () => {
+  const row = {
+    result_id: 10,
+    student_id: 20,
+    student_name: "Student",
+    student_code: "S-20",
+    guardian_phone: "01012345678",
+    whatsapp_opted_out: true,
+    is_active: true,
+    deleted_at: null
+  };
+  const queries = [];
+  const client = { query: async (sql) => { queries.push(sql); return { rowCount: 1, rows: [row] }; } };
+  assert.deepEqual(await enqueueGradeNotificationInTransaction(client, { resultId: 10 }), { queued: false, reason: "whatsapp_opted_out" });
+  assert.equal(queries.length, 1);
+
+  row.whatsapp_opted_out = false;
+  row.is_active = false;
+  queries.length = 0;
+  assert.deepEqual(await enqueueGradeNotificationInTransaction(client, { resultId: 10 }), { queued: false, reason: "student_inactive" });
+  assert.equal(queries.length, 1);
+
+  row.is_active = true;
+  row.guardian_phone = "invalid";
+  queries.length = 0;
+  assert.deepEqual(await enqueueGradeNotificationInTransaction(client, { resultId: 10 }), { queued: false, reason: "invalid_phone" });
+  assert.equal(queries.length, 1);
+});
+
+test("absence correction fences an in-flight provider call as delivery_unknown", () => {
+  assert.deepEqual(absenceCorrectionTransition("pending", null), {
+    status: "skipped",
+    lastError: "attendance_corrected_before_send"
+  });
+  assert.deepEqual(absenceCorrectionTransition("processing", null), {
+    status: "skipped",
+    lastError: "attendance_corrected_before_send"
+  });
+  assert.deepEqual(absenceCorrectionTransition("processing", "2026-09-12T01:00:00Z"), {
+    status: "delivery_unknown",
+    lastError: "attendance_correction_during_send"
+  });
+});
+
+test("manual retry reasons are bounded and normalized before database access", () => {
+  assert.deepEqual(normalizeManualRetryReason("  corrected phone number  "), { ok: true, value: "corrected phone number" });
+  assert.deepEqual(normalizeManualRetryReason(""), { ok: false, reason: "retry_reason_required" });
+  assert.deepEqual(normalizeManualRetryReason("x"), { ok: false, reason: "retry_reason_required" });
+  assert.deepEqual(normalizeManualRetryReason("x".repeat(501)), { ok: false, reason: "retry_reason_too_long" });
+});
+
+test("grade queue payloads never contain a usable portal token", () => {
+  const payload = gradeQueuePreviewPayload({ student_name: "Student", portal_link: "https://example.com/p/old-token" });
+  assert.equal(payload.portal_link, "[secure-link-generated-at-send]");
+  assert.doesNotMatch(JSON.stringify(payload), /old-token/);
 });
 
 test("WhatsApp access can be assigned independently while management includes viewing", () => {

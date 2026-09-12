@@ -636,7 +636,7 @@ export async function migrate() {
       phone_number TEXT NOT NULL,
       payload JSONB NOT NULL DEFAULT '{}'::jsonb,
       ref_code TEXT NOT NULL UNIQUE,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped', 'delivery_unknown')),
       attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
       last_error TEXT,
       template_index INTEGER,
@@ -645,6 +645,8 @@ export async function migrate() {
       next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       sent_at TIMESTAMPTZ,
       lease_expires_at TIMESTAMPTZ,
+      claim_token TEXT,
+      send_started_at TIMESTAMPTZ,
       provider_message_id TEXT,
       provider_accepted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -683,6 +685,19 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS student_portal_access_tokens_expiry_idx
       ON student_portal_access_tokens(expires_at, used_at);
+    CREATE TABLE IF NOT EXISTS whatsapp_session_leases (
+      session_key TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      owner_token TEXT NOT NULL,
+      lease_expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS whatsapp_send_slots (
+      session_key TEXT PRIMARY KEY,
+      next_available_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
   // Keep every DDL/DML command separate when no transaction client is used.
   // node-postgres rejects a multi-command query whenever parameters are passed
@@ -701,10 +716,14 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_text TEXT");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS rendered_message TEXT");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS claim_token TEXT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS send_started_at TIMESTAMPTZ");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_message_id TEXT");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_accepted_at TIMESTAMPTZ");
   await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN attendance_record_id DROP NOT NULL");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_notification_type_check");
+  await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_status_check");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_status_check CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped', 'delivery_unknown'))");
   await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
   await query("ALTER TABLE whatsapp_template_rotation DROP CONSTRAINT IF EXISTS whatsapp_template_rotation_notification_type_check");
   await query("ALTER TABLE whatsapp_template_rotation ADD CONSTRAINT whatsapp_template_rotation_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
@@ -719,6 +738,15 @@ export async function migrate() {
     ON whatsapp_notification_jobs(source_id)
     WHERE notification_type = 'grade' AND source_id IS NOT NULL
       AND status IN ('pending', 'processing')`);
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_notification_jobs_claim_token_idx ON whatsapp_notification_jobs(claim_token) WHERE claim_token IS NOT NULL");
+  await query("ALTER TABLE whatsapp_session_leases ADD COLUMN IF NOT EXISTS owner_id TEXT NOT NULL DEFAULT 'migration-recovery'");
+  await query("ALTER TABLE whatsapp_session_leases ADD COLUMN IF NOT EXISTS owner_token TEXT NOT NULL DEFAULT 'migration-recovery'");
+  await query("ALTER TABLE whatsapp_session_leases ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+  await query("ALTER TABLE whatsapp_session_leases ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+  await query("ALTER TABLE whatsapp_session_leases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+  await query("ALTER TABLE whatsapp_send_slots ADD COLUMN IF NOT EXISTS next_available_at TIMESTAMPTZ");
+  await query("ALTER TABLE whatsapp_send_slots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()");
+  await query("UPDATE whatsapp_session_leases SET owner_id = COALESCE(NULLIF(owner_id, ''), 'migration-recovery'), owner_token = COALESCE(NULLIF(owner_token, ''), 'migration-recovery'), lease_expires_at = COALESCE(lease_expires_at, NOW())");
   await query("CREATE INDEX IF NOT EXISTS attendance_sessions_absence_dispatch_idx ON attendance_sessions(status, absence_dispatched, closes_at, id)");
   await query(
     `INSERT INTO whatsapp_settings (id, templates, grade_templates, receipt_templates, advance_payment_templates)

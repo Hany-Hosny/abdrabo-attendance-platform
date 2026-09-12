@@ -15,7 +15,7 @@ import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue, scanLook
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { hasPermission } from "../services/rbac.js";
 import { ipKeyGenerator } from "express-rate-limit";
-import { enqueueAttendanceNotification, enqueueAttendanceNotificationInTransaction, wakeWhatsAppWorker } from "../services/whatsapp.js";
+import { enqueueAttendanceNotification, enqueueAttendanceNotificationInTransaction, settleAbsenceNotificationJobsForCorrection, wakeWhatsAppWorker } from "../services/whatsapp.js";
 import { MANUAL_ATTENDANCE_STATUSES } from "../utils/attendanceStatus.js";
 
 export const operationsRouter = express.Router();
@@ -891,11 +891,15 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
         SET status = 'excused', method = 'manual', checkin_time = NOW(), whatsapp_notified = FALSE
         WHERE id = $1
         RETURNING *`, [existing.rows[0].id]);
-      await client.query(`UPDATE whatsapp_notification_jobs
-        SET status = 'skipped', last_error = 'attendance_excused', next_attempt_at = NULL,
-            lease_expires_at = NULL, updated_at = NOW()
-        WHERE notification_type = 'absence' AND attendance_record_id = $1
-          AND status IN ('pending', 'processing')`, [existing.rows[0].id]);
+      await settleAbsenceNotificationJobsForCorrection({
+        client,
+        attendanceRecordId: existing.rows[0].id,
+        reason: "attendance_excused",
+        actorId,
+        studentId,
+        sessionId,
+        request
+      });
       await auditLog({ db: client, action: "attendance_recorded", actorId, studentId, sessionId, details: { method: "manual", status_before: "absent", status_after: "excused", record_id: corrected.rows[0].id }, request });
       await client.query("COMMIT");
       return { corrected: true, record: corrected.rows[0] };
@@ -1125,16 +1129,77 @@ async function correctSystemAbsence({ sessionId, studentId, actorId, ip, deviceI
       : null;
     const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
     await client.query("UPDATE attendance_records SET whatsapp_notified = $2 WHERE id = $1", [corrected.rows[0].id, considered]);
-    await client.query(`UPDATE whatsapp_notification_jobs
-      SET status = 'skipped', last_error = 'attendance_corrected', next_attempt_at = NULL,
-          lease_expires_at = NULL, updated_at = NOW()
-      WHERE notification_type = 'absence' AND attendance_record_id = $1
-        AND status IN ('pending', 'processing')`, [corrected.rows[0].id]);
+    await settleAbsenceNotificationJobsForCorrection({
+      client,
+      attendanceRecordId: corrected.rows[0].id,
+      reason: "attendance_corrected",
+      actorId,
+      studentId,
+      sessionId,
+      request
+    });
     corrected.rows[0].whatsapp_notified = considered;
     await auditLog({ db: client, action: "attendance_recorded", actorId, studentId, sessionId, details: { method: "scanner", status_before: "absent", status_after: "present", record_id: corrected.rows[0].id, corrected_system_absence: true, whatsapp_queue_reason: whatsapp?.reason || null }, request });
     await client.query("COMMIT");
     if (whatsapp?.queued) wakeWhatsAppWorker();
     return corrected.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function correctManualAttendance({ sessionId, studentId, actorId, status, ip, deviceId, whatsappNotified, request }) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    const existing = await client.query(
+      "SELECT * FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1 FOR UPDATE",
+      [sessionId, studentId]
+    );
+    if (!existing.rowCount || !((existing.rows[0].method === "system" && existing.rows[0].status === "absent") || existing.rows[0].status === "excused")) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    const previousStatus = existing.rows[0].status;
+    const updated = await client.query(`
+      UPDATE attendance_records
+      SET status=$1, method='manual', checkin_time=NOW(), whatsapp_notified=$3
+      WHERE id=$2
+      RETURNING *`, [status, existing.rows[0].id, status === "present" || status === "late" ? whatsappNotified : false]);
+    if (status === "present" || status === "late" || status === "excused") {
+      await settleAbsenceNotificationJobsForCorrection({
+        client,
+        attendanceRecordId: updated.rows[0].id,
+        reason: status === "excused" ? "attendance_excused" : "attendance_corrected",
+        actorId,
+        studentId,
+        sessionId,
+        request
+      });
+    }
+    let whatsapp = null;
+    if (whatsappNotified && (status === "present" || status === "late")) {
+      whatsapp = await enqueueAttendanceNotificationInTransaction(client, { attendanceRecordId: updated.rows[0].id, studentId });
+      const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+      await client.query("UPDATE attendance_records SET whatsapp_notified = $2 WHERE id = $1", [updated.rows[0].id, considered]);
+      updated.rows[0].whatsapp_notified = considered;
+    }
+    await auditLog({
+      db: client,
+      action: "attendance_recorded",
+      actorId,
+      studentId,
+      sessionId,
+      details: { method: "manual", status_before: previousStatus, status_after: status, record_id: updated.rows[0].id, whatsapp_queue_reason: whatsapp?.reason || null },
+      request
+    });
+    await client.query("COMMIT");
+    if (whatsapp?.queued) wakeWhatsAppWorker();
+    return updated.rows[0];
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -1150,29 +1215,8 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
     if (!sessionId || !studentId || !MANUAL_ATTENDANCE_STATUSES.includes(status)) return res.status(400).json({ok:false,status:"invalid_attendance_payload"});
     const check = await query("SELECT 1 FROM attendance_sessions s JOIN students st ON st.group_id=s.group_id WHERE s.id=$1 AND st.id=$2", [sessionId,studentId]);
     if (!check.rowCount) return res.status(400).json({ok:false,status:"wrong_group"});
-    const existing = await query("SELECT id, status, method FROM attendance_records WHERE session_id=$1 AND student_id=$2 LIMIT 1", [sessionId, studentId]);
-    if (existing.rowCount && ((existing.rows[0].method === "system" && existing.rows[0].status === "absent") || existing.rows[0].status === "excused")) {
-      const previousStatus = existing.rows[0].status;
-      const updated = await query(`UPDATE attendance_records
-        SET status=$1, method='manual', checkin_time=NOW(), whatsapp_notified=$3
-        WHERE id=$2
-        RETURNING *`, [status, existing.rows[0].id, status === "present" || status === "late" ? whatsappNotified : false]);
-      await auditLog({ action: "attendance_recorded", actorId: req.teacher.id, studentId, sessionId, details: { method: "manual", status_before: previousStatus, status_after: status, record_id: updated.rows[0].id }, request: req });
-      if (status === "present" || status === "late" || status === "excused") {
-        await query(`UPDATE whatsapp_notification_jobs
-          SET status = 'skipped', last_error = 'attendance_corrected', next_attempt_at = NULL,
-              lease_expires_at = NULL, updated_at = NOW()
-          WHERE notification_type = 'absence' AND attendance_record_id = $1
-            AND status IN ('pending', 'processing')`, [updated.rows[0].id]);
-        if (whatsappNotified && (status === "present" || status === "late")) {
-          const whatsapp = await enqueueAttendanceNotification({ attendanceRecordId: updated.rows[0].id, studentId });
-          const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
-          await query("UPDATE attendance_records SET whatsapp_notified = $2 WHERE id = $1", [updated.rows[0].id, considered]);
-          updated.rows[0].whatsapp_notified = considered;
-        }
-      }
-      return res.status(200).json({ok:true,record:updated.rows[0],corrected:true});
-    }
+    const corrected = await correctManualAttendance({ sessionId, studentId, actorId: req.teacher.id, status, ip: req.ip, whatsappNotified, request: req });
+    if (corrected) return res.status(200).json({ok:true,record:corrected,corrected:true});
     const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,whatsappNotified,request:req});
     if (saved.corrected) return res.status(200).json({ok:true,record:saved.record,corrected:true});
     if (saved.duplicate) return res.status(409).json({ok:false,status:"duplicate_attendance"});

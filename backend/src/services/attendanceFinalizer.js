@@ -74,7 +74,7 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
   );
   const dispatchedSources = new Set(
     existing.rows
-      .filter((row) => ["pending", "processing", "sent", "failed", "skipped"].includes(row.status))
+      .filter((row) => ["pending", "processing", "sent", "failed", "skipped", "delivery_unknown"].includes(row.status))
       .map((row) => Number(row.source_id))
   );
   const pending = eligible.filter((row) => !dispatchedSources.has(row.source_id));

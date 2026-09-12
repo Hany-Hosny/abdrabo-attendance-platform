@@ -11,7 +11,7 @@ import {
   getWhatsAppStatus,
   enqueueGradeBatchNotifications,
   enqueueGradeNotification,
-  retryGradeNotificationJob,
+  retryWhatsAppNotificationJob,
   updateWhatsAppSettings,
   resolveWhatsAppTemplate
 } from "../services/whatsapp.js";
@@ -20,7 +20,7 @@ export const whatsappRouter = express.Router();
 whatsappRouter.use(requireTeacher);
 
 const HISTORY_TYPES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment"]);
-const HISTORY_STATUSES = new Set(["pending", "processing", "sent", "failed", "skipped"]);
+const HISTORY_STATUSES = new Set(["pending", "processing", "sent", "failed", "skipped", "delivery_unknown"]);
 const TEMPLATE_CATEGORIES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment"]);
 
 const batchExamSchema = z.object({
@@ -194,6 +194,27 @@ whatsappRouter.get("/history", requirePermission("whatsapp.view"), async (req, r
   } catch (error) { next(error); }
 });
 
+whatsappRouter.get("/history/stats", requirePermission("whatsapp.view"), async (_req, res, next) => {
+  try {
+    const result = await query(
+      `SELECT status, COUNT(*)::int AS count
+       FROM whatsapp_notification_jobs
+       GROUP BY status`
+    );
+    const counts = Object.fromEntries(result.rows.map((row) => [row.status, Number(row.count) || 0]));
+    const total = result.rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+    res.json({
+      ok: true,
+      stats: {
+        total,
+        sent: counts.sent || 0,
+        failed: counts.failed || 0,
+        pending: (counts.pending || 0) + (counts.processing || 0)
+      }
+    });
+  } catch (error) { next(error); }
+});
+
 whatsappRouter.post("/send-grade", requirePermission("whatsapp.send_grades"), async (req, res, next) => {
   try {
     const resultId = Number(req.body?.result_id);
@@ -215,12 +236,25 @@ whatsappRouter.post("/batch-exams", requirePermission("whatsapp.send_grades"), a
   } catch (error) { next(error); }
 });
 
-whatsappRouter.post("/jobs/:id/retry", requirePermission("whatsapp.send_grades"), async (req, res, next) => {
+whatsappRouter.post("/jobs/:id/retry", requirePermission("whatsapp.manage"), async (req, res, next) => {
   try {
     const jobId = Number(req.params.id);
     if (!Number.isSafeInteger(jobId) || jobId <= 0) return res.status(400).json({ ok: false, status: "invalid_job" });
-    const result = await retryGradeNotificationJob({ jobId });
+    const result = await retryWhatsAppNotificationJob({
+      jobId,
+      actorId: req.teacher.id,
+      reason: req.body?.reason,
+      allowDeliveryUnknown: req.body?.confirm_delivery_unknown === true,
+      request: req
+    });
     if (!result.ok && result.reason === "not_found") return res.status(404).json({ ok: false, status: result.reason });
+    if (!result.ok && result.reason === "delivery_unknown_requires_confirmation") return res.status(409).json({ ok: false, status: result.reason });
+    if (!result.ok && result.reason === "retry_reason_required") return res.status(400).json({ ok: false, status: result.reason });
+    if (!result.ok && result.reason === "retry_reason_too_long") return res.status(400).json({ ok: false, status: result.reason });
+    if (!result.ok && result.reason === "unsupported_whatsapp_notification_type") return res.status(409).json({ ok: false, status: result.reason });
+    if (!result.ok && ["student_inactive", "whatsapp_opted_out", "invalid_phone", "attendance_excused", "attendance_no_longer_eligible", "absence_no_longer_eligible", "grade_no_longer_exists", "payment_no_longer_exists"].includes(result.reason)) {
+      return res.status(409).json({ ok: false, status: result.reason });
+    }
     res.status(result.retried ? 202 : 200).json({ ok: true, ...result });
   } catch (error) { next(error); }
 });
