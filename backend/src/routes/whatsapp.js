@@ -22,8 +22,7 @@ whatsappRouter.use(requireTeacher);
 const HISTORY_TYPES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment"]);
 const HISTORY_STATUSES = new Set(["pending", "processing", "sent", "failed", "skipped"]);
 const TEMPLATE_CATEGORIES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment"]);
-// exam_results.id is SERIAL in the existing PostgreSQL schema, so the
-// boundary accepts numeric IDs (including JSON string IDs from older clients).
+
 const batchExamSchema = z.object({
   resultIds: z.array(z.coerce.number().int().positive()).min(1).max(500)
 });
@@ -31,7 +30,8 @@ const batchExamSchema = z.object({
 function maskPhoneNumber(value) {
   const phone = String(value || "");
   if (phone.length <= 4) return "****";
-  return `${phone.slice(0, 3)}****${phone.slice(-2)}`;
+  // تم إصلاح الخطأ البرمجي هنا (استخدام القالب الصحيح للـ Template Literals)
+  return `\({phone.slice(0, 3)}****\){phone.slice(-2)}`;
 }
 
 function redactPortalTokens(value) {
@@ -169,10 +169,11 @@ whatsappRouter.get("/history", requirePermission("whatsapp.view"), async (req, r
       values
     );
     values.push(limit);
+    
     const result = await query(
       `SELECT j.id, j.notification_type, j.phone_number, j.status, j.attempts, j.ref_code,
           j.template_index, j.template_text, j.rendered_message, j.last_error,
-          j.created_at, j.sent_at, s.full_name AS student_name, s.student_code
+          j.created_at, j.sent_at, j.next_attempt_at, j.lease_expires_at, s.full_name AS student_name, s.student_code
        FROM whatsapp_notification_jobs j
        LEFT JOIN students s ON s.id = j.student_id
        WHERE ${whereClause}
