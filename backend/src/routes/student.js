@@ -15,8 +15,8 @@ import path from "node:path";
 import fs from "node:fs";
 
 export const studentRouter = express.Router();
-const appDownloadPath = path.resolve(process.cwd(), "public/downloads/app-debug.apk");
-const appDownloadFilename = "app-debug.apk";
+const appDownloadPath = path.resolve(process.cwd(), "public/downloads/Mr.Abdrabo Edu");
+const appDownloadFilename = "Mr.Abdrabo Edu.apk";
 const studentCodePattern = /^A-\d{4}$/;
 const studentLoginRateLimit = createRateLimiter({ windowMs: 60_000, max: 10, key: (req) => `student-login:${ipKeyGenerator(req.ip || "unknown")}` });
 const studentLookupRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 10, key: (req) => `student-lookup:${ipKeyGenerator(req.ip || "unknown")}` });
