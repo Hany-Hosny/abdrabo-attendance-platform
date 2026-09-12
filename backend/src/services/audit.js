@@ -16,7 +16,9 @@ const SENSITIVE_KEYS = new Set([
   "resend_api_key",
   "password_reset_secret",
   "settings_encryption_key",
-  "confirmation"
+  "confirmation",
+  "security_pin",
+  "audit_pin"
 ]);
 
 function isSensitiveKey(key) {

@@ -10252,6 +10252,8 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
 
   function reversalErrorMessage(error: unknown) {
     const code = error instanceof Error ? error.message : "";
+    const serverMessage = error instanceof Error ? (error as Error & { serverMessage?: string }).serverMessage : "";
+    if (serverMessage) return serverMessage;
     if (code === "unauthorized" || code === "http_401") return t("fees.reversalUnauthorized");
     if (code === "permission_required" || code === "http_403") return t("fees.reversalPermission");
     if (code === "already_reversed" || code === "http_409") return t("fees.reversalAlreadyReversed");
@@ -10282,7 +10284,9 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.ok) {
         const errorCode = String(data?.status || (response.status ? `http_${response.status}` : "reverse_failed"));
-        throw new Error(errorCode);
+        const error = new Error(errorCode) as Error & { serverMessage?: string };
+        if (typeof data?.message === "string" && data.message.trim()) error.serverMessage = data.message.trim();
+        throw error;
       }
 
       setReverseTarget(null);

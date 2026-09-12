@@ -38,7 +38,9 @@ function paymentReversalFailure(res, error) {
   const code = String(error?.code || "");
   if (code === "23505") return res.status(409).json({ ok: false, status: "already_reversed" });
   if (code === "23514") return res.status(400).json({ ok: false, status: "payment_not_reversible" });
-  if (code === "42P01" || code === "42703") return res.status(503).json({ ok: false, status: "reversal_unavailable" });
+  if (code === "42P01" || code === "42703" || code === "23503" || code === "23502" || code === "22P02") {
+    return res.status(503).json({ ok: false, status: "reversal_unavailable" });
+  }
   return res.status(500).json({ ok: false, status: "reversal_failed", message: "The reversal could not be completed. No change was committed. / تعذر اعتماد عكس الدفعة. لم يتم اعتماد أي تغيير." });
 }
 
@@ -366,8 +368,9 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("pa
     return res.status(statusCode).json({ ok: false, status: pinCheck.status, message: messages[pinCheck.status] || messages.invalid_audit_pin });
   }
 
-  const client = await pool.connect();
+  let client = null;
   try {
+    client = await pool.connect();
     await client.query("BEGIN");
     const paymentResult = await client.query(`
       SELECT p.*, s.full_name, s.student_code, s.student_serial, s.scan_serial,
@@ -435,11 +438,11 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("pa
     await client.query("COMMIT");
     return res.status(201).json({ ok: true, reversal: reversal.rows[0] });
   } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
+    await client?.query("ROLLBACK").catch(() => undefined);
     console.error("Payment reversal failed", { code: error?.code || "unknown" });
     return paymentReversalFailure(res, error);
   } finally {
-    client.release();
+    client?.release();
   }
 });
 
