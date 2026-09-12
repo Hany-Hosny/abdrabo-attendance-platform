@@ -335,10 +335,10 @@ function hasUsableSocket(socket) {
   return Boolean(socket && socket.ws?.isOpen !== false);
 }
 
-async function closeStaleSocket(socket) {
+async function closeStaleSocket(socket, reason = "whatsapp_stale_socket") {
   if (!socket) return;
   try {
-    await Promise.resolve().then(() => socket.end(new Error("whatsapp_stale_socket")));
+    await Promise.resolve().then(() => socket.end(new Error(reason)));
   } catch (error) {
     console.warn("Failed to close stale WhatsApp socket", error);
   }
@@ -664,11 +664,11 @@ export async function resolveWhatsAppTemplate({ category, values = {}, sourceId 
   const templates = await getNotificationTemplates({}, category, db);
   if (!templates.length) throw new Error("no_whatsapp_templates");
   const rows = await activeTemplateRows(normalizeNotificationType(category), db);
-  const selected = rows.length ? rows[randomInteger(0, rows.length - 1)] : { id: 0, message: templates[randomInteger(0, templates.length - 1)] };
+  const selected = rows.length ? rows[randomInteger(0, rows.length - 1)] : { id: 0, message_body: templates[randomInteger(0, templates.length - 1)] };
   const entropy = `${Date.now()}-${sourceId}-${crypto.randomUUID()}`;
   const uniqueHash = crypto.createHash("sha256").update(entropy).digest("hex").slice(0, 16);
   const reference = `ABS-${Date.now()}-${selected.id}-${uniqueHash}`;
-  return { id: Number(selected.id), message: `${resolveSpintax(selected.message || selected, { ...values, ref_code: reference })}\n\nRef: ${reference}`, reference };
+  return { id: Number(selected.id), message: `${resolveSpintax(selected.message_body || selected, { ...values, ref_code: reference })}\n\nRef: ${reference}`, reference };
 }
 
 function compileWhatsAppMessage(_type, template, values) {
@@ -1204,6 +1204,7 @@ async function claimNextJob(dbClient = null) {
   const ownsClient = !dbClient;
   try {
     await client.query("BEGIN");
+    // Rely on row-level SKIP LOCKED; session advisory locks are unsafe through pooled connections.
     const result = await client.query(`SELECT * FROM whatsapp_notification_jobs
       WHERE status = 'pending' AND next_attempt_at <= NOW()
       ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`);
@@ -1306,14 +1307,8 @@ async function processWhatsAppJob() {
   if (state.workerRunning) return;
   state.workerRunning = true;
   let job = null;
-  let lockClient = null;
   try {
-    // A process-local flag prevents duplicate work in one instance. The
-    // advisory lock extends that guarantee across multiple API instances.
-    lockClient = await pool.connect();
-    const lockResult = await lockClient.query("SELECT pg_try_advisory_lock($1::bigint) AS locked", [284951237]);
-    if (lockResult.rows[0]?.locked !== true) return;
-    job = await claimNextJob(lockClient);
+    job = await claimNextJob();
     if (!job) return;
     const settings = await getWhatsAppSettings();
     const type = notificationTypeForJob(job);
@@ -1445,10 +1440,6 @@ async function processWhatsAppJob() {
       await auditWhatsAppJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason: String(error.message || error) }).catch((auditError) => console.error("Failed to audit WhatsApp worker error", auditError));
     }
   } finally {
-    if (lockClient) {
-      await lockClient.query("SELECT pg_advisory_unlock($1::bigint)", [284951237]).catch(() => undefined);
-      lockClient.release();
-    }
     state.workerRunning = false;
   }
 }
@@ -1472,4 +1463,28 @@ export async function startWhatsAppService() {
   try {
     if (await hasWhatsAppAuthState()) await connectWhatsApp();
   } catch (error) { console.error("WhatsApp PostgreSQL auth state could not be loaded", error); }
+}
+
+export async function stopWhatsAppService() {
+  state.manuallyDisconnected = true;
+  state.reconnectAttempt = 0;
+  if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
+  if (state.workerTimer) clearInterval(state.workerTimer);
+  if (state.workerRecoveryTimer) clearInterval(state.workerRecoveryTimer);
+  state.reconnectTimer = null;
+  state.workerTimer = null;
+  state.workerRecoveryTimer = null;
+
+  if (state.connecting) {
+    await withTimeout(state.connecting, 5000, "whatsapp_connect_shutdown_timeout")
+      .catch((error) => console.warn("WhatsApp connection was still negotiating during shutdown", error));
+  }
+  const socket = state.socket;
+  state.connectionEstablished = false;
+  setDisconnected();
+  if (socket) {
+    await withTimeout(closeStaleSocket(socket, "server_shutdown"), 5000, "whatsapp_shutdown_timeout")
+      .catch((error) => console.warn("WhatsApp shutdown completed with socket close warning", error));
+  }
+  return getWhatsAppStatus();
 }

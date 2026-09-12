@@ -20,11 +20,14 @@ import { ensureMonthlyFees } from "./services/fees.js";
 import { finalizeExpiredAttendanceSessions } from "./services/attendanceFinalizer.js";
 import { purgeDeletedStudents } from "./services/studentCleanup.js";
 import { installAuditFallback } from "./services/audit.js";
-import { startWhatsAppService } from "./services/whatsapp.js";
+import { startWhatsAppService, stopWhatsAppService } from "./services/whatsapp.js";
 import { metricsMiddleware, metricsRegistry } from "./services/metrics.js";
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
+let server = null;
+let shuttingDown = false;
+const maintenanceTimers = [];
 assertProductionConfig();
 app.use(helmet({
   hsts: process.env.NODE_ENV === "production" ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
@@ -121,16 +124,40 @@ app.use((error, _req, res, _next) => {
   res.status(500).json({ ok: false, message: "Unexpected server error." });
 });
 
+async function gracefulShutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal} received. Shutting down gracefully...`);
+  for (const timer of maintenanceTimers) clearInterval(timer);
+  await stopWhatsAppService().catch((error) => console.error("Failed to stop WhatsApp service cleanly", error));
+  if (server?.listening) await new Promise((resolve) => server.close(resolve));
+  await pool.end();
+}
+
+function handleShutdown(signal) {
+  void gracefulShutdown(signal)
+    .then(() => process.exit(0))
+    .catch((error) => {
+      console.error("Graceful shutdown failed", error);
+      process.exit(1);
+    });
+}
+
+process.on("SIGTERM", () => handleShutdown("SIGTERM"));
+process.on("SIGINT", () => handleShutdown("SIGINT"));
+
 migrate()
   .then(() => {
     ensureMonthlyFees().catch((error) => console.error("Failed to create monthly fees", error));
     finalizeExpiredAttendanceSessions().catch((error) => console.error("Failed to finalize expired attendance sessions", error));
     purgeDeletedStudents().catch((error) => console.error("Failed to purge deleted students", error));
     startWhatsAppService().catch((error) => console.error("Failed to start WhatsApp service", error));
-    setInterval(() => ensureMonthlyFees().catch((error) => console.error("Failed to renew monthly fees", error)), 60 * 60 * 1000);
-    setInterval(() => finalizeExpiredAttendanceSessions().catch((error) => console.error("Failed to finalize expired attendance sessions", error)), 60 * 1000);
-    setInterval(() => purgeDeletedStudents().catch((error) => console.error("Failed to purge deleted students", error)), 24 * 60 * 60 * 1000);
-    const server = app.listen(port, "0.0.0.0", () => {
+    maintenanceTimers.push(
+      setInterval(() => ensureMonthlyFees().catch((error) => console.error("Failed to renew monthly fees", error)), 60 * 60 * 1000),
+      setInterval(() => finalizeExpiredAttendanceSessions().catch((error) => console.error("Failed to finalize expired attendance sessions", error)), 60 * 1000),
+      setInterval(() => purgeDeletedStudents().catch((error) => console.error("Failed to purge deleted students", error)), 24 * 60 * 60 * 1000)
+    );
+    server = app.listen(port, "0.0.0.0", () => {
       console.log(`Abdrabo API listening on port ${port}`);
     });
     server.requestTimeout = 30_000;
