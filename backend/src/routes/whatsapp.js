@@ -29,9 +29,9 @@ const batchExamSchema = z.object({
 
 function maskPhoneNumber(value) {
   const phone = String(value || "");
+  if (!phone) return null;
   if (phone.length <= 4) return "****";
-  // تم إصلاح الخطأ البرمجي هنا (استخدام القالب الصحيح للـ Template Literals)
-  return `\({phone.slice(0, 3)}****\){phone.slice(-2)}`;
+  return `${phone.slice(0, 3)}****${phone.slice(-2)}`;
 }
 
 function redactPortalTokens(value) {
@@ -209,7 +209,8 @@ whatsappRouter.get("/history/stats", requirePermission("whatsapp.view"), async (
         total,
         sent: counts.sent || 0,
         failed: counts.failed || 0,
-        pending: (counts.pending || 0) + (counts.processing || 0)
+        pending: (counts.pending || 0) + (counts.processing || 0),
+        delivery_unknown: counts.delivery_unknown || 0
       }
     });
   } catch (error) { next(error); }

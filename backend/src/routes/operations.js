@@ -771,12 +771,12 @@ operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"
         original_starts_at, original_opens_at, original_closes_at, original_ends_at, status)
       SELECT cs.group_id, cs.id, cs.slot_key, $1::date,
         ${cairoSessionTimeSql("$1", "cs.start_time")},
-        ${cairoSessionTimeSql("$1", "cs.start_time")},
         (($1::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-        (($1::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-        ${cairoSessionCloseSql("$1", "$3")},
         ${cairoSessionCloseSql("$1", "$3")},
         ${cairoSessionEndTimeSql("$1")},
+        ${cairoSessionTimeSql("$1", "cs.start_time")},
+        (($1::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+        ${cairoSessionCloseSql("$1", "$3")},
         ${cairoSessionEndTimeSql("$1")},
         'open'
       FROM class_schedules cs
@@ -809,12 +809,13 @@ operationsRouter.post("/attendance/sessions", requirePermission("attendance.mana
     const timing = await getAttendanceTimingDefaults();
     const result = await query(`INSERT INTO attendance_sessions (group_id,schedule_id,occurrence_key,session_date,starts_at,opens_at,closes_at,ends_at,
       original_starts_at,original_opens_at,original_closes_at,original_ends_at,status)
-      SELECT $1, cs.id, cs.slot_key, $3::date, ${cairoSessionTimeSql("$3", "cs.start_time")}, ${cairoSessionTimeSql("$3", "cs.start_time")},
+      SELECT $1, cs.id, cs.slot_key, $3::date, ${cairoSessionTimeSql("$3", "cs.start_time")},
       (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-      (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
-      ${cairoSessionCloseSql("$3", "$5")},
       ${cairoSessionCloseSql("$3", "$5")},
       ${cairoSessionEndTimeSql("$3")},
+      ${cairoSessionTimeSql("$3", "cs.start_time")},
+      (($3::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $4 ELSE cs.opens_before_minutes END) || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo'),
+      ${cairoSessionCloseSql("$3", "$5")},
       ${cairoSessionEndTimeSql("$3")}, 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.id=$2 AND cs.group_id=$1 AND cs.is_active=TRUE
@@ -927,6 +928,7 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const timing = await getAttendanceTimingDefaults(client.query.bind(client));
     const lockedSession = await client.query("SELECT id, group_id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
     if (lockedSession.rowCount && !hasGroupAccess(user, lockedSession.rows[0].group_id)) {
       await client.query("ROLLBACK");
@@ -942,10 +944,10 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
         AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
         AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
         AND CURRENT_TIMESTAMP BETWEEN
-          ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
-          AND ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+          (s.starts_at - ((CASE WHEN cs.opens_before_minutes = 3 THEN $9 ELSE cs.opens_before_minutes END)::text || ' minutes')::interval)
+          AND (s.starts_at + ((CASE WHEN cs.closes_after_minutes = 20 THEN $10 ELSE cs.closes_after_minutes END)::text || ' minutes')::interval)
     )
-    ON CONFLICT DO NOTHING RETURNING *`, [sessionId, studentId, status, method, ip, deviceId, idempotencyKey, Boolean(whatsappNotified)]);
+    ON CONFLICT DO NOTHING RETURNING *`, [sessionId, studentId, status, method, ip, deviceId, idempotencyKey, Boolean(whatsappNotified), timing.openBeforeMinutes, timing.closeAfterMinutes]);
   if (!result.rowCount) {
     const stillOpen = await client.query(`
       SELECT 1
@@ -955,10 +957,10 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
         AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
         AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
         AND CURRENT_TIMESTAMP BETWEEN
-          ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
-          AND ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+          (s.starts_at - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END)::text || ' minutes')::interval)
+          AND (s.starts_at + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END)::text || ' minutes')::interval)
       LIMIT 1
-    `, [sessionId]);
+    `, [sessionId, timing.openBeforeMinutes, timing.closeAfterMinutes]);
     if (!stillOpen.rowCount) {
       await client.query("COMMIT");
       return { windowClosed: true };
@@ -1022,6 +1024,13 @@ function attendanceWindowMessage(status) {
   return "Attendance window closed.";
 }
 
+function effectiveAttendanceTiming(schedule, defaults) {
+  return {
+    openBeforeMinutes: Number(schedule.opens_before_minutes) === 3 ? defaults.openBeforeMinutes : schedule.opens_before_minutes,
+    closeAttendanceAfterMinutes: Number(schedule.closes_after_minutes) === 20 ? defaults.closeAfterMinutes : schedule.closes_after_minutes
+  };
+}
+
 async function resolveRequestedAttendanceSession({ sessionId, groupId, actorId, request }) {
   const client = await pool.connect();
   try {
@@ -1054,6 +1063,7 @@ async function resolveRequestedAttendanceSession({ sessionId, groupId, actorId, 
       return { status: "attendance_window_closed", session };
     }
 
+    const timing = await getAttendanceTimingDefaults(client.query.bind(client));
     const clock = await client.query("SELECT CURRENT_TIMESTAMP AS server_now");
     let window;
     try {
@@ -1062,8 +1072,7 @@ async function resolveRequestedAttendanceSession({ sessionId, groupId, actorId, 
         dayOfWeek: session.day_of_week,
         startTime: session.start_time,
         endTime: session.end_time,
-        openBeforeMinutes: session.opens_before_minutes,
-        closeAttendanceAfterMinutes: session.closes_after_minutes
+        ...effectiveAttendanceTiming(session, timing)
       }, { now: clock.rows[0].server_now });
     } catch (error) {
       await client.query("COMMIT");
@@ -1075,13 +1084,13 @@ async function resolveRequestedAttendanceSession({ sessionId, groupId, actorId, 
         UPDATE attendance_sessions s
         SET status='open',
             starts_at=((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
-            opens_at=(((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-            closes_at=(((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+            opens_at=(((s.session_date::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+            closes_at=(((s.session_date::date + cs.start_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
             ends_at=((((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time)) AT TIME ZONE 'Africa/Cairo')
         FROM class_schedules cs
         WHERE s.id=$1 AND cs.id=s.schedule_id
         RETURNING s.*
-      `, [sessionId]);
+      `, [sessionId, timing.openBeforeMinutes, timing.closeAfterMinutes]);
       if (!reopened.rowCount) throw new Error("attendance_session_reopen_conflict");
       await auditLog({
         db: client,
@@ -1133,6 +1142,7 @@ async function resolveImplicitAttendanceSession({ groupId, actorId, request }) {
       ORDER BY s.starts_at, s.id
       FOR UPDATE OF s
     `, [groupId]);
+    const timing = await getAttendanceTimingDefaults(client.query.bind(client));
     const clock = await client.query("SELECT CURRENT_TIMESTAMP AS server_now");
     let fallbackStatus = "closed_session";
     for (const session of result.rows) {
@@ -1143,8 +1153,7 @@ async function resolveImplicitAttendanceSession({ groupId, actorId, request }) {
           dayOfWeek: session.day_of_week,
           startTime: session.start_time,
           endTime: session.end_time,
-          openBeforeMinutes: session.opens_before_minutes,
-          closeAttendanceAfterMinutes: session.closes_after_minutes
+          ...effectiveAttendanceTiming(session, timing)
         }, { now: clock.rows[0].server_now });
       } catch (error) {
         fallbackStatus = error.code || fallbackStatus;
@@ -1155,13 +1164,13 @@ async function resolveImplicitAttendanceSession({ groupId, actorId, request }) {
           UPDATE attendance_sessions s
           SET status='open',
               starts_at=((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo'),
-              opens_at=(((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-              closes_at=(((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+              opens_at=(((s.session_date::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+              closes_at=(((s.session_date::date + cs.start_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $3 ELSE cs.closes_after_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
               ends_at=((((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time)) AT TIME ZONE 'Africa/Cairo')
           FROM class_schedules cs
           WHERE s.id=$1 AND cs.id=s.schedule_id
           RETURNING s.*
-        `, [session.id]);
+        `, [session.id, timing.openBeforeMinutes, timing.closeAfterMinutes]);
         if (!reopened.rowCount) throw new Error("attendance_session_reopen_conflict");
         await auditLog({
           db: client,
@@ -1191,6 +1200,7 @@ async function correctSystemAbsence({ sessionId, studentId, actorId, ip, deviceI
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const timing = await getAttendanceTimingDefaults(client.query.bind(client));
     const lockedSession = await client.query("SELECT id, group_id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
     if (lockedSession.rowCount && !hasGroupAccess(user, lockedSession.rows[0].group_id)) {
       await client.query("ROLLBACK");
@@ -1209,11 +1219,11 @@ async function correctSystemAbsence({ sessionId, studentId, actorId, ip, deviceI
             AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
             AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
             AND CURRENT_TIMESTAMP BETWEEN
-              ((s.session_date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
-              AND ((s.session_date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo')
+              (s.starts_at - ((CASE WHEN cs.opens_before_minutes = 3 THEN $7 ELSE cs.opens_before_minutes END)::text || ' minutes')::interval)
+              AND (s.starts_at + ((CASE WHEN cs.closes_after_minutes = 20 THEN $8 ELSE cs.closes_after_minutes END)::text || ' minutes')::interval)
         )
       RETURNING *
-    `, [sessionId, studentId, ip, deviceId, whatsappNotified, idempotencyKey]);
+    `, [sessionId, studentId, ip, deviceId, whatsappNotified, idempotencyKey, timing.openBeforeMinutes, timing.closeAfterMinutes]);
     if (!corrected.rowCount) {
       await client.query("COMMIT");
       return null;
@@ -1396,12 +1406,12 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
         original_starts_at, original_opens_at, original_closes_at, original_ends_at, status)
       SELECT cs.group_id, cs.id, cs.slot_key, (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date,
         ${cairoSessionTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "cs.start_time")},
-        ${cairoSessionTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "cs.start_time")},
         ((((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-        ((((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
-        ${cairoSessionCloseSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "$3")},
         ${cairoSessionCloseSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "$3")},
         ${cairoSessionEndTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')")},
+        ${cairoSessionTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "cs.start_time")},
+        ((((CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $2 ELSE cs.opens_before_minutes END) || ' minutes')::interval)) AT TIME ZONE 'Africa/Cairo'),
+        ${cairoSessionCloseSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')", "$3")},
         ${cairoSessionEndTimeSql("(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')")}, 'open'
       FROM class_schedules cs JOIN groups g ON g.id=cs.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
       WHERE cs.group_id=$1 AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER

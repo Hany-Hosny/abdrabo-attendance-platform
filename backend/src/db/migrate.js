@@ -811,6 +811,7 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_message_id TEXT");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_accepted_at TIMESTAMPTZ");
   await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN attendance_record_id DROP NOT NULL");
+  await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN phone_number DROP NOT NULL");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_notification_type_check");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_status_check");
   await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_status_check CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped', 'delivery_unknown'))");

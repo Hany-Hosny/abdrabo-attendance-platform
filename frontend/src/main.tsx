@@ -538,6 +538,7 @@ const translations = {
     "whatsapp.historyStatsSent": "تم الإرسال بنجاح",
     "whatsapp.historyStatsFailed": "فشل الإرسال",
     "whatsapp.historyStatsPending": "قيد الانتظار",
+    "whatsapp.historyStatsDeliveryUnknown": "نتيجة إرسال غير مؤكدة",
     "whatsapp.historyEmpty": "لا توجد رسائل مطابقة للبحث.",
     "whatsapp.historyUnknownStudent": "طالب غير معروف",
     "whatsapp.historyStudent": "الطالب",
@@ -552,9 +553,11 @@ const translations = {
     "whatsapp.historyRetrying": "جاري إعادة الإرسال...",
     "whatsapp.historyRetryQueued": "تمت إعادة الرسالة إلى قائمة الانتظار.",
     "whatsapp.historyRetryReason": "إعادة إرسال يدوية من سجل رسائل واتساب",
+    "whatsapp.historyRetryUnknownConfirm": "نتيجة الإرسال السابق غير مؤكدة. هل تريد إعادة الإرسال مع احتمال وصول الرسالتين؟",
     "whatsapp.historyRetryFailed": "تعذر إعادة إرسال الرسالة. راجع سبب الفشل وحاول مرة أخرى.",
     "whatsapp.historyRetryNotEligible": "لا يمكن إعادة الإرسال لأن بيانات الرسالة لم تعد مؤهلة.",
     "whatsapp.historyType.attendance": "حضور",
+    "whatsapp.historyType.absence": "غياب",
     "whatsapp.historyType.grade": "نتيجة امتحان",
     "whatsapp.historyType.receipt": "إيصال مصروفات",
     "whatsapp.historyType.advance_payment": "دفع مقدم",
@@ -563,6 +566,7 @@ const translations = {
     "whatsapp.historyStatus.processing": "قيد التنفيذ",
     "whatsapp.historyStatus.failed": "فشل",
     "whatsapp.historyStatus.skipped": "تم التخطي",
+    "whatsapp.historyStatus.delivery_unknown": "نتيجة غير مؤكدة",
     "whatsapp.attendanceTemplatesTitle": "قوالب إشعارات الحضور",
     "whatsapp.attendanceTemplatesDescription": "رسائل الحضور التي تصل إلى ولي الأمر بعد تسجيل حضور الطالب.",
     "whatsapp.absenceTemplatesTitle": "قوالب إشعارات الغياب",
@@ -2085,6 +2089,7 @@ const translations = {
     "whatsapp.historyStatsSent": "Sent successfully",
     "whatsapp.historyStatsFailed": "Failed",
     "whatsapp.historyStatsPending": "Pending",
+    "whatsapp.historyStatsDeliveryUnknown": "Delivery unknown",
     "whatsapp.historyEmpty": "No matching messages were found.",
     "whatsapp.historyUnknownStudent": "Unknown student",
     "whatsapp.historyStudent": "Student",
@@ -2099,9 +2104,11 @@ const translations = {
     "whatsapp.historyRetrying": "Resending...",
     "whatsapp.historyRetryQueued": "The message was added back to the sending queue.",
     "whatsapp.historyRetryReason": "Manual resend from WhatsApp message history",
+    "whatsapp.historyRetryUnknownConfirm": "The previous delivery result is unknown. Resend anyway? The guardian may receive both messages.",
     "whatsapp.historyRetryFailed": "Could not resend the message. Review the failure and try again.",
     "whatsapp.historyRetryNotEligible": "The message cannot be resent because its data is no longer eligible.",
     "whatsapp.historyType.attendance": "Attendance",
+    "whatsapp.historyType.absence": "Absence",
     "whatsapp.historyType.grade": "Exam result",
     "whatsapp.historyType.receipt": "Fee receipt",
     "whatsapp.historyType.advance_payment": "Advance payment",
@@ -2110,6 +2117,7 @@ const translations = {
     "whatsapp.historyStatus.processing": "Processing",
     "whatsapp.historyStatus.failed": "Failed",
     "whatsapp.historyStatus.skipped": "Skipped",
+    "whatsapp.historyStatus.delivery_unknown": "Delivery unknown",
     "whatsapp.attendanceTemplatesTitle": "Attendance notification templates",
     "whatsapp.attendanceTemplatesDescription": "Attendance messages sent to the guardian after a student is marked present.",
     "whatsapp.absenceTemplatesTitle": "Absence notification templates",
@@ -4323,7 +4331,11 @@ function LandingPage({ language, t }: { language: Language; t: Translator }) {
                     <span>{t(landingStageLabels[grade.stage])}</span>
                     <h3><LandingDynamicText value={grade.title} /></h3>
                   </div>
-                  <span className="landing-grade-status">{grade.comingSoon ? t("landing.grade.comingSoon") : visual.special ? "✦" : <LandingDynamicText value={grade.badge} />}</span>
+                  {!grade.comingSoon ? (
+                    <span className={`landing-grade-status ${visual.special ? "is-special-status" : "is-available-status"}`}>
+                      {visual.special ? "✦" : <LandingDynamicText value={grade.badge} />}
+                    </span>
+                  ) : null}
                 </article>
                 );
               })}
@@ -5328,7 +5340,7 @@ function GlobalSearch({ session, language, t, onSelect }: { session: TeacherSess
     onSelect(result.id);
   }
 
-  return <div className="admin-header-tool global-search" ref={containerRef}>
+  return <div className="admin-header-tool global-search" ref={containerRef} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
     <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={open ? t("dashboard.searchClose") : t("dashboard.searchOpen")} title={t("dashboard.searchOpen")} aria-expanded={open} onClick={() => { setOpen(true); window.setTimeout(() => inputRef.current?.focus(), 0); }}>
       <svg className="admin-search-icon" viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="10.8" cy="10.8" r="6.6" />
@@ -6070,7 +6082,7 @@ function TeacherDashboard({
   }
 
   return (
-    <div className="app-shell admin-shell">
+    <div className="app-shell admin-shell" dir={language} lang={language}>
       <header
         className="site-header admin-header"
         style={{
@@ -11446,7 +11458,7 @@ function Shell({
   ];
 
   return (
-    <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell auth-page-shell` : ""} ${pageVariant ? `${pageVariant}-page-shell` : ""}`}>
+    <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell auth-page-shell` : ""} ${pageVariant ? `${pageVariant}-page-shell` : ""}`} dir={language} lang={language}>
       {pageVariant === "public" ? <ScienceBackdrop variant="student" /> : null}
       <header
         className={`site-header mobile-first-header ${isStudentAuthenticated ? "is-authenticated" : "is-guest"} ${language === "ar" ? "is-ar" : "is-en"} ${headerVariant ? `${headerVariant}-header` : ""}`}

@@ -1,6 +1,6 @@
 :root {
   color-scheme: dark;
-  font-family: "Tahoma", "Arial", sans-serif;
+  font-family: "Cairo", "Alexandria", "Tahoma", "Arial", sans-serif;
   background: var(--bg);
   color: var(--text);
   --bg: #071321;
@@ -2500,6 +2500,47 @@ textarea {
   }
 }
 
+/* Header tools need a viewport-level layer on phones and tablets. A sticky
+   header with blur/isolation can otherwise clip or paint its popovers behind
+   the dashboard, especially when the page is embedded in a mobile webview. */
+@media (max-width: 1023px) {
+  .admin-header .admin-header-tools {
+    position: relative;
+    z-index: 1500;
+  }
+
+  .admin-header .global-search,
+  .admin-header .notification-center {
+    position: static;
+  }
+
+  .admin-header .header-popover {
+    position: fixed !important;
+    z-index: 2000 !important;
+    inset-block-start: calc(92px + var(--safe-top)) !important;
+    inset-block-end: calc(78px + var(--safe-bottom)) !important;
+    inset-inline-start: max(12px, var(--safe-left)) !important;
+    inset-inline-end: max(12px, var(--safe-right)) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .admin-header .search-popover,
+  .admin-header .notification-popover {
+    box-sizing: border-box;
+  }
+
+  .admin-header .search-popover input {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+}
+
 .admin-header .admin-logout-tab {
   flex: 0 0 auto !important;
   min-height: 36px !important;
@@ -3118,10 +3159,13 @@ textarea {
 .whatsapp-history-stat-card.failed .whatsapp-history-stat-icon { background: rgba(244, 63, 94, .2); }
 .whatsapp-history-stat-card.pending { color: #fcd34d; border-color: rgba(245, 158, 11, .3); background: linear-gradient(135deg, rgba(217, 119, 6, .15), rgba(15, 23, 42, .18)); }
 .whatsapp-history-stat-card.pending .whatsapp-history-stat-icon { background: rgba(245, 158, 11, .2); }
+.whatsapp-history-stat-card.delivery-unknown { color: #c4b5fd; border-color: rgba(139, 92, 246, .3); background: linear-gradient(135deg, rgba(109, 40, 217, .14), rgba(15, 23, 42, .18)); }
+.whatsapp-history-stat-card.delivery-unknown .whatsapp-history-stat-icon { background: rgba(139, 92, 246, .2); }
 [data-theme="light"] .whatsapp-history-stat-card.total { color: #1d4ed8; background: rgba(59, 130, 246, .08); }
 [data-theme="light"] .whatsapp-history-stat-card.sent { color: #15803d; background: rgba(34, 197, 94, .08); }
 [data-theme="light"] .whatsapp-history-stat-card.failed { color: #be123c; background: rgba(244, 63, 94, .08); }
 [data-theme="light"] .whatsapp-history-stat-card.pending { color: #b45309; background: rgba(245, 158, 11, .1); }
+[data-theme="light"] .whatsapp-history-stat-card.delivery-unknown { color: #6d28d9; background: rgba(139, 92, 246, .08); }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .whatsapp-history-load-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid rgba(244, 63, 94, 0.2); border-radius: 8px; background: rgba(244, 63, 94, 0.06); }
@@ -3147,6 +3191,7 @@ textarea {
 .whatsapp-history-status.failed { color: #fda4af; background: rgba(244, 63, 94, 0.12); }
 .whatsapp-history-status.pending,
 .whatsapp-history-status.processing { color: #fcd34d; background: rgba(245, 158, 11, 0.12); }
+.whatsapp-history-status.delivery_unknown { color: #c4b5fd; background: rgba(139, 92, 246, 0.14); }
 .whatsapp-history-details { display: grid; gap: 14px; padding: 0 14px 14px; }
 .whatsapp-history-details dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding-top: 12px; border-top: 1px solid rgba(128, 170, 211, 0.13); }
 .whatsapp-history-details dl > div { display: grid; gap: 3px; min-width: 0; }
@@ -6357,7 +6402,7 @@ textarea:focus-visible {
 }
 
 .dashboard-hero p {
-  color: #c8d5e8;
+  color: var(--text-secondary);
   line-height: 1.55;
 }
 
@@ -6371,7 +6416,7 @@ textarea:focus-visible {
   border: 1px solid #f59e0b;
   border-radius: 12px;
   background: rgba(245, 158, 11, 0.12);
-  color: #fff;
+  color: var(--text-primary);
   box-shadow: 0 12px 28px rgba(245, 158, 11, 0.08);
 }
 
@@ -6400,7 +6445,7 @@ textarea:focus-visible {
 
 .renewal-reminder-content p {
   margin: 0;
-  color: #fff;
+  color: var(--text-primary);
   font-size: 14px;
   line-height: 1.65;
 }
@@ -14487,7 +14532,7 @@ body,
 #root,
 .app-shell,
 .public-page-shell {
-  overflow-x: visible !important;
+  overflow-x: hidden !important;
 }
 
 .site-header,
@@ -15364,6 +15409,9 @@ body,
 .landing-hero-art {
   position: relative;
   display: grid;
+  width: min(100%, 38rem);
+  height: auto;
+  aspect-ratio: 4 / 3;
   min-height: 410px;
   place-items: center;
   overflow: hidden;
@@ -15380,7 +15428,7 @@ body,
     width: min(100%, 38rem);
     max-width: 100%;
     min-height: 0;
-    aspect-ratio: 1.28 / 1;
+    aspect-ratio: 4 / 3;
     justify-self: center;
     align-self: center;
   }
@@ -15388,47 +15436,69 @@ body,
 
 .landing-hero-art::before {
   position: absolute;
-  inset: 14%;
+  top: 50%;
+  left: 50%;
+  width: 72%;
+  height: 72%;
   border: 1px dashed rgba(134, 229, 239, 0.2);
   border-radius: 50%;
   content: "";
-  transform: rotate(-18deg) scaleX(1.28);
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-18deg) scaleX(1.28);
 }
 
 .landing-art-orbit {
   position: absolute;
+  top: 50%;
+  left: 50%;
   width: 82%;
   height: 41%;
   border: 1px solid rgba(77, 208, 225, 0.26);
   border-radius: 50%;
-  transform: rotate(-22deg);
+  pointer-events: none;
+  transform: translate(-50%, -50%) rotate(-22deg);
 }
 
 .landing-art-orbit-one { animation: landing-orbit-one 14s linear infinite; }
-.landing-art-orbit-two { width: 67%; height: 73%; border-color: rgba(242, 140, 40, 0.25); transform: rotate(52deg); animation: landing-orbit-two 18s linear infinite reverse; }
+.landing-art-orbit-two { width: 67%; height: 73%; border-color: rgba(242, 140, 40, 0.25); transform: translate(-50%, -50%) rotate(52deg); animation: landing-orbit-two 18s linear infinite reverse; }
 
 .landing-art-core {
-  position: relative;
+  position: absolute;
+  top: 50%;
+  left: 50%;
   display: grid;
-  width: 126px;
-  height: 126px;
+  width: clamp(88px, 21%, 150px);
+  aspect-ratio: 1;
+  height: auto;
   place-items: center;
   border: 1px solid rgba(255, 205, 122, 0.52);
   border-radius: 50%;
   background: radial-gradient(circle at 35% 28%, #fff1ca 0 5%, #ffbd62 20%, #ef791b 53%, rgba(242, 140, 40, 0.12) 74%);
   box-shadow: 0 0 0 18px rgba(242, 140, 40, 0.05), 0 0 50px rgba(242, 140, 40, 0.3), 0 0 90px rgba(77, 208, 225, 0.16);
   color: #231504;
-  font-size: 54px;
+  font-family: "Tahoma", "Arial", sans-serif;
+  font-size: clamp(38px, 8vw, 58px);
   font-weight: 950;
+  line-height: 1;
+  transform: translate(-50%, -50%);
+  text-rendering: geometricPrecision;
+}
+
+.landing-art-core > span {
+  display: block;
+  font-family: "Cairo", "Alexandria", "Tahoma", "Arial", sans-serif;
+  line-height: 1;
 }
 
 .landing-art-profile {
   position: absolute;
-  right: 9%;
-  bottom: 9%;
+  inset-inline-end: 7%;
+  inset-block-end: 7%;
   display: flex;
   align-items: center;
   gap: 10px;
+  max-width: 42%;
+  min-width: 0;
   padding: 10px 13px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
@@ -15441,9 +15511,9 @@ body,
 .landing-art-profile b, .landing-art-profile small { display: block; }
 .landing-art-profile b { font-size: 12px; }
 .landing-art-profile small { margin-top: 3px; color: rgba(226, 232, 240, 0.56); font-size: 10px; }
-.landing-art-formula { position: absolute; color: rgba(134, 229, 239, 0.5); font-family: Georgia, serif; font-size: 22px; font-weight: 700; letter-spacing: 0.1em; }
-.landing-art-formula-one { top: 16%; right: 13%; }
-.landing-art-formula-two { bottom: 18%; left: 13%; color: rgba(255, 190, 112, 0.44); }
+.landing-art-formula { position: absolute; color: rgba(134, 229, 239, 0.5); font-family: Georgia, serif; font-size: clamp(17px, 3vw, 28px); font-weight: 700; letter-spacing: 0.1em; line-height: 1; pointer-events: none; }
+.landing-art-formula-one { inset-block-start: 15%; inset-inline-end: 12%; }
+.landing-art-formula-two { inset-block-end: 15%; inset-inline-start: 12%; color: rgba(255, 190, 112, 0.44); }
 
 .landing-section-heading { max-width: 720px; margin: 0 auto 32px; text-align: center; }
 .landing-kicker { color: #ffb45c; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -15532,8 +15602,21 @@ body,
 .landing-stats { display: flex; align-items: stretch; justify-content: space-around; gap: 16px; margin-top: 20px; padding: 22px clamp(16px, 4vw, 44px); border-radius: 20px; box-shadow: 0 22px 55px rgba(0, 0, 0, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.06); }
 .landing-stats > div { display: flex; min-width: 0; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 4px 16px; text-align: center; }
 .landing-stats > div + div { border-inline-start: 1px solid rgba(255, 255, 255, 0.1); }
-.landing-stats strong { color: #ffb45c; font-size: clamp(28px, 4vw, 43px); font-weight: 950; letter-spacing: -0.06em; line-height: 1; }
-.landing-stats span { color: rgba(226, 232, 240, 0.64); font-size: 12px; font-weight: 750; }
+.landing-stats strong {
+  color: #ffd08a;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  text-shadow: 0 2px 14px rgba(255, 180, 92, 0.16);
+}
+.landing-stats span {
+  color: #e2e8f0;
+  font-size: clamp(0.75rem, 1.3vw, 0.9rem);
+  font-weight: 600;
+  line-height: 1.45;
+}
 .landing-footer { padding: 32px 0 26px; color: rgba(226, 232, 240, 0.42); font-size: 11px; text-align: center; }
 
 .landing-theme-light { color: #142238; background: #edf6fb; }
@@ -15555,6 +15638,7 @@ body,
 .landing-theme-light .landing-section-heading h2,
 .landing-theme-light .landing-grade-copy h3,
 .landing-theme-light .landing-feature-card h3 { color: #142238; }
+.landing-theme-light .landing-stats strong { color: #9a3412; text-shadow: none; }
 .landing-theme-light .landing-brand small,
 .landing-theme-light .landing-hero p,
 .landing-theme-light .landing-section-heading p,
@@ -15573,8 +15657,8 @@ body,
 .landing-theme-light .landing-footer { color: rgba(20, 34, 56, 0.48); }
 .landing-theme-light .landing-stats > div + div { border-color: rgba(67, 104, 143, 0.15); }
 
-@keyframes landing-orbit-one { from { transform: rotate(-22deg); } to { transform: rotate(338deg); } }
-@keyframes landing-orbit-two { from { transform: rotate(52deg); } to { transform: rotate(-308deg); } }
+@keyframes landing-orbit-one { from { transform: translate(-50%, -50%) rotate(-22deg); } to { transform: translate(-50%, -50%) rotate(338deg); } }
+@keyframes landing-orbit-two { from { transform: translate(-50%, -50%) rotate(52deg); } to { transform: translate(-50%, -50%) rotate(-308deg); } }
 
 @media (max-width: 980px) {
   .landing-header-inner { grid-template-columns: minmax(170px, 1fr) auto; }
@@ -15617,8 +15701,8 @@ body,
   .landing-feature-card { min-height: 0; }
   .landing-stats { gap: 0; padding: 16px 6px; }
   .landing-stats > div { padding: 4px 5px; }
-  .landing-stats strong { font-size: 25px; }
-  .landing-stats span { font-size: 9px; line-height: 1.4; }
+  .landing-stats strong { font-size: clamp(1.75rem, 8vw, 2.25rem); }
+  .landing-stats span { font-size: clamp(0.7rem, 2.5vw, 0.8rem); line-height: 1.4; }
 }
 
 @media (max-width: 430px) {
@@ -15702,14 +15786,8 @@ body,
     gap: 6px;
   }
 
-  .public-layout-landing .public-header .landing-language-switcher {
-    display: inline-flex;
-    flex: 0 0 auto;
-  }
-
-  .public-layout-landing .public-header .landing-language-switcher button {
-    min-width: 36px;
-    min-height: 40px;
+  .public-layout-landing .public-header .public-header-language-switcher {
+    display: none;
   }
 
   .public-layout-landing .public-header .public-app-download,
@@ -15821,6 +15899,27 @@ body,
     border-color: rgba(242, 140, 40, 0.45);
     background: rgba(242, 140, 40, 0.1);
     color: #ffb45c;
+  }
+
+  .public-mobile-menu-language {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(128, 170, 211, 0.16);
+    color: rgba(226, 232, 240, 0.8);
+    font-size: 14px;
+    font-weight: 800;
+  }
+
+  .public-mobile-language-switcher {
+    flex: 0 0 auto;
+  }
+
+  .public-mobile-language-switcher button {
+    min-width: 42px;
+    min-height: 40px;
   }
 
   .public-layout-landing .landing-main {
@@ -15943,7 +16042,7 @@ body,
     max-width: 24vw;
   }
 
-  .public-layout-landing .public-header .landing-language-switcher {
+  .public-layout-landing .public-header .public-header-language-switcher {
     display: none;
   }
 
@@ -16922,4 +17021,922 @@ body,
   .cms-action-buttons { display: grid; grid-template-columns: 1fr 1fr; }
   .cms-action-buttons button { width: 100%; }
   .cms-guard-actions { flex-direction: column-reverse; }
+}
+
+/* Cross-platform science card geometry. Every decorative element is anchored
+   to the same 4:3 box, so device viewport height cannot stretch the artwork. */
+.public-layout-landing .landing-hero-art {
+  width: min(100%, 38rem) !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-width: 100% !important;
+  aspect-ratio: 4 / 3 !important;
+  box-sizing: border-box;
+  overflow: hidden !important;
+  contain: layout paint;
+}
+
+.public-layout-landing .landing-art-orbit,
+.public-layout-landing .landing-hero-art::before {
+  top: 50% !important;
+  left: 50% !important;
+}
+
+.public-layout-landing .landing-art-orbit {
+  transform: translate(-50%, -50%) rotate(-22deg);
+}
+
+.public-layout-landing .landing-art-orbit-two {
+  transform: translate(-50%, -50%) rotate(52deg);
+}
+
+.public-layout-landing .landing-hero-art::before {
+  width: 72%;
+  height: 72%;
+  transform: translate(-50%, -50%) rotate(-18deg) scaleX(1.28);
+}
+
+.public-layout-landing .landing-art-core {
+  top: 50% !important;
+  left: 50% !important;
+  width: clamp(84px, 21%, 150px) !important;
+  height: auto !important;
+  aspect-ratio: 1 / 1;
+  min-width: 84px;
+  min-height: 84px;
+  max-width: 150px;
+  max-height: 150px;
+  box-sizing: border-box;
+  font-family: "Cairo", "Alexandria", "Tahoma", "Arial", sans-serif !important;
+  font-size: clamp(38px, 8vw, 58px) !important;
+  line-height: 1 !important;
+  transform: translate(-50%, -50%) !important;
+  text-rendering: geometricPrecision;
+}
+
+.public-layout-landing .landing-art-core > span {
+  font-family: "Cairo", "Alexandria", "Tahoma", "Arial", sans-serif !important;
+  line-height: 1 !important;
+}
+
+.public-layout-landing .landing-art-formula-two {
+  display: block !important;
+}
+
+.public-layout-landing .landing-art-profile {
+  inset-block-end: clamp(14px, 7%, 36px) !important;
+  inset-inline-end: clamp(14px, 7%, 36px) !important;
+  z-index: 1;
+  max-width: min(42%, 220px);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.public-layout-landing .landing-art-profile > span {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.public-layout-landing .landing-art-profile b,
+.public-layout-landing .landing-art-profile small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.public-layout-landing .landing-art-formula-one {
+  inset-block-start: clamp(14%, 15%, 18%) !important;
+  inset-inline-end: clamp(10%, 12%, 16%) !important;
+}
+
+.public-layout-landing .landing-art-formula-two {
+  inset-block-end: clamp(10%, 12%, 16%) !important;
+  inset-inline-start: auto !important;
+  inset-inline-end: auto !important;
+  left: clamp(8%, 10%, 14%) !important;
+  right: auto !important;
+  z-index: 0;
+  opacity: 0.32;
+}
+
+@media (max-width: 980px) {
+  .public-layout-landing .landing-hero-art {
+    width: min(100%, 38rem) !important;
+    min-height: 0 !important;
+    margin-inline: auto;
+  }
+}
+
+@media (max-width: 430px) {
+  .public-layout-landing .landing-hero-art {
+    width: 100% !important;
+    min-height: 0 !important;
+    border-radius: 24px;
+  }
+
+  .public-layout-landing .landing-art-core {
+    width: clamp(84px, 22%, 112px) !important;
+    min-width: 84px;
+    min-height: 84px;
+    font-size: clamp(38px, 11vw, 48px) !important;
+  }
+
+  .public-layout-landing .landing-art-profile {
+    inset-block-end: 6% !important;
+    inset-inline-end: 6% !important;
+    max-width: 46%;
+    padding: 8px 10px;
+  }
+
+  .public-layout-landing .landing-art-profile img {
+    width: clamp(30px, 10vw, 36px);
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .public-layout-landing .landing-art-formula {
+    font-size: clamp(17px, 5vw, 22px) !important;
+  }
+}
+
+/* Final phone layout contract. The app is a React/Capacitor web surface, so
+   CSS safe-area insets provide the same protection as SafeAreaView/useSafeAreaInsets
+   without introducing a second native navigation tree. */
+@media (max-width: 767px) {
+  html,
+  body,
+  #root,
+  .landing-shell,
+  .landing-overlay,
+  .app-shell,
+  .admin-shell,
+  .public-page-shell {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden !important;
+  }
+
+  body {
+    min-width: 320px;
+    padding: 0 !important;
+  }
+
+  .app-shell {
+    min-height: 100dvh;
+    padding-inline: max(16px, var(--safe-left)) max(16px, var(--safe-right));
+    padding-bottom: max(24px, var(--safe-bottom));
+  }
+
+  .app-shell > .site-header:not(.admin-header),
+  .app-shell > .admin-header {
+    position: sticky !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin-inline: 0 !important;
+    margin-bottom: 12px !important;
+    box-sizing: border-box;
+  }
+
+  .admin-shell {
+    padding-inline: max(12px, var(--safe-left)) max(12px, var(--safe-right));
+    padding-bottom: 0;
+  }
+
+  .admin-shell > .admin-header {
+    min-height: calc(60px + var(--safe-top));
+    padding-top: max(8px, var(--safe-top));
+    padding-inline: 10px;
+    border-radius: 16px !important;
+    background: rgba(8, 20, 35, 0.96) !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .admin-header > .admin-account-menu,
+  .admin-header > .header-actions,
+  .admin-header .admin-header-tools,
+  .admin-header .admin-header-tool,
+  .admin-header .admin-identity-copy,
+  .admin-header .admin-account-button {
+    min-width: 0;
+  }
+
+  .admin-header > .admin-account-menu {
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .admin-header .admin-account-button {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .admin-header .admin-account-button .admin-identity-copy strong,
+  .admin-header .admin-account-button .admin-identity-copy small {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-header > .header-actions {
+    flex: 0 0 auto !important;
+    max-width: 50%;
+    overflow: visible;
+  }
+
+  .admin-header .admin-header-tools {
+    flex: 0 0 auto;
+    max-width: 100%;
+  }
+
+  .admin-header .admin-tool-button,
+  .admin-header .mobile-camera-scanner-button,
+  .admin-header .admin-account-button {
+    min-height: 44px !important;
+  }
+
+  .admin-dashboard {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0 0 calc(96px + var(--safe-bottom)) !important;
+  }
+
+  .admin-tab-panel,
+  .admin-tab-transition,
+  .admin-editor,
+  .executive-dashboard,
+  .report-panel-stack,
+  .inbox-layout,
+  .academic-list,
+  .table-wrap,
+  .dashboard-panel,
+  .content-page,
+  .content-grid {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .admin-tab-panel,
+  .admin-editor {
+    margin-top: 0 !important;
+  }
+
+  .admin-editor,
+  .dashboard-panel,
+  .content-panel,
+  .audit-filter-panel {
+    padding: 14px !important;
+    border-radius: 16px;
+  }
+
+  .section-heading h1,
+  .section-heading h2,
+  .content-hero h1,
+  .admin-editor h2,
+  .dashboard-hero h1,
+  .executive-title-row h1 {
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-size: clamp(22px, 7vw, 32px) !important;
+    line-height: 1.2;
+  }
+
+  .dashboard-hero,
+  .student-dashboard-layout,
+  .inbox-layout,
+  .teacher-profile-panel,
+  .content-grid,
+  .report-filters,
+  .payment-report-filters,
+  .audit-filter-grid,
+  .exam-filter-grid,
+  .editor-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .report-filters,
+  .payment-report-filters,
+  .audit-filter-grid {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .report-filters label,
+  .payment-report-filters label,
+  .audit-filter-grid label,
+  .admin-editor label:not(.checkbox-label) {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .report-filters input,
+  .report-filters select,
+  .payment-report-filters input,
+  .payment-report-filters select,
+  .audit-filter-grid input,
+  .audit-filter-grid select,
+  .admin-editor input,
+  .admin-editor select,
+  .admin-editor textarea {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 48px;
+  }
+
+  .report-filters .payment-report-search,
+  .audit-filter-grid .audit-filter-search,
+  .payment-report-search {
+    grid-column: auto;
+  }
+
+  .report-actions,
+  .report-summary,
+  .audit-filter-actions,
+  .audit-export-actions,
+  .finance-reports-toolbar,
+  .attendance-actions,
+  .attendance-buttons {
+    width: 100%;
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .report-actions > button,
+  .audit-filter-actions > button,
+  .attendance-buttons > button,
+  .attendance-buttons .attendance-status-badge,
+  .report-search-button {
+    width: 100%;
+    min-height: 48px;
+  }
+
+  .academic-row,
+  .attendance-row {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px;
+    align-items: stretch;
+    padding: 13px;
+  }
+
+  .attendance-row .student-info,
+  .attendance-row .attendance-actions {
+    grid-column: auto;
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .attendance-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    flex-direction: initial;
+  }
+
+  .attendance-buttons .compact-button,
+  .attendance-buttons .attendance-status-badge {
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    white-space: normal;
+  }
+
+  .attendance-buttons .attendance-status-badge {
+    grid-column: 1 / -1;
+  }
+
+  .student-card,
+  .user-row,
+  .group-student-row,
+  .homework-card,
+  .notification-item,
+  .search-result,
+  .attention-row,
+  .dashboard-alert,
+  .recent-payment-row {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .student-card-heading,
+  .student-card-meta,
+  .student-info,
+  .attention-student,
+  .notification-item > span,
+  .search-result > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .table-wrap {
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+  }
+
+  .table-wrap table {
+    min-width: 640px;
+  }
+
+  .audit-filter-panel {
+    position: static;
+  }
+
+  .modal-backdrop,
+  .student-profile-backdrop,
+  .mobile-site-menu-backdrop,
+  .mobile-more-backdrop,
+  .public-mobile-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    min-width: 0;
+    padding: max(8px, var(--safe-top)) max(8px, var(--safe-right)) max(8px, var(--safe-bottom)) max(8px, var(--safe-left));
+    align-items: stretch;
+    justify-content: center;
+  }
+
+  .modal,
+  .modal-card,
+  .student-profile-modal,
+  .mobile-site-menu,
+  .mobile-more-sheet,
+  .public-mobile-menu {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    max-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-radius: 20px;
+  }
+
+  .modal,
+  .modal-card,
+  .student-profile-modal {
+    margin: 0;
+  }
+
+  .admin-shell > .site-footer {
+    width: 100%;
+    max-width: 100%;
+    padding-bottom: calc(100px + var(--safe-bottom)) !important;
+  }
+
+  .mobile-bottom-nav {
+    inset-inline-start: max(8px, var(--safe-left));
+    inset-inline-end: max(8px, var(--safe-right));
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    min-height: 70px;
+    padding-bottom: max(8px, var(--safe-bottom));
+  }
+
+  .mobile-bottom-nav button,
+  .mobile-more-close,
+  .mobile-more-logout,
+  .mobile-site-menu-close,
+  .public-mobile-menu-close {
+    min-height: 48px;
+  }
+
+  .mobile-more-sheet,
+  .mobile-site-menu,
+  .public-mobile-menu {
+    align-self: flex-end;
+    max-height: min(88dvh, 720px);
+    padding: 16px;
+  }
+
+  .header-popover,
+  .admin-header .header-popover {
+    position: fixed !important;
+    inset-block-start: calc(76px + var(--safe-top)) !important;
+    inset-block-end: calc(82px + var(--safe-bottom)) !important;
+    inset-inline-start: max(12px, var(--safe-left)) !important;
+    inset-inline-end: max(12px, var(--safe-right)) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    z-index: 2000 !important;
+  }
+
+  .header-popover input,
+  .header-popover button {
+    min-height: 48px;
+  }
+
+  .landing-header {
+    width: 100%;
+    min-width: 0;
+    padding: max(10px, var(--safe-top)) max(16px, var(--safe-right)) 10px max(16px, var(--safe-left));
+    overflow: visible;
+  }
+
+  .landing-header-inner {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .landing-brand,
+  .landing-brand > span,
+  .landing-header-actions {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .landing-header-actions {
+    gap: 5px;
+  }
+
+  .landing-brand strong,
+  .landing-brand small {
+    max-width: 28vw;
+  }
+
+  .landing-main,
+  .public-content-page {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    padding-inline: max(16px, var(--safe-left)) max(16px, var(--safe-right));
+  }
+
+  .public-layout-auth .public-student-login,
+  .public-layout-auth .public-teacher-login {
+    width: 100%;
+    min-width: 0;
+    min-height: calc(100dvh - 86px);
+    padding: 28px max(14px, var(--safe-right)) 28px max(14px, var(--safe-left));
+  }
+
+  .public-layout-auth .public-student-login .login-card,
+  .public-layout-auth .public-teacher-login-card {
+    width: 100%;
+    max-width: 430px;
+    min-width: 0;
+  }
+
+  .landing-hero h1 {
+    max-width: 100%;
+    font-size: clamp(36px, 11vw, 58px) !important;
+    line-height: 1.1;
+  }
+
+  .landing-hero p,
+  .content-hero p,
+  .content-panel p,
+  .about-teacher-profile p {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    font-size: clamp(14px, 4vw, 18px);
+  }
+
+  [dir="rtl"] .app-shell,
+  [dir="rtl"] .landing-shell {
+    text-align: right;
+  }
+
+  [dir="ltr"] .app-shell,
+  [dir="ltr"] .landing-shell {
+    text-align: left;
+  }
+
+  :where(button, a, input, select, textarea) {
+    font-size: max(14px, 1em);
+  }
+
+  :where(button, input, select, textarea) {
+    min-height: 48px;
+  }
+}
+
+@media (max-width: 380px) {
+  .admin-header .admin-tool-button,
+  .admin-header .mobile-camera-scanner-button {
+    width: 40px !important;
+    min-width: 40px !important;
+  }
+
+  .admin-header .admin-account-button .admin-identity-copy {
+    display: none;
+  }
+
+  .landing-brand strong,
+  .landing-brand small {
+    max-width: 24vw;
+  }
+
+  .landing-language-switcher {
+    display: none;
+  }
+}
+
+/* Academic grade cards: compact two-column phone grid. */
+@media (max-width: 640px) {
+  .public-layout-landing .landing-grades-section,
+  .public-layout-landing .landing-grade-grid,
+  .public-layout-landing .landing-grade-card {
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .public-layout-landing .landing-grades-section {
+    overflow-x: hidden;
+  }
+
+  .public-layout-landing .landing-grade-grid {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px;
+    overflow: visible;
+  }
+
+  .public-layout-landing .landing-grade-card {
+    position: relative;
+    display: flex;
+    min-height: 146px;
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    overflow: hidden;
+    padding: 34px 10px 10px;
+    border-radius: 15px;
+    text-align: start;
+  }
+
+  .public-layout-landing .landing-grade-card.is-special {
+    min-height: 104px;
+    grid-column: 1 / -1;
+    align-items: center;
+    flex-direction: row;
+    gap: 10px;
+    padding: 11px 10px;
+  }
+
+  .public-layout-landing .landing-grade-icon-wrap {
+    width: clamp(36px, 11vw, 40px);
+    height: clamp(36px, 11vw, 40px);
+    flex: 0 0 clamp(36px, 11vw, 40px);
+    border-radius: 12px;
+  }
+
+  .public-layout-landing .landing-grade-icon {
+    width: clamp(22px, 7vw, 26px);
+    height: auto;
+    aspect-ratio: 1;
+  }
+
+  .public-layout-landing .landing-grade-copy {
+    display: grid;
+    width: auto;
+    min-width: 0;
+    box-sizing: border-box;
+    flex: 1 1 auto;
+    align-content: start;
+    gap: 4px;
+  }
+
+  .public-layout-landing .landing-grade-copy > span {
+    max-width: 100%;
+    margin: 0;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .public-layout-landing .landing-grade-copy h3 {
+    max-width: 100%;
+    font-size: 0.85rem !important;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
+  }
+
+  .public-layout-landing .landing-grade-status {
+    display: inline-flex;
+    inset-block-start: auto !important;
+    inset-inline-end: auto !important;
+    top: 8px !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: 8px !important;
+    align-items: center;
+    justify-content: center;
+    max-width: 45%;
+    min-width: 0;
+    min-height: 24px;
+    padding: 3px 7px;
+    border: 1px solid rgba(134, 229, 239, 0.25);
+    border-radius: 999px;
+    background: rgba(7, 24, 42, 0.88);
+    font-size: 0.68rem;
+    line-height: 1.2;
+    white-space: normal;
+    text-align: center;
+    overflow-wrap: anywhere;
+  }
+
+  .public-layout-landing .landing-grade-status.is-special-status {
+    min-width: 34px;
+    padding: 0 7px;
+    border-color: rgba(255, 193, 7, 0.35);
+    background: rgba(55, 43, 11, 0.78);
+    color: #ffd35f;
+    font-size: 1rem;
+    line-height: 1;
+  }
+
+  .public-layout-landing .landing-grade-card.is-special .landing-grade-status {
+    inset-block-start: 50%;
+    top: 50% !important;
+    left: 8px !important;
+    transform: translateY(-50%);
+  }
+
+  .public-layout-landing .landing-grade-card.is-special .landing-grade-copy {
+    padding-inline-end: 24px;
+  }
+
+  .public-layout-landing .landing-ribbon {
+    top: 0;
+    right: auto !important;
+    left: auto !important;
+    inset-inline-end: -30px;
+    padding: 3px 34px;
+    font-size: 8px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 360px) {
+  .public-layout-landing .landing-grade-card {
+    min-height: 150px;
+    padding: 30px 8px 10px;
+  }
+
+  .public-layout-landing .landing-grade-card.is-special {
+    padding: 10px 8px;
+  }
+
+  .public-layout-landing .landing-grade-copy h3 {
+    font-size: 0.8rem !important;
+  }
+
+  .public-layout-landing .landing-grade-copy > span {
+    font-size: 0.68rem;
+  }
+
+  .public-layout-landing .landing-grade-status {
+    max-width: 50%;
+    font-size: 0.64rem;
+  }
+}
+
+/* Student dashboard light-mode contrast. Keep metadata and reminder copy
+   readable against the pale workspace surface instead of using dark-theme
+   white/blue text values. */
+[data-theme="light"] .student-shell .student-dashboard-header .eyebrow,
+[data-theme="light"] .student-shell .student-dashboard-intro > p:not(.eyebrow),
+[data-theme="light"] .student-shell .dashboard-hero > p:not(.eyebrow) {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="light"] .student-shell .student-dashboard-header .eyebrow {
+  color: var(--accent-strong) !important;
+}
+
+[data-theme="light"] .student-shell .renewal-reminder {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .student-shell .renewal-reminder-content h2 {
+  color: #8a5a00 !important;
+}
+
+[data-theme="light"] .student-shell .renewal-reminder-content p {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .student-shell .renewal-reminder-icon {
+  color: #8a5a00 !important;
+}
+
+[data-theme="light"] .student-shell .renewal-reminder-close {
+  border-color: rgba(138, 90, 0, 0.32) !important;
+  color: #8a5a00 !important;
+}
+
+/* Keep the public hamburger menu as a viewport-level modal. This comes after
+   the shared phone modal rules so the drawer cannot be stretched or pushed to
+   an edge by a broader mobile layout override. */
+@media (max-width: 767px) {
+  .public-layout-landing .public-header .public-mobile-menu-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 9999 !important;
+    display: flex !important;
+    width: 100% !important;
+    max-width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
+    box-sizing: border-box;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-direction: row;
+    padding: max(16px, var(--safe-top)) max(16px, var(--safe-right)) max(16px, var(--safe-bottom)) max(16px, var(--safe-left));
+    overflow: hidden;
+    animation: public-mobile-menu-backdrop-in 180ms ease-out both;
+  }
+
+  .public-layout-landing .public-header .public-mobile-menu {
+    width: min(360px, 100%);
+    max-width: 100%;
+    max-height: min(80dvh, 680px);
+    min-width: 0;
+    box-sizing: border-box;
+    align-self: center !important;
+    flex: 0 1 auto;
+    margin: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    animation: public-mobile-menu-in 180ms ease-out both;
+  }
+
+  .public-layout-landing .public-header .public-mobile-language-switcher {
+    display: inline-flex !important;
+  }
+}
+
+@keyframes public-mobile-menu-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes public-mobile-menu-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-layout-landing .public-header .public-mobile-menu-backdrop,
+  .public-layout-landing .public-header .public-mobile-menu {
+    animation: none;
+  }
+}
+
+/* Keep short public/auth dialogs compact on phones. The shared phone layout
+   contract intentionally stretches some app sheets, so these auth dialogs
+   need an explicit centered, content-sized layout at the end of the cascade. */
+@media (max-width: 767px) {
+  .public-layout-auth .modal-backdrop,
+  .teacher-auth-shell .password-recovery-backdrop {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 9999 !important;
+    display: grid !important;
+    width: 100vw;
+    height: 100dvh;
+    min-height: 100dvh;
+    box-sizing: border-box;
+    place-items: center !important;
+    align-items: center !important;
+    justify-items: center !important;
+    padding: max(16px, var(--safe-top)) max(16px, var(--safe-right)) max(16px, var(--safe-bottom)) max(16px, var(--safe-left));
+    overflow: hidden;
+  }
+
+  .public-layout-auth .modal,
+  .teacher-auth-shell .password-recovery-dialog {
+    width: min(460px, 100%);
+    max-width: 460px;
+    height: auto !important;
+    min-height: 0;
+    max-height: calc(100dvh - 32px);
+    box-sizing: border-box;
+    align-self: center;
+    justify-self: center;
+    margin: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 16px;
+  }
 }

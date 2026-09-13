@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { pool } from "../db/pool.js";
 import { auditLog } from "./audit.js";
+import { getAttendanceTimingDefaults } from "./systemSettings.js";
 import { getWhatsAppSettings, normalizeEgyptianPhone, resolveSpintax } from "./whatsapp.js";
 
 const FINALIZER_LOCK_KEY = "abdrabo-attendance-expiry-finalizer";
@@ -24,11 +25,32 @@ function sessionDateLabel(value) {
 
 async function queueAbsenceNotifications(client, session, absentStudents) {
   const eligible = [];
+  const unresolved = [];
   for (const student of absentStudents) {
     const phoneNumber = normalizeEgyptianPhone(student.guardian_phone);
-    if (!phoneNumber) continue;
+    const sourceId = Number(student.attendance_record_id);
+    const studentId = Number(student.student_id);
+    const payload = {
+      type: "absence",
+      student_name: student.student_name,
+      student_code: student.student_code,
+      group_name: session.group_name,
+      session_id: Number(session.session_id),
+      event_time: session.session_date
+    };
+    if (!phoneNumber) {
+      unresolved.push({
+        source_id: sourceId,
+        attendance_record_id: sourceId,
+        student_id: studentId,
+        payload,
+        ref_code: absenceReference(studentId),
+        last_error: "invalid_phone"
+      });
+      continue;
+    }
 
-    const refCode = absenceReference(student.student_id);
+    const refCode = absenceReference(studentId);
     const selected = randomTemplate(session.templates);
     const template = selected.template;
     const renderedMessage = resolveSpintax(template, {
@@ -40,18 +62,11 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
     }).trim();
 
     eligible.push({
-      source_id: Number(student.attendance_record_id),
-      attendance_record_id: Number(student.attendance_record_id),
-      student_id: Number(student.student_id),
+      source_id: sourceId,
+      attendance_record_id: sourceId,
+      student_id: studentId,
       phone_number: phoneNumber,
-      payload: {
-        type: "absence",
-        student_name: student.student_name,
-        student_code: student.student_code,
-        group_name: session.group_name,
-        session_id: Number(session.session_id),
-        event_time: session.session_date
-      },
+      payload,
       ref_code: refCode,
       template_index: selected.index,
       template_text: template,
@@ -59,13 +74,10 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
     });
   }
 
-  const invalidPhoneCount = absentStudents.length - eligible.length;
-  if (!eligible.length) return { queuedCount: 0, unresolvedCount: invalidPhoneCount };
-
   // A session is row-locked by the caller. Still inspect all historical jobs
   // so a recovered database cannot create a second message for an already
   // delivered absence notification.
-  const sourceIds = eligible.map((row) => row.source_id);
+  const sourceIds = absentStudents.map((student) => Number(student.attendance_record_id));
   const existing = await client.query(
     `SELECT source_id, status
      FROM whatsapp_notification_jobs
@@ -78,6 +90,7 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
       .map((row) => Number(row.source_id))
   );
   const pending = eligible.filter((row) => !dispatchedSources.has(row.source_id));
+  const unresolvedPending = unresolved.filter((row) => !dispatchedSources.has(row.source_id));
 
   let insertedCount = 0;
   for (let offset = 0; offset < pending.length; offset += ABSENCE_QUEUE_BATCH_SIZE) {
@@ -101,7 +114,24 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
     insertedCount += inserted.rowCount;
   }
 
-  return { queuedCount: insertedCount, unresolvedCount: invalidPhoneCount };
+  for (let offset = 0; offset < unresolvedPending.length; offset += ABSENCE_QUEUE_BATCH_SIZE) {
+    const batch = unresolvedPending.slice(offset, offset + ABSENCE_QUEUE_BATCH_SIZE);
+    await client.query(
+      `INSERT INTO whatsapp_notification_jobs
+        (notification_type, source_id, attendance_record_id, student_id, phone_number,
+         payload, ref_code, status, last_error, next_attempt_at, created_at, updated_at)
+       SELECT 'absence', row.source_id, row.attendance_record_id, row.student_id,
+         NULL, row.payload, row.ref_code, 'skipped', row.last_error, NOW(), NOW(), NOW()
+       FROM jsonb_to_recordset($1::jsonb) AS row(
+         source_id bigint, attendance_record_id bigint, student_id integer,
+         payload jsonb, ref_code text, last_error text
+       )
+       ON CONFLICT DO NOTHING`,
+      [JSON.stringify(batch)]
+    );
+  }
+
+  return { queuedCount: insertedCount, unresolvedCount: unresolved.length };
 }
 
 async function processSession(sessionId, now = null) {
@@ -129,20 +159,22 @@ async function processSession(sessionId, now = null) {
       return { skipped: true, reason: "already_dispatched" };
     }
 
+    const timing = await getAttendanceTimingDefaults(client.query.bind(client));
+
     const scheduleResult = session.schedule_id
       ? await client.query(
         `SELECT cs.id, cs.start_time, cs.end_time, cs.opens_before_minutes,
             cs.closes_after_minutes, cs.is_active, cs.deleted_at,
             ((s.session_date::date + cs.start_time) AT TIME ZONE 'Africa/Cairo') AS starts_at,
-            ((s.session_date::date + cs.start_time - (cs.opens_before_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo') AS opens_at,
-            ((s.session_date::date + cs.start_time + (cs.closes_after_minutes || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo') AS closes_at,
+            ((s.session_date::date + cs.start_time - ((CASE WHEN cs.opens_before_minutes = 3 THEN $3 ELSE cs.opens_before_minutes END)::text || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo') AS opens_at,
+            ((s.session_date::date + cs.start_time + ((CASE WHEN cs.closes_after_minutes = 20 THEN $4 ELSE cs.closes_after_minutes END)::text || ' minutes')::interval) AT TIME ZONE 'Africa/Cairo') AS closes_at,
             (((s.session_date::date + CASE WHEN cs.end_time <= cs.start_time THEN 1 ELSE 0 END) + cs.end_time) AT TIME ZONE 'Africa/Cairo') AS ends_at,
             COALESCE($2::timestamptz, CURRENT_TIMESTAMP) AS effective_now
          FROM attendance_sessions s
          JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
          WHERE s.id = $1
          FOR SHARE OF cs`,
-        [sessionId, now]
+        [sessionId, now, timing.openBeforeMinutes, timing.closeAfterMinutes]
       )
       : { rowCount: 0, rows: [] };
     const schedule = scheduleResult.rows[0] || null;
@@ -223,14 +255,15 @@ async function processSession(sessionId, now = null) {
     );
 
     const queueResult = await queueAbsenceNotifications(client, session, absentResult.rows);
-    if (queueResult.unresolvedCount === 0) {
-      await client.query(
-        `UPDATE attendance_sessions
-         SET absence_dispatched = TRUE
-         WHERE id = $1 AND status = 'closed' AND absence_dispatched = FALSE`,
-        [session.session_id]
-      );
-    }
+    // Finalization is complete once every eligible absence has been evaluated.
+    // Invalid phone numbers remain visible in audit details instead of making
+    // the same closed session retry forever on every finalizer run.
+    await client.query(
+      `UPDATE attendance_sessions
+       SET absence_dispatched = TRUE
+       WHERE id = $1 AND status = 'closed' AND absence_dispatched = FALSE`,
+      [session.session_id]
+    );
 
     await auditLog({
       db: client,
@@ -248,7 +281,7 @@ async function processSession(sessionId, now = null) {
         eligible_absence_count: absentResult.rowCount,
         unresolved_absence_count: queueResult.unresolvedCount,
         status_after: "closed",
-        absence_dispatched: queueResult.unresolvedCount === 0
+        absence_dispatched: true
       }
     });
 
@@ -284,6 +317,8 @@ export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
       return { finalized_sessions: [], skipped: true, reason: "already_running" };
     }
 
+    const timing = await getAttendanceTimingDefaults(client.query.bind(client));
+
     const candidates = await client.query(
       `SELECT s.id, s.status
        FROM attendance_sessions s
@@ -295,11 +330,11 @@ export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
           OR (s.status = 'open'
               AND cs.is_active = TRUE AND cs.deleted_at IS NULL
               AND ((s.session_date::date + cs.start_time
-                    + (cs.closes_after_minutes || ' minutes')::interval)
+                    + ((CASE WHEN cs.closes_after_minutes = 20 THEN $2 ELSE cs.closes_after_minutes END)::text || ' minutes')::interval)
                    AT TIME ZONE 'Africa/Cairo')
                   <= COALESCE($1::timestamptz, CURRENT_TIMESTAMP))
        ORDER BY s.session_date, s.id`,
-      [now]
+      [now, timing.closeAfterMinutes]
     );
 
     const finalized = [];

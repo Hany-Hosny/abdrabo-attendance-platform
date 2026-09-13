@@ -137,7 +137,7 @@ export function PublicHeader({
           <a className="public-app-download" href={downloadUrl} download aria-label={labels.downloadApp} title={labels.downloadApp}>
             <DownloadIcon />
           </a>
-          <div className="landing-language-switcher" aria-label={labels.languageSelector}>
+          <div className="landing-language-switcher public-header-language-switcher" aria-label={labels.languageSelector}>
             <button type="button" tabIndex={0} className={language === "ar" ? "is-active" : ""} onClick={() => onLanguageChange("ar")} aria-pressed={language === "ar"}>AR</button>
             <button type="button" tabIndex={0} className={language === "en" ? "is-active" : ""} onClick={() => onLanguageChange("en")} aria-pressed={language === "en"}>EN</button>
           </div>
@@ -185,6 +185,13 @@ export function PublicHeader({
                 <span aria-hidden="true">{language === "ar" ? "←" : "→"}</span>
               </a>
             </nav>
+            <div className="public-mobile-menu-language">
+              <span>{labels.languageSelector}</span>
+              <div className="landing-language-switcher public-mobile-language-switcher" aria-label={labels.languageSelector}>
+                <button type="button" className={language === "ar" ? "is-active" : ""} onClick={() => onLanguageChange("ar")} aria-pressed={language === "ar"}>AR</button>
+                <button type="button" className={language === "en" ? "is-active" : ""} onClick={() => onLanguageChange("en")} aria-pressed={language === "en"}>EN</button>
+              </div>
+            </div>
           </div>
         </div>
       ) : null}

@@ -57,7 +57,7 @@ app.use(cors({
     }
     return callback(new Error("cors_origin_not_allowed"));
   },
-  credentials: false
+  credentials: true
 }));
 
 app.use(express.json({ limit: "100kb", strict: true, inflate: false }));
