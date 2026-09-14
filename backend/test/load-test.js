@@ -2,19 +2,18 @@ import "../src/config/env.js";
 import { Agent } from "undici";
 
 const DEFAULT_BASE_URL = process.env.LOAD_TEST_BASE_URL || process.env.BASE_URL || "http://localhost:4000";
-const DEFAULT_ENDPOINT = process.env.LOAD_TEST_ENDPOINT || "/api/site/pages/tips";
+const DEFAULT_ENDPOINT = process.env.LOAD_TEST_ENDPOINT || "/api/site/pages/contact";
 const DEFAULT_CONCURRENCY = 100;
 const DEFAULT_WARMUP_REQUESTS = 5;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_STUDENT_LIMIT = 100;
-const FALLBACK_STUDENT_CODE = "A-1001";
 
 function printHelp() {
   console.log(`
 Usage: npm run test:load -- [options]
 
-Runs a read-only HTTP benchmark. The default target is the public tips page:
-GET /api/site/pages/tips
+Runs a read-only HTTP benchmark. The default target is the public contact page:
+GET /api/site/pages/contact
 
 Options:
   --base-url <url>          Backend origin (default: ${DEFAULT_BASE_URL})
@@ -32,7 +31,7 @@ Environment equivalents:
 
 Example:
   LOAD_TEST_BASE_URL=https://api.example.com npm run test:load
-  npm run test:load -- --endpoint /api/students/{studentCode} --student-codes A-1001,A-1002
+  npm run test:load -- --endpoint /api/students/{studentCode} --student-codes A-2001,A-2002
 `);
 }
 
@@ -143,11 +142,10 @@ async function getStudentCodes(options, endpoint) {
   try {
     const databaseCodes = await loadStudentCodes(options.studentLimit);
     if (databaseCodes.length) return databaseCodes;
-    console.warn("No active student codes were found; using the seeded test code A-1001.");
+    throw new Error("No active student codes were found; provide --student-codes explicitly.");
   } catch (error) {
-    console.warn(`Could not load student codes from the database (${error.message}); using A-1001.`);
+    throw new Error(`Could not load student codes from the database: ${error.message}`);
   }
-  return [FALLBACK_STUDENT_CODE];
 }
 
 function makeRequestUrl(endpoint, studentCodes, requestNumber) {

@@ -159,7 +159,7 @@ siteRouter.get("/pages/:slug", async (req, res, next) => {
 
 adminSiteRouter.put("/pages/:slug", requireTeacher, requirePermission("settings.manage"), async (req, res, next) => {
   try {
-    const allowedSlugs = ["about-teacher", "about-center", "contact", "tips"];
+    const allowedSlugs = ["about-teacher", "about-center", "contact"];
     if (!allowedSlugs.includes(req.params.slug)) {
       return res.status(404).json({ ok: false, status: "not_found" });
     }

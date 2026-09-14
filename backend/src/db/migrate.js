@@ -1,13 +1,8 @@
 import "../config/env.js";
-import crypto from "node:crypto";
 import { pool, query } from "./pool.js";
 import { hashPassword } from "../services/auth.js";
 import { DEFAULT_ADMIN_PERMISSIONS, DEFAULT_STAFF_PERMISSIONS, OWNER_USER_ID } from "../services/rbac.js";
 import { DEFAULT_HOME_CONTENT } from "@abdrabo/shared/landingContent.js";
-
-function hashValue(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
 
 export async function migrate() {
   // 1. Define the schema and create the core tables.
@@ -1052,26 +1047,9 @@ export async function migrate() {
     (await query("SELECT id FROM groups WHERE name = $1 LIMIT 1", ["مجموعة السبت 6 مساء"])).rows[0]
       .id;
 
-  // Demo student, schedule, and exam data are for local development only.
-  // Production migrations must never recreate a deleted student on restart.
+  // Schedules and exams are local development fixtures. Student records are
+  // intentionally never seeded here, so deleting a student remains durable.
   if (process.env.NODE_ENV !== "production") {
-    const student = await query(
-      `
-        INSERT INTO students (group_id, student_code, full_name, phone, guardian_phone, national_id_hash)
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (student_code) DO UPDATE SET
-          group_id = EXCLUDED.group_id,
-          full_name = EXCLUDED.full_name,
-          phone = EXCLUDED.phone,
-          guardian_phone = EXCLUDED.guardian_phone,
-          national_id_hash = EXCLUDED.national_id_hash,
-          is_active = TRUE
-        RETURNING id
-      `,
-      [groupId, "A-1001", "أحمد محمد", "01000000000", "01012345678", hashValue("29901011234567")]
-    );
-
-    const studentId = student.rows[0].id;
     await query(
       `
         INSERT INTO class_schedules (group_id, day_of_week, start_time, end_time, opens_before_minutes, closes_after_minutes)
@@ -1082,7 +1060,7 @@ export async function migrate() {
       [groupId, "18:00:00", "19:30:00"]
     );
 
-    const exam = await query(
+    await query(
       `
         INSERT INTO exams (group_id, title, max_score, exam_date)
         SELECT $1, $2, 50, CURRENT_DATE - INTERVAL '7 days'
@@ -1090,22 +1068,6 @@ export async function migrate() {
         RETURNING id
       `,
       [groupId, "امتحان الوحدة الأولى"]
-    );
-
-    const examId =
-      exam.rows[0]?.id ||
-      (await query("SELECT id FROM exams WHERE group_id = $1 AND title = $2 LIMIT 1", [
-        groupId,
-        "امتحان الوحدة الأولى"
-      ])).rows[0].id;
-
-    await query(
-      `
-        INSERT INTO exam_results (exam_id, student_id, score, note)
-        VALUES ($1, $2, 42, 'مستوى جيد جدا')
-        ON CONFLICT (exam_id, student_id) DO UPDATE SET score = EXCLUDED.score, note = EXCLUDED.note
-      `,
-      [examId, studentId]
     );
   }
 
@@ -1242,26 +1204,6 @@ export async function migrate() {
         formIntro: "Leave your details and we will contact you."
       }
     },
-    {
-      slug: "tips",
-      title_ar: "نصائح",
-      title_en: "Tips",
-      subtitle_ar: "إرشادات سريعة تساعدك على الاستعداد للحصة والامتحان.",
-      subtitle_en: "Quick guidance to help you prepare for class and exams.",
-      content_ar: {
-        intro: "راجع الدرس قبل الحصة، حضر أسئلتك، وحل التدريب في نفس اليوم.",
-        features: ["ذاكر بانتظام", "حل أسئلة متنوعة", "راجع أخطاءك", "تابع درجاتك بعد كل امتحان"]
-      },
-      content_en: {
-        intro: "Review the lesson before class, prepare your questions, and solve practice on the same day.",
-        features: [
-          "Study consistently",
-          "Solve varied questions",
-          "Review your mistakes",
-          "Track your scores after every exam"
-        ]
-      }
-    }
   ];
 
   for (const page of sitePages) {

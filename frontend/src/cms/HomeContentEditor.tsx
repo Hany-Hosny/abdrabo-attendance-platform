@@ -12,7 +12,7 @@ import {
 import { cloneHomeContent, fetchHomeContent, normalizeLocalizedHomeContent } from "./homeContent";
 
 type CmsTranslator = (key: string, values?: Record<string, string>) => string;
-type SitePageSlug = "home" | "about-teacher" | "about-center" | "contact" | "tips";
+type SitePageSlug = "home" | "about-teacher" | "about-center" | "contact";
 type HomePageOption = { slug: SitePageSlug; label: string };
 type AccordionKey = "hero" | "grades" | "features" | "stats";
 

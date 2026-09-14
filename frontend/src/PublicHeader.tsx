@@ -31,6 +31,7 @@ export interface PublicHeaderProps {
   theme: PublicTheme;
   labels: PublicHeaderLabels;
   downloadUrl: string;
+  isStudentLoggedIn?: boolean;
   onLanguageChange: (language: PublicLanguage) => void;
   onToggleTheme: () => void;
   onNavigate?: (path: string) => void;
@@ -61,12 +62,14 @@ export function PublicHeader({
   theme,
   labels,
   downloadUrl,
+  isStudentLoggedIn = false,
   onLanguageChange,
   onToggleTheme,
   onNavigate
 }: PublicHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const activePath = normalizePath(currentPath);
+  const profileIsInteractive = !isStudentLoggedIn;
   const navItems: NavItem[] = [
     { path: "/", label: labels.home },
     { path: "/login", label: labels.studentLogin },
@@ -92,11 +95,12 @@ export function PublicHeader({
       <div className="landing-header-inner">
         <div className="landing-brand">
           <a
-            className="public-header-profile-door"
-            href="/teacher/login"
-            tabIndex={0}
+            className={`public-header-profile-door ${profileIsInteractive ? "" : "is-disabled"}`}
+            href={profileIsInteractive ? "/teacher/login" : undefined}
+            tabIndex={profileIsInteractive ? 0 : -1}
             aria-label={labels.teacherLogin}
-            onClick={(event) => handleNavigation(event, { path: "/teacher/login", label: labels.teacherLogin })}
+            aria-disabled={!profileIsInteractive || undefined}
+            onClick={profileIsInteractive ? (event) => handleNavigation(event, { path: "/teacher/login", label: labels.teacherLogin }) : undefined}
           >
             <img src="/assets/teacher-profile.png" alt="" />
           </a>
@@ -180,10 +184,6 @@ export function PublicHeader({
                   </a>
                 );
               })}
-              <a href="/teacher/login" onClick={(event) => handleMobileNavigation(event, { path: "/teacher/login", label: labels.teacherLogin })}>
-                <span>{labels.teacherLogin}</span>
-                <span aria-hidden="true">{language === "ar" ? "←" : "→"}</span>
-              </a>
             </nav>
             <div className="public-mobile-menu-language">
               <span>{labels.languageSelector}</span>

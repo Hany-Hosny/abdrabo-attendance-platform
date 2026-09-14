@@ -2489,6 +2489,93 @@ textarea {
   }
 }
 
+/* Direction-aware coming-soon ribbon. Keep the strip centered so its label is
+   never clipped into an unreadable fragment at narrow card widths. */
+.landing-grade-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.landing-grade-card .landing-ribbon {
+  position: absolute;
+  top: 10px;
+  right: auto !important;
+  bottom: auto;
+  left: auto !important;
+  inset-inline-start: auto !important;
+  inset-inline-end: auto !important;
+  z-index: 3;
+  display: flex;
+  width: 120px;
+  min-height: 25px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  font-size: clamp(8px, 2.5vw, 9px);
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  transform-origin: center;
+}
+
+[dir="rtl"] .landing-grade-card .landing-ribbon,
+[dir="ar"] .landing-grade-card .landing-ribbon {
+  right: -16px !important;
+  left: auto !important;
+  direction: rtl;
+  unicode-bidi: plaintext;
+  transform: rotate(45deg);
+}
+
+[dir="ltr"] .landing-grade-card .landing-ribbon,
+[dir="en"] .landing-grade-card .landing-ribbon {
+  right: auto !important;
+  left: -16px !important;
+  direction: ltr;
+  unicode-bidi: plaintext;
+  transform: rotate(-45deg);
+}
+
+@media (max-width: 640px) {
+  .landing-grade-card .landing-grade-status.is-available-status {
+    white-space: nowrap;
+  }
+
+  [dir="ltr"] .landing-grade-card.is-special .landing-grade-status.is-special-status,
+  [dir="en"] .landing-grade-card.is-special .landing-grade-status.is-special-status {
+    right: 8px !important;
+    left: auto !important;
+    transform: translateY(-50%);
+  }
+}
+
+/* Desktop ribbon geometry stays content-sized and independent from the phone
+   ribbon so the web card does not inherit narrow-screen offsets. */
+@media (min-width: 641px) {
+  .landing-grade-card .landing-ribbon {
+    top: 15px;
+    width: auto;
+    min-height: 0;
+    padding: 4px 40px;
+    font-size: 10px;
+  }
+
+  [dir="rtl"] .landing-grade-card .landing-ribbon,
+  [dir="ar"] .landing-grade-card .landing-ribbon {
+    right: -35px !important;
+    left: auto !important;
+    transform: rotate(45deg);
+  }
+
+  [dir="ltr"] .landing-grade-card .landing-ribbon,
+  [dir="en"] .landing-grade-card .landing-ribbon {
+    right: auto !important;
+    left: -35px !important;
+    transform: rotate(-45deg);
+  }
+}
+
 .tabs .messages-nav-item .nav-unread-badge {
   top: 0;
   inset-inline-end: -3px;
@@ -13360,6 +13447,15 @@ header a {
   white-space: nowrap;
 }
 
+.mobile-first-header .header-identity .brand.is-profile-interactive {
+  cursor: pointer;
+}
+
+.mobile-first-header .header-identity .brand.is-profile-disabled {
+  cursor: default;
+  pointer-events: none;
+}
+
 .mobile-first-header .header-identity .brand-icon {
   width: 42px;
   height: 42px;
@@ -15203,6 +15299,7 @@ body,
 .public-header-profile-door img { display: block; }
 .public-header-profile-door:hover,
 .public-header-profile-door:focus-visible { opacity: 0.8; }
+.public-header-profile-door.is-disabled { cursor: default; pointer-events: none; }
 
 .landing-nav {
   display: flex;
@@ -17939,4 +18036,23 @@ body,
     overflow-y: auto;
     padding: 16px;
   }
+}
+
+/* Nudge only the ribbon label along the diagonal; the yellow strip itself
+   keeps its established corner position and clipping geometry. */
+.landing-grade-card .landing-ribbon-label {
+  display: inline-block;
+  position: relative;
+  line-height: 1.2;
+  transform: translateX(20px);
+}
+
+[dir="rtl"] .landing-grade-card .landing-ribbon-label,
+[dir="ar"] .landing-grade-card .landing-ribbon-label {
+  transform: translateX(20px);
+}
+
+[dir="ltr"] .landing-grade-card .landing-ribbon-label,
+[dir="en"] .landing-grade-card .landing-ribbon-label {
+  transform: translateX(-20px);
 }

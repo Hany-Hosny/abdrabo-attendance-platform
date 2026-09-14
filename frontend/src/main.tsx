@@ -209,7 +209,7 @@ type AdminStudent = {
   purge_after?: string | null;
 };
 
-type SiteSlug = "about-teacher" | "about-center" | "contact" | "tips";
+type SiteSlug = "about-teacher" | "about-center" | "contact";
 type AdminTab = "overview" | "add-user" | "users" | "site-content" | "students" | "groups" | "attendance" | "scanner" | "fees" | "reports" | "exams" | "inbox" | "audit-logs" | "whatsapp" | "settings";
 
 const adminTabIds: AdminTab[] = ["overview", "add-user", "users", "site-content", "students", "groups", "attendance", "scanner", "fees", "reports", "exams", "inbox", "audit-logs", "whatsapp", "settings"];
@@ -267,7 +267,6 @@ const translations = {
     "nav.aboutTeacher": "عن المستر",
     "nav.aboutCenter": "عن السنتر",
     "nav.contact": "التواصل",
-    "nav.tips": "نصائح",
     "nav.home": "الرئيسية",
     "nav.exams": "الامتحانات",
     "nav.grades": "الدرجات",
@@ -1818,7 +1817,6 @@ const translations = {
     "nav.aboutTeacher": "About Teacher",
     "nav.aboutCenter": "About Center",
     "nav.contact": "Contact",
-    "nav.tips": "Tips",
     "nav.home": "Home",
     "nav.exams": "Exams",
     "nav.grades": "Grades",
@@ -3538,21 +3536,6 @@ const fallbackSitePages: Record<SiteSlug, SitePage> = {
       formIntro: "Leave your details and we will contact you."
     }
   },
-  tips: {
-    slug: "tips",
-    title_ar: "نصائح",
-    title_en: "Tips",
-    subtitle_ar: "إرشادات سريعة تساعدك على الاستعداد للحصة والامتحان.",
-    subtitle_en: "Quick guidance to help you prepare for class and exams.",
-    content_ar: {
-      intro: "راجع الدرس قبل الحصة، حضر أسئلتك، وحل التدريب في نفس اليوم.",
-      features: ["ذاكر بانتظام", "حل أسئلة متنوعة", "راجع أخطاءك", "تابع درجاتك بعد كل امتحان"]
-    },
-    content_en: {
-      intro: "Review the lesson before class, prepare your questions, and solve practice on the same day.",
-      features: ["Study consistently", "Solve varied questions", "Review your mistakes", "Track your scores after every exam"]
-    }
-  }
 };
 
 function createTranslator(language: Language) {
@@ -3835,7 +3818,7 @@ function WhatsAppNotSentBadge({ t }: { t: Translator }) {
 
 function getCurrentSiteSlug(path: string): SiteSlug | null {
   const slug = path.replace(/^\//, "");
-  return slug === "about-teacher" || slug === "about-center" || slug === "contact" || slug === "tips"
+  return slug === "about-teacher" || slug === "about-center" || slug === "contact"
     ? slug
     : null;
 }
@@ -4325,7 +4308,7 @@ function LandingPage({ language, t }: { language: Language; t: Translator }) {
                   key={grade.id}
                   aria-disabled={grade.comingSoon || undefined}
                 >
-                  {grade.comingSoon ? <span className="landing-ribbon">{t("landing.grade.comingSoon")}</span> : null}
+                  {grade.comingSoon ? <span className="landing-ribbon"><span className="landing-ribbon-label">{t("landing.grade.comingSoon")}</span></span> : null}
                   <div className={`landing-grade-icon-wrap landing-icon-${visual.icon}`}><LandingGradeIcon kind={visual.icon} /></div>
                   <div className="landing-grade-copy">
                     <span>{t(landingStageLabels[grade.stage])}</span>
@@ -4415,6 +4398,7 @@ function App() {
     theme: theme as PublicTheme,
     labels: publicLabels,
     downloadUrl: APP_DOWNLOAD_URL,
+    isStudentLoggedIn: Boolean(loginData?.student),
     background: publicBackground,
     onLanguageChange: setLanguage,
     onToggleTheme: toggleTheme,
@@ -5045,11 +5029,7 @@ function PublicContentPage({
               <p className="eyebrow">
                 {t(
                   `nav.${
-                    slug === "about-center"
-                      ? "aboutCenter"
-                      : slug === "tips"
-                        ? "tips"
-                        : "contact"
+                    slug === "about-center" ? "aboutCenter" : "contact"
                   }` as TranslationKey
                 )}
               </p>
@@ -5105,23 +5085,6 @@ function PublicContentPage({
                   <li key={item}>{item}</li>
                 ))}
               </ul>
-            </article>
-            <article className="content-panel wide">
-              <span>{t("public.features")}</span>
-              <div className="pill-row">
-                {(view.content.features || []).map((item: string) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </div>
-            </article>
-          </section>
-        ) : null}
-
-        {slug === "tips" ? (
-          <section className="content-grid">
-            <article className="content-panel wide">
-              <span>{t("nav.tips")}</span>
-              <p>{view.content.intro}</p>
             </article>
             <article className="content-panel wide">
               <span>{t("public.features")}</span>
@@ -10742,8 +10705,7 @@ function SiteContentEditor({
     { slug: "home", label: t("nav.home") },
     { slug: "about-teacher", label: t("nav.aboutTeacher") },
     { slug: "about-center", label: t("nav.aboutCenter") },
-    { slug: "contact", label: t("nav.contact") },
-    { slug: "tips", label: t("nav.tips") }
+    { slug: "contact", label: t("nav.contact") }
   ];
   const [page, setPage] = useState<"home" | SiteSlug>("home");
   const [slug, setSlug] = useState<SiteSlug>("about-teacher");
@@ -11465,7 +11427,12 @@ function Shell({
         dir={language}
       >
         <div className="header-identity" dir={language}>
-          <a className="brand" href="/">
+          <a
+            className={`brand ${isStudentAuthenticated ? "is-profile-disabled" : "is-profile-interactive"}`}
+            href={isStudentAuthenticated ? undefined : "/teacher/login"}
+            tabIndex={isStudentAuthenticated ? -1 : 0}
+            aria-disabled={isStudentAuthenticated || undefined}
+          >
             <img className="brand-icon teacher-avatar" src="/assets/teacher-profile.png" alt={t("site.name")} />
             <span>
               <strong>{t("site.name")}</strong>
@@ -11542,12 +11509,9 @@ function Shell({
               {isStudentAuthenticated ? (
                 <>
                   <a href="/student/dashboard#student-account" onClick={() => handleNavClick("student-account")}>{t("nav.studentAccount")}</a>
-                  <a href="/tips" onClick={() => handleNavClick("tips")}>{t("nav.tips")}</a>
                 </>
               ) : (
                 <>
-                  <a href="/tips" onClick={() => handleNavClick("tips")}>{t("nav.tips")}</a>
-                  <a href="/teacher/login" onClick={() => handleNavClick("teacher-login")}>{t("nav.teacherLogin")}</a>
                   {guestNavigation.map((item) => (
                     <a href={item.href} key={item.id} onClick={() => handleNavClick(item.id)}>{item.label}</a>
                   ))}
@@ -11588,7 +11552,6 @@ function getActiveNavKey() {
   if (window.location.pathname === "/about-teacher") return "about-teacher";
   if (window.location.pathname === "/about-center") return "center";
   if (window.location.pathname === "/contact") return "contact";
-  if (window.location.pathname === "/tips") return "tips";
   if (window.location.pathname.startsWith("/teacher")) return "teacher-login";
   if (window.location.pathname.startsWith("/student")) return "student-login";
   return "student-login";

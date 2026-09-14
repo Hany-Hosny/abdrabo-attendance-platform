@@ -9,6 +9,7 @@ export interface PublicLayoutProps {
   theme: PublicTheme;
   labels: PublicHeaderLabels;
   downloadUrl: string;
+  isStudentLoggedIn?: boolean;
   onLanguageChange: (language: PublicLanguage) => void;
   onToggleTheme: () => void;
   onNavigate?: (path: string) => void;
@@ -23,6 +24,7 @@ export function PublicLayout({
   theme,
   labels,
   downloadUrl,
+  isStudentLoggedIn,
   onLanguageChange,
   onToggleTheme,
   onNavigate,
@@ -42,6 +44,7 @@ export function PublicLayout({
           theme={theme}
           labels={labels}
           downloadUrl={downloadUrl}
+          isStudentLoggedIn={isStudentLoggedIn}
           onLanguageChange={onLanguageChange}
           onToggleTheme={onToggleTheme}
           onNavigate={onNavigate}
