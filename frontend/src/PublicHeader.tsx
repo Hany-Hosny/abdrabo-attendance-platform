@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { useState, type ReactNode, type MouseEvent } from "react";
+import { useEscapeKey } from "./utils/useEscapeKey";
 
 export type PublicLanguage = "ar" | "en";
 export type PublicTheme = "dark" | "light";
@@ -20,6 +21,7 @@ export interface PublicHeaderLabels {
   contact: string;
   downloadApp: string;
   mainNavigation: string;
+  closeMenu: string;
   languageSelector: string;
   themeToLight: string;
   themeToDark: string;
@@ -68,6 +70,7 @@ export function PublicHeader({
   onNavigate
 }: PublicHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  useEscapeKey(mobileMenuOpen, () => setMobileMenuOpen(false));
   const activePath = normalizePath(currentPath);
   const profileIsInteractive = !isStudentLoggedIn;
   const navItems: NavItem[] = [
@@ -166,7 +169,7 @@ export function PublicHeader({
           <div className="public-mobile-menu" id="public-mobile-menu" role="dialog" aria-modal="true" aria-label={labels.mainNavigation}>
             <div className="public-mobile-menu-heading">
               <strong>{labels.mainNavigation}</strong>
-              <button className="public-mobile-menu-close" type="button" aria-label={labels.mainNavigation} onClick={() => setMobileMenuOpen(false)}>×</button>
+              <button className="public-mobile-menu-close" type="button" aria-label={labels.closeMenu} title={labels.closeMenu} onClick={() => setMobileMenuOpen(false)}>×</button>
             </div>
             <nav className="public-mobile-menu-links" aria-label={labels.mainNavigation}>
               {navItems.map((item) => {

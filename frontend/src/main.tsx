@@ -19,6 +19,7 @@ import { resolvePublicRoute } from "./routes";
 import { HomeContentEditor } from "./cms/HomeContentEditor";
 import { DEFAULT_HOME_CONTENT, fetchHomeContent, type LandingPageContent } from "./cms/homeContent";
 import { registerServiceWorker } from "./registerServiceWorker";
+import { useEscapeKey } from "./utils/useEscapeKey";
 
 registerServiceWorker();
 
@@ -276,6 +277,7 @@ const translations = {
     "nav.notifications": "الإشعارات",
     "nav.downloadApp": "تحميل التطبيق",
     "nav.mobileNavigation": "التنقل",
+    "common.close": "إغلاق",
     "nav.mobileMenu": "فتح القائمة",
     "nav.closeMobileMenu": "إغلاق القائمة",
     "theme.switchToLight": "التبديل إلى الوضع الفاتح",
@@ -1826,6 +1828,7 @@ const translations = {
     "nav.notifications": "Notifications",
     "nav.downloadApp": "Download app",
     "nav.mobileNavigation": "Navigation",
+    "common.close": "Close",
     "nav.mobileMenu": "Open menu",
     "nav.closeMobileMenu": "Close menu",
     "theme.switchToLight": "Switch to light mode",
@@ -4388,6 +4391,7 @@ function App() {
     contact: t("nav.contact"),
     downloadApp: t("nav.downloadApp"),
     mainNavigation: t("nav.mobileNavigation"),
+    closeMenu: t("nav.closeMobileMenu"),
     languageSelector: t("nav.language"),
     themeToLight: t("theme.switchToLight"),
     themeToDark: t("theme.switchToDark")
@@ -4487,6 +4491,8 @@ function App() {
     window.history.pushState({}, "", nextPath);
     setPath(window.location.pathname);
   }
+
+  useEscapeKey(lookupOpen, closeLookupModal);
 
   if (portalAccessLoading) {
     return <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth"><main className="teacher-auth"><GlassLoader label={t("public.preparing")} /></main></Shell>;
@@ -5311,6 +5317,7 @@ function GlobalSearch({ session, language, t, onSelect }: { session: TeacherSess
       </svg>
     </button>
     {open ? <div className="header-popover search-popover" role="dialog" aria-label={t("dashboard.searchStudents")}>
+      <button className="popup-close-button" type="button" onClick={() => { setOpen(false); setTerm(""); }} aria-label={t("common.close")} title={t("common.close")}>×</button>
       <label className="visually-hidden" htmlFor="global-student-search">{t("dashboard.searchStudents")}</label>
       <input id="global-student-search" ref={inputRef} value={term} onChange={(event) => setTerm(event.target.value)} onKeyDown={(event) => {
         if (event.key === "ArrowDown") { event.preventDefault(); setActiveIndex((value) => Math.min(results.length - 1, value + 1)); }
@@ -5438,7 +5445,7 @@ function NotificationCenter({ session, language, t, onSelect, onOpenAll }: { ses
   ];
   return <div className="admin-header-tool notification-center" ref={containerRef} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>
     <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={t("dashboard.notificationCenter")} title={t("dashboard.notificationCenter")} aria-expanded={open} onClick={() => setOpen((value) => !value)}><BellIcon />{unreadCount > 0 ? <span className="header-unread-badge" aria-label={badge}>{badge}</span> : null}</button>
-    {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button className={markAllState === "success" ? "is-success" : ""} type="button" onClick={() => void markAllRead()} disabled={!unreadCount || markAllState === "loading"}>{markAllState === "loading" ? t("dashboard.loading") : markAllState === "success" ? t("dashboard.notificationsMarkedRead") : t("dashboard.markAllRead")}</button></div><div className="notification-filter-tabs" role="tablist" aria-label={t("dashboard.notifications")}>
+    {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><button className="popup-close-button" type="button" onClick={() => setOpen(false)} aria-label={t("common.close")} title={t("common.close")}>×</button><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button className={markAllState === "success" ? "is-success" : ""} type="button" onClick={() => void markAllRead()} disabled={!unreadCount || markAllState === "loading"}>{markAllState === "loading" ? t("dashboard.loading") : markAllState === "success" ? t("dashboard.notificationsMarkedRead") : t("dashboard.markAllRead")}</button></div><div className="notification-filter-tabs" role="tablist" aria-label={t("dashboard.notifications")}>
       {filterTabs.map((filter) => <button key={filter.id} className={activeFilter === filter.id ? "active" : ""} type="button" role="tab" aria-selected={activeFilter === filter.id} onClick={() => setActiveFilter(filter.id)}><span>{filter.label}</span><b>{filter.count}</b></button>)}
     </div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : filteredNotifications.length ? <div className="notification-list">{filteredNotifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.type}`}>{notification.type === "new_message" ? "✉" : notification.type === "payment_overdue" ? "₤" : notification.type === "whatsapp_disconnected" ? "⚠" : "!"}</span><span><strong>{notificationTitle(notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{notifications.length ? t("dashboard.notificationsFilterEmpty") : t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setOpen(false); onOpenAll(); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
   </div>;
@@ -5865,6 +5872,7 @@ function StudentNotificationBell({
       {unreadCount > 0 ? <span className="student-notification-badge" aria-label={badge}>{badge}</span> : null}
     </button>
     {open ? <div className="student-notification-popover" role="dialog" aria-label={t("studentNotifications.title")}>
+      <button className="popup-close-button" type="button" onClick={() => setOpen(false)} aria-label={t("common.close")} title={t("common.close")}>×</button>
       <div className="student-notification-heading">
         <strong>{t("studentNotifications.title")}</strong>
         <button type="button" onClick={() => void markAllRead()} disabled={!unreadCount || markingRead}>
@@ -6074,6 +6082,7 @@ function TeacherDashboard({
             </span>
           </button>
           {accountOpen ? <div className="account-dropdown" role="menu">
+            <button className="menu-close-button" type="button" role="menuitem" onClick={() => setAccountOpen(false)} aria-label={t("common.close")} title={t("common.close")}>×</button>
             {can("settings.manage") ? <button type="button" role="menuitem" onClick={() => { navigateAdmin("settings"); setAccountOpen(false); }}>{t("admin.tabs.settings")}</button> : null}
             {can("settings.manage") ? <span className="account-menu-divider" role="separator" /> : null}
             <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); onLogout(); }}><LogoutIcon />{t("teacher.logout")}</button>
@@ -6148,13 +6157,14 @@ function TeacherDashboard({
               }}
             ><SettingsIcon /><span className="visually-hidden">{language === "ar" ? "الإدارة والإعدادات" : "Administration and settings"}</span></button>
             {gearOpen ? <div className="gear-dropdown" role="menu" ref={gearMenuRef}>
+              <button className="menu-close-button" type="button" role="menuitem" onClick={() => { setGearOpen(false); gearButtonRef.current?.focus(); }} aria-label={t("common.close")} title={t("common.close")}>×</button>
               {gearAdminTabs.map((tab, index) => <span key={tab.id} className={tab.id === "settings" ? "gear-menu-settings" : ""}>
                 {tab.id === "settings" ? <span className="gear-divider" role="separator" /> : null}
                 <button type="button" role="menuitem" onClick={() => { navigateAdmin(tab.id); setGearOpen(false); }} onKeyDown={(event) => {
                   if (event.key === "Escape") { event.preventDefault(); setGearOpen(false); gearButtonRef.current?.focus(); return; }
                   if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
                   event.preventDefault();
-                  const items = Array.from(gearMenuRef.current?.querySelectorAll<HTMLButtonElement>("button[role='menuitem']") || []);
+                  const items = Array.from(gearMenuRef.current?.querySelectorAll<HTMLButtonElement>("button[role='menuitem']:not(.menu-close-button)") || []);
                   if (!items.length) return;
                   const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
                   items[nextIndex]?.focus();
@@ -6369,6 +6379,11 @@ function UsersTeamManager({
   const editorFormRef = useRef<HTMLFormElement>(null);
   const isOwner = session.teacher.role === "owner";
   const canManageGroupAccess = isOwner || sessionHasPermission(session, "users.edit");
+
+  useEscapeKey(Boolean(transferTarget) && !loading, () => {
+    setTransferTarget(null);
+    setTransferPassword("");
+  });
 
   async function loadUsers() {
     const response = await fetch(`${API_BASE_URL}/admin/users?status=${statusFilter}`, {
@@ -6969,6 +6984,7 @@ function UsersTeamManager({
       {transferTarget ? (
         <div className="modal-backdrop" role="presentation">
           <section className="modal admin-editor" role="dialog" aria-modal="true" aria-labelledby="transfer-ownership-title">
+            <button className="modal-close-button" type="button" onClick={() => { setTransferTarget(null); setTransferPassword(""); }} disabled={loading} aria-label={t("common.close")} title={t("common.close")}>×</button>
             <div className="section-heading">
               <p className="eyebrow">{t("admin.transferOwnership")}</p>
               <h3 id="transfer-ownership-title">{transferTarget.name}</h3>
@@ -7356,6 +7372,32 @@ function AcademicManager({
   const profileScanRef = useRef<HTMLInputElement>(null);
   const profileScanBusyRef = useRef(false);
   const profileScanAbortRef = useRef<AbortController | null>(null);
+
+  const activeDialogBusy = bulkActionsBusy
+    || Boolean(groupDeletePinTarget && groupActionState(`delete:${groupDeletePinTarget.id}`) !== "idle")
+    || Boolean(permanentDeleteTarget && studentActionState(`permanent-delete:${permanentDeleteTarget.id}`) === "loading");
+
+  useEscapeKey(Boolean(groupDetails || bulkDeleteConfirmOpen || permanentBulkDeleteConfirmOpen || permanentDeleteTarget || groupDeletePinTarget) && !activeDialogBusy, () => {
+    if (groupDetails) {
+      setGroupDetails(null);
+      return;
+    }
+    if (groupDeletePinTarget) {
+      setGroupDeletePinTarget(null);
+      setGroupDeletePin("");
+      return;
+    }
+    if (permanentDeleteTarget) {
+      setPermanentDeleteTarget(null);
+      return;
+    }
+    if (permanentBulkDeleteConfirmOpen) {
+      setPermanentBulkDeleteConfirmOpen(false);
+      setPermanentBulkDeletePhrase("");
+      return;
+    }
+    setBulkDeleteConfirmOpen(false);
+  });
 
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` };
   function syncProfileFromLocation() {
@@ -8270,6 +8312,7 @@ function AcademicManager({
         <span>{studentBulkToast.message}</span>
       </div> : null}
       {bulkDeleteConfirmOpen ? <div className="modal-backdrop" role="presentation"><section className="modal-card bulk-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-confirm-title">
+        <button className="modal-close-button" type="button" onClick={() => setBulkDeleteConfirmOpen(false)} disabled={bulkDeleteFeedback.state === "loading"} aria-label={t("common.close")} title={t("common.close")}>×</button>
         <h3 id="bulk-delete-confirm-title">{t("admin.bulkDelete", { count: String(selectedStudentIds.length) })}</h3>
         <p>{t("admin.bulkDeleteConfirm", { count: String(selectedStudentIds.length) })}</p>
         <div className="form-actions">
@@ -8278,6 +8321,7 @@ function AcademicManager({
         </div>
       </section></div> : null}
       {permanentDeleteTarget ? <div className="modal-backdrop" role="presentation"><section className="modal-card permanent-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="permanent-delete-confirm-title">
+        <button className="modal-close-button" type="button" onClick={() => setPermanentDeleteTarget(null)} disabled={studentActionState(`permanent-delete:${permanentDeleteTarget.id}`) === "loading"} aria-label={t("common.close")} title={t("common.close")}>×</button>
         <h3 id="permanent-delete-confirm-title">{t("admin.retentionConfirmSingle")}</h3>
         <p><strong>{permanentDeleteTarget.full_name}</strong> · <span dir="ltr">{permanentDeleteTarget.student_code}</span></p>
         <p>{t("admin.retentionIdentityWarning")}</p>
@@ -8289,6 +8333,7 @@ function AcademicManager({
         </div>
       </section></div> : null}
       {permanentBulkDeleteConfirmOpen ? <div className="modal-backdrop" role="presentation"><section className="modal-card permanent-bulk-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="permanent-bulk-delete-confirm-title">
+        <button className="modal-close-button" type="button" onClick={() => { setPermanentBulkDeleteConfirmOpen(false); setPermanentBulkDeletePhrase(""); }} disabled={permanentBulkDeleteFeedback.state === "loading"} aria-label={t("common.close")} title={t("common.close")}>×</button>
         <h3 id="permanent-bulk-delete-confirm-title">{t("admin.permanentBulkDeleteTitle")}</h3>
         <p>{t("admin.permanentBulkDeleteWarning", { count: String(selectedStudentIds.length) })}</p>
         {selectedStudentIds.length <= 8 ? <ul className="permanent-delete-student-list">{selectedStudentIds.map((studentId) => { const student = students.find((item) => item.id === studentId); return student ? <li key={student.id}><strong>{student.full_name}</strong><span dir="ltr">{student.student_code}</span></li> : null; })}</ul> : null}
@@ -8302,6 +8347,7 @@ function AcademicManager({
         </div>
       </section></div> : null}
       {groupDeletePinTarget ? <div className="modal-backdrop" role="presentation"><section className="modal-card group-delete-pin-modal" role="dialog" aria-modal="true" aria-labelledby="group-delete-pin-title">
+        <button className="modal-close-button" type="button" onClick={() => { setGroupDeletePinTarget(null); setGroupDeletePin(""); }} disabled={groupActionState(`delete:${groupDeletePinTarget.id}`) !== "idle"} aria-label={t("common.close")} title={t("common.close")}>×</button>
         <h3 id="group-delete-pin-title">{t("admin.groupDeletePinTitle")}</h3>
         <p><strong>{groupDeletePinTarget.display_name || groupDeletePinTarget.name}</strong></p>
         <p>{t("admin.groupDeletePinDescription", { count: String(groupDeletePinTarget.students_count || 0) })}</p>
@@ -8314,7 +8360,7 @@ function AcademicManager({
           <button className="secondary-button compact-button" type="button" disabled={groupActionState(`delete:${groupDeletePinTarget.id}`) !== "idle"} onClick={() => { setGroupDeletePinTarget(null); setGroupDeletePin(""); }}>{t("admin.cancel")}</button>
         </div>
       </section></div> : null}
-      {groupDetails ? <div className="modal-backdrop" role="presentation"><section className="modal group-details-modal" role="dialog" aria-modal="true"><button className="close-button" type="button" onClick={()=>setGroupDetails(null)}>×</button><p className="eyebrow">Group details / تفاصيل المجموعة</p><h2>{groupDetails.group.display_name || groupDetails.group.name}</h2><p>{groupDetails.group.grade_level || groupDetails.group.grade} · {groupDetails.group.subject} · {groupDetails.group.fees_amount} EGP</p><div className="detail-stats"><span>Total: {groupDetails.group.students_count ?? 0}</span><span>Active: {groupDetails.group.active_students_count ?? 0}</span><span>Disabled: {groupDetails.group.disabled_students_count ?? 0}</span><span>Deleted: {groupDetails.group.deleted_students_count ?? 0}</span></div><div className="status-filter-buttons group-details-filters" role="group" aria-label="Student status filters">{(["all","active","disabled","deleted"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={detailFilter===filter?"active":""} type="button" onClick={()=>setDetailFilter(filter)}>{recordStatusFilterLabel(filter,t)}</button>)}</div><div className="schedule-detail-list">{groupDetails.schedules.map((schedule:any)=><span key={schedule.id}>{t(`days.${schedule.day_of_week}` as TranslationKey)} · {schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</span>)}</div><div className="academic-list group-student-list">{groupDetails.students.filter((student:any)=>detailFilter==="all"||(detailFilter==="deleted"?student.deleted_at:!student.deleted_at&&(detailFilter==="active"?student.is_active:!student.is_active))).map((student:any)=><article className="academic-row group-student-row" key={student.id}><div className="group-student-info"><div className="group-student-heading"><strong>{student.full_name}</strong><span className={student.deleted_at?"status-deleted":student.is_active?"status-active":"status-disabled"}>{recordStatusLabel(student,t)}</span></div><span>Code / الكود: {student.student_serial || student.student_code || "—"}</span><span>Phone / الهاتف: {student.phone || "—"} · Guardian / ولي الأمر: {student.guardian_phone || "—"}</span></div></article>)}</div></section></div> : null}
+      {groupDetails ? <div className="modal-backdrop" role="presentation"><section className="modal group-details-modal" role="dialog" aria-modal="true"><button className="close-button" type="button" onClick={()=>setGroupDetails(null)} aria-label={t("common.close")} title={t("common.close")}>×</button><p className="eyebrow">Group details / تفاصيل المجموعة</p><h2>{groupDetails.group.display_name || groupDetails.group.name}</h2><p>{groupDetails.group.grade_level || groupDetails.group.grade} · {groupDetails.group.subject} · {groupDetails.group.fees_amount} EGP</p><div className="detail-stats"><span>Total: {groupDetails.group.students_count ?? 0}</span><span>Active: {groupDetails.group.active_students_count ?? 0}</span><span>Disabled: {groupDetails.group.disabled_students_count ?? 0}</span><span>Deleted: {groupDetails.group.deleted_students_count ?? 0}</span></div><div className="status-filter-buttons group-details-filters" role="group" aria-label="Student status filters">{(["all","active","disabled","deleted"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={detailFilter===filter?"active":""} type="button" onClick={()=>setDetailFilter(filter)}>{recordStatusFilterLabel(filter,t)}</button>)}</div><div className="schedule-detail-list">{groupDetails.schedules.map((schedule:any)=><span key={schedule.id}>{t(`days.${schedule.day_of_week}` as TranslationKey)} · {schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</span>)}</div><div className="academic-list group-student-list">{groupDetails.students.filter((student:any)=>detailFilter==="all"||(detailFilter==="deleted"?student.deleted_at:!student.deleted_at&&(detailFilter==="active"?student.is_active:!student.is_active))).map((student:any)=><article className="academic-row group-student-row" key={student.id}><div className="group-student-info"><div className="group-student-heading"><strong>{student.full_name}</strong><span className={student.deleted_at?"status-deleted":student.is_active?"status-active":"status-disabled"}>{recordStatusLabel(student,t)}</span></div><span>Code / الكود: {student.student_serial || student.student_code || "—"}</span><span>Phone / الهاتف: {student.phone || "—"} · Guardian / ولي الأمر: {student.guardian_phone || "—"}</span></div></article>)}</div></section></div> : null}
     </section>
   );
 }
@@ -8464,7 +8510,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
   const profilePercent = (value: unknown) => value == null || !Number.isFinite(Number(value)) ? "—" : `${Number(value).toFixed(1)}%`;
   const attentionReasonLabel = (reason: any) => reason.type === "attendance" ? t("dashboard.attentionAttendance", { value: profilePercent(reason.value) }) : reason.type === "evaluation" ? t("dashboard.attentionEvaluation", { value: profilePercent(reason.value) }) : t("dashboard.attentionPayment", { amount: money(reason.amount) });
   return createPortal(<div className="modal-backdrop student-profile-backdrop" role="presentation" onWheel={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }} onTouchMove={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }}><section ref={profileModalRef} className="modal student-profile-modal" role="dialog" aria-modal="true" aria-label={t("admin.studentProfile")}>
-    <button className="close-button" type="button" onClick={onClose}>×</button>
+    <button className="close-button" type="button" onClick={onClose} aria-label={t("common.close")} title={t("common.close")}>×</button>
     {loading ? <p className="empty-state">{t("admin.profileLoading")}</p> : profile ? <>
       <div className="section-heading"><p className="eyebrow">{t("dashboard.student360")}</p><h2>{profile.student.full_name}</h2><p>{profile.student.student_code || profile.student.student_serial || "—"} · {profile.student.group_name || "—"} · {recordStatusLabel(profile.student, t)}</p></div>
       <section className="student360-summary" aria-label={t("dashboard.student360Subtitle")}>
@@ -10158,6 +10204,8 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
   const exportFeedback = useActionFeedback();
   const auth = { Authorization: `Bearer ${session.token}` };
 
+  useEscapeKey(Boolean(reverseTarget) && !reversing, () => setReverseTarget(null));
+
   async function searchReport(nextFrom = from, nextTo = to) {
     return searchFeedback.run(async () => {
       setLoading(true); setStatus(""); setNoResults(false);
@@ -10299,7 +10347,7 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     <p className="report-total">{t("fees.totalPaid")}: {totalPaid.toFixed(2)} EGP · {t("fees.paymentCount")}: {paymentCount}</p>
     {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td>{row.amount} EGP</td><td><span className="payment-type-cell">{formatPaymentType(row)}</span></td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td>{canReverse ? <td><button className="secondary-button compact-button" type="button" disabled={reversing} onClick={() => openReverseDialog(row)}>{t("fees.reversePayment")}</button></td> : null}</tr>)}</tbody></table></div> : null}
     {status ? <p className="form-error">{status}</p> : null}
-    {reverseTarget ? <div className="modal-backdrop"><form className="modal-card" role="dialog" aria-modal="true" onSubmit={reversePayment}><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(false); }} rows={4} autoFocus required /></label><label>{t("fees.securityCode")}<input value={reversePin} onChange={(event) => { setReversePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4)); setReverseError(false); }} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" placeholder={t("fees.securityCodeHint")} required /></label>{reverseError ? <p className="form-error" role="alert">{status || t("fees.reversalFailed")}</p> : null}<div className="report-actions"><button className="primary-button" type="submit" disabled={reversing || reverseReason.trim().length < 3 || !/^\d{4}$/.test(normalizeDigits(reversePin).trim())}>{reverseButtonLabel}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></form></div> : null}
+    {reverseTarget ? <div className="modal-backdrop"><form className="modal-card" role="dialog" aria-modal="true" onSubmit={reversePayment}><button className="modal-close-button" type="button" onClick={() => setReverseTarget(null)} disabled={reversing} aria-label={t("common.close")} title={t("common.close")}>×</button><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(false); }} rows={4} autoFocus required /></label><label>{t("fees.securityCode")}<input value={reversePin} onChange={(event) => { setReversePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4)); setReverseError(false); }} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" placeholder={t("fees.securityCodeHint")} required /></label>{reverseError ? <p className="form-error" role="alert">{status || t("fees.reversalFailed")}</p> : null}<div className="report-actions"><button className="primary-button" type="submit" disabled={reversing || reverseReason.trim().length < 3 || !/^\d{4}$/.test(normalizeDigits(reversePin).trim())}>{reverseButtonLabel}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></form></div> : null}
     </section>
   </div>;
 }
@@ -10948,6 +10996,8 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   const batchToastTimerRef = useRef<number | null>(null);
   const canSendGrades = sessionHasPermission(session, "whatsapp.send_grades");
 
+  useEscapeKey(Boolean(batchConfirmOpen) && !batchMutating, () => setBatchConfirmOpen(false));
+
   const recordsQuery = useMemo(() => {
     const params = new URLSearchParams();
     if (selectedGroup) params.set("group_id", selectedGroup);
@@ -11305,6 +11355,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
       </AnimatePresence>
       {batchConfirmOpen ? <div className="modal-backdrop exam-bulk-confirm-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !batchMutating) setBatchConfirmOpen(false); }}>
         <section className="modal-card exam-bulk-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="exam-bulk-confirm-title">
+          <button className="modal-close-button" type="button" onClick={() => setBatchConfirmOpen(false)} disabled={batchMutating} aria-label={t("common.close")} title={t("common.close")}>×</button>
           <h3 id="exam-bulk-confirm-title">{t("whatsapp.bulkConfirmTitle")}</h3>
           <p>{t("whatsapp.bulkConfirm", { count: String(selectedIds.size) })}</p>
           <div className="exam-bulk-confirm-actions">

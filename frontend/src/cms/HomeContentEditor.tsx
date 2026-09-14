@@ -10,6 +10,7 @@ import {
   type LocalizedLandingPageContent
 } from "@abdrabo/shared/landingContent.js";
 import { cloneHomeContent, fetchHomeContent, normalizeLocalizedHomeContent } from "./homeContent";
+import { useEscapeKey } from "../utils/useEscapeKey";
 
 type CmsTranslator = (key: string, values?: Record<string, string>) => string;
 type SitePageSlug = "home" | "about-teacher" | "about-center" | "contact";
@@ -118,6 +119,11 @@ export function HomeContentEditor({ apiBaseUrl, token, language, t, pageOptions,
   const watchedGrades = watch("grades");
   const watchedFeatures = watch("features");
   const watchedStats = watch("stats");
+
+  useEscapeKey(guardOpen, () => {
+    setGuardOpen(false);
+    pendingActionRef.current = null;
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -311,7 +317,7 @@ export function HomeContentEditor({ apiBaseUrl, token, language, t, pageOptions,
         </div>
       </form>
 
-      {guardOpen ? <div className="modal-backdrop cms-guard-backdrop" role="presentation"><section className="modal cms-guard-modal" role="dialog" aria-modal="true" aria-labelledby="cms-guard-title"><span className="cms-guard-icon" aria-hidden="true">!</span><h2 id="cms-guard-title">{text("cms.guard.title", "لديك تعديلات غير محفوظة")}</h2><p>{text("cms.guard.description", "هل تريد مغادرة الصفحة دون حفظ التعديلات الحالية؟")}</p><div className="cms-guard-actions"><button className="secondary-button" type="button" onClick={() => { setGuardOpen(false); pendingActionRef.current = null; }}>{text("cms.guard.stay", "البقاء والتعديل")}</button><button className="primary-button" type="button" onClick={discardAndContinue}>{text("cms.guard.leave", "مغادرة دون حفظ")}</button></div></section></div> : null}
+      {guardOpen ? <div className="modal-backdrop cms-guard-backdrop" role="presentation"><section className="modal cms-guard-modal" role="dialog" aria-modal="true" aria-labelledby="cms-guard-title"><button className="modal-close-button" type="button" onClick={() => { setGuardOpen(false); pendingActionRef.current = null; }} aria-label={t("nav.closeMobileMenu")} title={t("nav.closeMobileMenu")}>×</button><span className="cms-guard-icon" aria-hidden="true">!</span><h2 id="cms-guard-title">{text("cms.guard.title", "لديك تعديلات غير محفوظة")}</h2><p>{text("cms.guard.description", "هل تريد مغادرة الصفحة دون حفظ التعديلات الحالية؟")}</p><div className="cms-guard-actions"><button className="secondary-button" type="button" onClick={() => { setGuardOpen(false); pendingActionRef.current = null; }}>{text("cms.guard.stay", "البقاء والتعديل")}</button><button className="primary-button" type="button" onClick={discardAndContinue}>{text("cms.guard.leave", "مغادرة دون حفظ")}</button></div></section></div> : null}
     </div>
   );
 }
