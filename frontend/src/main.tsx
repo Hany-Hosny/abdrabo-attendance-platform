@@ -4806,7 +4806,7 @@ function App() {
         </main>
         {lookupOpen ? (
           <div className="modal-backdrop" role="presentation">
-            <section className="modal" role="dialog" aria-modal="true" aria-labelledby="lookup-title">
+            <section className="modal student-code-lookup-modal" role="dialog" aria-modal="true" aria-labelledby="lookup-title">
               <button className="close-button" aria-label={t("student.close")} onClick={closeLookupModal}>×</button>
               <h2 id="lookup-title">{t("student.lookupTitle")}</h2>
               <p>{t("student.lookupHelp")}</p>
@@ -4902,7 +4902,7 @@ function App() {
 
       {lookupOpen ? (
         <div className="modal-backdrop" role="presentation">
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="lookup-title">
+          <section className="modal student-code-lookup-modal" role="dialog" aria-modal="true" aria-labelledby="lookup-title">
             <button
               className="close-button"
               aria-label={t("student.close")}

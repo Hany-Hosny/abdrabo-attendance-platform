@@ -6467,8 +6467,22 @@ textarea:focus-visible {
   border-radius: 8px;
   background: transparent;
   color: var(--text);
+  font-size: 0;
   cursor: pointer;
 }
+
+.close-button::before,
+.close-button::after {
+  content: "";
+  position: absolute;
+  width: 17px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.close-button::before { transform: rotate(45deg); }
+.close-button::after { transform: rotate(-45deg); }
 
 .close-button:hover {
   border-color: rgba(255, 255, 255, 0.18);
@@ -6478,6 +6492,18 @@ textarea:focus-visible {
 
 .close-button:active {
   transform: scale(0.94);
+}
+
+/* Keep the student-code lookup close control on the physical left edge in
+   both writing directions, as requested by the mobile login layout. */
+.student-code-lookup-modal .close-button {
+  inset-inline-start: 14px;
+  inset-inline-end: auto;
+}
+
+[dir="rtl"] .student-code-lookup-modal .close-button {
+  inset-inline-start: auto;
+  inset-inline-end: 14px;
 }
 
 .lookup-result {
@@ -7114,12 +7140,13 @@ textarea:focus-visible {
 }
 
 .digital-card-backdrop {
-  z-index: 30;
+  z-index: 140;
   padding: 12px;
   background: rgba(2, 8, 18, 0.82);
 }
 
 .digital-card-modal {
+  box-sizing: border-box;
   width: min(620px, 100%);
   max-height: min(92vh, 860px);
   overflow-y: auto;
@@ -7177,6 +7204,24 @@ textarea:focus-visible {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.digital-card-modal .modal-close-button {
+  z-index: 1;
+  font-size: 0;
+}
+
+.digital-card-modal .modal-close-button::before,
+.digital-card-modal .modal-close-button::after {
+  content: "";
+  position: absolute;
+  width: 17px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.digital-card-modal .modal-close-button::before { transform: rotate(45deg); }
+.digital-card-modal .modal-close-button::after { transform: rotate(-45deg); }
+
 .digital-card-scan-surface {
   padding: 10px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -7227,20 +7272,6 @@ textarea:focus-visible {
 .digital-card-hint span {
   color: var(--warning);
   font-size: 17px;
-}
-
-@media (max-width: 520px) {
-  .digital-card-modal {
-    padding: 16px;
-  }
-
-  .digital-card-modal-header h2 {
-    font-size: 20px;
-  }
-
-  .digital-card-info {
-    grid-template-columns: 1fr;
-  }
 }
 
 .date-time-widget {
@@ -18148,5 +18179,101 @@ html[data-scanner-feedback="error"]::after {
     white-space: normal;
     overflow-wrap: anywhere;
     text-align: center;
+  }
+}
+
+/* The shared phone modal contract stretches app sheets. Keep the digital
+   student card content-sized and above the sticky header on small screens. */
+@media (max-width: 520px) {
+  .digital-card-backdrop {
+    z-index: 9999 !important;
+    align-items: center;
+    padding: max(8px, var(--safe-top)) max(8px, var(--safe-right)) max(8px, var(--safe-bottom)) max(8px, var(--safe-left));
+  }
+
+  .digital-card-modal {
+    align-self: center;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .digital-card-modal-header {
+    position: relative;
+    display: block;
+    padding-inline-end: 44px;
+    margin-bottom: 12px;
+  }
+
+  .digital-card-modal .modal-close-button {
+    inset-block-start: 0;
+    inset-inline-end: 0;
+  }
+
+  .digital-card-system-title {
+    margin-bottom: 3px;
+    font-size: 11px;
+  }
+
+  .digital-card-modal-header h2 {
+    font-size: clamp(18px, 5vw, 20px);
+  }
+
+  .digital-card-modal-header p {
+    font-size: 13px;
+  }
+
+  .digital-card-scan-surface {
+    padding: 6px;
+  }
+
+  .digital-card-modal .profile-label-preview {
+    box-sizing: border-box;
+    width: 100%;
+    gap: 4px;
+    padding: 12px 8px;
+  }
+
+  .digital-card-modal .profile-label-brand {
+    font-size: clamp(15px, 4vw, 18px);
+  }
+
+  .digital-card-modal .profile-label-name {
+    font-size: clamp(18px, 5vw, 21px);
+  }
+
+  .digital-card-modal .profile-label-code {
+    font-size: clamp(16px, 4.5vw, 18px);
+  }
+
+  .digital-card-modal .profile-label-grade {
+    font-size: clamp(15px, 4vw, 17px);
+  }
+
+  .digital-card-modal .profile-label-preview .barcode-preview {
+    height: clamp(68px, 22vw, 90px);
+    margin-top: 4px;
+  }
+
+  .digital-card-modal .profile-label-serial {
+    font-size: 15px;
+  }
+
+  .digital-card-info {
+    gap: 7px;
+    margin-top: 10px;
+    grid-template-columns: 1fr;
+  }
+
+  .digital-card-info div {
+    padding: 8px 10px;
+  }
+
+  .digital-card-hint {
+    margin-top: 10px;
+    font-size: 12px;
   }
 }
