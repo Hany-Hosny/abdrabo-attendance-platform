@@ -5,6 +5,11 @@ import { pool, query } from "../db/pool.js";
 import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "./auth.js";
 import { recordWhatsAppConnectionNotification } from "./notifications.js";
 import { auditLog } from "./audit.js";
+import {
+  WHATSAPP_TEMPLATE_CATALOG,
+  WHATSAPP_TEMPLATE_PLACEHOLDERS,
+  normalizeStudentGender
+} from "./whatsappTemplateCatalog.js";
 
 const normalizeTeacherDisplayName = (value) => String(value ?? "").replace(/مستر أحمد عبدربه/g, "Mr. Ahmed Abdrabo");
 
@@ -302,17 +307,17 @@ export async function updateWhatsAppSettings(input, { actorId, request = null, d
       [settings.auto_send, JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates), settings.min_delay_seconds, settings.max_delay_seconds, actorId || null]
     );
     await client.query(`
-      INSERT INTO whatsapp_templates (category, message_body, is_active)
-      SELECT source.category, item.value, TRUE
+      INSERT INTO whatsapp_templates (category, message_body, is_active, audience, is_fallback)
+      SELECT source.category, item.value, FALSE, 'neutral', FALSE
       FROM (VALUES
         ('attendance', $1::jsonb), ('grade', $2::jsonb), ('receipt', $3::jsonb), ('advance_payment', $4::jsonb)
       ) AS source(category, template_values)
       CROSS JOIN LATERAL jsonb_array_elements_text(source.template_values) AS item(value)
-      ON CONFLICT (category, message_body) DO UPDATE SET is_active = TRUE, updated_at = NOW()
+      WHERE NOT EXISTS (
+        SELECT 1 FROM whatsapp_templates existing
+        WHERE existing.category = source.category AND existing.message_body = item.value
+      )
     `, [JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates)]);
-    for (const [category, templates] of [["attendance", settings.templates], ["grade", settings.grade_templates], ["receipt", settings.receipt_templates], ["advance_payment", settings.advance_payment_templates]]) {
-      await client.query(`UPDATE whatsapp_templates SET is_active = EXISTS (SELECT 1 FROM jsonb_array_elements_text($2::jsonb) item WHERE item.value = message_body), updated_at = NOW() WHERE category = $1`, [category, JSON.stringify(templates)]);
-    }
     if (audit && JSON.stringify(before) !== JSON.stringify(settings)) {
       await audit({ db: client, action: "whatsapp_settings_updated", actorId, details: { previous: before, next: settings }, request });
     }
@@ -872,25 +877,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function chooseTemplate(type, templates) {
-  await query(
-    `INSERT INTO whatsapp_template_rotation (notification_type, next_index)
-     VALUES ($1, 0)
-     ON CONFLICT (notification_type) DO NOTHING`,
-    [type]
-  );
-  const result = await query(
-    `UPDATE whatsapp_template_rotation
-     SET next_index = (next_index + 1) % $2, updated_at = NOW()
-     WHERE notification_type = $1
-     RETURNING next_index`,
-    [type, templates.length]
-  );
-  const nextIndex = Number(result.rows[0]?.next_index || 0);
-  const index = (nextIndex + templates.length - 1) % templates.length;
-  return { index, template: templates[index] };
-}
-
 function normalizeNotificationType(value) {
   const type = String(value || "").trim().toLowerCase();
   if (type === "grade" || type === "exam") return "grade";
@@ -911,10 +897,26 @@ export const requiredPlaceholders = Object.freeze({
 
 export function validateWhatsAppTemplate(category, messageBody) {
   const normalizedCategory = normalizeNotificationType(category);
+  const source = String(messageBody ?? "");
+  const allowed = WHATSAPP_TEMPLATE_PLACEHOLDERS[normalizedCategory] || [];
+  const tokens = [...source.matchAll(TEMPLATE_TOKEN_PATTERN)].map((match) => normalizeTemplateKey(match[1]));
+  const unknownPlaceholder = tokens.find((token) => !allowed.includes(token));
+  const spintaxFree = source
+    .replace(TEMPLATE_TOKEN_PATTERN, "")
+    .replace(/\{([^{}|]+(?:\|[^{}|]+)+)\}/g, "$1");
+  const malformed = /[{}]/.test(spintaxFree);
+  const required = requiredPlaceholders[normalizedCategory] ? [requiredPlaceholders[normalizedCategory]] : [];
+  const missing = required.filter((key) => !tokens.includes(key));
   const requiredPlaceholder = requiredPlaceholders[normalizedCategory];
+  const hasForbiddenLiteral = /\b(undefined|null)\b|\[object Object\]/i.test(source);
   return {
-    ok: Boolean(requiredPlaceholder && templateHasPlaceholder(messageBody, requiredPlaceholder)),
-    requiredPlaceholder
+    ok: Boolean(normalizedCategory && source.trim() && !unknownPlaceholder && !malformed && !hasForbiddenLiteral && !missing.length),
+    requiredPlaceholder,
+    missingPlaceholders: missing,
+    unknownPlaceholder,
+    malformed,
+    hasForbiddenLiteral,
+    allowedPlaceholders: allowed
   };
 }
 
@@ -942,50 +944,18 @@ function notificationTypeForJob(job) {
   return normalizeNotificationType(job.payload?.type || job.type || job.notification_type) || referenceType;
 }
 
-function notificationTemplates(settings, type) {
-  switch (normalizeNotificationType(type)) {
-    case "grade": {
-      const configured = settings.grade_templates;
-      const templates = Array.isArray(configured) ? configured.filter((template) => templateHasPlaceholder(template, "exam_title")) : [];
-      return templates.length ? templates : [...DEFAULT_GRADE_TEMPLATES];
-    }
-    case "receipt": {
-      const configured = settings.receipt_templates;
-      const templates = Array.isArray(configured) ? configured.filter((template) => templateHasPlaceholder(template, "amount_paid")) : [];
-      return templates.length ? templates : [...DEFAULT_RECEIPT_TEMPLATES];
-    }
-    case "advance_payment": {
-      const configured = settings.advance_payment_templates;
-      const templates = Array.isArray(configured)
-        ? configured.filter((template) => templateHasPlaceholder(template, "amount_paid") && templateHasPlaceholder(template, "months"))
-        : [];
-      return templates.length ? templates : [...DEFAULT_ADVANCE_PAYMENT_TEMPLATES];
-    }
-    case "attendance":
-      return Array.isArray(settings.templates) ? settings.templates : [...DEFAULT_TEMPLATES];
-    case "absence":
-      return [...DEFAULT_ABSENCE_TEMPLATES];
-    default:
-      throw new Error("unsupported_whatsapp_notification_type");
-  }
-}
-
 async function activeTemplateRows(category, db = query) {
   const result = await db(
-    `SELECT id, message_body FROM whatsapp_templates
+    `SELECT id, category, audience, slot_number, slot_key, is_fallback,
+        content_version, message_body, is_active
+     FROM whatsapp_templates
      WHERE category = $1 AND is_active = TRUE
-     ORDER BY id`,
+       AND ((audience IN ('male', 'female') AND slot_number BETWEEN 1 AND 4 AND is_fallback = FALSE)
+         OR (audience = 'neutral' AND is_fallback = TRUE AND slot_number IS NULL))
+     ORDER BY audience, slot_number NULLS LAST, id`,
     [category]
   );
-  const requiredPlaceholder = requiredPlaceholders[normalizeNotificationType(category)];
-  return result.rows.filter((row) => !requiredPlaceholder || templateHasPlaceholder(row.message_body, requiredPlaceholder));
-}
-
-async function getNotificationTemplates(settings, type, db = query) {
-  const category = normalizeNotificationType(type);
-  const rows = await activeTemplateRows(category, db);
-  if (rows.length) return rows.map((row) => String(row.message_body));
-  return notificationTemplates(settings, category);
+  return result.rows.filter((row) => validateWhatsAppTemplate(category, row.message_body).ok);
 }
 
 export function resolveSpintax(template, values = {}) {
@@ -996,17 +966,21 @@ export function resolveSpintax(template, values = {}) {
   return applyTemplate(expanded, values);
 }
 
-export async function resolveWhatsAppTemplate({ category, values = {}, sourceId = "preview", db = query }) {
+export async function resolveWhatsAppTemplate({ category, audience = "neutral", slotNumber = null, values = {}, sourceId = "preview", db = query }) {
   const normalizedCategory = normalizeNotificationType(category);
-  const templates = await getNotificationTemplates({}, normalizedCategory, db);
-  if (!templates.length) throw new Error("no_whatsapp_templates");
   const rows = await activeTemplateRows(normalizedCategory, db);
-  const selected = rows.length ? rows[randomInteger(0, rows.length - 1)] : { id: 0, message_body: templates[randomInteger(0, templates.length - 1)] };
+  const normalizedAudience = audience === "male" || audience === "female" ? audience : "neutral";
+  const candidates = rows.filter((row) => row.audience === normalizedAudience && (slotNumber == null || Number(row.slot_number) === Number(slotNumber)));
+  const selected = candidates[0] || rows.find((row) => row.audience === "neutral" && row.is_fallback);
+  if (!selected) throw new Error("no_whatsapp_templates");
   const entropy = `${Date.now()}-${sourceId}-${crypto.randomUUID()}`;
   const uniqueHash = crypto.createHash("sha256").update(entropy).digest("hex").slice(0, 16);
   const referencePrefix = PREVIEW_REFERENCE_PREFIXES[normalizedCategory] || "MSG";
   const reference = `${referencePrefix}-${Date.now()}-${selected.id}-${uniqueHash}`;
-  return { id: Number(selected.id), message: `${resolveSpintax(selected.message_body || selected, { ...values, ref_code: reference })}\n\nRef:${reference}`, reference };
+  const safeValues = { ...values, portal_link: "[secure-link-preview]", ref_code: reference };
+  const rendered = resolveSpintax(selected.message_body, safeValues);
+  const message = templateHasPlaceholder(selected.message_body, "ref_code") ? rendered : `${rendered}\n\nRef:${reference}`;
+  return { id: Number(selected.id), audience: selected.audience, slot_number: selected.slot_number, message, reference };
 }
 
 function compileWhatsAppMessage(_type, template, values) {
@@ -1091,7 +1065,8 @@ function redactPortalLink(value) {
 }
 
 async function createPortalAccessRecord(studentId, accessToken, db = query) {
-  await db(
+  const execute = typeof db === "function" ? db : db.query.bind(db);
+  await execute(
     `INSERT INTO student_portal_access_tokens (token_hash, student_id, expires_at)
      VALUES ($1, $2, NOW() + INTERVAL '1 hour')
      ON CONFLICT (token_hash) DO NOTHING`,
@@ -1103,21 +1078,23 @@ function portalTokenFromLink(value) {
   return String(value || "").match(/\/p\/([A-Za-z0-9_-]{20,64})(?:[?#]|$)/)?.[1] || null;
 }
 
-async function removePortalAccessRecord(accessToken) {
+async function removePortalAccessRecord(accessToken, db = query) {
   if (!accessToken) return;
-  await query("DELETE FROM student_portal_access_tokens WHERE token_hash = $1", [hashStudentPortalAccessToken(accessToken)]);
+  const execute = typeof db === "function" ? db : db.query.bind(db);
+  await execute("DELETE FROM student_portal_access_tokens WHERE token_hash = $1", [hashStudentPortalAccessToken(accessToken)]);
 }
 
-async function cleanupJobPortalAccess(job, extraToken = null) {
+async function cleanupJobPortalAccess(job, extraToken = null, db = query) {
   const tokens = [portalTokenFromLink(job?.payload?.portal_link), extraToken].filter(Boolean);
-  for (const token of tokens) await removePortalAccessRecord(token).catch(() => undefined);
+  for (const token of tokens) await removePortalAccessRecord(token, db).catch(() => undefined);
 }
 
-async function scrubClaimedGradePortalLink(job) {
+async function scrubClaimedGradePortalLink(job, db = query) {
   const token = portalTokenFromLink(job?.payload?.portal_link);
-  if (token) await removePortalAccessRecord(token);
+  if (token) await removePortalAccessRecord(token, db);
   const payload = { ...(job?.payload && typeof job.payload === "object" ? job.payload : {}), portal_link: GRADE_PORTAL_PREVIEW_MARKER };
-  const result = await query(
+  const execute = typeof db === "function" ? db : db.query.bind(db);
+  const result = await execute(
     `UPDATE whatsapp_notification_jobs
      SET payload = $2::jsonb, updated_at = NOW()
      WHERE id = $1 AND status = 'processing' AND claim_token = $3
@@ -1226,8 +1203,8 @@ export async function settlePaymentNotificationJobsForReversal({ client, payment
   return result.rows;
 }
 
-async function reserveWhatsAppSendSlot(settings) {
-  const client = await pool.connect();
+async function reserveWhatsAppSendSlot(settings, dbPool = pool) {
+  const client = await dbPool.connect();
   try {
     await client.query("BEGIN");
     await client.query(
@@ -1323,27 +1300,7 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
       return { queuedCount: 0, ignoredCount: ignored.length, ignored, queuedResultIds: [], errors: [] };
     }
 
-    const settings = await getWhatsAppSettings(client.query.bind(client));
-    const templates = (await getNotificationTemplates(settings, "grade", client.query.bind(client))).filter(Boolean);
-    await client.query(
-      `INSERT INTO whatsapp_template_rotation (notification_type, next_index)
-       VALUES ('grade', 0) ON CONFLICT (notification_type) DO NOTHING`
-    );
-    const rotation = await client.query(
-      `SELECT next_index FROM whatsapp_template_rotation
-       WHERE notification_type = 'grade' FOR UPDATE`
-    );
-    const firstTemplateIndex = Number(rotation.rows[0]?.next_index || 0) % templates.length;
-    await client.query(
-      `UPDATE whatsapp_template_rotation
-       SET next_index = (next_index + $1) % $2, updated_at = NOW()
-       WHERE notification_type = 'grade'`,
-      [pendingCandidates.length, templates.length]
-    );
-
     const queueRows = pendingCandidates.map(({ row, phone }, offset) => {
-      const templateIndex = (firstTemplateIndex + offset) % templates.length;
-      const template = templates[templateIndex];
       const maxScore = Number(row.max_score);
       const score = Number(row.score);
       const percentage = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1).replace(/\.0$/, "") : "0";
@@ -1357,22 +1314,16 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
         percentage,
         event_time: row.exam_date
       });
-      const parts = cairoParts(row.exam_date);
-      const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
       const refCode = notificationRefCode("GRD", row.exam_date, row.result_id, true);
-      const templateValues = { ...payload, ...parts, ref_code: refCode };
-      templateValues.ref_code = refCode;
-      const renderedBody = compileWhatsAppMessage("grade", template, templateValues).trim();
-      const finalBody = `${renderedBody}\n\n${locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform"}`;
       return {
         resultId: Number(row.result_id),
         studentId: Number(row.student_id),
         phoneNumber: phone,
         payload,
         refCode,
-        templateIndex,
-        template,
-        renderedMessage: redactPortalLink(finalBody)
+        templateIndex: null,
+        template: null,
+        renderedMessage: null
       };
     });
 
@@ -1447,25 +1398,7 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
   }
   if (active.rows[0]) await scrubGradePortalLinkInTransaction(client, active.rows[0]);
 
-  const settings = await getWhatsAppSettings(client.query.bind(client));
-  const templates = (await getNotificationTemplates(settings, "grade", client.query.bind(client))).filter(Boolean);
-  if (!templates.length) throw new Error("no_whatsapp_templates");
-  await client.query(`
-    INSERT INTO whatsapp_template_rotation (notification_type, next_index)
-    VALUES ('grade', 0)
-    ON CONFLICT (notification_type) DO NOTHING`);
-  const rotation = await client.query(`
-    SELECT next_index FROM whatsapp_template_rotation
-    WHERE notification_type = 'grade'
-    FOR UPDATE`);
-  const templateIndex = Number(rotation.rows[0]?.next_index || 0) % templates.length;
-  await client.query(`
-    UPDATE whatsapp_template_rotation
-    SET next_index = (next_index + 1) % $1, updated_at = NOW()
-    WHERE notification_type = 'grade'`, [templates.length]);
-
-  const template = templates[templateIndex];
-  const rawPhone = String(row.guardian_phone || "").trim();
+    const rawPhone = String(row.guardian_phone || "").trim();
   const phone = normalizedPhone;
   const maxScore = Number(row.max_score);
   const score = Number(row.score);
@@ -1487,19 +1420,14 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
     whatsapp_opted_out: row.whatsapp_opted_out === true,
     event_time: row.exam_date
   });
-  const parts = cairoParts(row.exam_date);
-  const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
-  const templateValues = { ...payload, ...parts, ref_code: refCode };
-  const renderedBody = compileWhatsAppMessage("grade", template, templateValues).trim();
-  const finalBody = `${renderedBody}\n\n${locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform"}`;
   const values = [
     row.student_id,
     phone,
     JSON.stringify(payload),
     refCode,
-    templateIndex,
-    template,
-    redactPortalLink(finalBody)
+    null,
+    null,
+    null
   ];
   let job;
   if (active.rows[0]) {
@@ -1771,8 +1699,8 @@ export async function enqueueAdvancePaymentNotificationInTransaction(client, { p
   return enqueuePaymentNotificationWithDb({ paymentId, paymentType: "advance", notificationType: "advance_payment", referencePrefix: "ADV", db: client.query.bind(client), wake: false });
 }
 
-async function claimNextJob(dbClient = null) {
-  const client = dbClient || await pool.connect();
+async function claimNextJob(dbPool = pool, dbClient = null) {
+  const client = dbClient || await dbPool.connect();
   const ownsClient = !dbClient;
   try {
     await client.query("BEGIN");
@@ -1796,9 +1724,9 @@ async function claimNextJob(dbClient = null) {
   } finally { if (ownsClient) client.release(); }
 }
 
-async function updateJob(id, status, fields = {}, claimToken) {
+async function updateJob(id, status, fields = {}, claimToken, dbPool = pool) {
   if (!claimToken) return false;
-  const result = await query(`UPDATE whatsapp_notification_jobs SET status = $2, last_error = $3,
+  const result = await dbPool.query(`UPDATE whatsapp_notification_jobs SET status = $2, last_error = $3,
     next_attempt_at = COALESCE($4, next_attempt_at), sent_at = CASE WHEN $2 = 'sent' THEN NOW() ELSE sent_at END,
     lease_expires_at = CASE WHEN $2 = 'processing' THEN lease_expires_at ELSE NULL END,
     phone_number = COALESCE($5, phone_number), provider_message_id = COALESCE($6, provider_message_id),
@@ -1811,9 +1739,9 @@ async function updateJob(id, status, fields = {}, claimToken) {
   return result.rowCount > 0;
 }
 
-async function extendJobLease(job, phase) {
+async function extendJobLease(job, phase, dbPool = pool, audit = auditWhatsAppJob) {
   if (!job?.id || !job.claim_token) return false;
-  const result = await query(
+  const result = await dbPool.query(
     `UPDATE whatsapp_notification_jobs
      SET lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
      WHERE id = $1 AND status = 'processing' AND claim_token = $2
@@ -1821,7 +1749,7 @@ async function extendJobLease(job, phase) {
     [job.id, job.claim_token, JOB_LEASE_MS]
   );
   if (!result.rowCount) return false;
-  await auditWhatsAppJob(job, "whatsapp_job_lease_extended", { phase }).catch(() => undefined);
+  await audit(job, "whatsapp_job_lease_extended", { phase }).catch(() => undefined);
   return true;
 }
 
@@ -1830,6 +1758,19 @@ export async function markSendStarted(job, type, dbPool = pool) {
   const client = await dbPool.connect();
   try {
     await client.query("BEGIN");
+    const currentGender = await client.query(
+      `SELECT s.gender
+       FROM whatsapp_notification_jobs j
+       JOIN students s ON s.id = j.student_id
+       WHERE j.id = $1 AND j.status = 'processing' AND j.claim_token = $2
+       FOR UPDATE OF j, s`,
+      [job.id, job.claim_token]
+    );
+    if (currentGender.rowCount
+      && normalizeStudentGender(currentGender.rows[0].gender) !== normalizeStudentGender(job.template_gender)) {
+      await client.query("ROLLBACK");
+      return false;
+    }
     if (type === "receipt" || type === "advance_payment") {
       const payment = await client.query(
         `SELECT p.id
@@ -1865,8 +1806,8 @@ export async function markSendStarted(job, type, dbPool = pool) {
   }
 }
 
-async function completeSentJob(job, providerMessageId) {
-  const client = await pool.connect();
+async function completeSentJob(job, providerMessageId, dbPool = pool) {
+  const client = await dbPool.connect();
   try {
     await client.query("BEGIN");
     const completed = await client.query(
@@ -1925,7 +1866,7 @@ export async function revalidateWhatsAppJob(job, type, db = query) {
   const execute = typeof db === "function" ? db : db.query.bind(db);
   if (!job?.student_id) return { ok: false, reason: "student_missing" };
   const studentResult = await execute(`
-    SELECT id, full_name, student_code, guardian_phone, is_active, deleted_at, whatsapp_opted_out
+    SELECT id, full_name, student_code, guardian_phone, gender, is_active, deleted_at, whatsapp_opted_out
     FROM students WHERE id = $1`, [job.student_id]);
   const student = studentResult.rows[0];
   if (!student || !student.is_active || student.deleted_at) return { ok: false, reason: "student_inactive" };
@@ -2011,6 +1952,209 @@ export async function revalidateWhatsAppJob(job, type, db = query) {
   return { ok: true, phone, student, payload };
 }
 
+function selectionSnapshotIsCurrent(job, row, category, audience, gender) {
+  return Boolean(
+    Number(job.template_id) === Number(row.id)
+      && Number(job.template_version) === Number(row.content_version)
+      && String(job.template_category || "") === category
+      && String(job.template_audience || "") === audience
+      && (job.template_slot_number == null
+        ? row.slot_number == null
+        : Number(job.template_slot_number) === Number(row.slot_number))
+      && String(job.template_body_snapshot || "") === String(row.message_body)
+      && (job.template_text == null || String(job.template_text) === String(row.message_body))
+      && String(job.template_gender || "") === gender
+  );
+}
+
+async function selectAndPersistWhatsAppTemplate({ job, type, dbPool = pool }) {
+  const client = await dbPool.connect();
+  try {
+    await client.query("BEGIN");
+    const locked = await client.query(
+      `SELECT * FROM whatsapp_notification_jobs
+       WHERE id = $1
+         AND status = 'processing'
+         AND claim_token = $2
+         AND (lease_expires_at IS NULL OR lease_expires_at > NOW())
+       FOR UPDATE`,
+      [job.id, job.claim_token]
+    );
+    if (!locked.rowCount) {
+      await client.query("ROLLBACK");
+      return { ok: false, stale: true, reason: "stale_claim" };
+    }
+    const currentJob = locked.rows[0];
+    const eligibility = await revalidateWhatsAppJob(currentJob, type, client.query.bind(client));
+    if (!eligibility.ok) {
+      await client.query("ROLLBACK");
+      return eligibility;
+    }
+    const gender = normalizeStudentGender(eligibility.student.gender);
+    const audience = gender === "unknown" ? "neutral" : gender;
+
+    if (currentJob.template_id != null) {
+      if (audience === "neutral") {
+        const fallback = await client.query(
+          `SELECT id, category, audience, slot_number, slot_key, is_fallback,
+                  content_version, message_body, is_active
+           FROM whatsapp_templates
+           WHERE id = $1 AND category = $2 AND audience = 'neutral' AND is_fallback = TRUE
+             AND is_active = TRUE AND slot_number IS NULL
+           LIMIT 1
+           FOR SHARE`,
+          [currentJob.template_id, type]
+        );
+        const row = fallback.rows[0];
+        if (row && validateWhatsAppTemplate(type, row.message_body).ok && selectionSnapshotIsCurrent(currentJob, row, type, "neutral", gender)) {
+          await client.query("COMMIT");
+          return { ok: true, assignment: { ...row, audience: "neutral", gender, warning: null }, eligibility };
+        }
+      } else {
+        const existing = await client.query(
+          `SELECT id, category, audience, slot_number, slot_key, is_fallback,
+                  content_version, message_body, is_active
+           FROM whatsapp_templates
+           WHERE id = $1 AND category = $2 AND audience = $3 AND is_fallback = FALSE
+             AND is_active = TRUE AND slot_number BETWEEN 1 AND 4
+           LIMIT 1
+           FOR SHARE`,
+          [currentJob.template_id, type, audience]
+        );
+        const row = existing.rows[0];
+        if (row && validateWhatsAppTemplate(type, row.message_body).ok && selectionSnapshotIsCurrent(currentJob, row, type, audience, gender)) {
+          await client.query("COMMIT");
+          return { ok: true, assignment: { ...row, audience, gender, warning: null }, eligibility };
+        }
+      }
+    }
+
+    const rowsResult = await client.query(
+      `SELECT id, category, audience, slot_number, slot_key, is_fallback,
+          content_version, message_body, is_active
+       FROM whatsapp_templates
+       WHERE category = $1 AND is_active = TRUE
+         AND audience = $2 AND is_fallback = FALSE
+         AND slot_number BETWEEN 1 AND 4
+       ORDER BY slot_number
+       FOR SHARE`,
+      [type, audience]
+    );
+    const validRows = rowsResult.rows.filter((row) => validateWhatsAppTemplate(type, row.message_body).ok);
+    let selected = null;
+    let warning = null;
+    let usedAudience = audience;
+    let shouldAdvance = false;
+
+    if (audience === "neutral") {
+      const fallback = await client.query(
+        `SELECT id, category, audience, slot_number, slot_key, is_fallback,
+            content_version, message_body, is_active
+         FROM whatsapp_templates
+         WHERE category = $1 AND audience = 'neutral' AND is_fallback = TRUE
+           AND is_active = TRUE AND slot_number IS NULL
+         LIMIT 1
+         FOR SHARE`,
+        [type]
+      );
+      selected = fallback.rows.find((row) => validateWhatsAppTemplate(type, row.message_body).ok) || null;
+      if (!selected) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "whatsapp_template_configuration_missing" };
+      }
+    } else if (validRows.length) {
+      await client.query(
+        `INSERT INTO whatsapp_template_rotation_state (category, audience, next_slot)
+         VALUES ($1, $2, 1)
+         ON CONFLICT (category, audience) DO NOTHING`,
+        [type, audience]
+      );
+      const cursorResult = await client.query(
+        `SELECT next_slot FROM whatsapp_template_rotation_state
+         WHERE category = $1 AND audience = $2 FOR UPDATE`,
+        [type, audience]
+      );
+      const nextSlot = Number(cursorResult.rows[0]?.next_slot || 1);
+      let candidateIndex = validRows.findIndex((row) => Number(row.slot_number) >= nextSlot);
+      if (candidateIndex < 0) candidateIndex = 0;
+      selected = validRows[candidateIndex];
+
+      const previous = await client.query(
+        `SELECT template_id
+         FROM whatsapp_notification_jobs
+         WHERE student_id = $1 AND notification_type = $2
+           AND template_audience = $3 AND status = 'sent'
+           AND provider_accepted_at IS NOT NULL
+         ORDER BY provider_accepted_at DESC, id DESC
+         LIMIT 1`,
+        [currentJob.student_id, type, audience]
+      );
+      if (validRows.length > 1 && Number(previous.rows[0]?.template_id) === Number(selected.id)) {
+        selected = validRows[(candidateIndex + 1) % validRows.length];
+        warning = "repeat_avoidance_adjusted_rotation";
+      }
+      shouldAdvance = true;
+      warning = warning || (validRows.length < 4 ? `${audience}_template_pool_incomplete` : null);
+    } else {
+      const fallback = await client.query(
+        `SELECT id, category, audience, slot_number, slot_key, is_fallback,
+            content_version, message_body, is_active
+         FROM whatsapp_templates
+         WHERE category = $1 AND audience = 'neutral' AND is_fallback = TRUE
+           AND is_active = TRUE AND slot_number IS NULL
+         LIMIT 1
+         FOR SHARE`,
+        [type]
+      );
+      selected = fallback.rows.find((row) => validateWhatsAppTemplate(type, row.message_body).ok) || null;
+      usedAudience = "neutral";
+      warning = `${audience}_template_pool_empty_using_neutral_fallback`;
+      if (!selected) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "whatsapp_template_configuration_missing" };
+      }
+    }
+
+    const canReuse = selectionSnapshotIsCurrent(currentJob, selected, type, usedAudience, gender);
+    const nextSlot = shouldAdvance ? (Number(selected.slot_number) % 4) + 1 : null;
+    if (shouldAdvance && !canReuse) {
+      await client.query(
+        `UPDATE whatsapp_template_rotation_state
+         SET next_slot = $3, updated_at = NOW()
+         WHERE category = $1 AND audience = $2`,
+        [type, audience, nextSlot]
+      );
+    }
+
+    if (!canReuse) {
+      await client.query(
+        `UPDATE whatsapp_notification_jobs
+         SET template_id = $2, template_version = $3, template_category = $4,
+             template_audience = $5, template_slot_number = $6,
+             template_body_snapshot = $7, template_gender = $8,
+             template_index = $9, template_text = $7, rendered_message = NULL,
+             updated_at = NOW()
+         WHERE id = $1 AND status = 'processing' AND claim_token = $10`,
+        [currentJob.id, selected.id, selected.content_version, type, usedAudience, selected.slot_number,
+          selected.message_body, gender, selected.slot_number == null ? null : Number(selected.slot_number) - 1, currentJob.claim_token]
+      );
+    } else {
+      selected = { ...selected, message_body: currentJob.template_body_snapshot || currentJob.template_text };
+    }
+    await client.query("COMMIT");
+    return { ok: true, assignment: { ...selected, audience: usedAudience, gender, warning }, eligibility };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function selectWhatsAppTemplateForTest(options) {
+  return selectAndPersistWhatsAppTemplate(options);
+}
+
 async function recoverStaleWhatsAppJobs() {
   if (state.workerRecoveryRunning) return;
   state.workerRecoveryRunning = true;
@@ -2038,15 +2182,15 @@ async function auditStaleClaim(job, phase) {
   await auditWhatsAppJob(job, "whatsapp_job_stale_claim_rejected", { phase }).catch(() => undefined);
 }
 
-async function waitWithJobLease(job, waitMs) {
+async function waitWithJobLease(job, waitMs, dbPool = pool, audit = auditWhatsAppJob, ownsSession = () => state.ownsWhatsAppSession) {
   let remaining = Math.max(0, Number(waitMs) || 0);
   while (remaining > 0) {
-    if (!state.ownsWhatsAppSession || !(await extendJobLease(job, "send_slot_wait"))) return false;
+    if (!ownsSession() || !(await extendJobLease(job, "send_slot_wait", dbPool, audit))) return false;
     const chunk = Math.min(remaining, JOB_LEASE_RENEWAL_CHUNK_MS);
     await sleep(chunk);
     remaining -= chunk;
   }
-  return extendJobLease(job, "after_send_slot_wait");
+  return extendJobLease(job, "after_send_slot_wait", dbPool, audit);
 }
 
 function safeWorkerError(error) {
@@ -2061,22 +2205,28 @@ export function normalizeManualRetryReason(value) {
   return { ok: true, value: reason };
 }
 
-async function markDeliveryUnknown(job, reason, providerMessageId = null) {
+async function markDeliveryUnknown(job, reason, providerMessageId = null, dbPool = pool, audit = auditWhatsAppJob) {
   const updated = await updateJob(job.id, "delivery_unknown", {
     error: "delivery_unknown",
     nextAttemptAt: null,
     providerMessageId
-  }, job.claim_token);
+  }, job.claim_token, dbPool);
   if (updated) {
-    await auditWhatsAppJob(job, "whatsapp_job_delivery_unknown", { reason }).catch(() => undefined);
+    await audit(job, "whatsapp_job_delivery_unknown", { reason }).catch(() => undefined);
   } else {
-    await auditStaleClaim(job, "delivery_unknown");
+    await audit(job, "whatsapp_job_stale_claim_rejected", { phase: "delivery_unknown" }).catch(() => undefined);
   }
   return updated;
 }
 
-async function processWhatsAppJob() {
-  if (!state.ownsWhatsAppSession) return;
+async function processWhatsAppJob({ dbPool = pool, provider = state.socket, settingsOverride = null, auditEnabled = true, ownership = null, errorObserver = null } = {}) {
+  const auditJob = auditEnabled ? auditWhatsAppJob : async () => undefined;
+  const ownsSession = ownership?.owns || (() => state.ownsWhatsAppSession);
+  const renewOwnership = ownership?.renew || renewWhatsAppOwnership;
+  const verifyOwnership = ownership?.verify || verifyWhatsAppOwnership;
+  const connected = ownership?.connected || (() => state.status === "connected" && Boolean(provider || state.socket));
+  const auditStale = (job, phase) => auditJob(job, "whatsapp_job_stale_claim_rejected", { phase }).catch(() => undefined);
+  if (!ownsSession()) return;
   if (state.workerRunning) return;
   state.workerRunning = true;
   let job = null;
@@ -2084,86 +2234,81 @@ async function processWhatsAppJob() {
   let providerAccepted = false;
   let providerMessageId = null;
   try {
-    job = await claimNextJob();
+    job = await claimNextJob(dbPool);
     if (!job) return;
-    await auditWhatsAppJob(job, "whatsapp_job_claimed", { lease_expires_at: job.lease_expires_at }).catch(() => undefined);
-    const settings = await getWhatsAppSettings();
+    await auditJob(job, "whatsapp_job_claimed", { lease_expires_at: job.lease_expires_at }).catch(() => undefined);
+    const settings = settingsOverride || await getWhatsAppSettings(dbPool.query.bind(dbPool));
     const type = notificationTypeForJob(job);
     if (!type) {
-      const updated = await updateJob(job.id, "skipped", { error: "unsupported_whatsapp_notification_type" }, job.claim_token);
-      if (updated) await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: "unsupported_whatsapp_notification_type" });
-      else await auditStaleClaim(job, "unsupported_type");
+      const updated = await updateJob(job.id, "skipped", { error: "unsupported_whatsapp_notification_type" }, job.claim_token, dbPool);
+      if (updated) await auditJob(job, "whatsapp_job_skipped", { reason: "unsupported_whatsapp_notification_type" });
+      else await auditStale(job, "unsupported_type");
       return;
     }
     if (!settings.auto_send && (type === "attendance" || type === "absence")) {
-      const updated = await updateJob(job.id, "skipped", { error: "auto_send_disabled" }, job.claim_token);
-      if (updated) await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: "auto_send_disabled" });
-      else await auditStaleClaim(job, "auto_send_disabled");
+      const updated = await updateJob(job.id, "skipped", { error: "auto_send_disabled" }, job.claim_token, dbPool);
+      if (updated) await auditJob(job, "whatsapp_job_skipped", { reason: "auto_send_disabled" });
+      else await auditStale(job, "auto_send_disabled");
       return;
     }
-    if (state.status !== "connected" || !state.socket) {
+    if (!connected()) {
       const attempts = Number(job.attempts || 0);
       const retry = attempts < 3;
       const updated = await updateJob(job.id, retry ? "pending" : "failed", {
         error: "whatsapp_disconnected",
         nextAttemptAt: retry ? new Date(Date.now() + 10_000) : null
-      }, job.claim_token);
-      if (updated) await auditWhatsAppJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason: "whatsapp_disconnected" });
-      else await auditStaleClaim(job, "whatsapp_disconnected");
+      }, job.claim_token, dbPool);
+      if (updated) await auditJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason: "whatsapp_disconnected" });
+      else await auditStale(job, "whatsapp_disconnected");
       return;
     }
 
-    const waitMs = await reserveWhatsAppSendSlot(settings);
-    if (!(await waitWithJobLease(job, waitMs))) {
-      await auditStaleClaim(job, "send_slot_wait");
+    const waitMs = await reserveWhatsAppSendSlot(settings, dbPool);
+    if (!(await waitWithJobLease(job, waitMs, dbPool, auditJob, ownsSession))) {
+      await auditStale(job, "send_slot_wait");
       return;
     }
-    let eligibility = await revalidateWhatsAppJob(job, type);
+    let eligibility = await revalidateWhatsAppJob(job, type, dbPool.query.bind(dbPool));
     if (!eligibility.ok) {
-      const updated = await updateJob(job.id, "skipped", { error: eligibility.reason, nextAttemptAt: null }, job.claim_token);
+      const updated = await updateJob(job.id, "skipped", { error: eligibility.reason, nextAttemptAt: null }, job.claim_token, dbPool);
       if (updated) {
-        await cleanupJobPortalAccess(job, portalAccessToken);
-        await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: eligibility.reason });
-      } else await auditStaleClaim(job, "initial_revalidation");
+        await cleanupJobPortalAccess(job, portalAccessToken, dbPool);
+        await auditJob(job, "whatsapp_job_skipped", { reason: eligibility.reason });
+      } else await auditStale(job, "initial_revalidation");
       return;
     }
-    if (type === "grade" && !(await scrubClaimedGradePortalLink(job))) {
-      await auditStaleClaim(job, "grade_portal_link_scrub");
+    if (type === "grade" && !(await scrubClaimedGradePortalLink(job, dbPool))) {
+      await auditStale(job, "grade_portal_link_scrub");
       return;
     }
-    const templates = (await getNotificationTemplates(settings, type)).filter(Boolean);
-    if (!templates.length) {
-      const updated = await updateJob(job.id, "failed", { error: "no_whatsapp_templates", nextAttemptAt: null }, job.claim_token);
+    const selection = await selectAndPersistWhatsAppTemplate({ job, type, dbPool });
+    if (!selection.ok) {
+      const terminalReason = selection.stale ? "stale_claim" : selection.reason || "whatsapp_template_configuration_missing";
+      const updated = selection.stale
+        ? false
+        : await updateJob(job.id, "failed", { error: terminalReason, nextAttemptAt: null }, job.claim_token, dbPool);
       if (updated) {
-        await cleanupJobPortalAccess(job);
-        await auditWhatsAppJob(job, "whatsapp_job_failed", { reason: "no_whatsapp_templates" });
-      } else await auditStaleClaim(job, "no_templates");
+        await cleanupJobPortalAccess(job, null, dbPool);
+        await auditJob(job, "whatsapp_job_failed", { reason: terminalReason });
+      } else if (selection.stale) await auditStale(job, terminalReason);
       return;
     }
-    const persistedTemplateIndex = Number(job.template_index);
-    const hasPersistedTemplate = Number.isInteger(persistedTemplateIndex) && persistedTemplateIndex >= 0 && persistedTemplateIndex < templates.length && String(job.template_text || "").trim();
-    const { index: templateIndex, template } = hasPersistedTemplate
-      ? { index: persistedTemplateIndex, template: String(job.template_text) }
-      : await chooseTemplate(type, templates);
-
-    if (!state.ownsWhatsAppSession || !(await extendJobLease(job, "before_final_revalidation"))) {
-      await auditStaleClaim(job, "before_final_revalidation");
-      return;
-    }
-    eligibility = await revalidateWhatsAppJob(job, type);
-    if (!eligibility.ok) {
-      const updated = await updateJob(job.id, "skipped", { error: eligibility.reason, nextAttemptAt: null }, job.claim_token);
-      if (updated) {
-        await cleanupJobPortalAccess(job);
-        await auditWhatsAppJob(job, "whatsapp_job_skipped", { reason: eligibility.reason });
-      } else await auditStaleClaim(job, "final_revalidation");
-      return;
-    }
+    eligibility = selection.eligibility || eligibility;
+    let assignment = selection.assignment;
+    let templateIndex = assignment.slot_number == null ? null : Number(assignment.slot_number) - 1;
+    let template = String(assignment.message_body || "");
+    job.template_id = assignment.id;
+    job.template_version = assignment.content_version;
+    job.template_category = type;
+    job.template_audience = assignment.audience;
+    job.template_slot_number = assignment.slot_number;
+    job.template_body_snapshot = template;
+    job.template_gender = assignment.gender;
 
     let payload = eligibility.payload || {};
     if (type === "grade") {
-      if (!(await scrubClaimedGradePortalLink(job))) {
-        await auditStaleClaim(job, "grade_portal_link_scrub");
+      if (!(await scrubClaimedGradePortalLink(job, dbPool))) {
+        await auditStale(job, "grade_portal_link_scrub");
         return;
       }
       payload = { ...payload, portal_link: GRADE_PORTAL_PREVIEW_MARKER };
@@ -2198,71 +2343,114 @@ async function processWhatsAppJob() {
     const adjustedBody = adjustmentLine && !body.includes(adjustmentLine) ? `${body}\n${adjustmentLine}` : body;
     const footer = locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
     const finalBody = adjustedBody.includes(footer) ? adjustedBody : `${adjustedBody}\n\n${footer}`;
-    const contentUpdated = await query(
+    const contentUpdated = await dbPool.query(
       `UPDATE whatsapp_notification_jobs
-       SET template_index = $2, template_text = $3, rendered_message = $4, updated_at = NOW()
-       WHERE id = $1 AND status = 'processing' AND claim_token = $5
+       SET template_index = $2, template_text = $3, rendered_message = $4, template_body_snapshot = $3,
+           template_category = $5, template_audience = $6, template_slot_number = $7,
+           template_gender = $8, updated_at = NOW()
+       WHERE id = $1 AND status = 'processing' AND claim_token = $9
        RETURNING id`,
-      [job.id, templateIndex, template, redactPortalLink(finalBody), job.claim_token]
+      [job.id, templateIndex, template, redactPortalLink(finalBody), type, assignment.audience, assignment.slot_number, assignment.gender, job.claim_token]
     );
     if (!contentUpdated.rowCount) {
-      await auditStaleClaim(job, "rendered_content");
+      await auditStale(job, "rendered_content");
       return;
     }
-    if (!state.ownsWhatsAppSession
-      || !(await extendJobLease(job, "before_provider"))
-      || !(await renewWhatsAppOwnership())
-      || !(await verifyWhatsAppOwnership())) {
-      await auditStaleClaim(job, "before_provider");
+    if (!ownsSession()
+      || !(await extendJobLease(job, "before_provider", dbPool, auditJob))
+      || !(await renewOwnership())
+      || !(await verifyOwnership())) {
+      await auditStale(job, "before_provider");
       return;
     }
-    if (!(await markSendStarted(job, type))) {
-      await auditStaleClaim(job, "send_start");
+    if (!(await markSendStarted(job, type, dbPool))) {
+      await auditStale(job, "send_start");
       return;
     }
     if (portalAccessToken) {
-      await cleanupJobPortalAccess(job);
-      await createPortalAccessRecord(job.student_id, portalAccessToken);
+      await cleanupJobPortalAccess(job, null, dbPool);
+      await createPortalAccessRecord(job.student_id, portalAccessToken, dbPool);
     }
     const messagePayload = { text: finalBody };
     console.log(`[WhatsApp] Sending TYPE: ${type}, TEMPLATE: ${templateIndex + 1}`);
     const providerResponse = await withTimeout(
-      state.socket.sendMessage(`${eligibility.phone.slice(1)}@s.whatsapp.net`, messagePayload),
+      (provider || state.socket).sendMessage(`${eligibility.phone.slice(1)}@s.whatsapp.net`, messagePayload),
       JOB_PROVIDER_TIMEOUT_MS,
       "whatsapp_provider_timeout"
     );
     providerAccepted = true;
     providerMessageId = providerResponse?.key?.id || null;
-    if (!state.ownsWhatsAppSession || !isLocallyWithinConfirmedLease()) throw new Error("whatsapp_ownership_lost_during_send");
+    if (!ownsSession() || (!ownership && !isLocallyWithinConfirmedLease())) throw new Error("whatsapp_ownership_lost_during_send");
     state.lastSentAt = Date.now();
-    const completed = await completeSentJob(job, providerMessageId);
+    const completed = await completeSentJob(job, providerMessageId, dbPool);
     if (!completed) {
-      await auditStaleClaim(job, "sent_completion");
+      await auditStale(job, "sent_completion");
       return;
     }
-    await auditWhatsAppJob(job, "whatsapp_job_accepted", { provider_message_id: providerResponse?.key?.id || null });
+    await auditJob(job, "whatsapp_job_accepted", { provider_message_id: providerResponse?.key?.id || null });
   } catch (error) {
+    if (errorObserver) errorObserver(error);
     const reason = safeWorkerError(error);
     console.error("WhatsApp notification worker error", reason);
     if (job?.id) {
       const deliveryUnknown = reason === "whatsapp_provider_timeout" || reason === "whatsapp_ownership_lost_during_send" || providerAccepted;
       if (deliveryUnknown) {
-        await markDeliveryUnknown(job, reason, providerMessageId);
+        await markDeliveryUnknown(job, reason, providerMessageId, dbPool, auditJob);
       } else {
-        await cleanupJobPortalAccess(job, portalAccessToken);
+        await cleanupJobPortalAccess(job, portalAccessToken, dbPool);
         const attempts = Number(job.attempts || 0);
         const retry = attempts < 3;
         const retryDelayMs = Math.min(15 * 60_000, 15_000 * (2 ** Math.max(0, attempts - 1)));
         const updated = await updateJob(job.id, retry ? "pending" : "failed", {
           error: reason,
           nextAttemptAt: retry ? new Date(Date.now() + retryDelayMs) : null
-        }, job.claim_token);
-        if (updated) await auditWhatsAppJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason }).catch(() => undefined);
-        else await auditStaleClaim(job, "worker_error");
+        }, job.claim_token, dbPool);
+        if (updated) await auditJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason }).catch(() => undefined);
+        else await auditStale(job, "worker_error");
       }
     }
   } finally {
     state.workerRunning = false;
+  }
+}
+
+// Test-only worker seam. It injects the database and provider while keeping
+// the production worker path above unchanged; no WhatsApp socket or audit
+// tables are needed by tests that opt into the fake ownership callbacks.
+export async function processWhatsAppJobForTest({ dbPool = pool, provider, settings, ownership = {}, errorObserver = null } = {}) {
+  if (!provider || typeof provider.sendMessage !== "function") throw new Error("test_provider_required");
+  const previous = {
+    status: state.status,
+    socket: state.socket,
+    ownsWhatsAppSession: state.ownsWhatsAppSession,
+    confirmedWhatsAppLeaseExpiresAt: state.confirmedWhatsAppLeaseExpiresAt,
+    workerRunning: state.workerRunning
+  };
+  state.status = "connected";
+  state.socket = provider;
+  state.ownsWhatsAppSession = true;
+  state.confirmedWhatsAppLeaseExpiresAt = Date.now() + JOB_LEASE_MS;
+  state.workerRunning = false;
+  try {
+    return await processWhatsAppJob({
+      dbPool,
+      provider,
+      settingsOverride: settings,
+      auditEnabled: false,
+      errorObserver,
+      ownership: {
+        owns: ownership.owns || (() => true),
+        connected: ownership.connected || (() => true),
+        renew: ownership.renew || (async () => true),
+        verify: ownership.verify || (async () => true)
+      }
+    });
+  } finally {
+    state.status = previous.status;
+    state.socket = previous.socket;
+    state.ownsWhatsAppSession = previous.ownsWhatsAppSession;
+    state.confirmedWhatsAppLeaseExpiresAt = previous.confirmedWhatsAppLeaseExpiresAt;
+    state.workerRunning = previous.workerRunning;
   }
 }
 

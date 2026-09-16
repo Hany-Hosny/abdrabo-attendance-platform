@@ -16,13 +16,14 @@ import {
   resolveWhatsAppTemplate,
   validateWhatsAppTemplate
 } from "../services/whatsapp.js";
+import { WHATSAPP_TEMPLATE_AUDIENCES, WHATSAPP_TEMPLATE_CATEGORIES } from "../services/whatsappTemplateCatalog.js";
 
 export const whatsappRouter = express.Router();
 whatsappRouter.use(requireTeacher);
 
 const HISTORY_TYPES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment"]);
 const HISTORY_STATUSES = new Set(["pending", "processing", "sent", "failed", "skipped", "delivery_unknown"]);
-const TEMPLATE_CATEGORIES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment"]);
+const TEMPLATE_CATEGORIES = new Set(WHATSAPP_TEMPLATE_CATEGORIES);
 
 const batchExamSchema = z.object({
   resultIds: z.array(z.coerce.number().int().positive()).min(1).max(500)
@@ -90,7 +91,7 @@ whatsappRouter.get("/templates", requirePermission("whatsapp.view"), async (req,
     const values = [];
     const where = category && TEMPLATE_CATEGORIES.has(category) ? (values.push(category), "WHERE category = $1") : "";
     if (category && !TEMPLATE_CATEGORIES.has(category)) return res.status(400).json({ ok: false, status: "invalid_template_category" });
-    const result = await query(`SELECT id, category, message_body, is_active, created_at, updated_at FROM whatsapp_templates ${where} ORDER BY category, id`, values);
+    const result = await query(`SELECT id, category, audience, slot_number, slot_key, is_fallback, content_version, message_body, is_active, created_at, updated_at FROM whatsapp_templates ${where} ORDER BY category, is_fallback, audience, slot_number NULLS LAST, id`, values);
     res.json({ ok: true, templates: result.rows });
   } catch (error) { next(error); }
 });
@@ -99,7 +100,9 @@ whatsappRouter.post("/templates/resolve", requirePermission("whatsapp.view"), as
   try {
     const category = String(req.body?.category || "").trim();
     if (!TEMPLATE_CATEGORIES.has(category)) return res.status(400).json({ ok: false, status: "invalid_template_category" });
-    const resolved = await resolveWhatsAppTemplate({ category, values: req.body?.values && typeof req.body.values === "object" ? req.body.values : {} });
+    const audience = WHATSAPP_TEMPLATE_AUDIENCES.includes(String(req.body?.audience || "")) ? String(req.body.audience) : "neutral";
+    const slotNumber = req.body?.slot_number == null ? null : Number(req.body.slot_number);
+    const resolved = await resolveWhatsAppTemplate({ category, audience, slotNumber, values: req.body?.values && typeof req.body.values === "object" ? req.body.values : {} });
     res.json({ ok: true, ...resolved });
   } catch (error) { next(error); }
 });
@@ -108,17 +111,24 @@ whatsappRouter.post("/templates", requirePermission("whatsapp.manage"), async (r
   try {
     const category = String(req.body?.category || "").trim();
     const messageBody = String(req.body?.message_body || "").trim();
+    const audience = String(req.body?.audience || "neutral").trim().toLowerCase();
+    const isFallback = req.body?.is_fallback === true;
+    const slotNumber = req.body?.slot_number == null ? null : Number(req.body.slot_number);
     if (!TEMPLATE_CATEGORIES.has(category)) return res.status(400).json({ ok: false, status: "invalid_template_category" });
+    if (!WHATSAPP_TEMPLATE_AUDIENCES.includes(audience)) return res.status(400).json({ ok: false, status: "invalid_template_audience" });
+    if (audience === "neutral" ? (slotNumber !== null || !isFallback) : (isFallback || !Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > 4)) return res.status(400).json({ ok: false, status: "invalid_template_assignment" });
     if (messageBody.length < 5 || messageBody.length > 2000) return res.status(400).json({ ok: false, status: "invalid_template_length" });
     const validation = validateWhatsAppTemplate(category, messageBody);
     if (!validation.ok) {
       return res.status(400).json({
         ok: false,
-        status: "missing_required_placeholder",
-        required_placeholder: `{${validation.requiredPlaceholder}}`
+        status: validation.unknownPlaceholder ? "unknown_placeholder" : validation.malformed ? "invalid_template_syntax" : validation.hasForbiddenLiteral ? "invalid_template_value" : "missing_required_placeholder",
+        required_placeholder: validation.missingPlaceholders?.length ? `{${validation.missingPlaceholders[0]}}` : `{${validation.requiredPlaceholder}}`,
+        unknown_placeholder: validation.unknownPlaceholder ? `{${validation.unknownPlaceholder}}` : undefined
       });
     }
-    const result = await query(`INSERT INTO whatsapp_templates (category, message_body, is_active) VALUES ($1, $2, TRUE) RETURNING *`, [category, messageBody]);
+    const slotKey = isFallback ? `${category}:neutral:fallback` : `${category}:${audience}:${slotNumber}`;
+    const result = await query(`INSERT INTO whatsapp_templates (category, audience, slot_number, slot_key, is_fallback, message_body, is_active) VALUES ($1, $2, $3, $4, $5, $6, TRUE) RETURNING *`, [category, audience, slotNumber, slotKey, isFallback, messageBody]);
     await auditLog({ action: "whatsapp_template_created", actorId: req.teacher.id, request: req, details: { category, template_id: result.rows[0].id } });
     res.status(201).json({ ok: true, template: result.rows[0] });
   } catch (error) {
@@ -132,21 +142,31 @@ whatsappRouter.patch("/templates/:id", requirePermission("whatsapp.manage"), asy
     const id = Number(req.params.id);
     const messageBody = req.body?.message_body == null ? null : String(req.body.message_body).trim();
     const isActive = req.body?.is_active == null ? null : req.body.is_active === true;
+    const expectedVersion = req.body?.expected_content_version == null ? null : Number(req.body.expected_content_version);
     if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ ok: false, status: "invalid_template" });
     if (messageBody !== null && (messageBody.length < 5 || messageBody.length > 2000)) return res.status(400).json({ ok: false, status: "invalid_template_length" });
-    const existing = await query("SELECT category FROM whatsapp_templates WHERE id = $1", [id]);
+    const existing = await query("SELECT category, audience, slot_number, is_fallback, content_version FROM whatsapp_templates WHERE id = $1", [id]);
     if (!existing.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     if (messageBody !== null) {
       const validation = validateWhatsAppTemplate(existing.rows[0].category, messageBody);
       if (!validation.ok) {
         return res.status(400).json({
           ok: false,
-          status: "missing_required_placeholder",
-          required_placeholder: `{${validation.requiredPlaceholder}}`
+          status: validation.unknownPlaceholder ? "unknown_placeholder" : validation.malformed ? "invalid_template_syntax" : validation.hasForbiddenLiteral ? "invalid_template_value" : "missing_required_placeholder",
+          required_placeholder: validation.missingPlaceholders?.length ? `{${validation.missingPlaceholders[0]}}` : `{${validation.requiredPlaceholder}}`,
+          unknown_placeholder: validation.unknownPlaceholder ? `{${validation.unknownPlaceholder}}` : undefined
         });
       }
     }
-    const result = await query(`UPDATE whatsapp_templates SET message_body = COALESCE($2, message_body), is_active = COALESCE($3, is_active), updated_at = NOW() WHERE id = $1 RETURNING *`, [id, messageBody, isActive]);
+    if (expectedVersion !== null && (!Number.isInteger(expectedVersion) || expectedVersion < 1)) return res.status(400).json({ ok: false, status: "invalid_template_version" });
+    const result = await query(`UPDATE whatsapp_templates
+      SET message_body = COALESCE($2, message_body),
+          is_active = COALESCE($3, is_active),
+          content_version = CASE WHEN $2 IS NULL OR $2 = message_body THEN content_version ELSE content_version + 1 END,
+          updated_at = NOW()
+      WHERE id = $1 AND ($4::int IS NULL OR content_version = $4)
+      RETURNING *`, [id, messageBody, isActive, expectedVersion]);
+    if (!result.rowCount && expectedVersion !== null) return res.status(409).json({ ok: false, status: "template_version_conflict" });
     res.json({ ok: true, template: result.rows[0] });
   } catch (error) {
     if (error?.code === "23505") return res.status(409).json({ ok: false, status: "duplicate_template" });
@@ -192,7 +212,9 @@ whatsappRouter.get("/history", requirePermission("whatsapp.view"), async (req, r
     
     const result = await query(
       `SELECT j.id, j.notification_type, j.phone_number, j.status, j.attempts, j.ref_code,
-          j.template_index, j.template_text, j.rendered_message, j.last_error,
+          j.template_index, j.template_text, j.template_id, j.template_version,
+          j.template_category, j.template_audience, j.template_slot_number,
+          j.template_body_snapshot, j.template_gender, j.rendered_message, j.last_error,
           j.created_at, j.sent_at, j.next_attempt_at, j.lease_expires_at, s.full_name AS student_name, s.student_code
        FROM whatsapp_notification_jobs j
        LEFT JOIN students s ON s.id = j.student_id

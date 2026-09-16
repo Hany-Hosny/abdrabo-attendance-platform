@@ -2,17 +2,12 @@ import crypto from "node:crypto";
 import { pool } from "../db/pool.js";
 import { auditLog } from "./audit.js";
 import { getAttendanceTimingDefaults } from "./systemSettings.js";
-import { getWhatsAppSettings, normalizeEgyptianPhone, resolveSpintax, wakeWhatsAppWorker } from "./whatsapp.js";
+import { getWhatsAppSettings, normalizeEgyptianPhone, wakeWhatsAppWorker } from "./whatsapp.js";
 import { getAggregatedNotificationRecipients, upsertAggregatedNotification } from "./notifications.js";
 import { NotificationType } from "./notificationTypes.js";
 
 const FINALIZER_LOCK_KEY = "abdrabo-attendance-expiry-finalizer";
 const ABSENCE_QUEUE_BATCH_SIZE = 500;
-
-function randomTemplate(templates) {
-  const index = Math.floor(Math.random() * templates.length);
-  return { index, template: templates[index] };
-}
 
 function absenceReference(studentId) {
   const entropy = `${Date.now()}-${studentId}-${crypto.randomUUID()}`;
@@ -53,16 +48,6 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
     }
 
     const refCode = absenceReference(studentId);
-    const selected = randomTemplate(session.templates);
-    const template = selected.template;
-    const renderedMessage = resolveSpintax(template, {
-      student_name: student.student_name,
-      student_code: student.student_code,
-      group_name: session.group_name,
-      date: sessionDateLabel(session.session_date),
-      ref_code: refCode
-    }).trim();
-
     eligible.push({
       source_id: sourceId,
       attendance_record_id: sourceId,
@@ -70,9 +55,9 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
       phone_number: phoneNumber,
       payload,
       ref_code: refCode,
-      template_index: selected.index,
-      template_text: template,
-      rendered_message: `${renderedMessage}\n\nRef: ${refCode}`
+      template_index: null,
+      template_text: null,
+      rendered_message: null
     });
   }
 
@@ -291,16 +276,6 @@ async function processSession(sessionId, now = null) {
       await client.query("COMMIT");
       return { session_id: session.session_id, queued_count: 0, deferred: true, reason: "auto_send_disabled" };
     }
-
-    const templatesResult = await client.query(
-      `SELECT id, message_body
-       FROM whatsapp_templates
-       WHERE category = 'absence' AND is_active = TRUE
-       ORDER BY id`
-    );
-    const templates = templatesResult.rows.map((row) => String(row.message_body || "").trim()).filter(Boolean);
-    if (!templates.length) throw new Error("no_active_absence_templates");
-    session.templates = templates;
 
     const absentResult = await client.query(
       `SELECT absence.id AS attendance_record_id, st.id AS student_id,

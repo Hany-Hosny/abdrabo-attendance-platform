@@ -8,6 +8,9 @@ type Settings = {
   attendance_alert_threshold: number;
   evaluation_alert_threshold: number;
 };
+type CenterLocation = { name: string; address: string; latitude: number; longitude: number };
+type CenterLocationDraft = Omit<CenterLocation, "latitude" | "longitude"> & { latitude: number | string; longitude: number | string };
+type CenterLocationResponse = { ok?: boolean; center?: CenterLocation; name?: string; address?: string; latitude?: number; longitude?: number };
 
 type Props = { token: string; language: Language; isOwner?: boolean; t: Translator };
 
@@ -25,6 +28,102 @@ function normalizeSettings(value: Partial<Settings> | undefined): Settings {
     const numericValue = Number(value?.[settingKey]);
     return [settingKey, Number.isFinite(numericValue) ? numericValue : defaultSettings[settingKey]];
   })) as Settings;
+}
+
+function normalizeCenterLocation(payload: CenterLocationResponse): CenterLocation | null {
+  const source = payload.center || payload;
+  const latitude = Number(source.latitude);
+  const longitude = Number(source.longitude);
+  const address = String(source.address || "").trim();
+  if (!address || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return null;
+  return { name: String(source.name || ""), address, latitude, longitude };
+}
+
+function CenterLocationSettings({ token, language, t }: { token: string; language: Language; t: Translator }) {
+  const [location, setLocation] = useState<CenterLocationDraft>({ name: "", address: "", latitude: 30.0444, longitude: 31.2357 });
+  const [savedLocation, setSavedLocation] = useState<CenterLocation | null>(null);
+  const [debouncedCoordinates, setDebouncedCoordinates] = useState({ latitude: 30.0444, longitude: 31.2357 });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [error, setError] = useState("");
+  const dirty = !savedLocation || JSON.stringify(location) !== JSON.stringify(savedLocation);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${API_BASE_URL}/admin/center`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) throw new Error("load_failed");
+        const nextLocation = normalizeCenterLocation(payload);
+        if (!nextLocation) throw new Error("invalid_center");
+        return nextLocation;
+      })
+      .then((nextLocation) => { setLocation(nextLocation); setSavedLocation(nextLocation); setDebouncedCoordinates(nextLocation); setError(""); })
+      .catch((reason) => { if (reason?.name !== "AbortError") setError(t("settings.locationLoadFailed")); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [token]);
+
+  useEffect(() => {
+    const latitude = Number(location.latitude);
+    const longitude = Number(location.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return undefined;
+    const timer = window.setTimeout(() => setDebouncedCoordinates({ latitude, longitude }), 500);
+    return () => window.clearTimeout(timer);
+  }, [location.latitude, location.longitude]);
+
+  function update(field: "address" | "latitude" | "longitude", value: string) {
+    setStatus("idle"); setError("");
+    setLocation((current) => ({ ...current, [field]: field === "address" ? value : value.trim() === "" ? "" : Number(value) }));
+  }
+
+  function detectLocation() {
+    if (!navigator.geolocation) { setError(t("settings.locationUnavailable")); return; }
+    setDetecting(true); setStatus("idle"); setError("");
+    try {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) => { setLocation((current) => ({ ...current, latitude: Number(coords.latitude.toFixed(6)), longitude: Number(coords.longitude.toFixed(6)) })); setDetecting(false); },
+        () => { setError(t("settings.locationPermissionDenied")); setDetecting(false); },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    } catch (_error) { setError(t("settings.locationUnavailable")); setDetecting(false); }
+  }
+
+  async function save() {
+    if (saving || !dirty) return;
+    const latitude = Number(location.latitude); const longitude = Number(location.longitude);
+    if (!location.address.trim() || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) { setStatus("error"); setError(t("settings.locationInvalid")); return; }
+    setSaving(true); setStatus("idle"); setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/center`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ address: location.address.trim(), latitude, longitude }) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error("save_failed");
+      const nextLocation = normalizeCenterLocation(payload);
+      if (!nextLocation) throw new Error("invalid_center");
+      setLocation(nextLocation); setSavedLocation(nextLocation); setStatus("saved");
+      window.setTimeout(() => setStatus("idle"), 2200);
+    } catch (_error) { setStatus("error"); setError(t("settings.locationSaveFailed")); }
+    finally { setSaving(false); }
+  }
+
+  const mapUrl = `https://maps.google.com/maps?q=${encodeURIComponent(`${debouncedCoordinates.latitude},${debouncedCoordinates.longitude}`)}&hl=${language}&z=16&output=embed`;
+  return <section className="settings-section center-location-settings">
+    <div className="settings-section-heading"><span>05</span><div><h3>{t("settings.locationTitle")}</h3><p>{t("settings.locationDescription")}</p></div></div>
+    {loading ? <div className="center-location-skeleton" aria-hidden="true"><i /><i /><i /></div> : <div className="center-location-layout">
+      <div className="center-location-fields">
+        <label className="system-setting-field center-location-address"><span>{t("settings.addressLabel")}</span><small>{t("settings.addressDescription")}</small><input value={location.address} maxLength={500} onChange={(event) => update("address", event.target.value)} /></label>
+        <div className="center-location-coordinate-grid">
+          <label className="system-setting-field"><span>{t("settings.latitudeLabel")}</span><small>{t("settings.latitudeDescription")}</small><input type="number" inputMode="decimal" min={-90} max={90} step="any" value={location.latitude} onChange={(event) => update("latitude", event.target.value)} /></label>
+          <label className="system-setting-field"><span>{t("settings.longitudeLabel")}</span><small>{t("settings.longitudeDescription")}</small><input type="number" inputMode="decimal" min={-180} max={180} step="any" value={location.longitude} onChange={(event) => update("longitude", event.target.value)} /></label>
+        </div>
+        <button className="secondary-button compact-button" type="button" onClick={detectLocation} disabled={detecting || saving}>{detecting ? t("settings.detectingLocation") : t("settings.detectLocation")}</button>
+        <div className="system-settings-actions"><span className={status === "error" ? "form-error" : status === "saved" ? "lookup-result" : "form-hint"} role={status !== "idle" || error ? "status" : undefined}>{error || (status === "saved" ? t("settings.saved") : t("settings.locationHint"))}</span><button className={`primary-button compact-button ${status === "saved" ? "success-button" : ""}`} type="button" disabled={saving || !dirty} onClick={() => void save()}>{saving ? t("settings.saving") : status === "saved" ? t("settings.saved") : t("settings.saveLocation")}</button></div>
+      </div>
+      <div className="center-location-preview"><div className="center-location-preview-heading"><span>{t("settings.mapPreview")}</span><small>{t("settings.mapPreviewDescription")}</small></div><iframe className="center-location-map-frame filter invert-[90%] hue-rotate-180 contrast-[85%] grayscale-[10%]" src={mapUrl} title={t("settings.mapPreview")} loading="lazy" /></div>
+    </div>}
+  </section>;
 }
 
 function NumberSetting({ label, description, value, min, max, suffix, onChange }: {
@@ -111,6 +210,7 @@ export function SystemSettingsPanel({ token, language, isOwner = false, t }: Pro
       <section className="settings-section"><div className="settings-section-heading"><span>02</span><div><h3>{t("settings.attendanceTitle")}</h3><p>{t("settings.attendanceDescription")}</p></div></div><div className="system-settings-grid"><NumberSetting label={t("settings.openBeforeLabel")} description={t("settings.openBeforeDescription")} value={settings.attendance_open_before_minutes} min={0} max={180} suffix={t("settings.minutes")} onChange={(value) => update("attendance_open_before_minutes", value)} /><NumberSetting label={t("settings.closeAfterLabel")} description={t("settings.closeAfterDescription")} value={settings.attendance_close_after_minutes} min={0} max={240} suffix={t("settings.minutes")} onChange={(value) => update("attendance_close_after_minutes", value)} /><NumberSetting label={t("settings.attendanceAlertLabel")} description={t("settings.attendanceAlertDescription")} value={settings.attendance_alert_threshold} min={0} max={100} suffix="%" onChange={(value) => update("attendance_alert_threshold", value)} /></div></section>
       <section className="settings-section"><div className="settings-section-heading"><span>03</span><div><h3>{t("settings.evaluationTitle")}</h3><p>{t("settings.evaluationDescription")}</p></div></div><div className="system-settings-grid system-settings-grid-single"><NumberSetting label={t("settings.evaluationAlertLabel")} description={t("settings.evaluationAlertDescription")} value={settings.evaluation_alert_threshold} min={0} max={100} suffix="%" onChange={(value) => update("evaluation_alert_threshold", value)} /></div></section>
       <section className="settings-section settings-section-readonly"><div className="settings-section-heading"><span>04</span><div><h3>{t("settings.paymentsTitle")}</h3><p>{t("settings.paymentsDescription")}</p></div></div><div className="settings-note-grid"><div><strong>{t("settings.paymentFeesSource")}</strong><span>{t("settings.paymentFeesSourceDescription")}</span></div><div><strong>{t("settings.reversalSource")}</strong><span>{t("settings.reversalSourceDescription")}</span></div></div></section>
+      <CenterLocationSettings token={token} language={language} t={t} />
     </div>
     {isOwner ? <AdvancedPasswordRecoveryPanel token={token} t={t} open={advancedOpen} onToggle={() => setAdvancedOpen((value) => !value)} /> : null}
   </section>;
@@ -227,7 +327,7 @@ function AdvancedPasswordRecoveryPanel({ token, t, open, onToggle }: { token: st
 
   return <section className="settings-section settings-advanced-section">
     <button className="settings-accordion-toggle" type="button" aria-expanded={open} aria-controls="advanced-settings-content" onClick={onToggle}>
-      <span className="settings-section-heading"><span>05</span><span className="settings-accordion-copy"><strong>{t("settings.advancedTitle")}</strong><small>{t("settings.passwordRecoveryTitle")}</small><small className="settings-advanced-hint">{t("settings.advancedHint")}</small></span></span>
+      <span className="settings-section-heading"><span>06</span><span className="settings-accordion-copy"><strong>{t("settings.advancedTitle")}</strong><small>{t("settings.passwordRecoveryTitle")}</small><small className="settings-advanced-hint">{t("settings.advancedHint")}</small></span></span>
       <ChevronIcon open={open} />
     </button>
     <div id="advanced-settings-content" className={`settings-accordion-content ${open ? "is-open" : ""}`} aria-hidden={!open}><div>{advancedContent}</div></div>

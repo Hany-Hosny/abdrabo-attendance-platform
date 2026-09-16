@@ -11,6 +11,7 @@ import { ipKeyGenerator } from "express-rate-limit";
 import { DEFAULT_HOME_CONTENT, LandingPageContentSchema } from "@abdrabo/shared/landingContent.js";
 
 export const siteRouter = express.Router();
+export const publicRouter = express.Router();
 export const adminSiteRouter = express.Router();
 export const siteContentRouter = express.Router();
 const publicContactRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 10, key: (req) => `public-contact:${ipKeyGenerator(req.ip || "unknown")}` });
@@ -133,6 +134,18 @@ siteRouter.post("/contact", publicContactRateLimit, async (req, res, next) => {
     const result = await createPublicInquiry({ studentId: Number.isFinite(studentId) ? studentId : null, name, phone, subject: "Public inquiry", body, request: req });
     res.status(201).json({ ok: true, thread_id: result.thread.id });
   } catch (error) { next(error); }
+});
+
+publicRouter.get("/center", async (_req, res, next) => {
+  try {
+    const result = await query(
+      "SELECT name, address, latitude, longitude FROM centers WHERE id = 1 LIMIT 1"
+    );
+    if (!result.rowCount) return res.status(404).json({ ok: false, status: "center_not_found" });
+    return res.json(result.rows[0]);
+  } catch (error) {
+    return next(error);
+  }
 });
 
 siteRouter.get("/pages/:slug", async (req, res, next) => {

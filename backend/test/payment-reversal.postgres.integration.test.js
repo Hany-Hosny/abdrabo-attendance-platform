@@ -39,7 +39,7 @@ async function withDatabase(run) {
       CREATE TABLE students (
         id INTEGER PRIMARY KEY, group_id INTEGER NOT NULL, full_name TEXT NOT NULL,
         student_code TEXT, student_serial TEXT, scan_serial TEXT, guardian_phone TEXT,
-        is_active BOOLEAN NOT NULL DEFAULT TRUE, deleted_at TIMESTAMPTZ,
+        gender TEXT, is_active BOOLEAN NOT NULL DEFAULT TRUE, deleted_at TIMESTAMPTZ,
         whatsapp_opted_out BOOLEAN NOT NULL DEFAULT FALSE
       );
       CREATE TABLE payments (
@@ -72,7 +72,7 @@ async function withDatabase(run) {
         payment_id BIGINT, session_id INTEGER, details JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE TABLE whatsapp_notification_jobs (
-        id BIGSERIAL PRIMARY KEY, notification_type TEXT NOT NULL, source_id BIGINT,
+        id BIGSERIAL PRIMARY KEY, notification_type TEXT NOT NULL, source_id BIGINT, student_id INTEGER,
         status TEXT NOT NULL, claim_token TEXT, send_started_at TIMESTAMPTZ,
         next_attempt_at TIMESTAMPTZ, lease_expires_at TIMESTAMPTZ, last_error TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
       );
@@ -86,7 +86,7 @@ async function withDatabase(run) {
 
 async function seedCase(db, { amount = 100, paidAmount = amount, discountAmount = 0, isExempt = false, paymentType = "normal", months = [{ month: "2026-10-01", amount }], dueMonths = months.map((item) => item.month), duePaidAmount = amount } = {}) {
   await db.query("INSERT INTO groups (id, name, display_name, grade, grade_level) VALUES (1, 'Group A', 'Group A', 'Prep 1', 'Prep 1')");
-  await db.query("INSERT INTO students (id, group_id, full_name, student_code, student_serial, scan_serial, guardian_phone) VALUES (1, 1, 'Student One', 'A-0001', 'S-0001', 'Q-0001', '01012345678')");
+  await db.query("INSERT INTO students (id, group_id, full_name, student_code, student_serial, scan_serial, guardian_phone, gender) VALUES (1, 1, 'Student One', 'A-0001', 'S-0001', 'Q-0001', '01012345678', 'male')");
   for (const month of dueMonths) {
     const dueItem = months.find((item) => item.month === month);
     await db.query("INSERT INTO fee_dues (student_id, group_id, due_month, amount, paid_amount) VALUES (1, 1, $1::date, $2, $2)", [month, dueItem?.amount || amount]);
@@ -298,7 +298,7 @@ integrationTest("send-start fencing refuses a post-reversal receipt job", async 
   await withDatabase(async ({ db }) => {
     const paymentId = await seedCase(db);
     await reverse(db, paymentId, crypto.randomUUID());
-    await db.query("INSERT INTO whatsapp_notification_jobs (id, notification_type, source_id, status, claim_token) VALUES (1, 'receipt', $1, 'processing', 'late-token')", [paymentId]);
+    await db.query("INSERT INTO whatsapp_notification_jobs (id, notification_type, source_id, student_id, status, claim_token) VALUES (1, 'receipt', $1, 1, 'processing', 'late-token')", [paymentId]);
     assert.equal(await markSendStarted({ id: 1, source_id: paymentId, claim_token: "late-token" }, "receipt", db), false);
     assert.equal((await db.query("SELECT send_started_at FROM whatsapp_notification_jobs WHERE id = 1")).rows[0].send_started_at, null);
   });

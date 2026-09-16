@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { absenceCorrectionTransition, applyTemplate, buildStudentPortalLink, enqueueGradeNotificationInTransaction, formatWhatsAppMonthList, gradeQueuePreviewPayload, normalizeEgyptianPhone, normalizeManualRetryReason, paymentMonthsValue, validateWhatsAppSettings, validateWhatsAppTemplate } from "../src/services/whatsapp.js";
+import { absenceCorrectionTransition, applyTemplate, buildStudentPortalLink, enqueueGradeNotificationInTransaction, formatWhatsAppMonthList, gradeQueuePreviewPayload, normalizeEgyptianPhone, normalizeManualRetryReason, paymentMonthsValue, resolveWhatsAppTemplate, validateWhatsAppSettings, validateWhatsAppTemplate } from "../src/services/whatsapp.js";
+import { WHATSAPP_TEMPLATE_CATALOG, WHATSAPP_TEMPLATE_CATEGORIES, normalizeStudentGender } from "../src/services/whatsappTemplateCatalog.js";
 import { hasPermission } from "../src/services/rbac.js";
 import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "../src/services/auth.js";
 
@@ -37,6 +38,51 @@ test("validates the required placeholder for each WhatsApp template category", (
   assert.equal(validateWhatsAppTemplate("advance_payment", "Months: {months}").ok, true);
   assert.equal(validateWhatsAppTemplate("receipt", "Paid successfully").ok, false);
   assert.equal(validateWhatsAppTemplate("advance_payment", "Paid: {amount_paid}").ok, false);
+});
+
+test("catalogue contains forty regular slots and five genuinely neutral fallbacks", () => {
+  assert.deepEqual(Object.keys(WHATSAPP_TEMPLATE_CATALOG), WHATSAPP_TEMPLATE_CATEGORIES);
+  let regularCount = 0;
+  for (const category of WHATSAPP_TEMPLATE_CATEGORIES) {
+    for (const audience of ["male", "female"]) {
+      assert.equal(WHATSAPP_TEMPLATE_CATALOG[category][audience].length, 4);
+      for (const body of WHATSAPP_TEMPLATE_CATALOG[category][audience]) {
+        assert.equal(validateWhatsAppTemplate(category, body).ok, true);
+        regularCount += 1;
+      }
+    }
+    assert.equal(validateWhatsAppTemplate(category, WHATSAPP_TEMPLATE_CATALOG[category].neutral).ok, true);
+    assert.doesNotMatch(WHATSAPP_TEMPLATE_CATALOG[category].neutral, /\b(الطالب|الطالبة|حضر|حضرت|له|لها)\b/);
+  }
+  assert.equal(regularCount, 40);
+});
+
+test("gender normalization maps invalid and unknown legacy values to the neutral route", () => {
+  assert.equal(normalizeStudentGender("male"), "male");
+  assert.equal(normalizeStudentGender("female"), "female");
+  assert.equal(normalizeStudentGender(""), "unknown");
+  assert.equal(normalizeStudentGender("other"), "unknown");
+  assert.equal(normalizeStudentGender(null), "unknown");
+});
+
+test("template validation rejects unknown placeholders and forbidden rendered values", () => {
+  assert.equal(validateWhatsAppTemplate("attendance", "Hello {student_name} {unknown}").ok, false);
+  assert.equal(validateWhatsAppTemplate("attendance", "Hello {student_name} undefined").ok, false);
+  assert.equal(validateWhatsAppTemplate("attendance", "Hello {student_name} {broken").ok, false);
+});
+
+test("preview uses synthetic values without duplicating a template reference", async () => {
+  const body = WHATSAPP_TEMPLATE_CATALOG.absence.neutral;
+  const preview = await resolveWhatsAppTemplate({
+    category: "absence",
+    audience: "neutral",
+    slotNumber: null,
+    values: { student_name: "Synthetic Student", group_name: "Sample Group", date: "04/09/2026" },
+    db: async () => ({ rows: [{ id: 99, category: "absence", audience: "neutral", slot_number: null, slot_key: "absence:neutral:fallback", is_fallback: true, content_version: 1, message_body: body, is_active: true }] })
+  });
+  assert.match(preview.message, /Synthetic Student/);
+  assert.equal((preview.message.match(/Ref:/g) || []).length, 0);
+  assert.match(preview.message, /\[secure-link-preview\]/);
 });
 
 test("creates a short opaque portal link with a hashed one-hour access token", () => {

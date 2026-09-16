@@ -27,6 +27,35 @@ const supportedGradeLevels = new Set([
 ]);
 export const MAX_PERMANENT_DELETE_BATCH = 100;
 
+function parseCenterCoordinate(value, minimum, maximum) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) && coordinate >= minimum && coordinate <= maximum ? coordinate : null;
+}
+
+adminAcademicRouter.put("/center", requirePermission("settings.manage"), async (req, res, next) => {
+  try {
+    const address = String(req.body?.address || "").trim();
+    const latitude = parseCenterCoordinate(req.body?.latitude, -90, 90);
+    const longitude = parseCenterCoordinate(req.body?.longitude, -180, 180);
+    if (!address || address.length > 500 || latitude === null || longitude === null) {
+      return res.status(400).json({ ok: false, status: "invalid_center" });
+    }
+
+    const result = await query(
+      `UPDATE centers
+       SET address = $1, latitude = $2, longitude = $3
+       WHERE id = 1
+       RETURNING name, address, latitude, longitude`,
+      [address, latitude, longitude]
+    );
+    if (!result.rowCount) return res.status(404).json({ ok: false, status: "center_not_found" });
+    return res.json({ ok: true, center: result.rows[0] });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 function groupAccessDenied(res) {
   return res.status(403).json({ ok: false, status: "group_access_forbidden" });
 }

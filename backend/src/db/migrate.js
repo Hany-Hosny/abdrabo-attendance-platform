@@ -1,4 +1,6 @@
 import "../config/env.js";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { pool, query } from "./pool.js";
 import { hashPassword } from "../services/auth.js";
 import { DEFAULT_ADMIN_PERMISSIONS, DEFAULT_STAFF_PERMISSIONS, OWNER_USER_ID } from "../services/rbac.js";
@@ -824,9 +826,13 @@ export async function migrate() {
       category TEXT NOT NULL CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment')),
       message_body TEXT NOT NULL CHECK (length(trim(message_body)) > 0),
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      audience TEXT NOT NULL DEFAULT 'neutral',
+      slot_number INTEGER,
+      slot_key TEXT,
+      is_fallback BOOLEAN NOT NULL DEFAULT FALSE,
+      content_version INTEGER NOT NULL DEFAULT 1 CHECK (content_version > 0),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (category, message_body)
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE INDEX IF NOT EXISTS whatsapp_templates_category_active_idx
       ON whatsapp_templates(category, is_active);
@@ -886,6 +892,40 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_template_rotation ADD CONSTRAINT whatsapp_template_rotation_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
   await query("ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_category_check");
   await query("ALTER TABLE whatsapp_templates ADD CONSTRAINT whatsapp_templates_category_check CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
+  await query("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS audience TEXT NOT NULL DEFAULT 'neutral'");
+  await query("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS slot_number INTEGER");
+  await query("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS slot_key TEXT");
+  await query("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS is_fallback BOOLEAN NOT NULL DEFAULT FALSE");
+  await query("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS content_version INTEGER NOT NULL DEFAULT 1");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_id BIGINT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_version INTEGER");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_category TEXT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_audience TEXT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_slot_number INTEGER");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_body_snapshot TEXT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_gender TEXT");
+  await query("ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_audience_check");
+  await query("ALTER TABLE whatsapp_templates ADD CONSTRAINT whatsapp_templates_audience_check CHECK (audience IN ('male', 'female', 'neutral'))");
+  await query("ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_slot_check");
+  await query("ALTER TABLE whatsapp_templates ADD CONSTRAINT whatsapp_templates_slot_check CHECK ((audience IN ('male', 'female') AND slot_number BETWEEN 1 AND 4 AND is_fallback = FALSE) OR (audience = 'neutral' AND slot_number IS NULL))");
+  await query("ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_fallback_check");
+  await query("ALTER TABLE whatsapp_templates ADD CONSTRAINT whatsapp_templates_fallback_check CHECK (is_fallback = FALSE OR (audience = 'neutral' AND slot_number IS NULL))");
+  await query("ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_category_message_body_key");
+  await query("DROP INDEX IF EXISTS whatsapp_templates_category_message_body_key");
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_templates_slot_key_idx ON whatsapp_templates(slot_key) WHERE slot_key IS NOT NULL");
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_templates_regular_slot_idx ON whatsapp_templates(category, audience, slot_number) WHERE audience IN ('male', 'female') AND slot_number IS NOT NULL");
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_templates_fallback_idx ON whatsapp_templates(category) WHERE is_fallback = TRUE");
+  await query("CREATE TABLE IF NOT EXISTS whatsapp_template_rotation_state (category TEXT NOT NULL CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment')), audience TEXT NOT NULL CHECK (audience IN ('male', 'female')), next_slot INTEGER NOT NULL DEFAULT 1 CHECK (next_slot BETWEEN 1 AND 4), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (category, audience))");
+  // Preserve the old category-wide cursor for the male pool on first
+  // migration. Female pools have no prior independent cursor and start at
+  // slot one. ON CONFLICT keeps later restarts from resetting either cursor.
+  await query(`
+    INSERT INTO whatsapp_template_rotation_state (category, audience, next_slot)
+    SELECT notification_type, 'male', MOD(next_index, 4) + 1
+    FROM whatsapp_template_rotation
+    ON CONFLICT (category, audience) DO NOTHING
+  `);
+  await query("CREATE INDEX IF NOT EXISTS whatsapp_templates_assignment_idx ON whatsapp_templates(category, audience, is_fallback, is_active, slot_number)");
   await query("UPDATE whatsapp_notification_jobs SET source_id = attendance_record_id WHERE source_id IS NULL");
   await query("DROP INDEX IF EXISTS whatsapp_notification_jobs_source_type_idx");
   await query(`CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_notification_jobs_source_type_idx
@@ -974,11 +1014,12 @@ export async function migrate() {
   );
 
   // Migrate the legacy JSON template arrays into indexed rows once. The
-  // unique key makes this safe across restarts while preserving edits already
-  // made through the legacy settings screen.
+  // explicit anti-join and DISTINCT make this safe after the old
+  // (category, message_body) uniqueness is removed, while preserving edits
+  // already made through the legacy settings screen.
   await query(`
     INSERT INTO whatsapp_templates (category, message_body, is_active)
-    SELECT source.category, item.value, TRUE
+    SELECT DISTINCT source.category, item.value, TRUE
     FROM whatsapp_settings ws
     CROSS JOIN LATERAL (
       VALUES
@@ -990,22 +1031,98 @@ export async function migrate() {
     CROSS JOIN LATERAL jsonb_array_elements_text(
       CASE WHEN jsonb_typeof(source.template_values) = 'array' THEN source.template_values ELSE '[]'::jsonb END
     ) AS item(value)
-    WHERE ws.id = 1 AND length(trim(item.value)) > 0
-    ON CONFLICT (category, message_body) DO NOTHING
+    WHERE ws.id = 1
+      AND length(trim(item.value)) > 0
+      AND NOT EXISTS (
+        SELECT 1
+        FROM whatsapp_templates existing
+        WHERE existing.category = source.category
+          AND existing.message_body = item.value
+      )
   `);
 
   // Seed absence templates without re-enabling templates that an operator
-  // deliberately disabled. The unique key makes this safe on every restart.
+  // deliberately disabled. The anti-join makes this safe on every restart.
   await query(`
     INSERT INTO whatsapp_templates (category, message_body, is_active)
-    SELECT 'absence', item.value, TRUE
+    SELECT DISTINCT 'absence', item.value, TRUE
     FROM jsonb_array_elements_text($1::jsonb) AS item(value)
-    ON CONFLICT (category, message_body) DO NOTHING
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM whatsapp_templates existing
+      WHERE existing.category = 'absence'
+        AND existing.message_body = item.value
+    )
   `, [JSON.stringify([
     "*تنبيه غياب الطالب* ⚠️\n\n*الطالب:* {student_name}\n*المجموعة:* {group_name}\n*التاريخ:* {date}\n\nلم يتم تسجيل حضور الطالب لهذه الحصة.\nرابط المتابعة: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
     "*إشعار غياب*\n\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب *{student_name}* في حصة *{group_name}* بتاريخ *{date}*.\n\nرابط ملف المتابعة: {portal_link}\n*المرجع:* {ref_code}",
     "*متابعة الحضور*\n\nتم إغلاق جلسة *{group_name}* بتاريخ *{date}* دون تسجيل حضور الطالب *{student_name}*.\n\nرابط المتابعة: {portal_link}\n*رقم المرجع:* {ref_code}"
   ])]);
+
+  // Gender-aware template migration is additive and deterministic. Legacy
+  // rows are never deleted. Only rows with explicit gendered Arabic wording
+  // are assigned to regular pools; ambiguous rows remain unassigned and
+  // recoverable outside the new slot catalogue.
+  const { WHATSAPP_TEMPLATE_CATALOG } = await import("../services/whatsappTemplateCatalog.js");
+  for (const category of Object.keys(WHATSAPP_TEMPLATE_CATALOG)) {
+    await query(`
+      WITH candidates AS (
+        SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS slot_number
+        FROM whatsapp_templates
+        WHERE category = $1 AND slot_key IS NULL AND is_fallback = FALSE
+          AND audience = 'neutral'
+          AND message_body ~ 'الطالب(?![ء-ي])'
+          AND message_body !~ 'الطالبة(?![ء-ي])'
+        LIMIT 4
+      )
+      UPDATE whatsapp_templates t
+      SET audience = 'male', slot_number = candidates.slot_number,
+          slot_key = $1 || ':male:' || candidates.slot_number::text,
+          updated_at = NOW()
+      FROM candidates
+      WHERE t.id = candidates.id
+        AND NOT EXISTS (SELECT 1 FROM whatsapp_templates occupied WHERE occupied.slot_key = $1 || ':male:' || candidates.slot_number::text)
+    `, [category]);
+
+    await query(`
+      WITH candidates AS (
+        SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS slot_number
+        FROM whatsapp_templates
+        WHERE category = $1 AND slot_key IS NULL AND is_fallback = FALSE
+          AND audience = 'neutral'
+          AND message_body ~ '(الطالبة|حضرت الطالبة|لم يتم تسجيل حضور الطالبة|الخاصة بالطالبة)'
+        LIMIT 4
+      )
+      UPDATE whatsapp_templates t
+      SET audience = 'female', slot_number = candidates.slot_number,
+          slot_key = $1 || ':female:' || candidates.slot_number::text,
+          updated_at = NOW()
+      FROM candidates
+      WHERE t.id = candidates.id
+        AND NOT EXISTS (SELECT 1 FROM whatsapp_templates occupied WHERE occupied.slot_key = $1 || ':female:' || candidates.slot_number::text)
+    `, [category]);
+
+    for (const audience of ["male", "female"]) {
+      const bodies = WHATSAPP_TEMPLATE_CATALOG[category][audience];
+      for (let slot = 1; slot <= 4; slot += 1) {
+        await query(`
+          INSERT INTO whatsapp_templates (category, audience, slot_number, slot_key, is_fallback, message_body, is_active, content_version)
+          VALUES ($1, $2, $3, $4, FALSE, $5, TRUE, 1)
+          ON CONFLICT DO NOTHING
+        `, [category, audience, slot, `${category}:${audience}:${slot}`, bodies[slot - 1]]);
+      }
+    }
+    await query(`
+      INSERT INTO whatsapp_templates (category, audience, slot_number, slot_key, is_fallback, message_body, is_active, content_version)
+      VALUES ($1, 'neutral', NULL, $2, TRUE, $3, TRUE, 1)
+      ON CONFLICT DO NOTHING
+    `, [category, `${category}:neutral:fallback`, WHATSAPP_TEMPLATE_CATALOG[category].neutral]);
+    await query(`
+      INSERT INTO whatsapp_template_rotation_state (category, audience, next_slot)
+      VALUES ($1, 'male', 1), ($1, 'female', 1)
+      ON CONFLICT (category, audience) DO NOTHING
+    `, [category]);
+  }
 
   await query(`
     SET search_path TO public;
@@ -1351,7 +1468,7 @@ export async function migrate() {
   );
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   migrate()
     .then(() => {
       console.log("Database migrated and seeded.");

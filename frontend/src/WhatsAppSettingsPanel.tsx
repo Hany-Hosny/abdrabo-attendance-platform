@@ -60,10 +60,11 @@ const fallbackAdvancePaymentTemplates = ["إشعار دفع مقدم - مستر 
 const fallbackAbsenceTemplates = ["تنبيه غياب - منصة مستر أحمد عبدربه\nلم يتم تسجيل حضور الطالب {student_name} في مجموعة {group_name} بتاريخ {date}.\nبرجاء التواصل مع إدارة المنصة.", "إشعار غياب الطالب {student_name}\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب في حصة {group_name} بتاريخ {date}.", "متابعة الحضور | {student_name}\nتم إغلاق جلسة {group_name} بتاريخ {date} دون تسجيل حضور الطالب."];
 
 type TemplateKey = "templates" | "grade_templates" | "receipt_templates" | "advance_payment_templates" | "absence_templates";
-type WhatsAppTemplateRow = { id: number; category: string; message_body: string; is_active?: boolean };
+type WhatsAppTemplateRow = { id: number; category: string; audience: "male" | "female" | "neutral"; slot_number: number | null; slot_key: string | null; is_fallback: boolean; content_version: number; message_body: string; is_active?: boolean };
 type TemplateSaveError = Error & { requiredPlaceholder?: string; status?: string };
 type TemplateGroup = {
   key: TemplateKey;
+  category: "attendance" | "absence" | "grade" | "receipt" | "advance_payment";
   number: string;
   titleKey: string;
   descriptionKey: string;
@@ -71,11 +72,11 @@ type TemplateGroup = {
 };
 
 const templateGroups: TemplateGroup[] = [
-  { key: "templates", number: "03", titleKey: "whatsapp.attendanceTemplatesTitle", descriptionKey: "whatsapp.attendanceTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{date}", "{time}", "{group_name}", "{ref_code}", "{portal_link}"] },
-  { key: "absence_templates", number: "04", titleKey: "whatsapp.absenceTemplatesTitle", descriptionKey: "whatsapp.absenceTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{date}", "{group_name}", "{ref_code}", "{portal_link}"] },
-  { key: "grade_templates", number: "05", titleKey: "whatsapp.gradeTemplatesTitle", descriptionKey: "whatsapp.gradeTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{exam_title}", "{score}", "{max_score}", "{percentage}", "{portal_link}", "{ref_code}"] },
-  { key: "receipt_templates", number: "06", titleKey: "whatsapp.receiptTemplatesTitle", descriptionKey: "whatsapp.receiptTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{month}", "{receipt_number}", "{portal_link}", "{ref_code}"] },
-  { key: "advance_payment_templates", number: "07", titleKey: "whatsapp.advancePaymentTemplatesTitle", descriptionKey: "whatsapp.advancePaymentTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{months}", "{receipt_number}", "{portal_link}", "{ref_code}"] }
+  { key: "templates", category: "attendance", number: "03", titleKey: "whatsapp.attendanceTemplatesTitle", descriptionKey: "whatsapp.attendanceTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{date}", "{time}", "{group_name}", "{ref_code}", "{portal_link}"] },
+  { key: "absence_templates", category: "absence", number: "04", titleKey: "whatsapp.absenceTemplatesTitle", descriptionKey: "whatsapp.absenceTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{date}", "{group_name}", "{ref_code}", "{portal_link}"] },
+  { key: "grade_templates", category: "grade", number: "05", titleKey: "whatsapp.gradeTemplatesTitle", descriptionKey: "whatsapp.gradeTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{exam_title}", "{score}", "{max_score}", "{percentage}", "{portal_link}", "{ref_code}"] },
+  { key: "receipt_templates", category: "receipt", number: "06", titleKey: "whatsapp.receiptTemplatesTitle", descriptionKey: "whatsapp.receiptTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{month}", "{receipt_number}", "{portal_link}", "{ref_code}"] },
+  { key: "advance_payment_templates", category: "advance_payment", number: "07", titleKey: "whatsapp.advancePaymentTemplatesTitle", descriptionKey: "whatsapp.advancePaymentTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{months}", "{receipt_number}", "{portal_link}", "{ref_code}"] }
 ];
 
 const defaultSettings: WhatsAppSettings = {
@@ -280,6 +281,8 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
   const [status, setStatus] = useState<WhatsAppStatus>({ status: "disconnected", phone_number: null });
   const [settings, setSettings] = useState<WhatsAppSettings>(defaultSettings);
   const [savedSettings, setSavedSettings] = useState<WhatsAppSettings>(defaultSettings);
+  const [templateRows, setTemplateRows] = useState<WhatsAppTemplateRow[]>([]);
+  const [savedTemplateRows, setSavedTemplateRows] = useState<WhatsAppTemplateRow[]>([]);
   const [qr, setQr] = useState("");
   const [loading, setLoading] = useState(true);
   const [pairing, setPairing] = useState(false);
@@ -293,7 +296,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
   const [absenceTemplateRows, setAbsenceTemplateRows] = useState<WhatsAppTemplateRow[]>([]);
   const [absenceTemplateIds, setAbsenceTemplateIds] = useState<Array<number | null>>([]);
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
-  const dirty = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings), [settings, savedSettings]);
+  const dirty = useMemo(() => JSON.stringify(settings) !== JSON.stringify(savedSettings) || JSON.stringify(templateRows) !== JSON.stringify(savedTemplateRows), [settings, savedSettings, templateRows, savedTemplateRows]);
 
   async function loadStatus() {
     const response = await fetch(`${API_BASE_URL}/whatsapp/status`, { headers: { Authorization: `Bearer ${token}` } });
@@ -323,7 +326,10 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
       setStatus({ status: statusPayload.status, phone_number: statusPayload.phone_number || null, has_qr: statusPayload.has_qr });
       const next = normalizeSettings(settingsPayload.settings);
       const allTemplateRows = Array.isArray(templatePayload.templates) ? templatePayload.templates as WhatsAppTemplateRow[] : [];
-      const dbTemplates = allTemplateRows.filter((item) => item.is_active !== false);
+      const assignmentRows = allTemplateRows.filter((item) => item.slot_key || item.is_fallback);
+      setTemplateRows(assignmentRows);
+      setSavedTemplateRows(assignmentRows);
+      const dbTemplates = assignmentRows.filter((item) => item.is_active !== false);
       const absenceRows = allTemplateRows.filter((item) => item.category === "absence" && item.message_body);
       const activeAbsenceRows = absenceRows.filter((item) => item.is_active !== false).slice(0, 4);
       const categoryMap: Record<string, TemplateKey> = { attendance: "templates", absence: "absence_templates", grade: "grade_templates", receipt: "receipt_templates", advance_payment: "advance_payment_templates" };
@@ -340,7 +346,6 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     return () => controller.abort();
   }, [token]);
 
-  const memoizedTemplateGroups = useMemo(() => templateGroups.map((group) => ({ ...group, templates: settings[group.key] })), [settings]);
 
   function addTemplate(group: TemplateKey) {
     if (!canManage || settings[group].length >= 4) return;
@@ -406,7 +411,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     if (!canManage || saving || !dirty) return;
     setSaving(true); setFeedback("idle"); setError("");
     try {
-      const { absence_templates: absenceTemplates, ...settingsPayload } = settings;
+      const { absence_templates: _absenceTemplates, ...settingsPayload } = settings;
       const response = await fetch(`${API_BASE_URL}/whatsapp/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -419,12 +424,9 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
         failure.requiredPlaceholder = String(payload.required_placeholder || "").trim() || undefined;
         throw failure;
       }
-      const absenceChanged = JSON.stringify(absenceTemplates) !== JSON.stringify(savedSettings.absence_templates);
-      const syncedAbsenceRows = absenceChanged ? await saveAbsenceTemplates(absenceTemplates) : [];
+      await saveTemplateRows();
       const next = normalizeSettings(payload.settings);
-      next.absence_templates = absenceChanged
-        ? syncedAbsenceRows.map((row) => normalizeTeacherDisplayName(row.message_body))
-        : absenceTemplates;
+      next.absence_templates = settings.absence_templates;
       setSettings(next); setSavedSettings(next); setFeedback("saved");
       window.setTimeout(() => setFeedback("idle"), 2200);
     } catch (error) {
@@ -441,6 +443,77 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
             : t("whatsapp.saveFailed"));
     }
     finally { setSaving(false); }
+  }
+
+  async function saveTemplateRows() {
+    const changedRows = templateRows.filter((row) => {
+      const previous = savedTemplateRows.find((item) => item.id === row.id);
+      return previous && (previous.message_body !== row.message_body || previous.is_active !== row.is_active);
+    });
+    if (!changedRows.length) return;
+    const responses = await Promise.all(changedRows.map((row) => fetch(`${API_BASE_URL}/whatsapp/templates/${row.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ message_body: row.message_body, is_active: row.is_active !== false, expected_content_version: row.content_version })
+    })));
+    const payloads = await Promise.all(responses.map((response) => response.json().catch(() => ({}))));
+    const refreshedResponse = await fetch(`${API_BASE_URL}/whatsapp/templates`, { headers: { Authorization: `Bearer ${token}` } });
+    const refreshedPayload = await refreshedResponse.json().catch(() => ({}));
+    if (!refreshedResponse.ok || !refreshedPayload.ok) throw new Error("template_load_failed");
+    const refreshed = (Array.isArray(refreshedPayload.templates) ? refreshedPayload.templates : []) as WhatsAppTemplateRow[];
+    const assignments = refreshed.filter((row) => row.slot_key || row.is_fallback);
+    const failedIds = new Set(changedRows.filter((_row, index) => !responses[index].ok || !payloads[index].ok).map((row) => row.id));
+    setTemplateRows(assignments.map((row) => failedIds.has(row.id) ? (templateRows.find((current) => current.id === row.id) || row) : row));
+    setSavedTemplateRows(assignments);
+    const failure = payloads.find((payload, index) => !responses[index].ok || !payload.ok);
+    if (failure) {
+      const error = new Error(String(failure.status || "template_save_failed")) as TemplateSaveError;
+      error.status = String(failure.status || "template_save_failed");
+      error.requiredPlaceholder = String(failure.required_placeholder || "").trim() || undefined;
+      throw error;
+    }
+  }
+
+  function updateSlot(id: number, patch: Partial<Pick<WhatsAppTemplateRow, "message_body" | "is_active">>) {
+    if (!canManage) return;
+    setFeedback("idle");
+    setTemplateRows((current) => current.map((row) => row.id === id ? { ...row, ...patch } : row));
+  }
+
+  function insertSlotPlaceholder(row: WhatsAppTemplateRow, group: TemplateGroup, placeholder: string, refKey = `${group.category}-${row.audience}-${row.slot_number}`) {
+    if (!canManage || saving) return;
+    const textarea = textareaRefs.current[refKey];
+    const current = row.message_body || "";
+    const start = textarea?.selectionStart ?? current.length;
+    const end = textarea?.selectionEnd ?? start;
+    const next = `${current.slice(0, start)}${placeholder}${current.slice(end)}`;
+    updateSlot(row.id, { message_body: next });
+    window.setTimeout(() => {
+      textarea?.focus();
+      const cursor = start + placeholder.length;
+      textarea?.setSelectionRange(cursor, cursor);
+    }, 0);
+  }
+
+  function previewTemplate(row: WhatsAppTemplateRow, group: TemplateGroup) {
+    const values: Record<string, string> = {
+      student_name: row.audience === "female" ? t("whatsapp.sampleFemaleStudent") : t("whatsapp.sampleStudent"),
+      student_code: "A-1001",
+      date: "04/09/2026",
+      time: "06:00 PM",
+      group_name: t("whatsapp.sampleGroup"),
+      exam_title: t("whatsapp.sampleExam"),
+      score: "18",
+      max_score: "20",
+      percentage: "90",
+      amount_paid: "500.00",
+      month: "September 2026",
+      months: "September 2026, October 2026",
+      receipt_number: "P-00000001",
+      portal_link: "[secure-link-preview]",
+      ref_code: `${group.category.toUpperCase()}-PREVIEW`
+    };
+    return row.message_body.replace(/\{\{?\s*([a-zA-Z0-9_-]+)\s*\}\}?/gi, (_match, key: string) => values[key.toLowerCase()] ?? "");
   }
 
   async function toggleAutoSend(enabled: boolean) {
@@ -587,18 +660,6 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     setOpenTemplateGroups((current) => ({ ...current, [group]: !current[group] }));
   }
 
-  const portalLink = `${settings.portal_base_url || window.location.origin}/p/7Kx92QmY7Q4xP3nL8sV2`;
-  const previewTextWithoutLink = (settings.templates[0] || "")
-    .replace(/\{student_name\}/g, t("whatsapp.sampleStudent"))
-    .replace(/\{student_code\}/g, "A-1001")
-    .replace(/\{date\}/g, "04/09/2026")
-    .replace(/\{time\}/g, "06:00 PM")
-    .replace(/\{group_name\}/g, t("whatsapp.sampleGroup"))
-    .replace(/\{ref_code\}/g, "ATT-20260904-1001")
-    .replace(/\{portal_link\}/g, portalLink);
-  const previewText = previewTextWithoutLink.includes(portalLink) ? previewTextWithoutLink : `${previewTextWithoutLink}\n${portalLink}`;
-  const previewParts = previewText.split(portalLink);
-
   if (loading) return <section className="admin-editor whatsapp-settings-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.whatsapp")}</p><h2>{t("whatsapp.title")}</h2></div><div className="system-settings-skeleton" aria-hidden="true"><i /><i /><i /></div></section>;
 
   return <section className="admin-editor whatsapp-settings-panel" dir={language === "ar" ? "rtl" : "ltr"}>
@@ -636,23 +697,41 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
       <div className="settings-section-heading">{activeTab === "templates" ? <span>03–07</span> : null}<div><h3>{t(activeTab === "templates" ? "whatsapp.templatesTitle" : "whatsapp.messageHistoryTitle")}</h3><p>{t(activeTab === "templates" ? "whatsapp.templatesDescription" : "whatsapp.messageHistoryDescription")}</p></div></div>
       {activeTab === "history" ? <WhatsAppMessageHistory token={token} language={language} canManage={canManage} t={t} /> : <>
         <div className="whatsapp-template-groups">
-        {memoizedTemplateGroups.map((group) => {
-          const isOpen = openTemplateGroups[group.key];
-          const templates = settings[group.key];
-          const contentId = `whatsapp-${group.key}-content`;
-          return <article className={`whatsapp-template-accordion ${isOpen ? "is-open" : ""}`} key={group.key}>
-            <button id={`${contentId}-toggle`} className="whatsapp-template-accordion-toggle flex items-center justify-between gap-4 w-full p-5 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors duration-200" type="button" aria-expanded={isOpen} aria-controls={contentId} onClick={() => toggleTemplateGroup(group.key)}>
-              <span className="whatsapp-template-accordion-heading"><span className="whatsapp-template-number">{group.number}</span><span className="whatsapp-template-accordion-copy"><strong className="truncate">{t(group.titleKey)}</strong><small className="truncate">{t(group.descriptionKey)}</small><span className="whatsapp-template-accordion-badge truncate">{t("whatsapp.activeTemplates", { count: String(templates.length) })}</span></span></span>
-              <ChevronIcon open={isOpen} />
-            </button>
-            <div className={`whatsapp-template-accordion-content ${isOpen ? "is-open" : ""}`} id={contentId} role="region" aria-labelledby={`${contentId}-toggle`} aria-hidden={!isOpen}>
-              <div className="whatsapp-template-accordion-inner">
-                <div className="whatsapp-template-list">{templates.map((template, index) => { const refKey = `${group.key}-${index}`; return <label className="whatsapp-template-card" key={index}><span className="whatsapp-template-number">{String(index + 1).padStart(2, "0")}</span><strong>{t("whatsapp.templateLabel", { number: String(index + 1) })}</strong><textarea ref={(element) => { textareaRefs.current[refKey] = element; }} disabled={!canManage} dir="auto" value={template} onChange={(event) => updateTemplate(group.key, index, event.target.value)} maxLength={2000} /><span className="whatsapp-placeholder-label">{t("whatsapp.placeholders")}</span><div className="whatsapp-placeholder-chips">{group.placeholders.map((placeholder) => { const isUsed = templateUsesPlaceholder(template, placeholder); return <button className={isUsed ? "is-used" : ""} disabled={!canManage || isUsed} type="button" key={placeholder} aria-label={isUsed ? `Used ${placeholder}` : `Insert ${placeholder}`} onClick={() => insertPlaceholder(group.key, index, placeholder)}>{isUsed ? `✓ ${placeholder}` : placeholder}</button>; })}</div>{canManage && templates.length > 3 ? <button className="secondary-button compact-button" type="button" onClick={() => removeTemplate(group.key, index)}>{language === "ar" ? "حذف القالب" : "Delete template"}</button> : null}</label>; })}</div><button className="secondary-button compact-button" type="button" disabled={!canManage || templates.length >= 4} onClick={() => addTemplate(group.key)}>{language === "ar" ? "إضافة قالب" : "Add template"}</button>
-                {group.key === "templates" ? <div className="whatsapp-preview-box"><div><strong>{t("whatsapp.previewTitle")}</strong><small>{t("whatsapp.previewDescription")}</small></div><p>{previewParts.map((part, index) => <span key={`${part}-${index}`}>{index ? <a href={portalLink} target="_blank" rel="noreferrer">{portalLink}</a> : null}{part}</span>)}</p></div> : null}
+          {templateGroups.map((group) => {
+            const isOpen = openTemplateGroups[group.key];
+            const categoryRows = templateRows.filter((row) => row.category === group.category);
+            const activeCount = categoryRows.filter((row) => row.is_fallback === false && row.is_active !== false).length;
+            const contentId = `whatsapp-${group.key}-content`;
+            return <article className={`whatsapp-template-accordion ${isOpen ? "is-open" : ""}`} key={group.key}>
+              <button id={`${contentId}-toggle`} className="whatsapp-template-accordion-toggle" type="button" aria-expanded={isOpen} aria-controls={contentId} onClick={() => toggleTemplateGroup(group.key)}>
+                <span className="whatsapp-template-accordion-heading"><span className="whatsapp-template-number">{group.number}</span><span className="whatsapp-template-accordion-copy"><strong>{t(group.titleKey)}</strong><small>{t(group.descriptionKey)}</small><span className="whatsapp-template-accordion-metrics"><span className="whatsapp-template-accordion-badge">{t("whatsapp.genderPoolCount", { male: String(categoryRows.filter((row) => row.audience === "male" && row.is_active !== false).length), female: String(categoryRows.filter((row) => row.audience === "female" && row.is_active !== false).length), total: String(activeCount) })}</span><span className="whatsapp-template-accordion-badge is-total">{t("whatsapp.activeSlotCount", { count: String(activeCount) })}</span></span></span></span>
+                <ChevronIcon open={isOpen} />
+              </button>
+              <div className={`whatsapp-template-accordion-content ${isOpen ? "is-open" : ""}`} id={contentId} role="region" aria-labelledby={`${contentId}-toggle`} aria-hidden={!isOpen}>
+                <div className="whatsapp-template-accordion-inner">
+                  <div className="gender-template-audiences">
+                    {(["male", "female"] as const).map((audience) => <section className="gender-template-audience" key={audience}>
+                      <div className="gender-template-heading"><h4>{t(audience === "male" ? "whatsapp.boysTemplates" : "whatsapp.girlsTemplates")}</h4><span>{categoryRows.filter((row) => row.audience === audience && row.is_active !== false).length}/4 {t("whatsapp.enabled")}</span></div>
+                      <div className="whatsapp-template-list">{[1, 2, 3, 4].map((slotNumber) => {
+                        const row = categoryRows.find((item) => item.audience === audience && item.slot_number === slotNumber);
+                        if (!row) return <div className="whatsapp-template-card" key={`${audience}-${slotNumber}`}><strong>{audience === "male" ? "M" : "F"}{slotNumber}</strong><p className="form-error">{t("whatsapp.slotMissing")}</p></div>;
+                        const refKey = `${group.category}-${audience}-${slotNumber}`;
+                        const preview = previewTemplate(row, group);
+                        return <article className={`whatsapp-template-card ${row.is_active === false ? "is-disabled" : ""}`} key={row.id}>
+                          <div className="whatsapp-template-card-head"><div className="whatsapp-template-card-identity"><span className="whatsapp-template-slot-badge">{audience === "male" ? "M" : "F"}{slotNumber}</span><div><strong>{t("whatsapp.templateSlotLabel", { audience: audience === "male" ? t("whatsapp.boys") : t("whatsapp.girls"), number: String(slotNumber) })}</strong><small>{t(audience === "male" ? "whatsapp.boysTemplates" : "whatsapp.girlsTemplates")}</small></div></div><span className={`whatsapp-template-status ${row.is_active === false ? "is-disabled" : "is-enabled"}`} role="status"><i aria-hidden="true" />{row.is_active === false ? t("whatsapp.slotDisabled") : t("whatsapp.slotEnabled")}</span></div>
+                          <label className="whatsapp-template-enabled"><input type="checkbox" disabled={!canManage || saving} checked={row.is_active !== false} onChange={(event) => updateSlot(row.id, { is_active: event.target.checked })} /><span>{t("whatsapp.enabled")}</span></label>
+                          <div className="whatsapp-template-editor"><div className="whatsapp-template-field-label"><span>{t("whatsapp.editorLabel")}</span><small>{t("whatsapp.editorHint")}</small></div><textarea ref={(element) => { textareaRefs.current[refKey] = element; }} disabled={!canManage || saving} dir="auto" value={row.message_body} onChange={(event) => updateSlot(row.id, { message_body: event.target.value })} maxLength={2000} /></div>
+                          <div className="whatsapp-template-preview-panel"><div className="whatsapp-template-field-label"><span>{t("whatsapp.previewTitle")}</span><small>{t("whatsapp.previewDescription")}</small></div><p className="whatsapp-template-preview" dir="auto">{preview}</p></div>
+                          <div className="whatsapp-template-variables"><span className="whatsapp-placeholder-label">{t("whatsapp.placeholders")}</span><div className="whatsapp-placeholder-chips">{group.placeholders.map((placeholder) => { const isUsed = templateUsesPlaceholder(row.message_body, placeholder); return <button className={isUsed ? "is-used" : ""} disabled={!canManage || saving || isUsed} type="button" key={placeholder} aria-label={t(isUsed ? "whatsapp.placeholderUsed" : "whatsapp.placeholderInsert", { placeholder })} onClick={() => insertSlotPlaceholder(row, group, placeholder)}>{isUsed ? `✓ ${placeholder}` : placeholder}</button>; })}</div></div>
+                        </article>;
+                      })}</div>
+                    </section>)}
+                  </div>
+                  <details className="whatsapp-neutral-fallback"><summary>{t("whatsapp.neutralFallback")}</summary>{(() => { const row = categoryRows.find((item) => item.is_fallback && item.audience === "neutral"); if (!row) return <p className="form-error">{t("whatsapp.slotMissing")}</p>; const refKey = `${group.category}-neutral`; return <article className={`whatsapp-template-card ${row.is_active === false ? "is-disabled" : ""}`}><div className="whatsapp-template-card-head"><div className="whatsapp-template-card-identity"><span className="whatsapp-template-slot-badge">N</span><div><strong>{t("whatsapp.neutralFallback")}</strong><small>{t("whatsapp.neutralFallback")}</small></div></div><span className={`whatsapp-template-status ${row.is_active === false ? "is-disabled" : "is-enabled"}`} role="status"><i aria-hidden="true" />{row.is_active === false ? t("whatsapp.slotDisabled") : t("whatsapp.slotEnabled")}</span></div><label className="whatsapp-template-enabled"><input type="checkbox" disabled={!canManage || saving} checked={row.is_active !== false} onChange={(event) => updateSlot(row.id, { is_active: event.target.checked })} /><span>{t("whatsapp.enabled")}</span></label><div className="whatsapp-template-editor"><div className="whatsapp-template-field-label"><span>{t("whatsapp.editorLabel")}</span><small>{t("whatsapp.editorHint")}</small></div><textarea ref={(element) => { textareaRefs.current[refKey] = element; }} disabled={!canManage || saving} dir="auto" value={row.message_body} onChange={(event) => updateSlot(row.id, { message_body: event.target.value })} maxLength={2000} /></div><div className="whatsapp-template-preview-panel"><div className="whatsapp-template-field-label"><span>{t("whatsapp.previewTitle")}</span><small>{t("whatsapp.previewDescription")}</small></div><p className="whatsapp-template-preview" dir="auto">{previewTemplate(row, group)}</p></div><div className="whatsapp-template-variables"><span className="whatsapp-placeholder-label">{t("whatsapp.placeholders")}</span><div className="whatsapp-placeholder-chips">{group.placeholders.map((placeholder) => { const isUsed = templateUsesPlaceholder(row.message_body, placeholder); return <button className={isUsed ? "is-used" : ""} disabled={!canManage || saving || isUsed} type="button" key={placeholder} aria-label={t(isUsed ? "whatsapp.placeholderUsed" : "whatsapp.placeholderInsert", { placeholder })} onClick={() => insertSlotPlaceholder(row, group, placeholder, refKey)}>{isUsed ? `✓ ${placeholder}` : placeholder}</button>; })}</div></div></article>; })()}</details>
+                </div>
               </div>
-            </div>
-          </article>;
-        })}
+            </article>;
+          })}
         </div>
         <div className="whatsapp-save-row"><span className={feedback === "error" ? "form-error" : feedback === "saved" ? "lookup-result" : "form-hint"} role={feedback !== "idle" ? "status" : undefined}>{feedback === "saved" ? t("whatsapp.saved") : feedback === "error" ? t("whatsapp.saveFailed") : t("whatsapp.saveHint")}</span><button className={`primary-button ${feedback === "saved" ? "success-button" : ""}`} type="button" disabled={!canManage || saving || !dirty} onClick={() => void save()}>{saving ? t("whatsapp.saving") : feedback === "saved" ? t("whatsapp.saved") : t("whatsapp.save")}</button></div>
       </>}

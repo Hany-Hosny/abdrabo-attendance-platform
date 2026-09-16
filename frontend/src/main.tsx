@@ -344,6 +344,11 @@ const translations = {
     "contact.youtube": "يوتيوب",
     "contact.directTitle": "تواصل مباشرة",
     "contact.directSubtitle": "اختر الطريقة المناسبة وسنسعد بالتواصل معك.",
+    "contact.locationTitle": "موقع السنتر",
+    "contact.locationSubtitle": "اعرف موقعنا وتوجه إلينا بسهولة.",
+    "contact.getDirections": "الاتجاهات",
+    "contact.locationUnavailable": "بيانات الموقع غير متاحة حالياً. تواصل معنا وسنرسلها لك.",
+    "contact.locationMapLoading": "جاري تحميل الخريطة...",
     "contact.whatsappAction": "تواصل معنا عبر واتساب",
     "contact.whatsappUnavailable": "رقم واتساب غير مُهيأ بعد",
     "contact.facebookAction": "تابعنا على فيسبوك",
@@ -519,7 +524,7 @@ const translations = {
     "whatsapp.presetBalanced": "متوازن: 5–12 ثانية",
     "whatsapp.presetSafe": "فائق الأمان: 10–30 ثانية",
     "whatsapp.templatesTitle": "قوالب الرسائل",
-    "whatsapp.templatesDescription": "يدور النظام بين القوالب المحفوظة لكل نوع إشعار ويستبدل المتغيرات تلقائياً.",
+    "whatsapp.templatesDescription": "يدور النظام داخل مجموعة قوالب البنين أو البنات المناسبة، ويستخدم الرسالة المحايدة عند الحاجة.",
     "whatsapp.panelTabsLabel": "أقسام واتساب",
     "whatsapp.templatesTab": "القوالب",
     "whatsapp.historyTab": "سجل الرسائل",
@@ -583,6 +588,24 @@ const translations = {
     "whatsapp.advancePaymentTemplatesTitle": "قوالب الدفع المقدم",
     "whatsapp.advancePaymentTemplatesDescription": "رسائل تأكيد الدفعات المقدمة والشهور المسددة المرسلة إلى ولي الأمر.",
     "whatsapp.activeTemplates": "{{count}} قوالب نشطة (انقر للتعديل)",
+    "whatsapp.genderPoolCount": "بنين: {{male}}/4 مفعل · بنات: {{female}}/4 مفعل",
+    "whatsapp.activeSlotCount": "{{count}}/8 قالب مفعل",
+    "whatsapp.boysTemplates": "قوالب البنين",
+    "whatsapp.girlsTemplates": "قوالب البنات",
+    "whatsapp.boys": "بنين",
+    "whatsapp.girls": "بنات",
+    "whatsapp.enabled": "مفعل",
+    "whatsapp.slotEnabled": "مفعل",
+    "whatsapp.slotDisabled": "متوقف",
+    "whatsapp.editorLabel": "محتوى الرسالة القابل للتحرير",
+    "whatsapp.editorHint": "اكتب الرسالة كما سيستلمها ولي الأمر.",
+    "whatsapp.placeholderInsert": "إدراج {{placeholder}}",
+    "whatsapp.placeholderUsed": "مستخدم: {{placeholder}}",
+    "whatsapp.neutralFallback": "الرسالة المحايدة الاحتياطية",
+    "whatsapp.templateSlotLabel": "قالب {{audience}} رقم {{number}}",
+    "whatsapp.slotMissing": "هذا الموضع غير مهيأ. شغّل الترحيل المحلي قبل التحرير.",
+    "whatsapp.sampleFemaleStudent": "سارة محمد",
+    "whatsapp.sampleExam": "اختبار العلوم",
     "whatsapp.templateLabel": "القالب {{number}}",
     "whatsapp.placeholders": "المتغيرات المتاحة",
     "whatsapp.viewOnly": "صلاحية عرض فقط — اطلب صلاحية إدارة واتساب للتعديل أو الربط.",
@@ -656,6 +679,25 @@ const translations = {
     "settings.paymentFeesSourceDescription": "تُدار من إعدادات كل مجموعة ولا يتم تكرارها هنا.",
     "settings.reversalSource": "عكس المدفوعات",
     "settings.reversalSourceDescription": "يستمر استبعاد المدفوعات المعكوسة من التقارير.",
+    "settings.locationTitle": "إعدادات الموقع والسنتر",
+    "settings.locationDescription": "حدّث عنوان السنتر والإحداثيات لعرضها للطلاب وتسهيل الوصول إليه.",
+    "settings.addressLabel": "عنوان السنتر",
+    "settings.addressDescription": "العنوان الظاهر في صفحة التواصل.",
+    "settings.latitudeLabel": "خط العرض",
+    "settings.latitudeDescription": "قيمة بين -90 و90.",
+    "settings.longitudeLabel": "خط الطول",
+    "settings.longitudeDescription": "قيمة بين -180 و180.",
+    "settings.detectLocation": "اكتشاف موقعي",
+    "settings.detectingLocation": "جاري تحديد الموقع...",
+    "settings.locationUnavailable": "الموقع الجغرافي غير متاح على هذا الجهاز.",
+    "settings.locationPermissionDenied": "تعذر الوصول إلى موقع الجهاز. تحقق من إذن الموقع.",
+    "settings.locationInvalid": "تحقق من العنوان والإحداثيات وحدودها.",
+    "settings.locationLoadFailed": "تعذر تحميل بيانات السنتر.",
+    "settings.locationSaveFailed": "تعذر حفظ بيانات السنتر.",
+    "settings.locationHint": "تظهر المعاينة بعد استقرار الإحداثيات.",
+    "settings.saveLocation": "حفظ الموقع",
+    "settings.mapPreview": "معاينة الخريطة",
+    "settings.mapPreviewDescription": "تتحدث بعد توقف الكتابة مؤقتاً.",
     "settings.safeDefaults": "القيم الافتراضية آمنة وتحافظ على السلوك الحالي.",
     "settings.save": "حفظ التغييرات",
     "settings.saving": "جاري الحفظ...",
@@ -1934,6 +1976,11 @@ const translations = {
     "contact.youtube": "YouTube",
     "contact.directTitle": "Connect directly",
     "contact.directSubtitle": "Choose the channel that works best for you.",
+    "contact.locationTitle": "Center location",
+    "contact.locationSubtitle": "Find us quickly and get directions to the center.",
+    "contact.getDirections": "Get directions",
+    "contact.locationUnavailable": "Location details are temporarily unavailable. Contact us and we will share them with you.",
+    "contact.locationMapLoading": "Loading map...",
     "contact.whatsappAction": "Chat with us on WhatsApp",
     "contact.whatsappUnavailable": "WhatsApp number is not configured yet",
     "contact.facebookAction": "Follow us on Facebook",
@@ -2109,7 +2156,7 @@ const translations = {
     "whatsapp.presetBalanced": "Balanced: 5–12 seconds",
     "whatsapp.presetSafe": "Extra safe: 10–30 seconds",
     "whatsapp.templatesTitle": "Message templates",
-    "whatsapp.templatesDescription": "The system cycles through saved templates per notification type and replaces placeholders automatically.",
+    "whatsapp.templatesDescription": "The system rotates within the matching boys' or girls' pool and uses the neutral fallback when needed.",
     "whatsapp.panelTabsLabel": "WhatsApp sections",
     "whatsapp.templatesTab": "Templates",
     "whatsapp.historyTab": "Message history",
@@ -2173,6 +2220,24 @@ const translations = {
     "whatsapp.advancePaymentTemplatesTitle": "Advance payment templates",
     "whatsapp.advancePaymentTemplatesDescription": "Advance payment and covered-month confirmation messages sent to the guardian.",
     "whatsapp.activeTemplates": "{{count}} active templates (click to edit)",
+    "whatsapp.genderPoolCount": "Boys: {{male}}/4 enabled · Girls: {{female}}/4 enabled",
+    "whatsapp.activeSlotCount": "{{count}}/8 active slots",
+    "whatsapp.boysTemplates": "Boys",
+    "whatsapp.girlsTemplates": "Girls",
+    "whatsapp.boys": "Boys",
+    "whatsapp.girls": "Girls",
+    "whatsapp.enabled": "Enabled",
+    "whatsapp.slotEnabled": "Enabled",
+    "whatsapp.slotDisabled": "Disabled",
+    "whatsapp.editorLabel": "Editable message content",
+    "whatsapp.editorHint": "Write the message as the guardian should receive it.",
+    "whatsapp.placeholderInsert": "Insert {{placeholder}}",
+    "whatsapp.placeholderUsed": "Used: {{placeholder}}",
+    "whatsapp.neutralFallback": "Neutral fallback",
+    "whatsapp.templateSlotLabel": "{{audience}} template {{number}}",
+    "whatsapp.slotMissing": "This slot is not configured. Run the local migration before editing.",
+    "whatsapp.sampleFemaleStudent": "Sara Mohamed",
+    "whatsapp.sampleExam": "Science test",
     "whatsapp.templateLabel": "Template {{number}}",
     "whatsapp.placeholders": "Available placeholders",
     "whatsapp.viewOnly": "View-only access — request WhatsApp management permission to edit or pair.",
@@ -2246,6 +2311,25 @@ const translations = {
     "settings.paymentFeesSourceDescription": "Managed per group and intentionally not duplicated here.",
     "settings.reversalSource": "Payment reversals",
     "settings.reversalSourceDescription": "Reversed payments continue to be excluded from reports.",
+    "settings.locationTitle": "Location & Center Settings",
+    "settings.locationDescription": "Update the center address and coordinates shown to students and visitors.",
+    "settings.addressLabel": "Center address",
+    "settings.addressDescription": "The address displayed on the public contact page.",
+    "settings.latitudeLabel": "Latitude",
+    "settings.latitudeDescription": "A value between -90 and 90.",
+    "settings.longitudeLabel": "Longitude",
+    "settings.longitudeDescription": "A value between -180 and 180.",
+    "settings.detectLocation": "Detect my location",
+    "settings.detectingLocation": "Detecting location...",
+    "settings.locationUnavailable": "Geolocation is not available on this device.",
+    "settings.locationPermissionDenied": "Location access was denied. Check the browser permission.",
+    "settings.locationInvalid": "Check the address and coordinate ranges.",
+    "settings.locationLoadFailed": "Could not load center details.",
+    "settings.locationSaveFailed": "Could not save center details.",
+    "settings.locationHint": "The preview updates after the coordinates settle.",
+    "settings.saveLocation": "Save location",
+    "settings.mapPreview": "Map preview",
+    "settings.mapPreviewDescription": "Updates after typing pauses.",
     "settings.safeDefaults": "Safe defaults preserve current application behavior.",
     "settings.save": "Save changes",
     "settings.saving": "Saving...",
@@ -5033,6 +5117,51 @@ function App() {
   );
 }
 
+type PublicCenter = { name: string; address: string; latitude: number; longitude: number };
+type PublicCenterResponse = { ok?: boolean; center?: PublicCenter; name?: string; address?: string; latitude?: number; longitude?: number };
+type CenterLocationCardProps = { language: Language; t: Translator };
+
+function normalizePublicCenter(payload: PublicCenterResponse): PublicCenter | null {
+  const source = payload.center || payload;
+  const latitude = Number(source.latitude);
+  const longitude = Number(source.longitude);
+  const address = String(source.address || "").trim();
+  if (!address || !Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) return null;
+  return { name: String(source.name || ""), address, latitude, longitude };
+}
+
+function CenterLocationCard({ language, t }: CenterLocationCardProps) {
+  const [center, setCenter] = useState<PublicCenter | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [mapLoading, setMapLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true); setMapLoading(true); setError(false);
+    fetch(`${API_BASE_URL}/public/center`, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error("center_load_failed");
+        const nextCenter = normalizePublicCenter(payload);
+        if (!nextCenter) throw new Error("invalid_center");
+        return nextCenter;
+      })
+      .then((nextCenter) => setCenter(nextCenter))
+      .catch((reason) => { if (reason?.name !== "AbortError") { setCenter(null); setError(true); } })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, []);
+
+  const mapUrl = center ? `https://maps.google.com/maps?q=${encodeURIComponent(`${center.latitude},${center.longitude}`)}&hl=${language}&z=16&output=embed` : "";
+  const directionsUrl = center ? `https://www.google.com/maps/dir/?api=1&destination=${center.latitude},${center.longitude}` : "#";
+  return <article className="content-panel contact-location-panel" aria-labelledby="contact-location-title">
+    <div className="contact-location-copy"><span className="contact-section-kicker">{t("contact.locationTitle")}</span><h2 id="contact-location-title">{t("contact.locationTitle")}</h2><p>{t("contact.locationSubtitle")}</p></div>
+    {loading ? <div className="contact-location-map contact-location-map-skeleton animate-pulse bg-slate-800" aria-label={t("contact.locationMapLoading")} /> : center ? <div className="contact-location-map"><iframe className="contact-location-map-frame filter invert-[90%] hue-rotate-180 contrast-[85%] grayscale-[10%]" src={mapUrl} title={t("contact.locationTitle")} loading="lazy" onLoad={() => setMapLoading(false)} />{mapLoading ? <div className="contact-location-map-skeleton animate-pulse bg-slate-800" aria-hidden="true" /> : null}</div> : <div className="contact-location-fallback" role="status">{error ? t("contact.locationUnavailable") : t("contact.locationUnavailable")}</div>}
+    {center ? <div className="contact-location-footer"><address>{center.address}</address><a className="primary-button compact-button" href={directionsUrl} target="_blank" rel="noreferrer">{t("contact.getDirections")}</a></div> : null}
+  </article>;
+}
+
 function PublicContentPage({
   slug,
   studentId,
@@ -5204,6 +5333,7 @@ function PublicContentPage({
                 </a>
               </div>
             </article>
+            <CenterLocationCard language={language} t={t} />
             <article className="content-panel contact-form-panel">
               <h2>{t("contact.formTitle")}</h2>
               <p>{view.content.formIntro || t("contact.formSubtitle")}</p>
@@ -9176,11 +9306,11 @@ function LegacyScannerPanel({ session, language, t, selectedSessionId = "", onOp
           <p>{t("scanner.inputLabel")}</p>
         </div>
       </div>
-      <button className="secondary-button compact-button scanner-camera-button" type="button" onClick={onOpenCamera}>
+      <button className="secondary-button compact-button scanner-camera-button bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white dark:border-slate-700" type="button" onClick={onOpenCamera}>
         <span aria-hidden="true">▥</span>{t("scanner.openCamera")}
       </button>
       <form className="scanner-manual-form" onSubmit={(event) => void scan(codeRef.current, event)}>
-        <label className="scanner-manual-field-label" htmlFor="legacy-scanner-panel-code">
+        <label className="scanner-manual-field-label text-slate-600 dark:text-slate-400" htmlFor="legacy-scanner-panel-code">
           {t("scanner.inputLabel")}
         </label>
         <div className="scanner-manual-row">
@@ -9195,6 +9325,7 @@ function LegacyScannerPanel({ session, language, t, selectedSessionId = "", onOp
             onKeyDown={handleCodeKeyDown}
             placeholder={t("scanner.inputPlaceholder")}
             autoComplete="off"
+            className="bg-white text-slate-900 border-slate-300 placeholder-slate-400 dark:bg-slate-900/50 dark:text-white dark:border-slate-700 dark:placeholder-slate-500 focus:ring-2 focus:ring-orange-500/50"
             disabled={scanning}
           />
           <button className="primary-button scanner-submit-button" type="submit" disabled={scanning || !code.trim()}>
@@ -9238,11 +9369,11 @@ function ScannerPanel({ session, language, t, selectedSessionId = "", onOpenCame
           <p>{t("scanner.inputLabel")}</p>
         </div>
       </div>
-      <button className="secondary-button compact-button scanner-camera-button" type="button" onClick={onOpenCamera}>
+      <button className="secondary-button compact-button scanner-camera-button bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-white dark:border-slate-700" type="button" onClick={onOpenCamera}>
         <span aria-hidden="true">▥</span>{t("scanner.openCamera")}
       </button>
       <form className="scanner-manual-form" onSubmit={scanner.handleSubmit}>
-        <label className="scanner-manual-field-label" htmlFor="scanner-panel-code">
+        <label className="scanner-manual-field-label text-slate-600 dark:text-slate-400" htmlFor="scanner-panel-code">
           {t("scanner.inputLabel")}
         </label>
         <div className="scanner-manual-row">
@@ -9257,6 +9388,7 @@ function ScannerPanel({ session, language, t, selectedSessionId = "", onOpenCame
             onKeyDown={scanner.handleInputKeyDown}
             placeholder={t("scanner.inputPlaceholder")}
             autoComplete="off"
+            className="bg-white text-slate-900 border-slate-300 placeholder-slate-400 dark:bg-slate-900/50 dark:text-white dark:border-slate-700 dark:placeholder-slate-500 focus:ring-2 focus:ring-orange-500/50"
           />
           <button className="primary-button scanner-submit-button" type="submit" disabled={!scanner.inputValue.trim()}>
             {scanner.pendingCount ? `${t("dashboard.refreshing")} · ${scanner.pendingCount}` : t("scanner.submit")}
