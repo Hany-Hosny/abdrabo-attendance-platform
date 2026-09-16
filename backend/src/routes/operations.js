@@ -4,7 +4,7 @@ import XLSX from "xlsx";
 import { pool, query } from "../db/pool.js";
 import { requireAnyPermission, requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
 import { createAuditAccessToken, hashPassword, verifyAuditAccessToken, verifyPassword } from "../services/auth.js";
-import { ensureMonthlyFees, getAdvanceOptions, getFeeSummary, recordAdvancePayment, recordFullPayment } from "../services/fees.js";
+import { ensureMonthlyFees, getAdvanceOptions, getFeeSummary, recordAdvancePayment, recordFullPayment, reversePayment } from "../services/fees.js";
 import { finalizeExpiredAttendanceSessions } from "../services/attendanceFinalizer.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { cairoDateString } from "../utils/time.js";
@@ -19,9 +19,12 @@ import { enqueueAttendanceNotificationInTransaction, settleAbsenceNotificationJo
 import { MANUAL_ATTENDANCE_STATUSES } from "../utils/attendanceStatus.js";
 import { missingPaymentIdempotencyMessage, readRequiredPaymentIdempotencyKey } from "../utils/paymentIdempotency.js";
 import { appendGroupScope, hasGroupAccess, isGroupScopeRestricted, normalizeGroupIds } from "../services/groupAccess.js";
+import { setFinancialCacheHeaders } from "../utils/cacheHeaders.js";
 
 export const operationsRouter = express.Router();
 operationsRouter.use(requireTeacher);
+operationsRouter.use("/payments", setFinancialCacheHeaders);
+operationsRouter.use("/fees", setFinancialCacheHeaders);
 // Every fee/payment workflow is gated by the base view capability. Action and
 // report middleware below then apply the narrower capability for that route.
 operationsRouter.use("/fees/payments", requirePermission("payments.view"));
@@ -36,8 +39,17 @@ function groupAccessDenied(res) {
 
 function paymentReversalFailure(res, error) {
   const code = String(error?.code || "");
+  const message = typeof error?.message === "string" && error.message.trim() ? error.message : undefined;
+  if (code === "idempotency_conflict") return res.status(409).json({ ok: false, status: code, message });
+  if (code === "idempotency_incomplete") return res.status(409).json({ ok: false, status: "idempotency_in_progress", message });
+  if (code === "payment_not_found") return res.status(404).json({ ok: false, status: code, message });
+  if (code === "group_access_forbidden") return res.status(403).json({ ok: false, status: code, message });
+  if (["payment_student_missing", "payment_student_group_mismatch", "payment_group_missing", "payment_history_incomplete", "malformed_payment_months", "duplicate_payment_month", "fee_due_not_found", "fee_due_relationship_invalid", "invalid_covered_amount", "covered_total_mismatch", "fee_due_insufficient_paid", "fee_due_allocation_mismatch"].includes(code)) {
+    return res.status(409).json({ ok: false, status: code, message });
+  }
   if (code === "23505") return res.status(409).json({ ok: false, status: "already_reversed" });
-  if (code === "23514") return res.status(400).json({ ok: false, status: "payment_not_reversible" });
+  if (code === "23514" || code === "payment_not_reversible") return res.status(400).json({ ok: false, status: "payment_not_reversible", message });
+  if (code === "reversal_audit_log_failed") return res.status(503).json({ ok: false, status: code, message });
   if (code === "42P01" || code === "42703" || code === "23503" || code === "23502" || code === "22P02") {
     return res.status(503).json({ ok: false, status: "reversal_unavailable" });
   }
@@ -329,6 +341,7 @@ operationsRouter.get("/payments/report", requirePermission("payments.view"), req
     if (req.query.grade_level) add("COALESCE(g.grade_level,g.grade) ILIKE ?", `%${normalizeDigits(req.query.grade_level).trim()}%`);
     appendGroupScope(filters, values, req.teacher, "p.group_id");
     const result = await query(`SELECT p.id, ${paymentTimestamp} AS paid_at, p.amount, p.payment_months, p.payment_type, p.whatsapp_notified,
+        (pr.id IS NOT NULL) AS is_reversed, pr.created_at AS reversed_at,
         COALESCE(p.student_name_snapshot,s.full_name) AS full_name,
         COALESCE(p.student_code_snapshot,s.student_code) AS student_code,
         COALESCE(p.student_serial_snapshot,s.student_serial) AS student_serial,
@@ -338,8 +351,9 @@ operationsRouter.get("/payments/report", requirePermission("payments.view"), req
         COALESCE(u.name,u.username,u.email,'Staff') AS paid_by
       FROM payments p LEFT JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id
       LEFT JOIN teachers u ON u.id=COALESCE(p.paid_by,p.recorded_by)
-      WHERE ${filters.join(" AND ")} AND ${activePaymentFilter} ORDER BY ${paymentTimestamp} DESC`, values);
-    res.json({ ok: true, payments: result.rows, total_paid: result.rows.reduce((sum, row) => sum + Number(row.amount), 0), payment_count: result.rowCount });
+      LEFT JOIN payment_reversals pr ON pr.payment_id = p.id
+      WHERE ${filters.join(" AND ")} ORDER BY ${paymentTimestamp} DESC`, values);
+    res.json({ ok: true, payments: result.rows, total_paid: result.rows.filter((row) => !row.is_reversed).reduce((sum, row) => sum + Number(row.amount), 0), payment_count: result.rowCount });
   } catch (error) { next(error); }
 });
 
@@ -347,7 +361,10 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("pa
   const paymentId = Number(req.params.paymentId);
   const reason = String(req.body?.reason || "").trim();
   const securityPin = normalizeDigits(req.body?.security_pin || req.body?.audit_pin || "").trim();
+  const idempotency = readRequiredPaymentIdempotencyKey(req, { allowBody: false });
   if (!Number.isSafeInteger(paymentId) || paymentId <= 0) return res.status(400).json({ ok: false, status: "invalid_payment" });
+  if (idempotency.error === "missing_idempotency_key") return res.status(400).json({ ok: false, status: idempotency.error, message: missingPaymentIdempotencyMessage });
+  if (idempotency.error) return res.status(400).json({ ok: false, status: idempotency.error });
   if (reason.length < 3 || reason.length > 500) return res.status(400).json({ ok: false, status: "invalid_reason", message: "A reversal reason is required. / يجب إدخال سبب عكس الدفعة." });
   if (!/^\d{4}$/.test(securityPin)) return res.status(400).json({ ok: false, status: "security_code_required", message: "A 4-digit security code is required. / يجب إدخال رمز الحماية المكون من 4 أرقام." });
 
@@ -368,81 +385,13 @@ operationsRouter.post("/fees/payments/:paymentId/reverse", requirePermission("pa
     return res.status(statusCode).json({ ok: false, status: pinCheck.status, message: messages[pinCheck.status] || messages.invalid_audit_pin });
   }
 
-  let client = null;
   try {
-    client = await pool.connect();
-    await client.query("BEGIN");
-    const paymentResult = await client.query(`
-      SELECT p.*, s.full_name, s.student_code, s.student_serial, s.scan_serial,
-        COALESCE(g.display_name, g.name) AS group_name,
-        COALESCE(g.grade_level, g.grade) AS grade_level
-      FROM payments p
-      LEFT JOIN students s ON s.id = p.student_id
-      JOIN groups g ON g.id = p.group_id
-      WHERE p.id = $1
-      FOR UPDATE
-    `, [paymentId]);
-    if (!paymentResult.rowCount) {
-      await client.query("ROLLBACK");
-      return res.status(404).json({ ok: false, status: "payment_not_found" });
-    }
-    const payment = paymentResult.rows[0];
-    if (!Number.isFinite(Number(payment.amount)) || Number(payment.amount) <= 0) {
-      await client.query("ROLLBACK");
-      return res.status(400).json({ ok: false, status: "payment_not_reversible" });
-    }
-    if (!hasGroupAccess(req.teacher, payment.group_id)) {
-      await client.query("ROLLBACK");
-      return groupAccessDenied(res);
-    }
-    const existing = await client.query("SELECT id, created_at FROM payment_reversals WHERE payment_id = $1", [paymentId]);
-    if (existing.rowCount) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({ ok: false, status: "already_reversed", reversal: existing.rows[0] });
-    }
-
-    const reversal = await client.query(`
-      INSERT INTO payment_reversals (payment_id, reversed_by, reason, original_amount)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, payment_id, reversed_by, reason, original_amount, created_at
-    `, [paymentId, req.teacher.id, reason, payment.amount]);
-
-    const months = Array.isArray(payment.payment_months) ? payment.payment_months : [];
-    for (const covered of months) {
-      const month = String(covered?.month || "").slice(0, 10);
-      const amount = Number(covered?.amount || 0);
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount <= 0) continue;
-      await client.query(`
-        UPDATE fee_dues
-        SET paid_amount = GREATEST(0, paid_amount - $1)
-        WHERE student_id = $2 AND due_month = $3::date
-      `, [amount, payment.student_id, month]);
-    }
-
-    await auditLog({ db: client, action: "payment_reversed", actorId: req.teacher.id, studentId: payment.student_id, paymentId, request: req, details: {
-      reversal_id: reversal.rows[0].id,
-      reason,
-      original_amount: Number(payment.amount),
-      status_before: "paid",
-      status_after: "reversed",
-      payment_date: payment.payment_date,
-      payment_type: payment.payment_type,
-      payment_method: payment.payment_method,
-      payment_months: months,
-      student_name_snapshot: payment.student_name_snapshot || payment.full_name,
-      student_code_snapshot: payment.student_code_snapshot || payment.student_code,
-      student_serial_snapshot: payment.student_serial_snapshot || payment.student_serial,
-      group_name_snapshot: payment.group_name_snapshot || payment.group_name,
-      grade_level_snapshot: payment.grade_level_snapshot || payment.grade_level
-    }});
-    await client.query("COMMIT");
-    return res.status(201).json({ ok: true, reversal: reversal.rows[0] });
+    const result = await reversePayment({ paymentId, actorId: req.teacher.id, reason, user: req.teacher, idempotencyKey: idempotency.idempotencyKey, request: req });
+    if (result.alreadyReversed) return res.status(409).json({ ok: false, status: "already_reversed", reversal: result.reversal });
+    return res.status(result.replayed ? 200 : 201).json({ ok: true, reversal: result.reversal, replayed: Boolean(result.replayed) });
   } catch (error) {
-    await client?.query("ROLLBACK").catch(() => undefined);
     console.error("Payment reversal failed", { code: error?.code || "unknown" });
     return paymentReversalFailure(res, error);
-  } finally {
-    client?.release();
   }
 });
 
@@ -1452,7 +1401,8 @@ operationsRouter.get("/fees/payments", requirePermission("payments.view"), requi
     if (req.query.from) { values.push(String(req.query.from)); filters.push(`COALESCE(p.paid_at,p.payment_date) >= $${values.length}::date`); }
     if (req.query.to) { values.push(String(req.query.to)); filters.push(`COALESCE(p.paid_at,p.payment_date) < ($${values.length}::date + INTERVAL '1 day')`); }
     appendGroupScope(filters, values, req.teacher, "p.group_id");
-    const result = await query(`SELECT p.*, COALESCE(p.student_name_snapshot,s.full_name) AS full_name,
+    const result = await query(`SELECT p.*, (pr.id IS NOT NULL) AS is_reversed, pr.created_at AS reversed_at,
+      COALESCE(p.student_name_snapshot,s.full_name) AS full_name,
       COALESCE(p.student_serial_snapshot,s.student_serial) AS student_serial,
       COALESCE(p.student_code_snapshot,s.student_code) AS student_code,
       s.phone, s.guardian_phone,
@@ -1461,8 +1411,9 @@ operationsRouter.get("/fees/payments", requirePermission("payments.view"), requi
       u.name AS recorded_by_name
       FROM payments p LEFT JOIN students s ON s.id=p.student_id JOIN groups g ON g.id=p.group_id
       LEFT JOIN teachers u ON u.id=COALESCE(p.paid_by,p.recorded_by)
-      WHERE ${filters.join(" AND ")} AND ${activePaymentFilter} ORDER BY COALESCE(p.paid_at,p.payment_date) DESC`, values);
-    res.json({ ok: true, payments: result.rows, total_collected: result.rows.reduce((sum, row) => sum + Number(row.amount), 0) });
+      LEFT JOIN payment_reversals pr ON pr.payment_id = p.id
+      WHERE ${filters.join(" AND ")} ORDER BY COALESCE(p.paid_at,p.payment_date) DESC`, values);
+    res.json({ ok: true, payments: result.rows, total_collected: result.rows.filter((row) => !row.is_reversed).reduce((sum, row) => sum + Number(row.amount), 0) });
   } catch (error) { next(error); }
 });
 

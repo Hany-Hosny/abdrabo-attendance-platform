@@ -4,12 +4,13 @@ import { hasPermission } from "../services/rbac.js";
 import { getExecutiveDashboard } from "../services/dashboard.js";
 import { listStudentsNeedingAttention } from "../services/studentAttention.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
+import { setFinancialCacheHeaders } from "../utils/cacheHeaders.js";
 
 export const adminDashboardRouter = express.Router();
 adminDashboardRouter.use(requireTeacher);
 adminDashboardRouter.use(requirePermission("dashboard.view"));
 
-adminDashboardRouter.get("/summary", async (req, res, next) => {
+adminDashboardRouter.get("/summary", setFinancialCacheHeaders, async (req, res, next) => {
   try {
     const groupIdValue = normalizeDigits(req.query.group_id || "").trim();
     if (groupIdValue && (!/^\d+$/.test(groupIdValue) || Number(groupIdValue) <= 0)) {

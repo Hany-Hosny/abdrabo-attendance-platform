@@ -1,6 +1,8 @@
+import crypto from "node:crypto";
 import { pool, query } from "../db/pool.js";
 import { auditLog } from "./audit.js";
-import { enqueueAdvancePaymentNotificationInTransaction, enqueueReceiptNotificationInTransaction } from "./whatsapp.js";
+import { enqueueAdvancePaymentNotificationInTransaction, enqueueReceiptNotificationInTransaction, settlePaymentNotificationJobsForReversal } from "./whatsapp.js";
+import { hasGroupAccess, isGroupScopeRestricted } from "./groupAccess.js";
 
 function resolveExecutor(executor = query) {
   if (typeof executor === "function") return executor;
@@ -30,6 +32,262 @@ export function paymentRequestMatches(existing, { studentId, paymentType, paymen
     if (requestedMonths.join(",") !== normalizedPaymentMonths(existing.payment_months).join(",")) return false;
   }
   return true;
+}
+
+const reversalErrorMessages = Object.freeze({
+  idempotency_conflict: "This reversal request conflicts with an existing operation key. No change was committed. / يتعارض طلب عكس الدفعة مع عملية موجودة. لم يتم اعتماد أي تغيير.",
+  idempotency_incomplete: "The previous reversal request did not complete and must be reviewed before retrying. No change was committed. / لم تكتمل عملية عكس الدفعة السابقة، ويجب مراجعتها قبل إعادة المحاولة. لم يتم اعتماد أي تغيير.",
+  payment_not_found: "The payment was not found. No change was committed. / الدفعة غير موجودة. لم يتم اعتماد أي تغيير.",
+  payment_student_missing: "This payment cannot be reversed because its student record is missing or deleted. No change was committed. / لا يمكن عكس هذه الدفعة لأن سجل الطالب غير موجود أو تم حذفه. لم يتم اعتماد أي تغيير.",
+  group_access_forbidden: "You cannot reverse a payment outside your assigned groups. No change was committed. / لا يمكنك عكس دفعة خارج نطاق مجموعاتك. لم يتم اعتماد أي تغيير.",
+  payment_student_group_mismatch: "The payment student does not belong to the payment group. No change was committed. / الطالب المرتبط بالدفعة لا ينتمي إلى مجموعة الدفعة. لم يتم اعتماد أي تغيير.",
+  payment_group_missing: "This payment cannot be reversed because its group record is missing or deleted. No change was committed. / لا يمكن عكس هذه الدفعة لأن سجل المجموعة غير موجود أو تم حذفه. لم يتم اعتماد أي تغيير.",
+  payment_not_reversible: "This payment does not contain a valid reversible amount. No change was committed. / لا تحتوي هذه الدفعة على مبلغ صالح للعكس. لم يتم اعتماد أي تغيير.",
+  payment_history_incomplete: "The payment is missing its covered-dues allocation history. No change was committed. / تفتقد الدفعة سجل توزيع المصروفات المغطاة. لم يتم اعتماد أي تغيير.",
+  malformed_payment_months: "The payment covered-dues data is malformed. No change was committed. / بيانات المصروفات المغطاة في الدفعة غير صحيحة. لم يتم اعتماد أي تغيير.",
+  duplicate_payment_month: "The payment contains duplicate covered months. No change was committed. / تحتوي الدفعة على شهور مكررة ضمن المصروفات المغطاة. لم يتم اعتماد أي تغيير.",
+  covered_total_mismatch: "The covered-dues allocations do not match the payment totals. No change was committed. / لا تتطابق توزيعات المصروفات المغطاة مع إجمالي الدفعة. لم يتم اعتماد أي تغيير.",
+  fee_due_not_found: "A covered fee due could not be found for this student. No change was committed. / تعذر العثور على أحد الاستحقاقات المغطاة لهذا الطالب. لم يتم اعتماد أي تغيير.",
+  fee_due_relationship_invalid: "A covered fee due does not belong to this payment’s student and group. No change was committed. / أحد الاستحقاقات المغطاة لا ينتمي إلى طالب ومجموعة الدفعة. لم يتم اعتماد أي تغيير.",
+  invalid_covered_amount: "A covered allocation is invalid for its fee due. No change was committed. / أحد توزيعات المصروفات المغطاة غير صالح للاستحقاق. لم يتم اعتماد أي تغيير.",
+  fee_due_insufficient_paid: "A covered fee due does not have enough paid balance to reverse. No change was committed. / لا يحتوي أحد الاستحقاقات المغطاة على رصيد مدفوع كافٍ للعكس. لم يتم اعتماد أي تغيير.",
+  fee_due_allocation_mismatch: "A fee due changed while the reversal was being applied. No change was committed. / تغير أحد الاستحقاقات أثناء تنفيذ العكس. لم يتم اعتماد أي تغيير."
+});
+
+function reversalFailure(code, details = {}) {
+  const error = new Error(reversalErrorMessages[code] || `Payment reversal failed (${code}). No change was committed.`);
+  error.code = code;
+  Object.assign(error, details);
+  return error;
+}
+
+function moneyCents(value, { allowZero = true } = {}) {
+  const text = String(value ?? "").trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) return null;
+  const [whole, fraction = ""] = text.split(".");
+  const cents = Number(whole) * 100 + Number((fraction + "00").slice(0, 2));
+  if (!Number.isSafeInteger(cents) || (!allowZero && cents <= 0)) return null;
+  return cents;
+}
+
+function validDueMonth(value) {
+  const text = String(value ?? "").trim();
+  if (!/^\d{4}-(?:0[1-9]|1[0-2])-01$/.test(text)) return false;
+  const date = new Date(`${text}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === text;
+}
+
+function parseReversalMonths(value) {
+  if (!Array.isArray(value) || value.length === 0) throw reversalFailure("payment_history_incomplete");
+  const seen = new Set();
+  const months = value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) throw reversalFailure("malformed_payment_months");
+    const keys = Object.keys(entry);
+    if (keys.length !== 2 || !keys.includes("month") || !keys.includes("amount") || typeof entry.month !== "string" || typeof entry.amount !== "number" || !Number.isFinite(entry.amount)) {
+      throw reversalFailure("malformed_payment_months");
+    }
+    const month = entry.month.trim();
+    const amountCents = moneyCents(entry.amount, { allowZero: false });
+    if (!validDueMonth(month) || amountCents === null) throw reversalFailure("malformed_payment_months");
+    if (seen.has(month)) throw reversalFailure("duplicate_payment_month");
+    seen.add(month);
+    return { month, amountCents };
+  });
+  return months.sort((left, right) => left.month.localeCompare(right.month));
+}
+
+function reversalFingerprint(paymentId, reason) {
+  return crypto.createHash("sha256")
+    .update(JSON.stringify({ operation: "payment_reversal_v1", payment_id: paymentId, reason }))
+    .digest("hex");
+}
+
+export async function reversePayment({ paymentId, actorId, reason, user, idempotencyKey, request = null, dbPool = pool }) {
+  const fingerprint = reversalFingerprint(paymentId, reason);
+  const client = await dbPool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const insertedKey = await client.query(
+      `INSERT INTO payment_reversal_idempotency (idempotency_key, payment_id, request_fingerprint)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (idempotency_key) DO NOTHING
+       RETURNING idempotency_key`,
+      [idempotencyKey, paymentId, fingerprint]
+    );
+    if (!insertedKey.rowCount) {
+      const existingKey = await client.query(
+        `SELECT payment_id, request_fingerprint, reversal_id, response
+         FROM payment_reversal_idempotency
+         WHERE idempotency_key = $1
+         FOR UPDATE`,
+        [idempotencyKey]
+      );
+      const record = existingKey.rows[0];
+      if (!record || Number(record.payment_id) !== paymentId || record.request_fingerprint !== fingerprint) {
+        throw reversalFailure("idempotency_conflict");
+      }
+      if (record.reversal_id && record.response) {
+        if (request) request.auditLogged = true;
+        await client.query("COMMIT");
+        return { replayed: true, reversal: record.response };
+      }
+      throw reversalFailure("idempotency_incomplete");
+    }
+
+    const paymentResult = await client.query("SELECT * FROM payments WHERE id = $1 FOR UPDATE", [paymentId]);
+    if (!paymentResult.rowCount) throw reversalFailure("payment_not_found");
+    const payment = paymentResult.rows[0];
+
+    const existingReversal = await client.query(
+      `SELECT id, payment_id, reversed_by, reason, original_amount, covered_amount,
+          discount_amount, exemption_amount, created_at
+       FROM payment_reversals WHERE payment_id = $1`,
+      [paymentId]
+    );
+    if (existingReversal.rowCount) {
+      await client.query("ROLLBACK");
+      return { alreadyReversed: true, reversal: existingReversal.rows[0] };
+    }
+
+    if (payment.student_id == null) throw reversalFailure("payment_student_missing");
+    if (!hasGroupAccess(user, payment.group_id)) throw reversalFailure("group_access_forbidden");
+
+    const studentResult = await client.query(
+      `SELECT id, group_id, full_name, student_code, student_serial, scan_serial, is_active, deleted_at
+       FROM students WHERE id = $1 FOR UPDATE`,
+      [payment.student_id]
+    );
+    const student = studentResult.rows[0];
+    if (!student || student.deleted_at) throw reversalFailure("payment_student_missing");
+    if (Number(student.group_id) !== Number(payment.group_id)) throw reversalFailure("payment_student_group_mismatch");
+
+    const groupResult = await client.query(
+      `SELECT id, name, display_name, grade, grade_level, is_active, deleted_at
+       FROM groups WHERE id = $1 FOR UPDATE`,
+      [payment.group_id]
+    );
+    const group = groupResult.rows[0];
+    if (!group || group.deleted_at) throw reversalFailure("payment_group_missing");
+    if (isGroupScopeRestricted(user) && !group.is_active) throw reversalFailure("group_access_forbidden");
+
+    const netCents = moneyCents(payment.amount);
+    const paidCents = moneyCents(payment.paid_amount);
+    const discountCents = moneyCents(payment.discount_amount);
+    if (netCents === null || paidCents === null || discountCents === null || paidCents !== netCents) {
+      throw reversalFailure("payment_not_reversible");
+    }
+    if (payment.is_exempt === true && netCents !== 0) throw reversalFailure("payment_not_reversible");
+    const exemptionCents = payment.is_exempt === true ? discountCents : 0;
+    const coveredCents = netCents + discountCents;
+    if (coveredCents <= 0 || (payment.is_exempt === true && exemptionCents <= 0)) {
+      throw reversalFailure("payment_not_reversible");
+    }
+    const months = parseReversalMonths(payment.payment_months);
+    const allocatedCents = months.reduce((sum, item) => {
+      const next = sum + item.amountCents;
+      return Number.isSafeInteger(next) ? next : null;
+    }, 0);
+    if (allocatedCents === null || allocatedCents !== coveredCents) {
+      throw reversalFailure("covered_total_mismatch");
+    }
+
+    const dueResult = await client.query(
+      `SELECT id, student_id, group_id, to_char(due_month, 'YYYY-MM-DD') AS due_month, amount, paid_amount
+       FROM fee_dues
+       WHERE student_id = $1 AND due_month = ANY($2::date[])
+       ORDER BY due_month, id
+       FOR UPDATE`,
+      [payment.student_id, months.map((item) => item.month)]
+    );
+    if (dueResult.rowCount !== months.length) throw reversalFailure("fee_due_not_found");
+    const duesByMonth = new Map(dueResult.rows.map((due) => [String(due.due_month).slice(0, 10), due]));
+    for (const covered of months) {
+      const due = duesByMonth.get(covered.month);
+      const dueCents = moneyCents(due?.amount, { allowZero: false });
+      const paidDueCents = moneyCents(due?.paid_amount);
+      if (!due) throw reversalFailure("fee_due_not_found");
+      if (Number(due.student_id) !== Number(payment.student_id) || Number(due.group_id) !== Number(payment.group_id)) {
+        throw reversalFailure("fee_due_relationship_invalid");
+      }
+      if (dueCents === null || paidDueCents === null || paidDueCents > dueCents || covered.amountCents > dueCents) {
+        throw reversalFailure("invalid_covered_amount");
+      }
+      if (paidDueCents < covered.amountCents) throw reversalFailure("fee_due_insufficient_paid");
+    }
+
+    for (const covered of months) {
+      const restored = await client.query(
+        `UPDATE fee_dues
+         SET paid_amount = paid_amount - $1::numeric
+         WHERE student_id = $2 AND group_id = $3 AND due_month = $4::date
+           AND paid_amount >= $1::numeric
+         RETURNING id, paid_amount`,
+        [covered.amountCents / 100, payment.student_id, payment.group_id, covered.month]
+      );
+      const originalPaidCents = moneyCents(duesByMonth.get(covered.month)?.paid_amount);
+      const expectedPaidCents = originalPaidCents === null ? null : originalPaidCents - covered.amountCents;
+      const restoredPaidCents = moneyCents(restored.rows[0]?.paid_amount);
+      if (restored.rowCount !== 1 || expectedPaidCents === null || expectedPaidCents < 0 || restoredPaidCents !== expectedPaidCents) {
+        throw reversalFailure("fee_due_allocation_mismatch");
+      }
+    }
+
+    const reversal = await client.query(
+      `INSERT INTO payment_reversals
+         (payment_id, reversed_by, reason, original_amount, covered_amount, discount_amount, exemption_amount)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, payment_id, reversed_by, reason, original_amount, covered_amount,
+         discount_amount, exemption_amount, created_at`,
+      [paymentId, actorId, reason, netCents / 100, coveredCents / 100, discountCents / 100, exemptionCents / 100]
+    );
+    const whatsappJobs = await settlePaymentNotificationJobsForReversal({ client, paymentId });
+    const reversalRecord = reversal.rows[0];
+    const response = { ...reversalRecord };
+    await client.query(
+      `UPDATE payment_reversal_idempotency
+       SET reversal_id = $2, response = $3::jsonb
+       WHERE idempotency_key = $1`,
+      [idempotencyKey, reversalRecord.id, JSON.stringify(response)]
+    );
+    try {
+      await auditLog({
+        db: client,
+        action: "payment_reversed",
+        actorId,
+        studentId: payment.student_id,
+        paymentId,
+        request,
+        details: {
+          reversal_id: reversalRecord.id,
+          reason,
+          original_amount: netCents / 100,
+          covered_amount: coveredCents / 100,
+          discount_amount: discountCents / 100,
+          exemption_amount: exemptionCents / 100,
+          status_before: "paid",
+          status_after: "reversed",
+          payment_type: payment.payment_type,
+          payment_method: payment.payment_method,
+          payment_months: months.map((item) => ({ month: item.month, amount: item.amountCents / 100 })),
+          whatsapp_jobs: whatsappJobs.map((job) => ({ id: job.id, notification_type: job.notification_type, status: job.status, send_started: Boolean(job.send_started_at) }))
+        },
+        throwOnError: true
+      });
+    } catch (error) {
+      const auditError = new Error("The reversal audit record could not be written. No change was committed. / تعذر تسجيل سجل عكس الدفعة. لم يتم اعتماد أي تغيير.");
+      auditError.code = "reversal_audit_log_failed";
+      auditError.cause = error;
+      throw auditError;
+    }
+    await client.query("COMMIT");
+    return { reversal: response };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // Creates any missing monthly dues up to the current month.

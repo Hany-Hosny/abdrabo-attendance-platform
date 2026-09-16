@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { absenceCorrectionTransition, applyTemplate, buildStudentPortalLink, enqueueGradeNotificationInTransaction, formatWhatsAppMonthList, gradeQueuePreviewPayload, normalizeEgyptianPhone, normalizeManualRetryReason, paymentMonthsValue, validateWhatsAppSettings } from "../src/services/whatsapp.js";
+import { absenceCorrectionTransition, applyTemplate, buildStudentPortalLink, enqueueGradeNotificationInTransaction, formatWhatsAppMonthList, gradeQueuePreviewPayload, normalizeEgyptianPhone, normalizeManualRetryReason, paymentMonthsValue, validateWhatsAppSettings, validateWhatsAppTemplate } from "../src/services/whatsapp.js";
 import { hasPermission } from "../src/services/rbac.js";
 import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "../src/services/auth.js";
 
@@ -27,6 +27,16 @@ test("renders both placeholder formats and normalizes camelCase keys", () => {
     portal_link: "https://example.com/student/A-4260",
     "portal-link": "https://example.com/student/A-4260"
   }), "Ahmed / A-4260 / https://example.com/student/A-4260 / https://example.com/student/A-4260");
+});
+
+test("validates the required placeholder for each WhatsApp template category", () => {
+  assert.equal(validateWhatsAppTemplate("attendance", "Hello {student_name}").ok, true);
+  assert.equal(validateWhatsAppTemplate("absence", "Absent: {{ student_name }}").ok, true);
+  assert.equal(validateWhatsAppTemplate("grade", "Result: {exam_title}").ok, true);
+  assert.equal(validateWhatsAppTemplate("receipt", "Paid: {amount_paid}").ok, true);
+  assert.equal(validateWhatsAppTemplate("advance_payment", "Months: {months}").ok, true);
+  assert.equal(validateWhatsAppTemplate("receipt", "Paid successfully").ok, false);
+  assert.equal(validateWhatsAppTemplate("advance_payment", "Paid: {amount_paid}").ok, false);
 });
 
 test("creates a short opaque portal link with a hashed one-hour access token", () => {

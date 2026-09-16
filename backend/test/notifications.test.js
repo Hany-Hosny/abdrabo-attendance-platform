@@ -1,6 +1,78 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { formatAggregatedNotification, getAggregatedNotificationRecipients, upsertAggregatedNotification } from "../src/services/notifications.js";
+import { NotificationType } from "../src/services/notificationTypes.js";
 import { recordWhatsAppConnectionNotification } from "../src/services/notifications.js";
+
+test("formats aggregated notifications with singular and plural copy", () => {
+  assert.equal(
+    formatAggregatedNotification({ type: NotificationType.ATTENDANCE_ABSENCE, groupName: "Grade 7-A", studentCount: 1 }).message,
+    "1 student in Grade 7-A missed today's session."
+  );
+  assert.equal(
+    formatAggregatedNotification({ type: NotificationType.LOW_EXAM_GRADE, groupName: "Grade 7-A", examName: "Midterm Exam", studentCount: 5, threshold: 50 }).message,
+    "5 students in Grade 7-A scored below 50% in Midterm Exam."
+  );
+});
+
+test("aggregated notification upsert creates once and deduplicates retries", async () => {
+  const calls = [];
+  let first = true;
+  const db = async (sql, params) => {
+    calls.push({ sql, params });
+    return { rowCount: 1, rows: [{ id: 42, inserted: first }] };
+  };
+  const input = {
+    type: NotificationType.UNPAID_FEES,
+    groupId: 7,
+    referenceId: "2026-10",
+    groupName: "Grade 7-A",
+    studentCount: 8,
+    metadata: { billingPeriod: "2026-10", paymentStatus: "unpaid" },
+    recipients: [{ id: 3 }],
+    db
+  };
+  const created = await upsertAggregatedNotification(input);
+  first = false;
+  const retried = await upsertAggregatedNotification(input);
+
+  assert.deepEqual(created, { created: 1, deduplicated: 0, skipped: false });
+  assert.deepEqual(retried, { created: 0, deduplicated: 1, skipped: false });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].params[0], 3);
+  assert.equal(calls[0].params[1], NotificationType.UNPAID_FEES);
+  assert.equal(calls[0].params[8], "2026-10");
+  assert.match(calls[0].params[11], /^unpaid_fees:recipient:3:group:7:reference:2026-10$/);
+});
+
+test("aggregated notification upsert skips zero-result groups", async () => {
+  let calls = 0;
+  const result = await upsertAggregatedNotification({
+    type: NotificationType.ATTENDANCE_ABSENCE,
+    groupId: 7,
+    referenceId: "123",
+    groupName: "Grade 7-A",
+    studentCount: 0,
+    recipients: [3],
+    db: async () => { calls += 1; return { rows: [] }; }
+  });
+  assert.deepEqual(result, { created: 0, deduplicated: 0, skipped: true });
+  assert.equal(calls, 0);
+});
+
+test("aggregated recipients preserve permissions and group scope", async () => {
+  const recipients = await getAggregatedNotificationRecipients({
+    type: NotificationType.UNPAID_FEES,
+    groupId: 7,
+    db: async () => ({ rows: [
+      { id: 1, role: "owner", permissions: [], group_ids: [] },
+      { id: 2, role: "staff", permissions: ["payments.reports.view", "dashboard.alerts.view"], group_ids: [7] },
+      { id: 3, role: "staff", permissions: ["dashboard.alerts.view"], group_ids: [7] },
+      { id: 4, role: "staff", permissions: ["payments.reports.view", "dashboard.alerts.view"], group_ids: [8] }
+    ] })
+  });
+  assert.deepEqual(recipients.map((recipient) => recipient.id), [1, 2]);
+});
 
 test("records WhatsApp disconnect alerts only for active users with WhatsApp view access", async () => {
   const inserts = [];

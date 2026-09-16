@@ -18,12 +18,19 @@ const SENSITIVE_KEYS = new Set([
   "settings_encryption_key",
   "confirmation",
   "security_pin",
-  "audit_pin"
+  "audit_pin",
+  "phone",
+  "guardian_phone",
+  "phone_number",
+  "message",
+  "message_body",
+  "body",
+  "rendered_message"
 ]);
 
 function isSensitiveKey(key) {
   const normalized = String(key).toLowerCase();
-  return SENSITIVE_KEYS.has(normalized) || normalized.includes("password") || normalized.includes("token") || normalized.includes("secret") || normalized.includes("apikey") || normalized.includes("api_key") || normalized.includes("encrypted_value") || normalized.includes("auth_tag");
+  return SENSITIVE_KEYS.has(normalized) || normalized.includes("password") || normalized.includes("token") || normalized.includes("secret") || normalized.includes("apikey") || normalized.includes("api_key") || normalized.includes("encrypted_value") || normalized.includes("auth_tag") || normalized.includes("phone");
 }
 
 export function sanitizeAuditValue(value, key = "") {
@@ -176,7 +183,7 @@ export async function auditLog({
     if (request) request.auditLogged = true;
     return result.rows?.[0] || null;
   } catch (error) {
-    console.error("Failed to write audit log", { action, error: error.message });
+    console.error("Failed to write audit log", { action, error_code: error?.code || "unknown" });
     if (throwOnError) throw error;
     return null;
   }

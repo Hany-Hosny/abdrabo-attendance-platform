@@ -33,9 +33,10 @@ export function PublicLayout({
   const footerText = "© 2026 Mr. Ahmed Abdrabo · Designed & Developed by Eng. Hany Hosny";
 
   const noScrollPage = currentPath === "/about-teacher" || currentPath === "/login";
+  const direction = language === "ar" ? "rtl" : "ltr";
 
   return (
-    <div className={`landing-shell public-layout public-layout-${variant} ${noScrollPage ? "public-layout-no-scroll" : ""} landing-theme-${theme}`} dir={language} lang={language}>
+    <div className={`landing-shell public-layout public-layout-${variant} ${noScrollPage ? "public-layout-no-scroll" : ""} landing-theme-${theme}`} dir={direction} lang={language}>
       {background}
       <div className="landing-overlay public-layout-overlay">
         <PublicHeader

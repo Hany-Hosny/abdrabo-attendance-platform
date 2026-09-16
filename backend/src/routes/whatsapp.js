@@ -13,7 +13,8 @@ import {
   enqueueGradeNotification,
   retryWhatsAppNotificationJob,
   updateWhatsAppSettings,
-  resolveWhatsAppTemplate
+  resolveWhatsAppTemplate,
+  validateWhatsAppTemplate
 } from "../services/whatsapp.js";
 
 export const whatsappRouter = express.Router();
@@ -109,6 +110,14 @@ whatsappRouter.post("/templates", requirePermission("whatsapp.manage"), async (r
     const messageBody = String(req.body?.message_body || "").trim();
     if (!TEMPLATE_CATEGORIES.has(category)) return res.status(400).json({ ok: false, status: "invalid_template_category" });
     if (messageBody.length < 5 || messageBody.length > 2000) return res.status(400).json({ ok: false, status: "invalid_template_length" });
+    const validation = validateWhatsAppTemplate(category, messageBody);
+    if (!validation.ok) {
+      return res.status(400).json({
+        ok: false,
+        status: "missing_required_placeholder",
+        required_placeholder: `{${validation.requiredPlaceholder}}`
+      });
+    }
     const result = await query(`INSERT INTO whatsapp_templates (category, message_body, is_active) VALUES ($1, $2, TRUE) RETURNING *`, [category, messageBody]);
     await auditLog({ action: "whatsapp_template_created", actorId: req.teacher.id, request: req, details: { category, template_id: result.rows[0].id } });
     res.status(201).json({ ok: true, template: result.rows[0] });
@@ -125,8 +134,19 @@ whatsappRouter.patch("/templates/:id", requirePermission("whatsapp.manage"), asy
     const isActive = req.body?.is_active == null ? null : req.body.is_active === true;
     if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ ok: false, status: "invalid_template" });
     if (messageBody !== null && (messageBody.length < 5 || messageBody.length > 2000)) return res.status(400).json({ ok: false, status: "invalid_template_length" });
+    const existing = await query("SELECT category FROM whatsapp_templates WHERE id = $1", [id]);
+    if (!existing.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    if (messageBody !== null) {
+      const validation = validateWhatsAppTemplate(existing.rows[0].category, messageBody);
+      if (!validation.ok) {
+        return res.status(400).json({
+          ok: false,
+          status: "missing_required_placeholder",
+          required_placeholder: `{${validation.requiredPlaceholder}}`
+        });
+      }
+    }
     const result = await query(`UPDATE whatsapp_templates SET message_body = COALESCE($2, message_body), is_active = COALESCE($3, is_active), updated_at = NOW() WHERE id = $1 RETURNING *`, [id, messageBody, isActive]);
-    if (!result.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
     res.json({ ok: true, template: result.rows[0] });
   } catch (error) {
     if (error?.code === "23505") return res.status(409).json({ ok: false, status: "duplicate_template" });

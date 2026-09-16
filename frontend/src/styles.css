@@ -30,6 +30,88 @@
   --input-surface: rgba(5, 17, 30, 0.72);
 }
 
+/* Keep audit details reachable on phones: the dialog stays inside the
+   viewport while only its detail body scrolls. */
+@media (max-width: 767px) {
+  .audit-detail-backdrop {
+    align-items: center !important;
+    box-sizing: border-box;
+    overflow: hidden;
+    z-index: 1000 !important;
+    padding: max(12px, var(--safe-top)) max(12px, var(--safe-right)) max(12px, var(--safe-bottom)) max(12px, var(--safe-left)) !important;
+  }
+
+  .audit-detail-modal {
+    align-self: center;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    max-height: min(78dvh, 820px) !important;
+    min-height: 0;
+    border-radius: 16px;
+  }
+
+  .audit-detail-header {
+    align-items: flex-start;
+    padding: 14px !important;
+  }
+
+  .audit-detail-header > div {
+    padding-inline-end: 44px;
+  }
+
+  .audit-detail-header h3 {
+    margin: 8px 0 4px;
+    font-size: 22px;
+  }
+
+  .audit-detail-header p {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .audit-detail-header .modal-close-button {
+    inset-block-start: 10px;
+    inset-inline-end: 10px;
+    z-index: 2;
+    width: 36px;
+    height: 36px;
+    border-color: rgba(242, 140, 40, 0.45);
+    border-radius: 9px;
+    background: rgba(5, 17, 30, 0.72);
+    color: var(--accent-strong);
+  }
+
+  .audit-detail-scroll {
+    flex: 1 1 auto;
+    padding: 12px 14px;
+  }
+
+  .audit-detail-meta > div {
+    padding: 11px;
+  }
+
+  .audit-detail-section {
+    margin-top: 14px;
+    padding-top: 14px;
+  }
+
+  .audit-detail-footer {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    padding: 12px 14px;
+  }
+
+  .audit-detail-footer > span {
+    grid-column: 1 / -1;
+  }
+
+  .audit-detail-footer > button:first-of-type {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Activity Center: a consistent, responsive audit workspace. */
 .audit-center {
   width: 100%;
@@ -109,7 +191,7 @@
 .audit-summary-card span,
 .audit-summary-card small,
 .audit-filter-hint,
-.audit-export-actions > span,
+.audit-export-group > span,
 .audit-detail-meta span,
 .audit-detail-meta small {
   color: var(--muted);
@@ -155,24 +237,26 @@
 
 .audit-filter-collapse-button {
   display: inline-flex;
-  width: 34px;
-  height: 34px;
-  flex: 0 0 34px;
+  width: 100%;
+  min-height: 58px;
+  flex: 1 1 auto;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
   border: 1px solid rgba(242, 140, 40, 0.45);
-  border-radius: 999px;
-  background: transparent;
+  border-radius: 12px;
+  background: rgba(5, 17, 30, 0.42);
   color: var(--accent-strong);
   cursor: pointer;
-  font-size: 22px;
-  line-height: 1;
-  transition: transform 180ms ease, background-color 180ms ease;
+  text-align: start;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
 }
 
 .audit-filter-collapse-button:hover,
 .audit-filter-collapse-button:focus-visible {
   background: rgba(242, 140, 40, 0.12);
+  border-color: var(--accent-strong);
 }
 
 .audit-filter-collapse-button:focus-visible {
@@ -181,20 +265,54 @@
 }
 
 .audit-filter-collapse-button[aria-expanded="true"] {
+  background: rgba(242, 140, 40, 0.08);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+.audit-filter-toggle-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.audit-filter-toggle-copy strong {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.audit-filter-collapse-icon {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border: 1px solid rgba(242, 140, 40, 0.45);
+  border-radius: 999px;
+  font-size: 21px;
+  line-height: 1;
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+.audit-filter-collapse-button[aria-expanded="true"] .audit-filter-collapse-icon {
   transform: rotate(180deg);
+  background: rgba(242, 140, 40, 0.12);
 }
 
 .audit-filter-collapse-content {
   display: grid;
   grid-template-rows: 1fr;
   opacity: 1;
-  transition: grid-template-rows 220ms ease, opacity 180ms ease;
+  visibility: visible;
+  transition: grid-template-rows 220ms ease, opacity 180ms ease, visibility 0s linear;
 }
 
 .audit-filter-collapse-content.is-collapsed {
   grid-template-rows: 0fr;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
+  transition: grid-template-rows 220ms ease, opacity 180ms ease, visibility 0s linear 220ms;
 }
 
 .audit-filter-collapse-inner {
@@ -298,8 +416,44 @@
   font-size: 18px;
 }
 
+.audit-toolbar {
+  align-items: stretch;
+  flex-direction: column;
+}
+
+.audit-toolbar > div:first-child {
+  width: 100%;
+}
+
 .audit-export-actions {
-  justify-content: flex-end;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
+}
+
+.audit-export-group {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.audit-export-group > span {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.audit-export-buttons {
+  display: flex;
+  min-width: 0;
+  gap: 10px;
+}
+
+.audit-export-buttons > button {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 0;
 }
 
 .audit-table-wrap {
@@ -596,7 +750,7 @@
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 767px) {
   .audit-center {
     padding: 16px 12px;
   }
@@ -728,6 +882,262 @@
 
   .audit-change-row b {
     display: none;
+  }
+}
+
+/* Additional mobile audit-log layout rules keep the audit cards shrinkable
+   when shared desktop table styles are applied later in this stylesheet. */
+@media (max-width: 767px) {
+  .admin-shell .audit-center {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    gap: 12px;
+    padding: 12px !important;
+    overflow: hidden;
+  }
+
+  .admin-shell .audit-center-hero,
+  .admin-shell .audit-toolbar {
+    width: 100%;
+    min-width: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .admin-shell .audit-center-hero .section-heading,
+  .admin-shell .audit-toolbar > div:first-child {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-shell .audit-center-hero .section-heading h2 {
+    font-size: clamp(24px, 7vw, 32px);
+  }
+
+  .admin-shell .audit-center-hero-actions,
+  .admin-shell .audit-filter-actions {
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .admin-shell .audit-export-actions {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .admin-shell .audit-export-group,
+  .admin-shell .audit-export-buttons {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-shell .audit-export-buttons {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .admin-shell .audit-center-hero-actions > button,
+  .admin-shell .audit-filter-actions > button {
+    width: 100%;
+    min-width: 0;
+    flex: 0 0 auto;
+  }
+
+  .admin-shell .audit-export-buttons > button {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .admin-shell .audit-summary-grid,
+  .admin-shell .audit-filter-grid,
+  .admin-shell .audit-detail-meta {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .admin-shell .audit-summary-card {
+    min-height: 0;
+    padding: 14px;
+  }
+
+  .admin-shell .audit-filter-panel {
+    width: 100%;
+    min-width: 0;
+    padding: 12px !important;
+  }
+
+  .admin-shell .audit-filter-collapse-button {
+    min-height: 54px;
+    padding: 9px 11px;
+  }
+
+  .admin-shell .audit-filter-toggle-copy strong {
+    font-size: 16px;
+  }
+
+  .admin-shell .audit-filter-collapse-content,
+  .admin-shell .audit-filter-collapse-inner,
+  .admin-shell .audit-filter-grid,
+  .admin-shell .audit-filter-grid label,
+  .admin-shell .audit-filter-grid input,
+  .admin-shell .audit-filter-grid select {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .admin-shell .audit-filter-chips {
+    width: 100%;
+    align-items: stretch;
+  }
+
+  .admin-shell .audit-filter-chips button {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: start;
+  }
+
+  .admin-shell .audit-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .admin-shell .audit-activity-table,
+  .admin-shell .audit-activity-table tbody,
+  .admin-shell .audit-activity-table tr,
+  .admin-shell .audit-activity-table td {
+    display: block;
+    width: 100%;
+    min-width: 0 !important;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .admin-shell .audit-activity-table {
+    border-collapse: separate;
+  }
+
+  .admin-shell .audit-activity-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .admin-shell .audit-activity-table tbody tr {
+    margin-bottom: 10px;
+    padding: 11px 12px;
+    border: 1px solid var(--line);
+    border-inline-start-width: 4px;
+    border-radius: 14px;
+    background: var(--surface);
+  }
+
+  .admin-shell .audit-activity-table td {
+    display: grid;
+    grid-template-columns: minmax(74px, auto) minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px 0;
+    border: 0;
+    text-align: start;
+  }
+
+  .admin-shell .audit-activity-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .admin-shell .audit-activity-table td[data-label=""] {
+    display: flex;
+    justify-content: stretch;
+    padding-top: 10px;
+  }
+
+  .admin-shell .audit-activity-table td[data-label=""]::before {
+    display: none;
+  }
+
+  .admin-shell .audit-activity-table td[data-label=""] .audit-view-button {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-shell .audit-activity-table td strong,
+  .admin-shell .audit-activity-table td small,
+  .admin-shell .audit-activity-table td .audit-event-badge,
+  .admin-shell .audit-activity-table td .audit-outcome {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .admin-shell .audit-activity-table td small.audit-action-description {
+    max-width: 100%;
+  }
+
+  .admin-shell .audit-pagination {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 48px minmax(0, 1fr) 48px;
+    align-items: center;
+  }
+
+  .admin-shell .audit-pagination > button {
+    width: 48px;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .admin-shell .audit-pagination-label {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .admin-shell .audit-detail-backdrop {
+    align-items: stretch;
+    padding: max(8px, var(--safe-top)) max(8px, var(--safe-right)) max(8px, var(--safe-bottom)) max(8px, var(--safe-left));
+  }
+
+  .admin-shell .audit-detail-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    border-radius: 16px;
+  }
+
+  .admin-shell .audit-detail-header,
+  .admin-shell .audit-detail-scroll,
+  .admin-shell .audit-detail-footer {
+    padding-inline: 14px;
+  }
+
+  .admin-shell .audit-detail-header > div {
+    padding-inline-end: 38px;
+  }
+
+  .admin-shell .audit-detail-footer > button {
+    width: 100%;
   }
 }
 
@@ -1563,8 +1973,11 @@
   .skeleton-kpis { grid-template-columns: repeat(3, 1fr); }
 }
 
+@media (max-width: 767px) {
+  .executive-dashboard { gap: 12px; }.executive-title-row { align-items: flex-start; }.executive-title-row h1 { font-size: 28px; }.executive-title-mark { width: 36px; height: 36px; }.executive-filters { grid-template-columns: 1fr; padding: 12px; }.executive-filter-heading { grid-column: auto; }.executive-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }.executive-kpi { min-height: 132px; padding: 13px; }.executive-kpi > strong { font-size: 23px; }.executive-dashboard-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }.dashboard-monitoring-grid { grid-template-columns: 1fr; gap: 12px; }.collection-panel, .student-status-panel, .group-performance-panel, .revenue-panel, .alerts-panel, .recent-payments-panel { grid-column: auto; }.collection-content { grid-template-columns: 1fr; }.collection-donut { width: 155px; }.revenue-chart { height: 150px; }.revenue-labels strong { font-size: 10px; }.revenue-labels span { font-size: 10px; }.dashboard-alert { grid-template-columns: 32px minmax(0, 1fr); }.alert-arrow { grid-column: 2; }.recent-payment-row { grid-template-columns: 29px minmax(0, 1fr) auto; }.recent-payment-row time { grid-column: 2; }.recent-payment-row > b { grid-column: 3; grid-row: 1 / span 2; }.skeleton-kpis { grid-template-columns: 1fr 1fr; }.skeleton-panels { grid-template-columns: 1fr; }.skeleton-panels i { min-height: 180px; }
+}
+
 @media (max-width: 680px) {
-  .executive-dashboard { gap: 12px; }.executive-title-row { align-items: flex-start; }.executive-title-row h1 { font-size: 28px; }.executive-title-mark { width: 36px; height: 36px; }.executive-filters { grid-template-columns: 1fr; padding: 12px; }.executive-filter-heading { grid-column: auto; }.executive-kpi-grid { grid-template-columns: 1fr 1fr; gap: 9px; }.executive-kpi { min-height: 132px; padding: 13px; }.executive-kpi > strong { font-size: 23px; }.executive-dashboard-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }.dashboard-monitoring-grid { grid-template-columns: 1fr; gap: 12px; }.collection-panel, .student-status-panel, .group-performance-panel, .revenue-panel, .alerts-panel, .recent-payments-panel { grid-column: auto; }.collection-content { grid-template-columns: 1fr; }.collection-donut { width: 155px; }.revenue-chart { height: 150px; }.revenue-labels strong { font-size: 10px; }.revenue-labels span { font-size: 10px; }.dashboard-alert { grid-template-columns: 32px minmax(0, 1fr); }.alert-arrow { grid-column: 2; }.recent-payment-row { grid-template-columns: 29px minmax(0, 1fr) auto; }.recent-payment-row time { grid-column: 2; }.recent-payment-row > b { grid-column: 3; grid-row: 1 / span 2; }.skeleton-kpis { grid-template-columns: 1fr 1fr; }.skeleton-panels { grid-template-columns: 1fr; }.skeleton-panels i { min-height: 180px; }
 
   .camera-scanner-backdrop { padding: 0; }
   .camera-scanner-modal { width: 100%; max-height: 100dvh; min-height: 100dvh; padding: calc(16px + env(safe-area-inset-top)) 14px calc(18px + env(safe-area-inset-bottom)); border: 0; border-radius: 0; }
@@ -1656,6 +2069,11 @@ a {
 .audit-logs-panel .section-heading h2 { margin-bottom: 0; }
 .audit-pin-form { max-width: 520px; display: grid; gap: 10px; }
 .audit-pin-form label { gap: 6px; }
+.audit-pin-form .report-actions { justify-content: flex-end; }
+.audit-pin-form .report-actions > button { width: auto; min-width: 220px; }
+.audit-pin-form .audit-action-button { white-space: normal; line-height: 1.25; }
+.audit-pin-form .audit-action-button-error { background: #a74b56; color: #fff; }
+.audit-pin-form .audit-action-button-error:hover { background: #bb5b67; }
 .audit-details { max-width: 420px; max-height: 220px; overflow: auto; white-space: pre-wrap; color: var(--muted); font-size: 0.78rem; text-align: start; direction: ltr; }
 .audit-student-code { display: block; color: var(--muted); margin-top: 4px; }
 .audit-logs-panel .table-wrap { overflow-x: auto; }
@@ -2565,7 +2983,7 @@ textarea {
 }
 
 [dir="rtl"] .landing-grade-card .landing-ribbon,
-[dir="ar"] .landing-grade-card .landing-ribbon {
+[lang="ar"] .landing-grade-card .landing-ribbon {
   right: -16px !important;
   left: auto !important;
   direction: rtl;
@@ -2574,7 +2992,7 @@ textarea {
 }
 
 [dir="ltr"] .landing-grade-card .landing-ribbon,
-[dir="en"] .landing-grade-card .landing-ribbon {
+[lang="en"] .landing-grade-card .landing-ribbon {
   right: auto !important;
   left: -16px !important;
   direction: ltr;
@@ -2588,7 +3006,7 @@ textarea {
   }
 
   [dir="ltr"] .landing-grade-card.is-special .landing-grade-status.is-special-status,
-  [dir="en"] .landing-grade-card.is-special .landing-grade-status.is-special-status {
+  [lang="en"] .landing-grade-card.is-special .landing-grade-status.is-special-status {
     right: 8px !important;
     left: auto !important;
     transform: translateY(-50%);
@@ -2607,14 +3025,14 @@ textarea {
   }
 
   [dir="rtl"] .landing-grade-card .landing-ribbon,
-  [dir="ar"] .landing-grade-card .landing-ribbon {
+  [lang="ar"] .landing-grade-card .landing-ribbon {
     right: -35px !important;
     left: auto !important;
     transform: rotate(45deg);
   }
 
   [dir="ltr"] .landing-grade-card .landing-ribbon,
-  [dir="en"] .landing-grade-card .landing-ribbon {
+  [lang="en"] .landing-grade-card .landing-ribbon {
     right: auto !important;
     left: -35px !important;
     transform: rotate(-45deg);
@@ -3174,6 +3592,9 @@ textarea {
 .whatsapp-delay-card strong { font-size: 13px; line-height: 1.5; }
 .whatsapp-toggle-card small,
 .whatsapp-delay-card small { color: var(--muted); font-size: 11px; line-height: 1.5; }
+.whatsapp-toggle-card em { width: fit-content; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-style: normal; font-weight: 800; line-height: 1.4; }
+.whatsapp-toggle-card em.is-enabled { color: #86efac; background: rgba(30, 189, 122, 0.12); }
+.whatsapp-toggle-card em.is-disabled { color: var(--muted); background: rgba(128, 170, 211, 0.08); }
 .whatsapp-toggle-card input { position: absolute; opacity: 0; pointer-events: none; }
 .whatsapp-toggle-card > i { position: relative; display: block; width: 46px; height: 26px; flex: 0 0 auto; box-sizing: border-box; overflow: hidden; border-radius: 99px; background: #32465c; cursor: pointer; transition: background .2s ease; }
 .whatsapp-toggle-card > i::after { position: absolute; top: 4px; inset-inline-start: 4px; width: 18px; height: 18px; border-radius: 50%; background: #e7f0fb; content: ""; transition: inset-inline-start .2s ease; }
@@ -4031,6 +4452,11 @@ textarea {
   margin-top: 0;
   padding: 8px 14px;
   white-space: nowrap;
+}
+
+.student-card-action-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .student-card-actions .student-card-action {
@@ -5110,6 +5536,10 @@ textarea {
   width: min(1080px, calc(100vw - 32px));
   max-height: min(90vh, 900px);
   overflow-y: auto;
+}
+
+.academic-manager > form {
+  scroll-margin-block-start: calc(var(--safe-top) + 96px);
 }
 
 .profile-section {
@@ -6458,7 +6888,7 @@ textarea:focus-visible {
 .close-button {
   position: absolute;
   top: 14px;
-  inset-inline-start: 14px;
+  inset-inline-end: 14px;
   display: grid;
   width: 36px;
   height: 36px;
@@ -6492,18 +6922,6 @@ textarea:focus-visible {
 
 .close-button:active {
   transform: scale(0.94);
-}
-
-/* Keep the student-code lookup close control on the physical left edge in
-   both writing directions, as requested by the mobile login layout. */
-.student-code-lookup-modal .close-button {
-  inset-inline-start: 14px;
-  inset-inline-end: auto;
-}
-
-[dir="rtl"] .student-code-lookup-modal .close-button {
-  inset-inline-start: auto;
-  inset-inline-end: 14px;
 }
 
 .lookup-result {
@@ -6939,6 +7357,10 @@ textarea:focus-visible {
 
 .notifications-card-content {
   min-width: 0;
+}
+
+.notifications-card.is-actionable .notifications-card-content {
+  cursor: pointer;
 }
 
 .notifications-card-title-row {
@@ -8674,21 +9096,25 @@ th {
 
   .student-card-primary-actions {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     width: 100%;
   }
 
   .student-card-primary-actions .student-card-edit-action {
-    grid-column: 1 / -1;
+    grid-column: auto;
   }
 
   .student-card-action {
-    flex: 1 1 140px;
+    width: 100%;
+    min-height: 48px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
   }
 
   .student-card-delete-action {
     margin-inline-start: 0;
-    justify-self: end;
+    justify-self: stretch;
   }
 
   .status-filter-buttons button:last-child {
@@ -9361,11 +9787,13 @@ th {
 .system-settings-skeleton { display: grid; gap: 12px; }
 .system-settings-skeleton i { display: block; height: 120px; border: 1px solid rgba(128, 170, 211, 0.12); border-radius: 9px; background: linear-gradient(90deg, rgba(255,255,255,.03), rgba(255,255,255,.08), rgba(255,255,255,.03)); background-size: 200% 100%; animation: dashboard-shimmer 1.4s ease-in-out infinite; }
 
-@media (max-width: 760px) {
+@media (max-width: 767px) {
   .system-settings-grid, .system-settings-grid-single, .settings-note-grid { grid-template-columns: 1fr; }
   .system-settings-heading { align-items: stretch; flex-direction: column; }
-  .system-settings-heading-actions { align-items: center; justify-content: space-between; }
-  .system-settings-heading-actions button { width: auto; }
+  .system-settings-heading-actions { align-items: stretch; flex-direction: column; justify-content: flex-start; }
+  .system-settings-heading-actions .form-hint,
+  .system-settings-heading-actions .form-error { overflow-wrap: anywhere; text-align: start; }
+  .system-settings-heading-actions button { width: 100%; }
   .system-settings-actions { align-items: stretch; flex-direction: column; }
   .system-settings-actions button { width: auto; }
   .settings-secret-status { align-items: stretch; flex-direction: column; }
@@ -11261,6 +11689,28 @@ th {
     color: #ffaaa2;
     cursor: pointer;
     font-weight: 800;
+  }
+}
+
+@media (max-width: 767px) {
+  .executive-filters,
+  .executive-dashboard-grid,
+  .dashboard-monitoring-grid,
+  .collection-content {
+    grid-template-columns: 1fr;
+  }
+
+  .executive-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .collection-panel,
+  .student-status-panel,
+  .group-performance-panel,
+  .revenue-panel,
+  .alerts-panel,
+  .recent-payments-panel {
+    grid-column: auto;
   }
 }
 
@@ -18128,12 +18578,12 @@ html[data-scanner-feedback="error"]::after {
 }
 
 [dir="rtl"] .landing-grade-card .landing-ribbon-label,
-[dir="ar"] .landing-grade-card .landing-ribbon-label {
+[lang="ar"] .landing-grade-card .landing-ribbon-label {
   transform: translateX(20px);
 }
 
 [dir="ltr"] .landing-grade-card .landing-ribbon-label,
-[dir="en"] .landing-grade-card .landing-ribbon-label {
+[lang="en"] .landing-grade-card .landing-ribbon-label {
   transform: translateX(-20px);
 }
 
@@ -18275,5 +18725,128 @@ html[data-scanner-feedback="error"]::after {
   .digital-card-hint {
     margin-top: 10px;
     font-size: 12px;
+  }
+}
+
+/* Keep the attendance date control inside its card on phone-sized screens. */
+@media (max-width: 767px) {
+  .admin-shell .attendance-panel {
+    box-sizing: border-box;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .admin-shell .attendance-date-field {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin-inline: 0;
+  }
+
+  .admin-shell .attendance-date-field > input[type="date"] {
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin-inline: 0;
+  }
+}
+
+/* Group Details uses the same wide, self-contained modal workspace as the
+   Student Profile modal, without changing the Student Profile selectors. */
+.group-details-modal {
+  box-sizing: border-box;
+  width: min(1080px, calc(100vw - 48px));
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  margin: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.group-details-modal .section-heading,
+.group-details-modal .group-details-section,
+.group-details-modal .group-detail-summary,
+.group-details-modal .group-student-list {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.group-detail-summary {
+  margin-top: 16px;
+}
+
+.group-detail-summary article strong {
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.group-details-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.group-details-section h3 {
+  margin: 0;
+}
+
+.group-details-section .status-filter-buttons {
+  margin-bottom: 0;
+}
+
+.group-details-section .schedule-detail-list {
+  margin: 0;
+}
+
+.group-details-section .academic-list {
+  margin-top: 0;
+}
+
+.group-student-info,
+.group-student-heading {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.group-student-info > span,
+.group-student-heading strong {
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 769px) {
+  .group-details-modal {
+    padding: 24px 28px 30px;
+    border-radius: 18px;
+  }
+}
+
+@media (max-width: 768px) {
+  .group-details-modal {
+    width: calc(100vw - 16px);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+    padding: 20px 16px 24px;
+    border-radius: 16px;
+  }
+
+  .group-detail-summary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .group-details-section .status-filter-buttons {
+    width: 100%;
+  }
+}
+
+@media (max-width: 430px) {
+  .group-detail-summary {
+    grid-template-columns: 1fr;
   }
 }

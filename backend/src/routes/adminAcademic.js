@@ -12,6 +12,7 @@ import { parseStudentRetention, permanentlyDeleteStudents } from "../services/st
 import { enqueueGradeNotificationInTransaction, wakeWhatsAppWorker } from "../services/whatsapp.js";
 import { attendanceRateFromStatuses } from "../utils/attendanceStatus.js";
 import { appendGroupScope, hasGroupAccess, isGroupScopeRestricted } from "../services/groupAccess.js";
+import { setFinancialCacheHeaders } from "../utils/cacheHeaders.js";
 
 export const adminAcademicRouter = express.Router();
 adminAcademicRouter.use(requireTeacher);
@@ -706,7 +707,7 @@ adminAcademicRouter.get("/students", requirePermission("students.view"), async (
   }
 });
 
-adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.view", "payments.view"), async (req, res, next) => {
+adminAcademicRouter.get("/students/:id/profile", setFinancialCacheHeaders, requireAnyPermission("students.view", "payments.view"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);
     const studentResult = await query(`${studentSelect} WHERE s.id = $1`, [studentId]);
@@ -738,9 +739,11 @@ adminAcademicRouter.get("/students/:id/profile", requireAnyPermission("students.
         FROM student_notes n LEFT JOIN teachers t ON t.id = n.author_id
         WHERE n.student_id = $1 ORDER BY n.created_at DESC`, [studentId]) : Promise.resolve({ rows: [] }),
       canViewPaymentReports ? query(`SELECT p.id, p.amount, p.payment_date, p.paid_at, p.payment_method, p.notes,
+          (pr.id IS NOT NULL) AS is_reversed, pr.created_at AS reversed_at,
           p.payment_months, p.whatsapp_notified, COALESCE(t.username, t.name, t.email, 'Staff') AS paid_by
         FROM payments p LEFT JOIN teachers t ON t.id = COALESCE(p.paid_by, p.recorded_by)
-        WHERE p.student_id = $1 AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
+        LEFT JOIN payment_reversals pr ON pr.payment_id = p.id
+        WHERE p.student_id = $1
         ORDER BY COALESCE(p.paid_at, p.payment_date) DESC`, [studentId]) : Promise.resolve({ rows: [] }),
       canViewMessages ? query(`SELECT it.id, it.subject, it.status, it.created_at, it.updated_at,
           COUNT(im.id)::int AS message_count,
@@ -809,6 +812,8 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
     const filters = ["s.deleted_at IS NULL", "s.is_active = TRUE"];
     const groupId = Number(normalizeDigits(req.query.group_id || ""));
     const studentId = Number(normalizeDigits(req.query.student_id || ""));
+    const examId = Number(normalizeDigits(req.query.exam_id || ""));
+    const maxScorePercentage = Number(normalizeDigits(req.query.maxScorePercentage || req.query.max_score_percentage || ""));
     const search = normalizeDigits(req.query.search || "").trim();
     const date = String(req.query.date || "").trim();
     if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00Z`).getTime()) || new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date)) {
@@ -816,6 +821,8 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
     }
     if (Number.isInteger(groupId) && groupId > 0) { values.push(groupId); filters.push(`s.group_id = $${values.length}`); }
     if (Number.isInteger(studentId) && studentId > 0) { values.push(studentId); filters.push(`s.id = $${values.length}`); }
+    if (Number.isInteger(examId) && examId > 0) { values.push(examId); filters.push(`e.id = $${values.length}`); }
+    if (Number.isFinite(maxScorePercentage) && maxScorePercentage >= 0 && maxScorePercentage <= 100) { values.push(maxScorePercentage); filters.push(`e.max_score > 0 AND er.score / e.max_score * 100 < $${values.length}`); }
     appendGroupScope(filters, values, req.teacher, "s.group_id");
     if (date) { values.push(date); filters.push(`e.exam_date = $${values.length}::date`); }
     if (search) {

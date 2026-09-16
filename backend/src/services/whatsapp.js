@@ -9,29 +9,29 @@ import { auditLog } from "./audit.js";
 const normalizeTeacherDisplayName = (value) => String(value ?? "").replace(/مستر أحمد عبدربه/g, "Mr. Ahmed Abdrabo");
 
 const DEFAULT_TEMPLATES = Object.freeze([
-  "مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}",
-  "تنبيه حضور - مستر أحمد عبدربه:\nحضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام الساعة {time}.\nرابط ملف المتابعة: {portal_link}\nالمرجع: {ref_code}",
-  "إشعار حضور | مستر أحمد عبدربه\nتم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}.\nالتاريخ: {date} - الوقت: {time}.\nكود الطالب: {student_code}\nتقرير فوري: {portal_link}\nرقم المرجع: {ref_code}"
+  "*إشعار حضور الطالب* 👨‍🏫\n\n*الطالب:* {student_name}\n*المجموعة:* {group_name}\n*التاريخ:* {date}\n*الوقت:* {time}\n*كود الطالب:* {student_code}\n\nرابط المتابعة: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+  "*تم تسجيل الحضور بنجاح* ✅\n\nحضر الطالب *{student_name}* حصة *{group_name}*.\n*التاريخ:* {date}\n*الوقت:* {time}\n\nرابط ملف المتابعة: {portal_link}\n*المرجع:* {ref_code}",
+  "*إشعار حضور*\n\nتم تسجيل حضور الطالب *{student_name}* في مجموعة *{group_name}*.\n*التاريخ:* {date} | *الوقت:* {time}\n*كود الطالب:* {student_code}\n\nتقرير المتابعة: {portal_link}\n*رقم المرجع:* {ref_code}"
 ]);
 const DEFAULT_GRADE_TEMPLATES = Object.freeze([
-  "نتيجة تقييم - مستر أحمد عبدربه 📝\nمرحباً بحضرتك، تم رصد نتيجة امتحان {exam_title} للطالب: {student_name}.\nالدرجة: {score} من {max_score} (النسبة: {percentage}%).\nكود الطالب: {student_code}\nتقرير الإجابات والتقييم: {portal_link}\nالمرجع: {ref_code}",
-  "إشعار درجات | منصة مستر أحمد عبدربه\nحصل الطالب {student_name} في {exam_title} على نتيجة {score}/{max_score} بمعدل {percentage}%.\nتفاصيل التقييم: {portal_link}\nمع تحيات مستر أحمد عبدربه وإدارة المنصة.\nالمرجع: {ref_code}",
-  "تقييم دراسي - مستر أحمد عبدربه:\nتم تصحيح {exam_title} للطالب {student_name}.\nالنتيجة المحققة: {score} من أصل {max_score}.\nرابط التقرير الكامل: {portal_link}\nكود: {ref_code}"
+  "*نتيجة التقييم* 📝\n\n*الطالب:* {student_name}\n*الامتحان:* {exam_title}\n*الدرجة:* {score} من {max_score}\n*النسبة:* {percentage}%\n*كود الطالب:* {student_code}\n\nتقرير التقييم: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+  "*إشعار نتيجة الامتحان*\n\nحصل الطالب *{student_name}* في *{exam_title}* على *{score}/{max_score}* بنسبة *{percentage}%*.\n\nتفاصيل التقييم: {portal_link}\n*المرجع:* {ref_code}",
+  "*تقييم دراسي*\n\nتم تصحيح *{exam_title}* للطالب *{student_name}*.\n*النتيجة المحققة:* {score} من {max_score}\n\nرابط التقرير الكامل: {portal_link}\n*رقم المرجع:* {ref_code}"
 ]);
 const DEFAULT_RECEIPT_TEMPLATES = Object.freeze([
-  "إيصال سداد مصروفات - مستر أحمد عبدربه 🧾\nالسلام عليكم يا فندم، تم استلام مبلغ {amount_paid} ج.م سداداً لمصروفات شهر {month} للطالب: {student_name}.\nرقم الإيصال: {receipt_number}\nكود الطالب: {student_code}\nعرض الإيصال: {portal_link}\nشكراً لتعاونكم الدائم.",
-  "سند قبض إلكتروني | مستر أحمد عبدربه\nتم بنجاح تسجيل دفعة مالية بقيمة {amount_paid} ج.م لحساب الطالب: {student_name} (سداد {month}).\nرقم السند: {receipt_number}\nالسجل المالي: {portal_link}\nالمرجع: {ref_code}",
-  "إشعار تحصيل نقدية - مكتب مستر أحمد عبدربه:\nتم استلام مبلغ {amount_paid} جنيه لمصروفات {month} الخاصة بالطالب {student_name}.\nإيصال رقم: #{receipt_number}.\nمتابعة الحساب: {portal_link}"
+  "*إيصال سداد المصروفات* 🧾\n\n*الطالب:* {student_name}\n*المبلغ المدفوع:* {amount_paid} ج.م\n*عن شهر:* {month}\n*رقم الإيصال:* {receipt_number}\n*كود الطالب:* {student_code}\n\nعرض الإيصال ومتابعة الحساب: {portal_link}\n*المرجع:* {ref_code}\n\nشكراً لتعاونكم.",
+  "*سند قبض إلكتروني*\n\nتم تسجيل دفعة مالية بنجاح.\n*الطالب:* {student_name}\n*القيمة:* {amount_paid} ج.م\n*الشهر:* {month}\n*رقم السند:* {receipt_number}\n\nالسجل المالي: {portal_link}\n*المرجع:* {ref_code}",
+  "*إشعار تحصيل نقدية*\n\nتم استلام مبلغ *{amount_paid} جنيه* لمصروفات *{month}* الخاصة بالطالب *{student_name}*.\n*رقم الإيصال:* {receipt_number}\n\nمتابعة الحساب: {portal_link}\n*المرجع:* {ref_code}"
 ]);
 const DEFAULT_ADVANCE_PAYMENT_TEMPLATES = Object.freeze([
-  "إشعار دفع مقدم - مستر أحمد عبدربه 💳\nتم استلام مبلغ {amount_paid} ج.م كدفعة مقدمة للطالب: {student_name} عن شهور: {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}",
-  "تم بنجاح تسجيل دفعة مالية مقدمة بقيمة {amount_paid} ج.م لحساب الطالب: {student_name}.\nالشهور المسددة: {months}\nسند رقم: {receipt_number}\nالمرجع: {ref_code}",
-  "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"
+  "*إيصال الدفع المقدم* 💳\n\n*الطالب:* {student_name}\n*المبلغ المدفوع:* {amount_paid} ج.م\n*الشهور المسددة:* {months}\n*رقم الإيصال:* {receipt_number}\n\nمتابعة الحساب: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+  "*تم تسجيل الدفع المقدم بنجاح* ✅\n\n*الطالب:* {student_name}\n*القيمة:* {amount_paid} ج.م\n*الفترة المسددة:* {months}\n*رقم السند:* {receipt_number}\n\nرابط المتابعة: {portal_link}\n*المرجع:* {ref_code}",
+  "*إيصال استلام نقدية — دفع مقدم*\n\n*الطالب:* {student_name}\n*المبلغ:* {amount_paid} جنيه\n*الشهور:* {months}\n*الإيصال:* #{receipt_number}\n\nالرابط: {portal_link}\n*المرجع:* {ref_code}"
 ]);
 const DEFAULT_ABSENCE_TEMPLATES = Object.freeze([
-  "تنبيه غياب - منصة مستر أحمد عبدربه\nلم يتم تسجيل حضور الطالب {student_name} في مجموعة {group_name} بتاريخ {date}.\nبرجاء التواصل مع إدارة المنصة.",
-  "إشعار غياب الطالب {student_name}\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب في حصة {group_name} بتاريخ {date}.",
-  "متابعة الحضور | {student_name}\nتم إغلاق جلسة {group_name} بتاريخ {date} دون تسجيل حضور الطالب."
+  "*تنبيه غياب الطالب* ⚠️\n\n*الطالب:* {student_name}\n*المجموعة:* {group_name}\n*التاريخ:* {date}\n\nلم يتم تسجيل حضور الطالب لهذه الحصة.\nرابط المتابعة: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+  "*إشعار غياب*\n\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب *{student_name}* في حصة *{group_name}* بتاريخ *{date}*.\n\nرابط ملف المتابعة: {portal_link}\n*المرجع:* {ref_code}",
+  "*متابعة الحضور*\n\nتم إغلاق جلسة *{group_name}* بتاريخ *{date}* دون تسجيل حضور الطالب *{student_name}*.\n\nرابط المتابعة: {portal_link}\n*رقم المرجع:* {ref_code}"
 ]);
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -901,10 +901,35 @@ function normalizeNotificationType(value) {
   return null;
 }
 
+export const requiredPlaceholders = Object.freeze({
+  attendance: "student_name",
+  absence: "student_name",
+  grade: "exam_title",
+  receipt: "amount_paid",
+  advance_payment: "months"
+});
+
+export function validateWhatsAppTemplate(category, messageBody) {
+  const normalizedCategory = normalizeNotificationType(category);
+  const requiredPlaceholder = requiredPlaceholders[normalizedCategory];
+  return {
+    ok: Boolean(requiredPlaceholder && templateHasPlaceholder(messageBody, requiredPlaceholder)),
+    requiredPlaceholder
+  };
+}
+
+const PREVIEW_REFERENCE_PREFIXES = Object.freeze({
+  attendance: "ATT",
+  absence: "ABS",
+  grade: "EXM",
+  receipt: "REC",
+  advance_payment: "ADV"
+});
+
 function notificationTypeFromReference(value) {
   const reference = String(value || "").trim().toUpperCase();
-  if (reference.startsWith("GRD-")) return "grade";
-  if (reference.startsWith("RCT-")) return "receipt";
+  if (reference.startsWith("GRD-") || reference.startsWith("EXM-")) return "grade";
+  if (reference.startsWith("RCT-") || reference.startsWith("REC-")) return "receipt";
   if (reference.startsWith("ADV-")) return "advance_payment";
   if (reference.startsWith("ATT-")) return "attendance";
   if (reference.startsWith("ABS-")) return "absence";
@@ -952,7 +977,8 @@ async function activeTemplateRows(category, db = query) {
      ORDER BY id`,
     [category]
   );
-  return result.rows;
+  const requiredPlaceholder = requiredPlaceholders[normalizeNotificationType(category)];
+  return result.rows.filter((row) => !requiredPlaceholder || templateHasPlaceholder(row.message_body, requiredPlaceholder));
 }
 
 async function getNotificationTemplates(settings, type, db = query) {
@@ -971,13 +997,15 @@ export function resolveSpintax(template, values = {}) {
 }
 
 export async function resolveWhatsAppTemplate({ category, values = {}, sourceId = "preview", db = query }) {
-  const templates = await getNotificationTemplates({}, category, db);
+  const normalizedCategory = normalizeNotificationType(category);
+  const templates = await getNotificationTemplates({}, normalizedCategory, db);
   if (!templates.length) throw new Error("no_whatsapp_templates");
-  const rows = await activeTemplateRows(normalizeNotificationType(category), db);
+  const rows = await activeTemplateRows(normalizedCategory, db);
   const selected = rows.length ? rows[randomInteger(0, rows.length - 1)] : { id: 0, message_body: templates[randomInteger(0, templates.length - 1)] };
   const entropy = `${Date.now()}-${sourceId}-${crypto.randomUUID()}`;
   const uniqueHash = crypto.createHash("sha256").update(entropy).digest("hex").slice(0, 16);
-  const reference = `ABS-${Date.now()}-${selected.id}-${uniqueHash}`;
+  const referencePrefix = PREVIEW_REFERENCE_PREFIXES[normalizedCategory] || "MSG";
+  const reference = `${referencePrefix}-${Date.now()}-${selected.id}-${uniqueHash}`;
   return { id: Number(selected.id), message: `${resolveSpintax(selected.message_body || selected, { ...values, ref_code: reference })}\n\nRef:${reference}`, reference };
 }
 
@@ -1167,6 +1195,34 @@ export async function settleAbsenceNotificationJobsForCorrection({ client, atten
       request
     });
   }
+  return result.rows;
+}
+
+export async function settlePaymentNotificationJobsForReversal({ client, paymentId }) {
+  const result = await client.query(
+    `UPDATE whatsapp_notification_jobs
+     SET status = CASE
+           WHEN status = 'processing' AND send_started_at IS NOT NULL THEN 'delivery_unknown'
+           ELSE 'skipped'
+         END,
+         last_error = CASE
+           WHEN status = 'processing' AND send_started_at IS NOT NULL THEN 'payment_reversed_during_send'
+           ELSE 'payment_reversed_before_send'
+         END,
+         next_attempt_at = NULL,
+         lease_expires_at = NULL,
+         claim_token = NULL,
+         send_started_at = CASE
+           WHEN status = 'processing' AND send_started_at IS NOT NULL THEN send_started_at
+           ELSE NULL
+         END,
+         updated_at = NOW()
+     WHERE notification_type IN ('receipt', 'advance_payment')
+       AND source_id = $1
+       AND status IN ('pending', 'processing')
+     RETURNING id, notification_type, status, send_started_at`,
+    [paymentId]
+  );
   return result.rows;
 }
 
@@ -1488,7 +1544,8 @@ export async function retryWhatsAppNotificationJob({ jobId, actorId = null, reas
       await client.query("COMMIT");
       return { ok: false, reason: "delivery_unknown_requires_confirmation", job_id: job.id, status: job.status, ref_code: job.ref_code };
     }
-    if (job.status !== "failed" && job.status !== "delivery_unknown") {
+    const retryableInvalidPhone = job.status === "skipped" && job.last_error === "invalid_phone";
+    if (job.status !== "failed" && job.status !== "delivery_unknown" && !retryableInvalidPhone) {
       await client.query("COMMIT");
       return { ok: true, reason: "already_active", status: job.status, job_id: job.id, ref_code: job.ref_code };
     }
@@ -1508,7 +1565,9 @@ export async function retryWhatsAppNotificationJob({ jobId, actorId = null, reas
         next_attempt_at = NOW(), sent_at = NULL, claim_token = NULL,
         send_started_at = NULL, template_index = NULL, template_text = NULL,
         rendered_message = NULL, updated_at = NOW()
-      WHERE id = $1 AND status IN ('failed', 'delivery_unknown')
+      WHERE id = $1
+        AND (status IN ('failed', 'delivery_unknown')
+          OR (status = 'skipped' AND last_error = 'invalid_phone'))
       RETURNING id, status, ref_code`, [jobId]);
     await auditLog({
       db: client,
@@ -1678,7 +1737,9 @@ async function enqueuePaymentNotificationWithDb({ paymentId, paymentType, notifi
       s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
     FROM payments p
     JOIN students s ON s.id = p.student_id
-    WHERE p.id = $1 AND p.payment_type = $2 AND s.is_active = TRUE AND s.deleted_at IS NULL AND s.whatsapp_opted_out = FALSE`, [paymentId, paymentType]);
+    WHERE p.id = $1 AND p.payment_type = $2
+      AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
+      AND s.is_active = TRUE AND s.deleted_at IS NULL AND s.whatsapp_opted_out = FALSE`, [paymentId, paymentType]);
   const row = result.rows[0];
   if (!row) return { queued: false, reason: "not_found" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
@@ -1764,15 +1825,44 @@ async function extendJobLease(job, phase) {
   return true;
 }
 
-async function markSendStarted(job) {
-  const result = await query(
-    `UPDATE whatsapp_notification_jobs
-     SET send_started_at = NOW(), lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
-     WHERE id = $1 AND status = 'processing' AND claim_token = $2
-     RETURNING id`,
-    [job.id, job.claim_token, JOB_LEASE_MS]
-  );
-  return result.rowCount > 0;
+export async function markSendStarted(job, type, dbPool = pool) {
+  if (!job?.id || !job.claim_token) return false;
+  const client = await dbPool.connect();
+  try {
+    await client.query("BEGIN");
+    if (type === "receipt" || type === "advance_payment") {
+      const payment = await client.query(
+        `SELECT p.id
+         FROM payments p
+         WHERE p.id = $1
+           AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
+         FOR UPDATE`,
+        [job.source_id]
+      );
+      if (!payment.rowCount) {
+        await client.query("ROLLBACK");
+        return false;
+      }
+    }
+    const result = await client.query(
+      `UPDATE whatsapp_notification_jobs
+       SET send_started_at = NOW(), lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
+       WHERE id = $1 AND status = 'processing' AND claim_token = $2
+       RETURNING id`,
+      [job.id, job.claim_token, JOB_LEASE_MS]
+    );
+    if (!result.rowCount) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function completeSentJob(job, providerMessageId) {
@@ -1831,7 +1921,7 @@ function gradePercentage(score, maxScore) {
   return ((numericScore / numericMaxScore) * 100).toFixed(1).replace(/\.0$/, "");
 }
 
-async function revalidateWhatsAppJob(job, type, db = query) {
+export async function revalidateWhatsAppJob(job, type, db = query) {
   const execute = typeof db === "function" ? db : db.query.bind(db);
   if (!job?.student_id) return { ok: false, reason: "student_missing" };
   const studentResult = await execute(`
@@ -1890,10 +1980,15 @@ async function revalidateWhatsAppJob(job, type, db = query) {
     const source = await execute(`
       SELECT amount, paid_amount, discount_amount, is_exempt, payment_reference,
         payment_months, payment_date, paid_at, payment_type
-      FROM payments WHERE id = $1 AND student_id = $2 AND payment_type = $3`,
+      FROM payments
+      WHERE id = $1 AND student_id = $2 AND payment_type = $3
+        AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = payments.id)`,
       [job.source_id, student.id, type === "receipt" ? "normal" : "advance"]
     );
-    if (!source.rowCount) return { ok: false, reason: "payment_no_longer_exists" };
+    if (!source.rowCount) {
+      const reversed = await execute("SELECT 1 FROM payment_reversals WHERE payment_id = $1", [job.source_id]);
+      return { ok: false, reason: reversed.rowCount ? "payment_reversed" : "payment_no_longer_exists" };
+    }
     const payment = source.rows[0];
     const months = paymentMonthsValue(payment.payment_months, payment.payment_date, payment.paid_at);
     payload = {
@@ -2075,9 +2170,8 @@ async function processWhatsAppJob() {
     }
     const parts = cairoParts(payload.event_time || payload.checkin_time);
     const studentCode = String(payload.student_code || "").trim();
-    const configuredPortalLink = type === "grade" ? "" : String(payload.portal_link || "").trim();
-    if (type === "grade") portalAccessToken = createStudentPortalAccessToken();
-    const portalLink = configuredPortalLink || buildStudentPortalLink(job.student_id, studentCode, portalAccessToken);
+    portalAccessToken = createStudentPortalAccessToken();
+    const portalLink = buildStudentPortalLink(job.student_id, studentCode, portalAccessToken);
     const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
     const formattedPayload = {
       ...payload,
@@ -2122,11 +2216,11 @@ async function processWhatsAppJob() {
       await auditStaleClaim(job, "before_provider");
       return;
     }
-    if (!(await markSendStarted(job))) {
+    if (!(await markSendStarted(job, type))) {
       await auditStaleClaim(job, "send_start");
       return;
     }
-    if (type === "grade" && portalAccessToken) {
+    if (portalAccessToken) {
       await cleanupJobPortalAccess(job);
       await createPortalAccessRecord(job.student_id, portalAccessToken);
     }

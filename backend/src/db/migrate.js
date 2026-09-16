@@ -221,10 +221,17 @@ export async function migrate() {
       id BIGSERIAL PRIMARY KEY,
       recipient_user_id INTEGER NOT NULL REFERENCES teachers(id) ON DELETE CASCADE,
       type TEXT NOT NULL,
+      notification_type TEXT,
       entity_type TEXT,
       entity_id BIGINT,
       target_section TEXT,
       payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      title TEXT,
+      message TEXT,
+      group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+      reference_id TEXT,
+      student_count INTEGER CHECK (student_count IS NULL OR student_count >= 0),
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       dedupe_key TEXT NOT NULL,
       is_read BOOLEAN NOT NULL DEFAULT FALSE,
       read_at TIMESTAMPTZ,
@@ -278,6 +285,35 @@ export async function migrate() {
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS max_label_reprints INTEGER NOT NULL DEFAULT 2 CHECK (max_label_reprints >= 0);
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS can_use_inbox BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE teachers ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS notification_type TEXT;
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS message TEXT;
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS group_id INTEGER;
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS reference_id TEXT;
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS student_count INTEGER;
+    ALTER TABLE notifications ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+    UPDATE notifications SET notification_type = type WHERE notification_type IS NULL;
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notifications_group_id_fkey') THEN
+        ALTER TABLE notifications ADD CONSTRAINT notifications_group_id_fkey
+          FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE SET NULL;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'notifications_student_count_check') THEN
+        ALTER TABLE notifications ADD CONSTRAINT notifications_student_count_check
+          CHECK (student_count IS NULL OR student_count >= 0);
+      END IF;
+    END $$;
+    CREATE INDEX IF NOT EXISTS notifications_type_group_reference_idx
+      ON notifications(notification_type, group_id, reference_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS notifications_group_idx
+      ON notifications(group_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS notifications_reference_idx
+      ON notifications(reference_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS notifications_aggregated_dedupe_unique
+      ON notifications(dedupe_key)
+      WHERE notification_type IN ('attendance_absence', 'unpaid_fees', 'low_exam_grade');
 
     ALTER TABLE system_settings DROP CONSTRAINT IF EXISTS system_settings_key_check;
     ALTER TABLE system_settings ADD CONSTRAINT system_settings_key_check CHECK (key IN (
@@ -625,10 +661,45 @@ export async function migrate() {
       payment_id BIGINT NOT NULL UNIQUE REFERENCES payments(id) ON DELETE RESTRICT,
       reversed_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       reason TEXT NOT NULL,
-      original_amount NUMERIC(10,2) NOT NULL CHECK (original_amount > 0),
+      original_amount NUMERIC(10,2) NOT NULL CHECK (original_amount >= 0),
+      covered_amount NUMERIC(10,2),
+      discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
+      exemption_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE payment_reversals ADD COLUMN IF NOT EXISTS original_amount NUMERIC(10,2);
+    ALTER TABLE payment_reversals ADD COLUMN IF NOT EXISTS covered_amount NUMERIC(10,2);
+    ALTER TABLE payment_reversals ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+    ALTER TABLE payment_reversals ADD COLUMN IF NOT EXISTS exemption_amount NUMERIC(10,2) NOT NULL DEFAULT 0;
+    UPDATE payment_reversals pr
+    SET original_amount = COALESCE(pr.original_amount, p.amount),
+        covered_amount = COALESCE(pr.covered_amount, COALESCE(pr.original_amount, p.amount)),
+        discount_amount = COALESCE(pr.discount_amount, 0),
+        exemption_amount = COALESCE(pr.exemption_amount, 0)
+    FROM payments p
+    WHERE p.id = pr.payment_id
+      AND (pr.original_amount IS NULL OR pr.covered_amount IS NULL OR pr.discount_amount IS NULL OR pr.exemption_amount IS NULL);
+    ALTER TABLE payment_reversals DROP CONSTRAINT IF EXISTS payment_reversals_original_amount_check;
+    ALTER TABLE payment_reversals DROP CONSTRAINT IF EXISTS payment_reversals_covered_amount_check;
+    ALTER TABLE payment_reversals DROP CONSTRAINT IF EXISTS payment_reversals_discount_amount_check;
+    ALTER TABLE payment_reversals DROP CONSTRAINT IF EXISTS payment_reversals_exemption_amount_check;
+    ALTER TABLE payment_reversals ADD CONSTRAINT payment_reversals_original_amount_check CHECK (original_amount >= 0);
+    ALTER TABLE payment_reversals ADD CONSTRAINT payment_reversals_covered_amount_check CHECK (covered_amount IS NULL OR covered_amount > 0);
+    ALTER TABLE payment_reversals ADD CONSTRAINT payment_reversals_discount_amount_check CHECK (discount_amount >= 0);
+    ALTER TABLE payment_reversals ADD CONSTRAINT payment_reversals_exemption_amount_check CHECK (exemption_amount >= 0);
+    CREATE UNIQUE INDEX IF NOT EXISTS payment_reversals_payment_id_uidx ON payment_reversals(payment_id);
     CREATE INDEX IF NOT EXISTS payment_reversals_created_at_idx ON payment_reversals(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS payment_reversal_idempotency (
+      idempotency_key TEXT PRIMARY KEY CHECK (length(idempotency_key) BETWEEN 8 AND 128),
+      payment_id BIGINT NOT NULL REFERENCES payments(id) ON DELETE RESTRICT,
+      request_fingerprint TEXT NOT NULL,
+      reversal_id BIGINT REFERENCES payment_reversals(id) ON DELETE RESTRICT,
+      response JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS payment_reversal_idempotency_payment_idx
+      ON payment_reversal_idempotency(payment_id, created_at DESC);
 
     UPDATE payments
     SET student_name_snapshot = COALESCE(payments.student_name_snapshot, s.full_name),
@@ -839,21 +910,21 @@ export async function migrate() {
      VALUES (1, $1::jsonb, $2::jsonb, $3::jsonb, $4::jsonb)
      ON CONFLICT (id) DO NOTHING`,
     [JSON.stringify([
-    "مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}",
-    "تنبيه حضور - مستر أحمد عبدربه:\nحضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام الساعة {time}.\nرابط ملف المتابعة: {portal_link}\nالمرجع: {ref_code}",
-    "إشعار حضور | مستر أحمد عبدربه\nتم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}.\nالتاريخ: {date} - الوقت: {time}.\nكود الطالب: {student_code}\nتقرير فوري: {portal_link}\nرقم المرجع: {ref_code}"
+    "*إشعار حضور الطالب* 👨‍🏫\n\n*الطالب:* {student_name}\n*المجموعة:* {group_name}\n*التاريخ:* {date}\n*الوقت:* {time}\n*كود الطالب:* {student_code}\n\nرابط المتابعة: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+    "*تم تسجيل الحضور بنجاح* ✅\n\nحضر الطالب *{student_name}* حصة *{group_name}*.\n*التاريخ:* {date}\n*الوقت:* {time}\n\nرابط ملف المتابعة: {portal_link}\n*المرجع:* {ref_code}",
+    "*إشعار حضور*\n\nتم تسجيل حضور الطالب *{student_name}* في مجموعة *{group_name}*.\n*التاريخ:* {date} | *الوقت:* {time}\n*كود الطالب:* {student_code}\n\nتقرير المتابعة: {portal_link}\n*رقم المرجع:* {ref_code}"
     ]), JSON.stringify([
-      "نتيجة تقييم - مستر أحمد عبدربه 📝\nمرحباً بحضرتك، تم رصد نتيجة امتحان {exam_title} للطالب: {student_name}.\nالدرجة: {score} من {max_score} (النسبة: {percentage}%).\nكود الطالب: {student_code}\nتقرير الإجابات والتقييم: {portal_link}\nالمرجع: {ref_code}",
-      "إشعار درجات | منصة مستر أحمد عبدربه\nحصل الطالب {student_name} في {exam_title} على نتيجة {score}/{max_score} بمعدل {percentage}%.\nتفاصيل التقييم: {portal_link}\nمع تحيات مستر أحمد عبدربه وإدارة المنصة.\nالمرجع: {ref_code}",
-      "تقييم دراسي - مستر أحمد عبدربه:\nتم تصحيح {exam_title} للطالب {student_name}.\nالنتيجة المحققة: {score} من أصل {max_score}.\nرابط التقرير الكامل: {portal_link}\nكود: {ref_code}"
+      "*نتيجة التقييم* 📝\n\n*الطالب:* {student_name}\n*الامتحان:* {exam_title}\n*الدرجة:* {score} من {max_score}\n*النسبة:* {percentage}%\n*كود الطالب:* {student_code}\n\nتقرير التقييم: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+      "*إشعار نتيجة الامتحان*\n\nحصل الطالب *{student_name}* في *{exam_title}* على *{score}/{max_score}* بنسبة *{percentage}%*.\n\nتفاصيل التقييم: {portal_link}\n*المرجع:* {ref_code}",
+      "*تقييم دراسي*\n\nتم تصحيح *{exam_title}* للطالب *{student_name}*.\n*النتيجة المحققة:* {score} من {max_score}\n\nرابط التقرير الكامل: {portal_link}\n*رقم المرجع:* {ref_code}"
     ]), JSON.stringify([
-      "إيصال سداد مصروفات - مستر أحمد عبدربه 🧾\nالسلام عليكم يا فندم، تم استلام مبلغ {amount_paid} ج.م سداداً لمصروفات شهر {month} للطالب: {student_name}.\nرقم الإيصال: {receipt_number}\nكود الطالب: {student_code}\nعرض الإيصال: {portal_link}\nشكراً لتعاونكم الدائم.",
-      "سند قبض إلكتروني | مستر أحمد عبدربه\nتم بنجاح تسجيل دفعة مالية بقيمة {amount_paid} ج.م لحساب الطالب: {student_name} (سداد {month}).\nرقم السند: {receipt_number}\nالسجل المالي: {portal_link}\nالمرجع: {ref_code}",
-      "إشعار تحصيل نقدية - مكتب مستر أحمد عبدربه:\nتم استلام مبلغ {amount_paid} جنيه لمصروفات {month} الخاصة بالطالب {student_name}.\nإيصال رقم: #{receipt_number}.\nمتابعة الحساب: {portal_link}"
+      "*إيصال سداد المصروفات* 🧾\n\n*الطالب:* {student_name}\n*المبلغ المدفوع:* {amount_paid} ج.م\n*عن شهر:* {month}\n*رقم الإيصال:* {receipt_number}\n*كود الطالب:* {student_code}\n\nعرض الإيصال ومتابعة الحساب: {portal_link}\n*المرجع:* {ref_code}\n\nشكراً لتعاونكم.",
+      "*سند قبض إلكتروني*\n\nتم تسجيل دفعة مالية بنجاح.\n*الطالب:* {student_name}\n*القيمة:* {amount_paid} ج.م\n*الشهر:* {month}\n*رقم السند:* {receipt_number}\n\nالسجل المالي: {portal_link}\n*المرجع:* {ref_code}",
+      "*إشعار تحصيل نقدية*\n\nتم استلام مبلغ *{amount_paid} جنيه* لمصروفات *{month}* الخاصة بالطالب *{student_name}*.\n*رقم الإيصال:* {receipt_number}\n\nمتابعة الحساب: {portal_link}\n*المرجع:* {ref_code}"
     ]), JSON.stringify([
-      "إشعار دفع مقدم - مستر أحمد عبدربه 💳\nتم استلام مبلغ {amount_paid} ج.م كدفعة مقدمة للطالب: {student_name} عن شهور: {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}",
-      "تم بنجاح تسجيل دفعة مالية مقدمة بقيمة {amount_paid} ج.م لحساب الطالب: {student_name}.\nالشهور المسددة: {months}\nسند رقم: {receipt_number}\nالمرجع: {ref_code}",
-      "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"
+      "*إيصال الدفع المقدم* 💳\n\n*الطالب:* {student_name}\n*المبلغ المدفوع:* {amount_paid} ج.م\n*الشهور المسددة:* {months}\n*رقم الإيصال:* {receipt_number}\n\nمتابعة الحساب: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+      "*تم تسجيل الدفع المقدم بنجاح* ✅\n\n*الطالب:* {student_name}\n*القيمة:* {amount_paid} ج.م\n*الفترة المسددة:* {months}\n*رقم السند:* {receipt_number}\n\nرابط المتابعة: {portal_link}\n*المرجع:* {ref_code}",
+      "*إيصال استلام نقدية — دفع مقدم*\n\n*الطالب:* {student_name}\n*المبلغ:* {amount_paid} جنيه\n*الشهور:* {months}\n*الإيصال:* #{receipt_number}\n\nالرابط: {portal_link}\n*المرجع:* {ref_code}"
     ])]
   );
 
@@ -884,21 +955,21 @@ export async function migrate() {
        updated_at = NOW()
      WHERE id = 1`,
     [JSON.stringify([
-      "مرحباً بحضرتك، من منصة مستر أحمد عبدربه 👨‍🏫\nتم تسجيل حضور الطالب: {student_name}\nاليوم: {date} الساعة {time} في مجموعة: {group_name}.\nكود الطالب: {student_code}\nتقرير المتابعة: {portal_link}\nالمرجع: {ref_code}",
-      "تنبيه حضور - مستر أحمد عبدربه:\nحضر الطالب {student_name} حصة {group_name} بتاريخ {date} في تمام الساعة {time}.\nرابط ملف المتابعة: {portal_link}\nالمرجع: {ref_code}",
-      "إشعار حضور | مستر أحمد عبدربه\nتم تسجيل حضور {student_name} بنجاح في مجموعة {group_name}.\nالتاريخ: {date} - الوقت: {time}.\nكود الطالب: {student_code}\nتقرير فوري: {portal_link}\nرقم المرجع: {ref_code}"
+      "*إشعار حضور الطالب* 👨‍🏫\n\n*الطالب:* {student_name}\n*المجموعة:* {group_name}\n*التاريخ:* {date}\n*الوقت:* {time}\n*كود الطالب:* {student_code}\n\nرابط المتابعة: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+      "*تم تسجيل الحضور بنجاح* ✅\n\nحضر الطالب *{student_name}* حصة *{group_name}*.\n*التاريخ:* {date}\n*الوقت:* {time}\n\nرابط ملف المتابعة: {portal_link}\n*المرجع:* {ref_code}",
+      "*إشعار حضور*\n\nتم تسجيل حضور الطالب *{student_name}* في مجموعة *{group_name}*.\n*التاريخ:* {date} | *الوقت:* {time}\n*كود الطالب:* {student_code}\n\nتقرير المتابعة: {portal_link}\n*رقم المرجع:* {ref_code}"
     ]), JSON.stringify([
-      "نتيجة تقييم - مستر أحمد عبدربه 📝\nمرحباً بحضرتك، تم رصد نتيجة امتحان {exam_title} للطالب: {student_name}.\nالدرجة: {score} من {max_score} (النسبة: {percentage}%).\nكود الطالب: {student_code}\nتقرير الإجابات والتقييم: {portal_link}\nالمرجع: {ref_code}",
-      "إشعار درجات | منصة مستر أحمد عبدربه\nحصل الطالب {student_name} في {exam_title} على نتيجة {score}/{max_score} بمعدل {percentage}%.\nتفاصيل التقييم: {portal_link}\nمع تحيات مستر أحمد عبدربه وإدارة المنصة.\nالمرجع: {ref_code}",
-      "تقييم دراسي - مستر أحمد عبدربه:\nتم تصحيح {exam_title} للطالب {student_name}.\nالنتيجة المحققة: {score} من أصل {max_score}.\nرابط التقرير الكامل: {portal_link}\nكود: {ref_code}"
+      "*نتيجة التقييم* 📝\n\n*الطالب:* {student_name}\n*الامتحان:* {exam_title}\n*الدرجة:* {score} من {max_score}\n*النسبة:* {percentage}%\n*كود الطالب:* {student_code}\n\nتقرير التقييم: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+      "*إشعار نتيجة الامتحان*\n\nحصل الطالب *{student_name}* في *{exam_title}* على *{score}/{max_score}* بنسبة *{percentage}%*.\n\nتفاصيل التقييم: {portal_link}\n*المرجع:* {ref_code}",
+      "*تقييم دراسي*\n\nتم تصحيح *{exam_title}* للطالب *{student_name}*.\n*النتيجة المحققة:* {score} من {max_score}\n\nرابط التقرير الكامل: {portal_link}\n*رقم المرجع:* {ref_code}"
     ]), JSON.stringify([
-      "إيصال سداد مصروفات - مستر أحمد عبدربه 🧾\nالسلام عليكم يا فندم، تم استلام مبلغ {amount_paid} ج.م سداداً لمصروفات شهر {month} للطالب: {student_name}.\nرقم الإيصال: {receipt_number}\nكود الطالب: {student_code}\nعرض الإيصال: {portal_link}\nشكراً لتعاونكم الدائم.",
-      "سند قبض إلكتروني | مستر أحمد عبدربه\nتم بنجاح تسجيل دفعة مالية بقيمة {amount_paid} ج.م لحساب الطالب: {student_name} (سداد {month}).\nرقم السند: {receipt_number}\nالسجل المالي: {portal_link}\nالمرجع: {ref_code}",
-      "إشعار تحصيل نقدية - مكتب مستر أحمد عبدربه:\nتم استلام مبلغ {amount_paid} جنيه لمصروفات {month} الخاصة بالطالب {student_name}.\nإيصال رقم: #{receipt_number}.\nمتابعة الحساب: {portal_link}"
+      "*إيصال سداد المصروفات* 🧾\n\n*الطالب:* {student_name}\n*المبلغ المدفوع:* {amount_paid} ج.م\n*عن شهر:* {month}\n*رقم الإيصال:* {receipt_number}\n*كود الطالب:* {student_code}\n\nعرض الإيصال ومتابعة الحساب: {portal_link}\n*المرجع:* {ref_code}\n\nشكراً لتعاونكم.",
+      "*سند قبض إلكتروني*\n\nتم تسجيل دفعة مالية بنجاح.\n*الطالب:* {student_name}\n*القيمة:* {amount_paid} ج.م\n*الشهر:* {month}\n*رقم السند:* {receipt_number}\n\nالسجل المالي: {portal_link}\n*المرجع:* {ref_code}",
+      "*إشعار تحصيل نقدية*\n\nتم استلام مبلغ *{amount_paid} جنيه* لمصروفات *{month}* الخاصة بالطالب *{student_name}*.\n*رقم الإيصال:* {receipt_number}\n\nمتابعة الحساب: {portal_link}\n*المرجع:* {ref_code}"
     ]), JSON.stringify([
-      "إشعار دفع مقدم - مستر أحمد عبدربه 💳\nتم استلام مبلغ {amount_paid} ج.م كدفعة مقدمة للطالب: {student_name} عن شهور: {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}",
-      "تم بنجاح تسجيل دفعة مالية مقدمة بقيمة {amount_paid} ج.م لحساب الطالب: {student_name}.\nالشهور المسددة: {months}\nسند رقم: {receipt_number}\nالمرجع: {ref_code}",
-      "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"
+      "*إيصال الدفع المقدم* 💳\n\n*الطالب:* {student_name}\n*المبلغ المدفوع:* {amount_paid} ج.م\n*الشهور المسددة:* {months}\n*رقم الإيصال:* {receipt_number}\n\nمتابعة الحساب: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+      "*تم تسجيل الدفع المقدم بنجاح* ✅\n\n*الطالب:* {student_name}\n*القيمة:* {amount_paid} ج.م\n*الفترة المسددة:* {months}\n*رقم السند:* {receipt_number}\n\nرابط المتابعة: {portal_link}\n*المرجع:* {ref_code}",
+      "*إيصال استلام نقدية — دفع مقدم*\n\n*الطالب:* {student_name}\n*المبلغ:* {amount_paid} جنيه\n*الشهور:* {months}\n*الإيصال:* #{receipt_number}\n\nالرابط: {portal_link}\n*المرجع:* {ref_code}"
     ])]
   );
 
@@ -931,9 +1002,9 @@ export async function migrate() {
     FROM jsonb_array_elements_text($1::jsonb) AS item(value)
     ON CONFLICT (category, message_body) DO NOTHING
   `, [JSON.stringify([
-    "تنبيه غياب - منصة مستر أحمد عبدربه\nلم يتم تسجيل حضور الطالب {student_name} في مجموعة {group_name} بتاريخ {date}.\nبرجاء التواصل مع إدارة المنصة.",
-    "إشعار غياب الطالب {student_name}\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب في حصة {group_name} بتاريخ {date}.",
-    "متابعة الحضور | {student_name}\nتم إغلاق جلسة {group_name} بتاريخ {date} دون تسجيل حضور الطالب."
+    "*تنبيه غياب الطالب* ⚠️\n\n*الطالب:* {student_name}\n*المجموعة:* {group_name}\n*التاريخ:* {date}\n\nلم يتم تسجيل حضور الطالب لهذه الحصة.\nرابط المتابعة: {portal_link}\n*المرجع:* {ref_code}\n\n— منصة مستر أحمد عبدربه",
+    "*إشعار غياب*\n\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب *{student_name}* في حصة *{group_name}* بتاريخ *{date}*.\n\nرابط ملف المتابعة: {portal_link}\n*المرجع:* {ref_code}",
+    "*متابعة الحضور*\n\nتم إغلاق جلسة *{group_name}* بتاريخ *{date}* دون تسجيل حضور الطالب *{student_name}*.\n\nرابط المتابعة: {portal_link}\n*رقم المرجع:* {ref_code}"
   ])]);
 
   await query(`

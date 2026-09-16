@@ -1,16 +1,12 @@
 import { query } from "../db/pool.js";
 import { hasPermission } from "./rbac.js";
-import { listStudentsNeedingAttention } from "./studentAttention.js";
+import { getDashboardAlertThresholds } from "./systemSettings.js";
+import { hasGroupAccess } from "./groupAccess.js";
+import { NotificationType, AGGREGATED_NOTIFICATION_TYPES } from "./notificationTypes.js";
 import { sendPasswordRecoveryEmail } from "./email.js";
 import { getPasswordRecoveryConfig } from "./passwordRecoveryConfig.js";
 
 const WHATSAPP_CONNECTION_ALERT_COOLDOWN_MINUTES = 30;
-
-function cairoMonth() {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit" }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}`;
-}
 
 function notificationPermissionScope(teacher) {
   return {
@@ -20,53 +16,198 @@ function notificationPermissionScope(teacher) {
   };
 }
 
-function attentionNotification(reason, student, month) {
-  const key = `${reason.type}_low:${student.studentId}:${month}:${reason.threshold ?? "due"}`;
+function safeCount(value) {
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count > 0 ? count : 0;
+}
+
+function normalizedReferenceId(value) {
+  const referenceId = String(value ?? "").trim();
+  return referenceId || null;
+}
+
+export function formatAggregatedNotification({ type, groupName, studentCount, examName, billingPeriod, threshold }) {
+  const count = safeCount(studentCount);
+  const group = String(groupName || "Group").trim();
+  const exam = String(examName || "exam").trim();
+  const period = String(billingPeriod || "billing period").trim();
+  const scoreThreshold = Number.isFinite(Number(threshold)) ? Number(threshold) : 0;
+  const subject = count === 1 ? "student" : "students";
+  const arabicSubject = count === 1 ? "طالب" : "طلاب";
+
+  if (type === NotificationType.ATTENDANCE_ABSENCE) {
+    return {
+      title: "Attendance alert",
+      message: `${count} ${subject} in ${group} missed today's session.`,
+      titleAr: "تنبيه حضور",
+      messageAr: `${count} ${arabicSubject} في ${group} تغيبوا عن حصة اليوم.`
+    };
+  }
+  if (type === NotificationType.UNPAID_FEES) {
+    return {
+      title: "Unpaid fees alert",
+      message: `${count} ${subject} in ${group} have unpaid fees for ${period}.`,
+      titleAr: "تنبيه رسوم غير مدفوعة",
+      messageAr: `${count} ${arabicSubject} في ${group} لديهم رسوم غير مدفوعة عن ${period}.`
+    };
+  }
+  if (type === NotificationType.LOW_EXAM_GRADE) {
+    return {
+      title: "Low exam grade alert",
+      message: `${count} ${subject} in ${group} scored below ${scoreThreshold}% in ${exam}.`,
+      titleAr: "تنبيه درجات منخفضة",
+      messageAr: `${count} ${arabicSubject} في ${group} حصلوا على أقل من ${scoreThreshold}% في ${exam}.`
+    };
+  }
+  throw new Error("unsupported_aggregated_notification_type");
+}
+
+function aggregatedPayload({ type, groupId, groupName, referenceId, studentCount, metadata, content }) {
   return {
-    type: reason.type === "attendance" ? "attendance_low" : reason.type === "evaluation" ? "evaluation_low" : "payment_overdue",
-    dedupeKey: key,
-    entityType: "student",
-    entityId: student.studentId,
-    targetSection: reason.targetSection,
-    payload: {
-      studentName: student.studentName,
-      studentCode: student.studentCode,
-      groupName: student.groupName,
-      value: reason.value ?? null,
-      threshold: reason.threshold ?? null,
-      amount: reason.amount ?? null
-    }
+    ...metadata,
+    groupId: Number(groupId),
+    groupName,
+    referenceId,
+    studentCount,
+    notificationType: type,
+    title: content.title,
+    message: content.message,
+    titleAr: content.titleAr,
+    messageAr: content.messageAr
   };
+}
+
+export async function upsertAggregatedNotification({
+  type,
+  groupId,
+  referenceId,
+  studentCount,
+  groupName,
+  metadata = {},
+  recipients = [],
+  db = query
+} = {}) {
+  if (!AGGREGATED_NOTIFICATION_TYPES.includes(type)) throw new Error("unsupported_aggregated_notification_type");
+  const count = safeCount(studentCount);
+  const normalizedGroupId = Number(groupId);
+  const normalizedReferenceId = normalizedReferenceIdValue(referenceId);
+  if (!Number.isSafeInteger(normalizedGroupId) || normalizedGroupId <= 0 || !normalizedReferenceId || !count) return { created: 0, deduplicated: 0, skipped: true };
+
+  const content = formatAggregatedNotification({ type, groupName, studentCount: count, examName: metadata.examName || metadata.exam_name, billingPeriod: metadata.billingPeriod || metadata.billing_period, threshold: metadata.threshold });
+  const payload = aggregatedPayload({ type, groupId: normalizedGroupId, groupName, referenceId: normalizedReferenceId, studentCount: count, metadata, content });
+  const targetSection = type === NotificationType.ATTENDANCE_ABSENCE ? "attendance" : type === NotificationType.UNPAID_FEES ? "payments" : "evaluations";
+  const entityId = /^\d+$/.test(normalizedReferenceId) ? normalizedReferenceId : null;
+  let created = 0;
+  let deduplicated = 0;
+  for (const recipient of recipients) {
+    const recipientId = Number(typeof recipient === "object" ? recipient.id : recipient);
+    if (!Number.isSafeInteger(recipientId) || recipientId <= 0) continue;
+    const dedupeKey = `${type}:recipient:${recipientId}:group:${normalizedGroupId}:reference:${normalizedReferenceId}`;
+    const result = await db(
+      `INSERT INTO notifications (
+         recipient_user_id, type, notification_type, entity_type, entity_id, target_section,
+         payload, title, message, group_id, reference_id, student_count, metadata,
+         dedupe_key, is_read, read_at, resolved_at
+       ) VALUES ($1,$2,$2,'group',$3,$4,$5::jsonb,$6,$7,$8,$9,$10,$11::jsonb,$12,FALSE,NULL,NULL)
+       ON CONFLICT (recipient_user_id, dedupe_key) DO UPDATE SET
+         type = EXCLUDED.type,
+         notification_type = EXCLUDED.notification_type,
+         entity_type = EXCLUDED.entity_type,
+         entity_id = EXCLUDED.entity_id,
+         target_section = EXCLUDED.target_section,
+         payload = EXCLUDED.payload,
+         title = EXCLUDED.title,
+         message = EXCLUDED.message,
+         group_id = EXCLUDED.group_id,
+         reference_id = EXCLUDED.reference_id,
+         student_count = EXCLUDED.student_count,
+         metadata = EXCLUDED.metadata,
+         is_read = CASE WHEN notifications.resolved_at IS NOT NULL THEN FALSE ELSE notifications.is_read END,
+         read_at = CASE WHEN notifications.resolved_at IS NOT NULL THEN NULL ELSE notifications.read_at END,
+         resolved_at = NULL,
+         updated_at = NOW()
+       RETURNING id, (xmax = 0) AS inserted`,
+      [recipientId, type, entityId, targetSection, JSON.stringify(payload), content.title, content.message, normalizedGroupId, normalizedReferenceId, count, JSON.stringify({ ...metadata, group_id: normalizedGroupId, group_name: groupName, reference_id: normalizedReferenceId, student_count: count, title_ar: content.titleAr, message_ar: content.messageAr }) , dedupeKey]
+    );
+    const inserted = result.rows?.[0]?.inserted === true;
+    if (inserted) {
+      created += 1;
+      console.info(JSON.stringify({ event: "aggregated_notification_created", notification_type: type, group_id: normalizedGroupId, reference_id: normalizedReferenceId, student_count: count, recipient_user_id: recipientId }));
+    } else {
+      deduplicated += 1;
+      console.info(JSON.stringify({ event: "aggregated_notification_deduplicated", dedupe_key: dedupeKey }));
+    }
+  }
+  return { created, deduplicated, skipped: false };
+}
+
+function normalizedReferenceIdValue(value) {
+  return normalizedReferenceId(value);
+}
+
+export async function getAggregatedNotificationRecipients({ type, groupId, db = query } = {}) {
+  const permission = type === NotificationType.UNPAID_FEES ? "payments.reports.view" : "dashboard.alerts.view";
+  const result = await db(`
+    SELECT t.id, t.role, t.permissions,
+      COALESCE((SELECT array_agg(tga.group_id ORDER BY tga.group_id) FROM teacher_group_access tga WHERE tga.teacher_id = t.id), '{}') AS group_ids
+    FROM teachers t
+    WHERE t.is_active = TRUE AND t.deleted_at IS NULL`);
+  return (result.rows || []).filter((recipient) =>
+    hasPermission(recipient, permission) && hasGroupAccess({ ...recipient, group_ids: recipient.group_ids }, groupId)
+  );
 }
 
 async function syncAttentionNotifications(recipientUserId, teacher, db = query) {
   const scope = notificationPermissionScope(teacher);
   if (!scope.attention) return [];
-  const attention = await listStudentsNeedingAttention({ includePayment: scope.payment, limit: 50, db });
-  const month = cairoMonth();
-  const notifications = attention.students.flatMap((student) => student.reasons.map((reason) => attentionNotification(reason, student, month)));
-  const activeKeys = notifications.map((notification) => notification.dedupeKey);
+  const groupScope = !["owner", "admin"].includes(String(teacher.role || "")) ? Number.isInteger(Number(teacher.group_ids?.[0])) ? teacher.group_ids : [] : null;
+  const thresholds = await getDashboardAlertThresholds(db);
+  const feeValues = [];
+  const feeScope = [];
+  if (Array.isArray(groupScope)) { feeValues.push(groupScope); feeScope.push(`fd.group_id = ANY($${feeValues.length}::int[])`); }
+  const feeRows = scope.payment ? await db(`
+    SELECT fd.group_id, COALESCE(g.display_name, g.name) AS group_name,
+      to_char(fd.due_month, 'YYYY-MM') AS billing_period, COUNT(DISTINCT fd.student_id)::int AS student_count
+    FROM fee_dues fd JOIN groups g ON g.id = fd.group_id
+    JOIN students s ON s.id = fd.student_id AND s.is_active = TRUE AND s.deleted_at IS NULL
+    WHERE fd.amount > fd.paid_amount AND fd.due_month <= date_trunc('month', (NOW() AT TIME ZONE 'Africa/Cairo'))::date
+      ${feeScope.length ? `AND ${feeScope.join(" AND ")}` : ""}
+    GROUP BY fd.group_id, g.display_name, g.name, fd.due_month
+    ORDER BY fd.due_month DESC`, feeValues) : { rows: [] };
+  const examValues = [thresholds.evaluationAlert];
+  const examScope = [];
+  if (Array.isArray(groupScope)) { examValues.push(groupScope); examScope.push(`s.group_id = ANY($${examValues.length}::int[])`); }
+  const examRows = await db(`
+    SELECT e.id AS exam_id, e.group_id, COALESCE(g.display_name, g.name) AS group_name,
+      e.title AS exam_name, COUNT(DISTINCT er.student_id)::int AS student_count
+    FROM exam_results er JOIN exams e ON e.id = er.exam_id JOIN groups g ON g.id = e.group_id
+    JOIN students s ON s.id = er.student_id AND s.is_active = TRUE AND s.deleted_at IS NULL
+    WHERE e.max_score > 0 AND er.score / e.max_score * 100 < $1
+      ${examScope.length ? `AND ${examScope.join(" AND ")}` : ""}
+    GROUP BY e.id, e.group_id, g.display_name, g.name, e.title`, examValues);
+
+  const activeKeys = [];
+  const notifications = [];
+  for (const row of feeRows.rows || []) {
+    const referenceId = String(row.billing_period);
+    const notification = { type: NotificationType.UNPAID_FEES, groupId: Number(row.group_id), referenceId, groupName: row.group_name, studentCount: Number(row.student_count), metadata: { billingPeriod: referenceId, paymentStatus: "unpaid", reportFilter: { status: "unpaid", groupId: Number(row.group_id), period: referenceId } } };
+    notifications.push(notification);
+    activeKeys.push(`${notification.type}:recipient:${recipientUserId}:group:${notification.groupId}:reference:${referenceId}`);
+  }
+  for (const row of examRows.rows || []) {
+    const referenceId = String(row.exam_id);
+    const notification = { type: NotificationType.LOW_EXAM_GRADE, groupId: Number(row.group_id), referenceId, groupName: row.group_name, studentCount: Number(row.student_count), metadata: { examId: Number(row.exam_id), examName: row.exam_name, threshold: thresholds.evaluationAlert, reportFilter: { groupId: Number(row.group_id), examId: Number(row.exam_id), maxScorePercentage: thresholds.evaluationAlert } } };
+    notifications.push(notification);
+    activeKeys.push(`${notification.type}:recipient:${recipientUserId}:group:${notification.groupId}:reference:${referenceId}`);
+  }
   await db(
     `UPDATE notifications SET resolved_at = NOW(), updated_at = NOW()
-     WHERE recipient_user_id = $1 AND type IN ('attendance_low','evaluation_low','payment_overdue')
-       AND resolved_at IS NULL ${activeKeys.length ? "AND NOT (dedupe_key = ANY($2::text[]))" : ""}`,
-    activeKeys.length ? [recipientUserId, activeKeys] : [recipientUserId]
+     WHERE recipient_user_id = $1 AND type IN ($2,$3) AND resolved_at IS NULL ${activeKeys.length ? "AND NOT (dedupe_key = ANY($4::text[]))" : ""}`,
+    activeKeys.length ? [recipientUserId, NotificationType.UNPAID_FEES, NotificationType.LOW_EXAM_GRADE, activeKeys] : [recipientUserId, NotificationType.UNPAID_FEES, NotificationType.LOW_EXAM_GRADE]
   );
-  for (const notification of notifications) {
-    await db(
-      `INSERT INTO notifications (recipient_user_id, type, entity_type, entity_id, target_section, payload, dedupe_key, is_read, resolved_at)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,FALSE,NULL)
-       ON CONFLICT (recipient_user_id, dedupe_key) DO UPDATE SET
-         payload = EXCLUDED.payload,
-         entity_type = EXCLUDED.entity_type,
-         entity_id = EXCLUDED.entity_id,
-         target_section = EXCLUDED.target_section,
-         updated_at = NOW(),
-         is_read = CASE WHEN notifications.resolved_at IS NOT NULL THEN FALSE ELSE notifications.is_read END,
-         resolved_at = NULL`,
-      [recipientUserId, notification.type, notification.entityType, notification.entityId, notification.targetSection, JSON.stringify(notification.payload), notification.dedupeKey]
-    );
-  }
+  // Hide the old per-student dashboard alerts after the aggregated records are available.
+  await db(`UPDATE notifications SET resolved_at = NOW(), updated_at = NOW() WHERE recipient_user_id = $1 AND type IN ('attendance_low','evaluation_low','payment_overdue') AND entity_type = 'student' AND resolved_at IS NULL`, [recipientUserId]);
+  for (const notification of notifications) await upsertAggregatedNotification({ ...notification, recipients: [recipientUserId], db });
   return notifications;
 }
 
@@ -328,7 +469,9 @@ export async function listNotificationsForUser(teacher, { limit = 10, db = query
   await syncNotificationsForUser(teacher, db);
   const safeLimit = Math.min(100, Math.max(1, Number(limit) || 10));
   const result = await db(
-    `SELECT id, type, entity_type, entity_id, target_section, payload, is_read, created_at
+    `SELECT id, type, notification_type, entity_type, entity_id, target_section,
+        group_id, reference_id, student_count, metadata, title, message,
+        payload, is_read, read_at, created_at, updated_at
      FROM notifications
      WHERE recipient_user_id = $1 AND resolved_at IS NULL
      ORDER BY created_at DESC LIMIT $2`,

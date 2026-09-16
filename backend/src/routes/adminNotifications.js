@@ -12,9 +12,10 @@ adminNotificationsRouter.get("/", async (req, res, next) => {
   try {
     const result = await listNotificationsForUser(req.teacher, { limit: req.query.limit });
     const notifications = result.notifications.map((notification) => {
-      const canExposePayment = notification.type !== "payment_overdue" || hasPermission(req.teacher, "payments.reports.view");
+      const notificationType = notification.notification_type || notification.type;
+      const canExposePayment = !(notificationType === "payment_overdue" || notificationType === "unpaid_fees") || hasPermission(req.teacher, "payments.reports.view");
       if (canExposePayment) return notification;
-      return { ...notification, payload: { ...notification.payload, amount: null } };
+      return { ...notification, payload: { ...notification.payload, amount: null }, metadata: { ...(notification.metadata || {}), amount: null } };
     });
     return res.json({ ok: true, notifications, unreadCount: result.unreadCount });
   } catch (error) {

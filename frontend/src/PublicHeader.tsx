@@ -71,6 +71,7 @@ export function PublicHeader({
 }: PublicHeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   useEscapeKey(mobileMenuOpen, () => setMobileMenuOpen(false));
+  const direction = language === "ar" ? "rtl" : "ltr";
   const activePath = normalizePath(currentPath);
   const profileIsInteractive = !isStudentLoggedIn;
   const navItems: NavItem[] = [
@@ -94,7 +95,7 @@ export function PublicHeader({
   const themeLabel = theme === "dark" ? labels.themeToLight : labels.themeToDark;
 
   return (
-    <header className="landing-header public-header" dir={language}>
+    <header className="landing-header public-header" dir={direction}>
       <div className="landing-header-inner">
         <div className="landing-brand">
           <a

@@ -20,6 +20,7 @@ import { HomeContentEditor } from "./cms/HomeContentEditor";
 import { DEFAULT_HOME_CONTENT, fetchHomeContent, type LandingPageContent } from "./cms/homeContent";
 import { registerServiceWorker } from "./registerServiceWorker";
 import { useEscapeKey } from "./utils/useEscapeKey";
+import { getNotificationAction } from "./utils/notificationActions";
 
 registerServiceWorker();
 
@@ -504,8 +505,11 @@ const translations = {
     "whatsapp.loadFailed": "تعذر تحميل إعدادات واتساب.",
     "whatsapp.automationTitle": "الأتمتة ومكافحة الحظر",
     "whatsapp.automationDescription": "تُرسل الرسائل في قائمة انتظار متسلسلة مع تأخير عشوائي بين كل رسالة.",
-    "whatsapp.autoSendLabel": "إرسال رسالة تلقائية لولي الأمر فور تسجيل الحضور",
-    "whatsapp.autoSendDescription": "تُضاف الرسالة إلى قائمة الانتظار بعد تسجيل حضور الطالب.",
+    "whatsapp.autoSendLabel": "الإرسال التلقائي للرسائل الآلية",
+    "whatsapp.autoSendDescription": "يتحكم هذا الخيار في الرسائل المرتبطة بالوقت أو الشرط، مثل إشعارات الغياب بعد انتهاء الحصة.",
+    "whatsapp.autoSendEnabled": "مفعل",
+    "whatsapp.autoSendDisabled": "متوقف",
+    "whatsapp.autoSendSaveFailed": "تعذر تحديث الإرسال التلقائي. تمت إعادة الخيار إلى حالته السابقة.",
     "whatsapp.delayLabel": "التأخير بين الرسائل",
     "whatsapp.delayDescription": "يتم اختيار تأخير عشوائي داخل هذا النطاق لتقليل معدل الإرسال.",
     "whatsapp.minimum": "الأدنى",
@@ -591,6 +595,9 @@ const translations = {
     "whatsapp.saving": "جاري حفظ الإعدادات...",
     "whatsapp.saved": "تم حفظ الإعدادات",
     "whatsapp.saveFailed": "تعذر حفظ إعدادات واتساب.",
+    "whatsapp.templateMissingPlaceholder": "القالب يفتقد المتغير المطلوب: {{placeholder}}",
+    "whatsapp.duplicateTemplate": "لا يمكن حفظ قوالب مكررة. استخدم نصًا مختلفًا لكل قالب.",
+    "whatsapp.invalidTemplateLength": "يجب أن يتراوح طول القالب بين 5 و2000 حرف.",
     "whatsapp.sendGrade": "إرسال النتيجة عبر واتساب",
     "whatsapp.sendingGrade": "جاري تجهيز رسالة النتيجة...",
     "whatsapp.gradeQueued": "تمت إضافة رسالة النتيجة إلى قائمة الانتظار.",
@@ -815,6 +822,7 @@ const translations = {
     "fees.exported": "تم تصدير التقرير",
     "fees.totalPaid": "إجمالي المدفوع",
     "fees.paymentCount": "عدد المدفوعات",
+    "fees.reversed": "تم عكسها",
     "fees.paymentDate": "تاريخ الدفع",
     "fees.paymentTime": "وقت الدفع",
     "fees.coveredMonth": "الشهر المغطى",
@@ -838,6 +846,21 @@ const translations = {
     "fees.reversalInvalidReason": "يرجى إدخال سبب صحيح لعكس الدفعة.",
     "fees.reversalGroupAccess": "لا يمكنك عكس دفعة خارج نطاق مجموعاتك.",
     "fees.reversalNotReversible": "هذه الدفعة غير قابلة للعكس لأنها لا تحتوي على مبلغ مدفوع صالح.",
+    "fees.reversalIdempotencyConflict": "يتعارض طلب العكس مع عملية أخرى. لم يتم اعتماد أي تغيير.",
+    "fees.reversalInProgress": "توجد محاولة سابقة لعكس هذه الدفعة قيد المراجعة. لم يتم اعتماد أي تغيير.",
+    "fees.reversalStudentMissing": "لا يمكن عكس الدفعة لأن الطالب غير موجود أو تم حذفه.",
+    "fees.reversalGroupMissing": "لا يمكن عكس الدفعة لأن المجموعة غير موجودة أو تم حذفها.",
+    "fees.reversalStudentGroupMismatch": "الطالب المرتبط بالدفعة لا ينتمي إلى مجموعة الدفعة.",
+    "fees.reversalHistoryIncomplete": "تفتقد الدفعة سجل توزيع المصروفات المغطاة.",
+    "fees.reversalMalformedMonths": "بيانات المصروفات المغطاة في الدفعة غير صحيحة.",
+    "fees.reversalDuplicateMonth": "تحتوي الدفعة على شهور مكررة ضمن المصروفات المغطاة.",
+    "fees.reversalCoveredTotalMismatch": "لا تتطابق توزيعات المصروفات المغطاة مع إجمالي الدفعة.",
+    "fees.reversalDueNotFound": "تعذر العثور على أحد الاستحقاقات المغطاة للطالب.",
+    "fees.reversalDueRelationshipInvalid": "أحد الاستحقاقات المغطاة لا ينتمي إلى الطالب ومجموعة الدفعة.",
+    "fees.reversalInvalidCoveredAmount": "أحد توزيعات المصروفات المغطاة غير صالح للاستحقاق.",
+    "fees.reversalInsufficientDueBalance": "لا يحتوي أحد الاستحقاقات المغطاة على رصيد مدفوع كافٍ للعكس.",
+    "fees.reversalAllocationMismatch": "تغير أحد الاستحقاقات أثناء تنفيذ العكس. لم يتم اعتماد أي تغيير.",
+    "fees.reversalAuditLogFailed": "تعذر تسجيل عملية العكس. لم يتم اعتماد أي تغيير.",
     "fees.reversalUnavailable": "خدمة عكس الدفعات غير متاحة مؤقتاً. لم يتم اعتماد أي تغيير.",
     "fees.securityCode": "رمز الحماية",
     "fees.securityCodeHint": "أدخل رمز الحماية المكون من 4 أرقام لتأكيد العملية.",
@@ -956,6 +979,11 @@ const translations = {
     "audit.pinSaved": "تم حفظ رمز الحماية.",
     "audit.locked": "تم إيقاف المحاولة مؤقتاً بسبب محاولات فاشلة.",
     "audit.invalidPin": "رمز الحماية غير صحيح.",
+    "audit.invalidAdminPassword": "كلمة مرور المدير غير صحيحة.",
+    "audit.adminPasswordRequired": "اكتب كلمة مرور المدير.",
+    "audit.pinSaveFailed": "تعذر حفظ رمز الحماية.",
+    "audit.savingPin": "جارٍ حفظ رمز الحماية...",
+    "audit.unlocking": "جارٍ فتح سجل النشاط...",
     "audit.action.paymentCreated": "تم تسجيل دفع المصروفات",
     "audit.action.advancePaymentCreated": "تم تسجيل دفع مقدم",
     "audit.action.paymentReversed": "تم عكس دفعة",
@@ -1306,6 +1334,12 @@ const translations = {
     "dashboard.notificationDescriptionAttendance": "{{name}} يحتاج متابعة في الحضور",
     "dashboard.notificationDescriptionEvaluation": "{{name}} لديه متوسط تقييم منخفض",
     "dashboard.notificationDescriptionPayment": "{{name}} لديه مصروفات متأخرة",
+    "dashboard.notificationDescriptionAttendanceGroupOne": "طالب واحد في {{group}} تغيب عن حصة اليوم.",
+    "dashboard.notificationDescriptionAttendanceGroupMany": "{{count}} طلاب في {{group}} تغيبوا عن حصة اليوم.",
+    "dashboard.notificationDescriptionFeesGroupOne": "طالب واحد في {{group}} لديه رسوم غير مدفوعة عن {{period}}.",
+    "dashboard.notificationDescriptionFeesGroupMany": "{{count}} طلاب في {{group}} لديهم رسوم غير مدفوعة عن {{period}}.",
+    "dashboard.notificationDescriptionExamGroupOne": "طالب واحد في {{group}} حصل على أقل من {{threshold}}% في {{exam}}.",
+    "dashboard.notificationDescriptionExamGroupMany": "{{count}} طلاب في {{group}} حصلوا على أقل من {{threshold}}% في {{exam}}.",
     "dashboard.notificationsLoadFailed": "تعذر تحميل الإشعارات",
     "studentNotifications.title": "إشعارات الطالب",
     "studentNotifications.markAllRead": "تحديد الكل كمقروء",
@@ -1352,6 +1386,12 @@ const translations = {
     "admin.password": "كلمة المرور",
     "admin.role": "الدور",
     "admin.active": "نشط",
+    "admin.total": "الإجمالي",
+    "admin.groupDetails": "تفاصيل المجموعة",
+    "admin.groupStatistics": "إحصائيات المجموعة",
+    "admin.studentStatus": "حالة الطلاب",
+    "admin.classDays": "أيام الحصص",
+    "admin.students": "الطلاب",
     "admin.whatsappOptedOut": "إيقاف رسائل واتساب لولي الأمر",
     "admin.groupActive": "المجموعة نشطة",
     "admin.disabled": "معطل",
@@ -2055,8 +2095,11 @@ const translations = {
     "whatsapp.loadFailed": "Could not load WhatsApp settings.",
     "whatsapp.automationTitle": "Automation and anti-ban queue",
     "whatsapp.automationDescription": "Messages are sent sequentially with a randomized delay between each message.",
-    "whatsapp.autoSendLabel": "Automatically notify the guardian when attendance is recorded",
-    "whatsapp.autoSendDescription": "The notification is added to the queue after attendance is recorded.",
+    "whatsapp.autoSendLabel": "Automatic messaging",
+    "whatsapp.autoSendDescription": "Controls time-based or conditional messages, such as absence alerts after a session ends.",
+    "whatsapp.autoSendEnabled": "Enabled",
+    "whatsapp.autoSendDisabled": "Disabled",
+    "whatsapp.autoSendSaveFailed": "Could not update automatic messaging. The toggle was restored to its previous state.",
     "whatsapp.delayLabel": "Delay between messages",
     "whatsapp.delayDescription": "A random delay in this range is chosen to reduce sending frequency.",
     "whatsapp.minimum": "Minimum",
@@ -2142,6 +2185,9 @@ const translations = {
     "whatsapp.saving": "Saving settings...",
     "whatsapp.saved": "Settings saved",
     "whatsapp.saveFailed": "Could not save WhatsApp settings.",
+    "whatsapp.templateMissingPlaceholder": "Template missing required placeholder: {{placeholder}}",
+    "whatsapp.duplicateTemplate": "Duplicate templates cannot be saved. Use different text for each template.",
+    "whatsapp.invalidTemplateLength": "Template length must be between 5 and 2,000 characters.",
     "whatsapp.sendGrade": "Send result by WhatsApp",
     "whatsapp.sendingGrade": "Preparing result message...",
     "whatsapp.gradeQueued": "The result message was added to the queue.",
@@ -2366,6 +2412,7 @@ const translations = {
     "fees.exported": "Report exported",
     "fees.totalPaid": "Total paid",
     "fees.paymentCount": "Number of payments",
+    "fees.reversed": "Reversed",
     "fees.paymentDate": "Payment date",
     "fees.paymentTime": "Payment time",
     "fees.coveredMonth": "Covered month",
@@ -2389,6 +2436,21 @@ const translations = {
     "fees.reversalInvalidReason": "Please enter a valid reversal reason.",
     "fees.reversalGroupAccess": "You cannot reverse a payment outside your assigned groups.",
     "fees.reversalNotReversible": "This payment cannot be reversed because it has no valid paid amount.",
+    "fees.reversalIdempotencyConflict": "This reversal conflicts with another operation. No change was committed.",
+    "fees.reversalInProgress": "A previous reversal attempt is still under review. No change was committed.",
+    "fees.reversalStudentMissing": "The payment cannot be reversed because the student is missing or deleted.",
+    "fees.reversalGroupMissing": "The payment cannot be reversed because the group is missing or deleted.",
+    "fees.reversalStudentGroupMismatch": "The payment student does not belong to the payment group.",
+    "fees.reversalHistoryIncomplete": "The payment is missing its covered-dues allocation history.",
+    "fees.reversalMalformedMonths": "The payment covered-dues data is malformed.",
+    "fees.reversalDuplicateMonth": "The payment contains duplicate covered months.",
+    "fees.reversalCoveredTotalMismatch": "The covered-dues allocations do not match the payment total.",
+    "fees.reversalDueNotFound": "A covered fee due could not be found for this student.",
+    "fees.reversalDueRelationshipInvalid": "A covered fee due does not belong to the payment student and group.",
+    "fees.reversalInvalidCoveredAmount": "A covered allocation is invalid for its fee due.",
+    "fees.reversalInsufficientDueBalance": "A covered fee due does not have enough paid balance to reverse.",
+    "fees.reversalAllocationMismatch": "A fee due changed while the reversal was being applied. No change was committed.",
+    "fees.reversalAuditLogFailed": "The reversal audit record could not be written. No change was committed.",
     "fees.reversalUnavailable": "Payment reversal is temporarily unavailable. No change was committed.",
     "fees.securityCode": "Security code",
     "fees.securityCodeHint": "Enter the 4-digit security code to confirm this action.",
@@ -2507,6 +2569,11 @@ const translations = {
     "audit.pinSaved": "Security code saved.",
     "audit.locked": "Access is temporarily locked after failed attempts.",
     "audit.invalidPin": "The security code is incorrect.",
+    "audit.invalidAdminPassword": "The administrator password is incorrect.",
+    "audit.adminPasswordRequired": "Enter the administrator password.",
+    "audit.pinSaveFailed": "Unable to save the security code.",
+    "audit.savingPin": "Saving security code...",
+    "audit.unlocking": "Unlocking activity log...",
     "audit.action.paymentCreated": "Payment recorded",
     "audit.action.advancePaymentCreated": "Advance payment recorded",
     "audit.action.paymentReversed": "Payment reversed",
@@ -2857,6 +2924,12 @@ const translations = {
     "dashboard.notificationDescriptionAttendance": "{{name}} needs attendance follow-up",
     "dashboard.notificationDescriptionEvaluation": "{{name}} has a low evaluation average",
     "dashboard.notificationDescriptionPayment": "{{name}} has overdue payments",
+    "dashboard.notificationDescriptionAttendanceGroupOne": "1 student in {{group}} missed today's session.",
+    "dashboard.notificationDescriptionAttendanceGroupMany": "{{count}} students in {{group}} missed today's session.",
+    "dashboard.notificationDescriptionFeesGroupOne": "1 student in {{group}} has unpaid fees for {{period}}.",
+    "dashboard.notificationDescriptionFeesGroupMany": "{{count}} students in {{group}} have unpaid fees for {{period}}.",
+    "dashboard.notificationDescriptionExamGroupOne": "1 student in {{group}} scored below {{threshold}}% in {{exam}}.",
+    "dashboard.notificationDescriptionExamGroupMany": "{{count}} students in {{group}} scored below {{threshold}}% in {{exam}}.",
     "dashboard.notificationsLoadFailed": "Unable to load notifications",
     "studentNotifications.title": "Student notifications",
     "studentNotifications.markAllRead": "Mark all as read",
@@ -2903,6 +2976,12 @@ const translations = {
     "admin.password": "Password",
     "admin.role": "Role",
     "admin.active": "Active",
+    "admin.total": "Total",
+    "admin.groupDetails": "Group details",
+    "admin.groupStatistics": "Group statistics",
+    "admin.studentStatus": "Student status",
+    "admin.classDays": "Class days",
+    "admin.students": "Students",
     "admin.whatsappOptedOut": "Opt out of WhatsApp guardian messages",
     "admin.groupActive": "Group active",
     "admin.disabled": "Disabled",
@@ -4247,6 +4326,7 @@ function LandingDynamicText({ value, className }: { value: string; className?: s
 
 function LandingPage({ language, t }: { language: Language; t: Translator }) {
   const isArabic = language === "ar";
+  const direction = language === "ar" ? "rtl" : "ltr";
   const [content, setContent] = useState<LandingPageContent>(DEFAULT_HOME_CONTENT[language]);
 
   useEffect(() => {
@@ -4271,7 +4351,7 @@ function LandingPage({ language, t }: { language: Language; t: Translator }) {
   }
 
   return (
-    <main className="landing-main" dir={language}>
+    <main className="landing-main" dir={direction}>
           <section className="landing-hero landing-section" id="landing-home" aria-labelledby="landing-title">
             <div className="landing-hero-copy">
               <span className="landing-badge"><i aria-hidden="true" /><LandingDynamicText value={content.hero.badge} /></span>
@@ -5252,10 +5332,17 @@ type GlobalSearchResult = {
 type HeaderNotification = {
   id: number;
   type: string;
+  notification_type?: string | null;
   entity_type?: string | null;
   entity_id?: number | null;
   target_section?: string | null;
-  payload?: { studentName?: string; studentCode?: string; groupName?: string; amount?: number | null; value?: number | null; phoneNumber?: string | null; reason?: string; status?: string };
+  group_id?: number | null;
+  reference_id?: string | null;
+  student_count?: number | null;
+  title?: string | null;
+  message?: string | null;
+  metadata?: Record<string, any> | null;
+  payload?: { studentName?: string; studentCode?: string; groupName?: string; amount?: number | null; value?: number | null; phoneNumber?: string | null; reason?: string; status?: string; [key: string]: any };
   is_read: boolean;
   created_at: string;
 };
@@ -5332,26 +5419,43 @@ function GlobalSearch({ session, language, t, onSelect }: { session: TeacherSess
 
 function notificationTitle(type: string, t: Translator) {
   if (type === "new_message") return t("dashboard.newMessageNotification");
-  if (type === "attendance_low") return t("dashboard.attendanceNotification");
-  if (type === "evaluation_low") return t("dashboard.evaluationNotification");
+  if (type === "attendance_low" || type === "attendance_absence") return t("dashboard.attendanceNotification");
+  if (type === "evaluation_low" || type === "low_exam_grade") return t("dashboard.evaluationNotification");
+  if (type === "unpaid_fees") return t("dashboard.paymentNotification");
   if (type === "whatsapp_disconnected") return t("dashboard.whatsappDisconnectedNotification");
   return t("dashboard.paymentNotification");
 }
 
 function notificationDescription(notification: HeaderNotification, t: Translator, language: Language) {
+  const type = notification.notification_type || notification.type;
+  const metadata = notification.metadata || {};
+  const groupName = metadata.groupName || metadata.group_name || notification.payload?.groupName || (language === "ar" ? "المجموعة" : "Group");
+  const count = Number(notification.student_count ?? metadata.studentCount ?? metadata.student_count);
+  if (Number.isSafeInteger(count) && count > 0 && type === "attendance_absence") {
+    return t(count === 1 ? "dashboard.notificationDescriptionAttendanceGroupOne" : "dashboard.notificationDescriptionAttendanceGroupMany", { count: String(count), group: String(groupName) });
+  }
+  if (Number.isSafeInteger(count) && count > 0 && type === "unpaid_fees") {
+    const period = String(metadata.billingPeriod || metadata.billing_period || notification.reference_id || (language === "ar" ? "هذه الفترة" : "this period"));
+    return t(count === 1 ? "dashboard.notificationDescriptionFeesGroupOne" : "dashboard.notificationDescriptionFeesGroupMany", { count: String(count), group: String(groupName), period });
+  }
+  if (Number.isSafeInteger(count) && count > 0 && type === "low_exam_grade") {
+    const exam = String(metadata.examName || metadata.exam_name || (language === "ar" ? "الامتحان" : "the exam"));
+    const threshold = String(metadata.threshold ?? (language === "ar" ? "الحد المحدد" : "the configured threshold"));
+    return t(count === 1 ? "dashboard.notificationDescriptionExamGroupOne" : "dashboard.notificationDescriptionExamGroupMany", { count: String(count), group: String(groupName), exam, threshold });
+  }
   const name = notification.payload?.studentName || (language === "ar" ? "الطالب" : "Student");
-  if (notification.type === "new_message") return t("dashboard.notificationDescriptionMessage", { name });
-  if (notification.type === "attendance_low") return t("dashboard.notificationDescriptionAttendance", { name });
-  if (notification.type === "evaluation_low") return t("dashboard.notificationDescriptionEvaluation", { name });
-  if (notification.type === "whatsapp_disconnected") return t("dashboard.whatsappDisconnectedDescription");
+  if (type === "new_message") return t("dashboard.notificationDescriptionMessage", { name });
+  if (type === "attendance_low") return t("dashboard.notificationDescriptionAttendance", { name });
+  if (type === "evaluation_low") return t("dashboard.notificationDescriptionEvaluation", { name });
+  if (type === "whatsapp_disconnected") return t("dashboard.whatsappDisconnectedDescription");
   return t("dashboard.notificationDescriptionPayment", { name });
 }
 
 type NotificationPopoverFilter = "all" | "attendance" | "evaluation";
 
 function notificationPopoverCategory(type: string): NotificationPopoverFilter | null {
-  if (type === "attendance_low") return "attendance";
-  if (type === "evaluation_low") return "evaluation";
+  if (type === "attendance_low" || type === "attendance_absence") return "attendance";
+  if (type === "evaluation_low" || type === "low_exam_grade") return "evaluation";
   return null;
 }
 
@@ -5447,7 +5551,7 @@ function NotificationCenter({ session, language, t, onSelect, onOpenAll }: { ses
     <button className={`admin-tool-button ${open ? "active" : ""}`} type="button" aria-label={t("dashboard.notificationCenter")} title={t("dashboard.notificationCenter")} aria-expanded={open} onClick={() => setOpen((value) => !value)}><BellIcon />{unreadCount > 0 ? <span className="header-unread-badge" aria-label={badge}>{badge}</span> : null}</button>
     {open ? <div className="header-popover notification-popover" role="dialog" aria-label={t("dashboard.notifications")}><button className="popup-close-button" type="button" onClick={() => setOpen(false)} aria-label={t("common.close")} title={t("common.close")}>×</button><div className="notification-popover-heading"><strong>{t("dashboard.notifications")}</strong><button className={markAllState === "success" ? "is-success" : ""} type="button" onClick={() => void markAllRead()} disabled={!unreadCount || markAllState === "loading"}>{markAllState === "loading" ? t("dashboard.loading") : markAllState === "success" ? t("dashboard.notificationsMarkedRead") : t("dashboard.markAllRead")}</button></div><div className="notification-filter-tabs" role="tablist" aria-label={t("dashboard.notifications")}>
       {filterTabs.map((filter) => <button key={filter.id} className={activeFilter === filter.id ? "active" : ""} type="button" role="tab" aria-selected={activeFilter === filter.id} onClick={() => setActiveFilter(filter.id)}><span>{filter.label}</span><b>{filter.count}</b></button>)}
-    </div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : filteredNotifications.length ? <div className="notification-list">{filteredNotifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.type}`}>{notification.type === "new_message" ? "✉" : notification.type === "payment_overdue" ? "₤" : notification.type === "whatsapp_disconnected" ? "⚠" : "!"}</span><span><strong>{notificationTitle(notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{notifications.length ? t("dashboard.notificationsFilterEmpty") : t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setOpen(false); onOpenAll(); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
+    </div>{loading && !notifications.length ? <p className="header-popover-state">{t("dashboard.loading")}</p> : error ? <p className="header-popover-state form-error">{error}</p> : filteredNotifications.length ? <div className="notification-list">{filteredNotifications.map((notification) => <button type="button" className={`notification-item ${notification.is_read ? "" : "unread"}`} key={notification.id} onClick={() => { if (!notification.is_read) void markRead(notification.id); setOpen(false); onSelect(notification); }}><span className={`notification-icon notification-icon-${notification.notification_type || notification.type}`}>{(notification.notification_type || notification.type) === "new_message" ? "✉" : ["payment_overdue", "unpaid_fees"].includes(notification.notification_type || notification.type) ? "₤" : (notification.notification_type || notification.type) === "whatsapp_disconnected" ? "⚠" : "!"}</span><span><strong>{notificationTitle(notification.notification_type || notification.type, t)}</strong><small>{notificationDescription(notification, t, language)}</small><time>{new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Africa/Cairo" }).format(new Date(notification.created_at))}</time></span></button>)}</div> : <p className="header-popover-state">{notifications.length ? t("dashboard.notificationsFilterEmpty") : t("dashboard.noNotifications")}</p>}<button className="notification-view-all" type="button" onClick={() => { setOpen(false); onOpenAll(); }}>{t("dashboard.viewAllNotifications")} <span>←</span></button></div> : null}
   </div>;
 }
 
@@ -5456,8 +5560,8 @@ type NotificationActionState = "idle" | "marking" | "marked" | "marking-all" | "
 
 function notificationCategory(type: string): "whatsapp" | "attendance" | "exams" | "system" {
   if (type === "whatsapp_disconnected") return "whatsapp";
-  if (type === "attendance_low" || type === "payment_overdue") return "attendance";
-  if (type === "evaluation_low") return "exams";
+  if (type === "attendance_low" || type === "attendance_absence" || type === "payment_overdue" || type === "unpaid_fees") return "attendance";
+  if (type === "evaluation_low" || type === "low_exam_grade") return "exams";
   return "system";
 }
 
@@ -5655,10 +5759,11 @@ function NotificationsManagementCenter({ session, language, t, onBack }: { sessi
           const id = String(notification.id);
           const category = notificationCategory(notification.type);
           const selected = selectedIds.includes(id);
-          return <article className={`notifications-card notifications-card-${category} ${notification.is_read ? "is-read" : "is-unread"} ${selected ? "is-selected" : ""}`} key={notification.id}>
+          const action = getNotificationAction(notification);
+          return <article className={`notifications-card notifications-card-${category} ${notification.is_read ? "is-read" : "is-unread"} ${selected ? "is-selected" : ""} ${action ? "is-actionable" : ""}`} key={notification.id}>
             <label className="notifications-card-checkbox" htmlFor={`notification-${id}`}><input id={`notification-${id}`} type="checkbox" checked={selected} onChange={() => toggleSelection(id)} disabled={actionBusy} /><span className="visually-hidden">{notificationTitle(notification.type, t)}</span></label>
             <NotificationCategoryIcon category={category} />
-            <div className="notifications-card-content">
+            <div className="notifications-card-content" role={action ? "link" : undefined} tabIndex={action ? 0 : undefined} onClick={() => { if (!action || actionBusy) return; window.history.pushState({}, "", action); window.dispatchEvent(new Event("popstate")); }} onKeyDown={(event) => { if (action && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); window.history.pushState({}, "", action); window.dispatchEvent(new Event("popstate")); } }}>
               <div className="notifications-card-title-row"><h2>{notificationTitle(notification.type, t)}</h2><time dateTime={notification.created_at}>{formatNotificationTimestamp(notification.created_at, language)}</time></div>
               <p>{notificationDescription(notification, t, language)}</p>
               <span className={`notifications-status ${notification.is_read ? "is-read" : "is-unread"}`}><span aria-hidden="true">{notification.is_read ? "○" : "●"}</span>{notification.is_read ? t("dashboard.notificationsReadStatus") : t("dashboard.notificationsUnreadStatus")}</span>
@@ -5907,6 +6012,7 @@ function TeacherDashboard({
   onLogout: () => void;
   t: Translator;
 }) {
+  const direction = language === "ar" ? "rtl" : "ltr";
   const can = (permission: PermissionKey) => sessionHasPermission(session, permission);
   const dashboardTranslator = useMemo(
     () => (key: string, values?: Record<string, string>) => t(key as TranslationKey, values),
@@ -5914,7 +6020,7 @@ function TeacherDashboard({
   );
   const [inboxUnread, setInboxUnread] = useState(0);
   const [cameraScannerOpen, setCameraScannerOpen] = useState(false);
-  const [selectedAttendanceSessionId, setSelectedAttendanceSessionId] = useState("");
+  const [selectedAttendanceSessionId, setSelectedAttendanceSessionId] = useState(() => new URLSearchParams(window.location.search).get("sessionId") || "");
   const previousInboxUnread = useRef(0);
   const [inboxBadgeAnimationKey, setInboxBadgeAnimationKey] = useState(0);
   useEffect(() => {
@@ -5972,6 +6078,21 @@ function TeacherDashboard({
     attendance: t("admin.tabs.attendance"),
     exams: t("admin.tabs.exams")
   };
+
+  useEffect(() => {
+    const syncAdminLocation = () => {
+      const requestedTab = adminTabFromLocation();
+      if (adminTabs.some((tab) => tab.id === requestedTab)) setActiveTab(requestedTab);
+      const requestedSessionId = new URLSearchParams(window.location.search).get("sessionId") || "";
+      setSelectedAttendanceSessionId(requestedSessionId);
+    };
+    window.addEventListener("popstate", syncAdminLocation);
+    window.addEventListener("admin-location-change", syncAdminLocation);
+    return () => {
+      window.removeEventListener("popstate", syncAdminLocation);
+      window.removeEventListener("admin-location-change", syncAdminLocation);
+    };
+  }, [adminTabs]);
 
   useEffect(() => {
     if (!adminTabs.some((tab) => tab.id === activeTab)) {
@@ -6053,7 +6174,7 @@ function TeacherDashboard({
   }
 
   return (
-    <div className="app-shell admin-shell" dir={language} lang={language}>
+    <div className="app-shell admin-shell" dir={direction} lang={language}>
       <header
         className="site-header admin-header"
         style={{
@@ -6133,7 +6254,11 @@ function TeacherDashboard({
               window.history.pushState({}, "", "/notifications");
               window.dispatchEvent(new Event("popstate"));
             }} onSelect={(notification) => {
-              if (notification.entity_type === "student" && notification.entity_id && adminTabs.some((item) => item.id === "students")) navigateAdmin("students", Number(notification.entity_id), notification.target_section || undefined);
+              const action = getNotificationAction(notification);
+              if (action) {
+                window.history.pushState({}, "", action);
+                window.dispatchEvent(new Event("admin-location-change"));
+              } else if (notification.entity_type === "student" && notification.entity_id && adminTabs.some((item) => item.id === "students")) navigateAdmin("students", Number(notification.entity_id), notification.target_section || undefined);
               else if (notification.type === "whatsapp_disconnected" && adminTabs.some((item) => item.id === "whatsapp")) navigateAdmin("whatsapp");
               else if (can("messages.view")) navigateAdmin("inbox");
             }} /> : null}
@@ -7281,25 +7406,25 @@ function StudentCard({
       <div className="student-card-actions" onClick={(event) => event.stopPropagation()}>
         {isDeleted ? <>
           {canManage ? <button className={`secondary-button compact-button student-card-action restore-student-action action-feedback-${restoreState}`} type="button" disabled={!student.purge_after || anyActionBusy} onClick={() => onRestore(student)}>
-            <StudentActionIcon name="restore" />{actionButtonText(restoreState, { idle: t("admin.restore"), loading: t("admin.restoring"), success: t("admin.restored"), error: t("admin.actionFailedSave") })}
+            <StudentActionIcon name="restore" /><span className="student-card-action-label">{actionButtonText(restoreState, { idle: t("admin.restore"), loading: t("admin.restoring"), success: t("admin.restored"), error: t("admin.actionFailedSave") })}</span>
           </button> : null}
           {canDelete ? <button className={`danger-button compact-button student-card-action student-card-delete-action action-feedback-${permanentDeleteState}`} type="button" disabled={anyActionBusy} onClick={() => onPermanentDelete(student)}>
-            <StudentActionIcon name="trash" />{actionButtonText(permanentDeleteState, { idle: t("admin.permanentDelete"), loading: t("admin.permanentlyDeleting"), success: t("admin.permanentlyDeleted"), error: t("admin.actionFailedDelete") })}
+            <StudentActionIcon name="trash" /><span className="student-card-action-label">{actionButtonText(permanentDeleteState, { idle: t("admin.permanentDelete"), loading: t("admin.permanentlyDeleting"), success: t("admin.permanentlyDeleted"), error: t("admin.actionFailedDelete") })}</span>
           </button> : null}
         </> : <>
           <div className="student-card-primary-actions">
             {canManage ? <button className="primary-button compact-button student-card-action student-card-edit-action" type="button" disabled={anyActionBusy} onClick={() => onEdit(student)}>
-              <StudentActionIcon name="edit" />{t("admin.editUser")}
+              <StudentActionIcon name="edit" /><span className="student-card-action-label">{t("admin.editUser")}</span>
             </button> : null}
             {canManage && student.qr_token ? <button className={`secondary-button compact-button student-card-action action-feedback-${printState}`} type="button" disabled={anyActionBusy} onClick={() => onPrint(student)}>
-              <StudentActionIcon name="printer" />{actionButtonText(printState, { idle: t("admin.printLabel"), loading: t("admin.printingLabel"), success: t("admin.labelReady"), error: t("admin.actionFailedSave") })}
+              <StudentActionIcon name="printer" /><span className="student-card-action-label">{actionButtonText(printState, { idle: t("admin.printLabel"), loading: t("admin.printingLabel"), success: t("admin.labelReady"), error: t("admin.actionFailedSave") })}</span>
             </button> : null}
             {canManage ? <button className={`secondary-button compact-button student-card-action student-card-status-action action-feedback-${statusState}`} type="button" disabled={anyActionBusy} onClick={() => onStatus(student)}>
-              <StudentActionIcon name="power" />{actionButtonText(statusState, { idle: student.is_active ? t("admin.disable") : t("admin.enable"), loading: student.is_active ? t("admin.disabling") : t("admin.enabling"), success: student.is_active ? t("admin.disabledSuccessfully") : t("admin.enabledSuccessfully"), error: t("admin.actionFailedSave") })}
+              <StudentActionIcon name="power" /><span className="student-card-action-label">{actionButtonText(statusState, { idle: student.is_active ? t("admin.disable") : t("admin.enable"), loading: student.is_active ? t("admin.disabling") : t("admin.enabling"), success: student.is_active ? t("admin.disabledSuccessfully") : t("admin.enabledSuccessfully"), error: t("admin.actionFailedSave") })}</span>
             </button> : null}
           </div>
           {canDelete ? <button className={`danger-button compact-button student-card-action student-card-delete-action action-feedback-${deleteState}`} type="button" disabled={anyActionBusy} onClick={() => onDelete(student)}>
-            <StudentActionIcon name="trash" />{actionButtonText(deleteState, { idle: t("admin.deleteStudent"), loading: t("admin.studentDeleting"), success: t("admin.studentDeleted"), error: t("admin.actionFailedDelete") })}
+            <StudentActionIcon name="trash" /><span className="student-card-action-label">{actionButtonText(deleteState, { idle: t("admin.deleteStudent"), loading: t("admin.studentDeleting"), success: t("admin.studentDeleted"), error: t("admin.actionFailedDelete") })}</span>
           </button> : null}
         </>}
       </div>
@@ -7370,6 +7495,7 @@ function AcademicManager({
   const [profileScanStatus, setProfileScanStatus] = useState("");
   const [profileScanLoading, setProfileScanLoading] = useState(false);
   const profileScanRef = useRef<HTMLInputElement>(null);
+  const editSectionRef = useRef<HTMLFormElement | null>(null);
   const profileScanBusyRef = useRef(false);
   const profileScanAbortRef = useRef<AbortController | null>(null);
 
@@ -7398,6 +7524,28 @@ function AcademicManager({
     }
     setBulkDeleteConfirmOpen(false);
   });
+
+  useEffect(() => {
+    if (!groupDetails) return undefined;
+    const html = document.documentElement;
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const scrollbarWidth = window.innerWidth - html.clientWidth;
+    const previousHtmlOverflow = html.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+    const previousBodyPaddingRight = body.style.paddingRight;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) body.style.paddingRight = `${scrollbarWidth}px`;
+
+    return () => {
+      html.style.overflow = previousHtmlOverflow;
+      body.style.overflow = previousBodyOverflow;
+      body.style.paddingRight = previousBodyPaddingRight;
+      window.scrollTo(0, scrollY);
+    };
+  }, [groupDetails]);
 
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` };
   function syncProfileFromLocation() {
@@ -7745,6 +7893,7 @@ function AcademicManager({
       billing_start_month: student.billing_start_month ? String(student.billing_start_month).slice(0, 10) : defaultBillingStartMonth(),
       is_active: student.is_active
     });
+    editSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function updateStudentField(field: keyof typeof emptyStudentForm, value: string) {
@@ -8134,7 +8283,7 @@ function AcademicManager({
       <div className="section-heading">
         <h2>{editingId ? t("admin.update") : t(`admin.tabs.${kind}` as TranslationKey)}</h2>
       </div>
-      <form onSubmit={save} noValidate>
+      <form ref={kind === "students" ? editSectionRef : undefined} onSubmit={save} noValidate>
         {kind === "groups" ? (
           <div className="editor-grid">
             <label className={fieldErrors.name ? "field-with-error" : ""}>{t("admin.groupName")}<input required aria-invalid={Boolean(fieldErrors.name)} value={groupForm.name} onChange={(e) => updateGroupField("name", e.target.value)} />{fieldErrors.name ? <small className="field-error">{fieldErrors.name}</small> : null}</label>
@@ -8360,7 +8509,54 @@ function AcademicManager({
           <button className="secondary-button compact-button" type="button" disabled={groupActionState(`delete:${groupDeletePinTarget.id}`) !== "idle"} onClick={() => { setGroupDeletePinTarget(null); setGroupDeletePin(""); }}>{t("admin.cancel")}</button>
         </div>
       </section></div> : null}
-      {groupDetails ? <div className="modal-backdrop" role="presentation"><section className="modal group-details-modal" role="dialog" aria-modal="true"><button className="close-button" type="button" onClick={()=>setGroupDetails(null)} aria-label={t("common.close")} title={t("common.close")}>×</button><p className="eyebrow">Group details / تفاصيل المجموعة</p><h2>{groupDetails.group.display_name || groupDetails.group.name}</h2><p>{groupDetails.group.grade_level || groupDetails.group.grade} · {groupDetails.group.subject} · {groupDetails.group.fees_amount} EGP</p><div className="detail-stats"><span>Total: {groupDetails.group.students_count ?? 0}</span><span>Active: {groupDetails.group.active_students_count ?? 0}</span><span>Disabled: {groupDetails.group.disabled_students_count ?? 0}</span><span>Deleted: {groupDetails.group.deleted_students_count ?? 0}</span></div><div className="status-filter-buttons group-details-filters" role="group" aria-label="Student status filters">{(["all","active","disabled","deleted"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={detailFilter===filter?"active":""} type="button" onClick={()=>setDetailFilter(filter)}>{recordStatusFilterLabel(filter,t)}</button>)}</div><div className="schedule-detail-list">{groupDetails.schedules.map((schedule:any)=><span key={schedule.id}>{t(`days.${schedule.day_of_week}` as TranslationKey)} · {schedule.start_time.slice(0,5)}–{schedule.end_time.slice(0,5)}</span>)}</div><div className="academic-list group-student-list">{groupDetails.students.filter((student:any)=>detailFilter==="all"||(detailFilter==="deleted"?student.deleted_at:!student.deleted_at&&(detailFilter==="active"?student.is_active:!student.is_active))).map((student:any)=><article className="academic-row group-student-row" key={student.id}><div className="group-student-info"><div className="group-student-heading"><strong>{student.full_name}</strong><span className={student.deleted_at?"status-deleted":student.is_active?"status-active":"status-disabled"}>{recordStatusLabel(student,t)}</span></div><span>Code / الكود: {student.student_serial || student.student_code || "—"}</span><span>Phone / الهاتف: {student.phone || "—"} · Guardian / ولي الأمر: {student.guardian_phone || "—"}</span></div></article>)}</div></section></div> : null}
+      {groupDetails ? createPortal(
+        <div
+          className="modal-backdrop student-profile-backdrop group-details-backdrop"
+          role="presentation"
+          onWheel={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }}
+          onTouchMove={(event) => { if (event.target === event.currentTarget) event.preventDefault(); }}
+        >
+          <section
+            className="modal student-profile-modal group-details-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="group-details-title"
+            dir={language === "ar" ? "rtl" : "ltr"}
+          >
+            <button className="close-button" type="button" onClick={() => setGroupDetails(null)} aria-label={t("common.close")} title={t("common.close")}>×</button>
+            <div className="section-heading">
+              <p className="eyebrow">{t("admin.groupDetails")}</p>
+              <h2 id="group-details-title">{groupDetails.group.display_name || groupDetails.group.name}</h2>
+              <p>{groupDetails.group.grade_level || groupDetails.group.grade} · {groupDetails.group.subject} · {groupDetails.group.fees_amount} EGP</p>
+            </div>
+            <section className="student360-summary group-detail-summary" aria-label={t("admin.groupStatistics")}>
+              <article><span>{t("admin.total")}</span><strong>{groupDetails.group.students_count ?? 0}</strong></article>
+              <article><span>{t("admin.active")}</span><strong>{groupDetails.group.active_students_count ?? 0}</strong></article>
+              <article><span>{t("admin.disabled")}</span><strong>{groupDetails.group.disabled_students_count ?? 0}</strong></article>
+              <article><span>{t("admin.deleted")}</span><strong>{groupDetails.group.deleted_students_count ?? 0}</strong></article>
+            </section>
+            <section className="profile-section group-details-section">
+              <h3>{t("admin.studentStatus")}</h3>
+              <div className="status-filter-buttons group-details-filters" role="group" aria-label={t("admin.studentStatus")}>
+                {(["all", "active", "disabled", "deleted"] as RecordStatusFilter[]).map((filter) => <button key={filter} className={detailFilter === filter ? "active" : ""} type="button" onClick={() => setDetailFilter(filter)}>{recordStatusFilterLabel(filter, t)}</button>)}
+              </div>
+            </section>
+            <section className="profile-section group-details-section">
+              <h3>{t("admin.classDays")}</h3>
+              <div className="schedule-detail-list">
+                {groupDetails.schedules.map((schedule: any) => <span key={schedule.id}>{t(`days.${schedule.day_of_week}` as TranslationKey)} · {schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}</span>)}
+              </div>
+            </section>
+            <section className="profile-section group-details-section">
+              <h3>{t("admin.students")}</h3>
+              <div className="academic-list group-student-list">
+                {groupDetails.students.filter((student: any) => detailFilter === "all" || (detailFilter === "deleted" ? student.deleted_at : !student.deleted_at && (detailFilter === "active" ? student.is_active : !student.is_active))).map((student: any) => <article className="academic-row group-student-row" key={student.id}><div className="group-student-info"><div className="group-student-heading"><strong>{student.full_name}</strong><span className={student.deleted_at ? "status-deleted" : student.is_active ? "status-active" : "status-disabled"}>{recordStatusLabel(student, t)}</span></div><span>{t("admin.studentCode")}: {student.student_serial || student.student_code || "—"}</span><span>{t("admin.phone")}: {student.phone || "—"} · {t("admin.guardianPhone")}: {student.guardian_phone || "—"}</span></div></article>)}
+              </div>
+            </section>
+          </section>
+        </div>,
+        document.body
+      ) : null}
     </section>
   );
 }
@@ -8420,7 +8616,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
   async function loadProfile() {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/students/${studentId}/profile`, { headers: auth });
+      const response = await fetch(`${API_BASE_URL}/admin/students/${studentId}/profile`, { cache: "no-store", headers: auth });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(t("admin.profileLoadFailed"));
       setProfile(data);
@@ -8526,7 +8722,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
       {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.excusedCount")}</b>{profile.attendance.excused_count || 0}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{profileSessionTimeRange(row, language)}</span></small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
       {profile.exams ? <section className="profile-section" id="student360-evaluations"><h3>{t("admin.examHistory")}</h3>{profile.exams?.length ? <div className="profile-record-list profile-exam-list">{profile.exams.map((row: any) => { const evaluation = scoreEvaluation(row.score, row.max_score, t); return <div className="profile-exam-record" key={row.id}><div className="profile-exam-details"><strong>{displayValue(row.title, language)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small>{t("dashboard.latestExamDate")}: {formatDateOnly(String(row.exam_date || ""), language, "—")}</small>{row.note ? <small>{t("admin.assessment")}: {displayValue(row.note, language)}</small> : null}</div><div className="profile-exam-score">{row.score == null ? <strong>—</strong> : <><strong className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</strong>{evaluation ? <small className={`profile-exam-evaluation score-${evaluation.tone}`}>{evaluation.percentage.toFixed(0)}% — {evaluation.label}</small> : null}</>}</div></div>; })}</div> : <p className="empty-state">{t("admin.noProfileExams")}</p>}</section> : null}
       {profile.notes ? <section className="profile-section" id="student360-notes"><h3>{t("admin.notes")}</h3>{sessionHasPermission(session, "notes.manage") ? <form className="profile-note-form" onSubmit={saveNote}><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder={t("admin.notePlaceholder")} rows={3} /><button className="secondary-button compact-button" type="submit">{editingNoteId ? t("admin.editNote") : t("admin.addNote")}</button></form> : null}{profile.notes?.length ? <div className="profile-record-list">{profile.notes.map((note: any) => <div key={note.id}><span>{note.body}<small>{note.author_name} · {new Date(note.created_at).toLocaleString()}</small></span>{sessionHasPermission(session, "notes.manage") ? <div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setEditingNoteId(Number(note.id)); setNoteBody(note.body); }}>{t("admin.editNote")}</button><button className="secondary-button compact-button" type="button" onClick={() => deleteNote(Number(note.id))}>{t("admin.deleteNote")}</button></div> : null}</div>)}</div> : <p className="empty-state">{t("admin.noProfileNotes")}</p>}</section> : null}
-      {profile.fees ? <section className="profile-section" id="student360-payments"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.billingStartMonth")}</b>{formatBillingMonth(profile.fees.billing_start_month || profile.student.billing_start_month, language)}</span><span><b>{t("admin.billingStage")}</b><strong className={billingStageClass(profile.fees.billing_stage)}>{billingStageLabel(profile.fees.billing_stage, t)}</strong></span><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p>{profile.fees.payments ? <><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div className="profile-payment-record" key={row.id}><div className="profile-payment-amount"><strong>{money(row.amount)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><span>{row.payment_method || t("fees.normalPayment")}</span></div><div className="profile-record-primary"><span><b>{t("fees.paidBy")}:</b> {row.paid_by || "—"}</span><small><b>{t("fees.paymentDate")}:</b> {formatDateTime(String(row.paid_at || row.payment_date || ""), language, "—")}</small></div></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</> : null}</section> : null}
+      {profile.fees ? <section className="profile-section" id="student360-payments"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.billingStartMonth")}</b>{formatBillingMonth(profile.fees.billing_start_month || profile.student.billing_start_month, language)}</span><span><b>{t("admin.billingStage")}</b><strong className={billingStageClass(profile.fees.billing_stage)}>{billingStageLabel(profile.fees.billing_stage, t)}</strong></span><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p>{profile.fees.payments ? <><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div className="profile-payment-record" key={row.id}><div className="profile-payment-amount"><strong className={row.is_reversed ? "student-fee-payment-reversed" : undefined}>{money(row.amount)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><span>{row.is_reversed ? t("fees.reversed") : row.payment_method || t("fees.normalPayment")}</span></div><div className="profile-record-primary"><span><b>{t("fees.paidBy")}:</b> {row.paid_by || "—"}</span><small><b>{t("fees.paymentDate")}:</b> {formatDateTime(String(row.paid_at || row.payment_date || ""), language, "—")}</small></div></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</> : null}</section> : null}
       {profile.inbox ? <section className="profile-section" id="student360-messages"><h3>{t("admin.profileMessages")}</h3>{profile.inbox?.length ? <div className="profile-record-list">{profile.inbox.map((row: any) => <div key={row.id}><span>{row.subject}<small>{row.last_message || "—"}</small></span><strong>{row.message_count}</strong></div>)}</div> : <p className="empty-state">{t("admin.noProfileMessages")}</p>}</section> : null}
     </> : <p className="form-error">{status || t("admin.profileLoadFailed")}</p>}
     {status && profile ? <p className="form-error">{status}</p> : null}
@@ -8536,7 +8732,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
 function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdChange }: { session: TeacherSession; language: Language; t: Translator; selectedSessionId: string; onSessionIdChange: (sessionId: string) => void }) {
   const canSendAttendance = sessionHasPermission(session, "whatsapp.send_attendance");
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
-  const [date, setDate] = useState(localDateInputValue());
+  const [date, setDate] = useState(() => new URLSearchParams(window.location.search).get("date") || localDateInputValue());
   const [sessions, setSessions] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [records, setRecords] = useState<any[]>([]);
@@ -8545,9 +8741,18 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
   const [savingStudentId, setSavingStudentId] = useState<number | null>(null);
   const selected = selectedSessionId;
   const headers = { Authorization: `Bearer ${session.token}` };
-  async function load() { const [sr, st] = await Promise.all([fetch(`${API_BASE_URL}/admin/attendance/sessions?date=${date}`, { headers }), fetch(`${API_BASE_URL}/admin/students`, { headers })]); const sd = await sr.json(), td = await st.json(); const nextSessions = Array.isArray(sd.sessions) ? sd.sessions : []; const now = Date.now(); const selectableSessions = nextSessions.filter((item: any) => { if (String(item.status || "").toLowerCase() !== "open") return false; const opensAt = Date.parse(String(item.opens_at || item.starts_at || "")); const closesAt = Date.parse(String(item.closes_at || "")); const endsAt = Date.parse(String(item.ends_at || "")); const end = [closesAt, endsAt].filter(Number.isFinite).reduce((latest, value) => Math.min(latest, value), Number.POSITIVE_INFINITY); return Number.isFinite(opensAt) && Number.isFinite(end) && now >= opensAt && now <= end; }); setSessions(selectableSessions); setStudents(Array.isArray(td.students) ? td.students : []); const nextSelected = selectedSessionId && selectableSessions.some((item: any) => String(item.id) === selectedSessionId) ? selectedSessionId : selectableSessions[0] ? String(selectableSessions[0].id) : ""; onSessionIdChange(nextSelected); }
+  async function load() { const [sr, st] = await Promise.all([fetch(`${API_BASE_URL}/admin/attendance/sessions?date=${date}`, { headers }), fetch(`${API_BASE_URL}/admin/students`, { headers })]); const sd = await sr.json(), td = await st.json(); const nextSessions = Array.isArray(sd.sessions) ? sd.sessions : []; const now = Date.now(); const requestedSessionId = new URLSearchParams(window.location.search).get("sessionId") || selectedSessionId; const selectableSessions = nextSessions.filter((item: any) => { if (String(item.id) === requestedSessionId) return true; if (String(item.status || "").toLowerCase() !== "open") return false; const opensAt = Date.parse(String(item.opens_at || item.starts_at || "")); const closesAt = Date.parse(String(item.closes_at || "")); const endsAt = Date.parse(String(item.ends_at || "")); const end = [closesAt, endsAt].filter(Number.isFinite).reduce((latest, value) => Math.min(latest, value), Number.POSITIVE_INFINITY); return Number.isFinite(opensAt) && Number.isFinite(end) && now >= opensAt && now <= end; }); setSessions(selectableSessions); setStudents(Array.isArray(td.students) ? td.students : []); const nextSelected = requestedSessionId && selectableSessions.some((item: any) => String(item.id) === requestedSessionId) ? requestedSessionId : selectableSessions[0] ? String(selectableSessions[0].id) : ""; onSessionIdChange(nextSelected); }
   async function loadRecords(id: string) { const r = await fetch(`${API_BASE_URL}/admin/attendance/sessions/${id}/records`, { headers }); const d = await r.json(); setRecords(Array.isArray(d.records) ? d.records : []); }
   useEffect(() => { load().catch(() => setStatus("تعذر تحميل الحضور / Could not load attendance")); }, [date]);
+  useEffect(() => {
+    const syncLocation = () => {
+      const requestedDate = new URLSearchParams(window.location.search).get("date");
+      if (requestedDate && requestedDate !== date) setDate(requestedDate);
+    };
+    window.addEventListener("popstate", syncLocation);
+    window.addEventListener("admin-location-change", syncLocation);
+    return () => { window.removeEventListener("popstate", syncLocation); window.removeEventListener("admin-location-change", syncLocation); };
+  }, [date]);
   useEffect(() => { if (selected) loadRecords(selected).catch(() => undefined); else setRecords([]); }, [selected]);
   async function mark(studentId: number, statusValue: string) {
     if (savingStudentId !== null) return;
@@ -8567,8 +8772,13 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
     }
   }
   const selectedSession = sessions.find((item) => String(item.id) === selected);
-  const groupStudents = students.filter((item) => !selectedSession || item.group_id === selectedSession.group_id);
-  return <section className="admin-editor"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label>Date / التاريخ<input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => onSessionIdChange(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {formatTimeOfDay(item.start_time, language)} إلى {formatTimeOfDay(item.end_time, language)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}{canSendAttendance ? <label className="whatsapp-receipt-option attendance-whatsapp-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendWhatsApp} onChange={(event) => setSendWhatsApp(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendAttendance")}</span></label> : null}<div className="academic-list">{groupStudents.map((student) => { const currentRecord = records.find((record) => record.student_id === student.id); const currentStatus = currentRecord?.status || "not_marked"; const feedback = rowFeedback[student.id]; const rowSaving = savingStudentId === student.id; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}{currentRecord?.whatsapp_notified === false ? <span className="whatsapp-not-sent-badge" title={t("whatsapp.notSent")}>🔕 {t("whatsapp.notSent")}</span> : null}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "present")}>{rowSaving ? "Saving… / جاري الحفظ" : "Present / حاضر"}</button><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "absent")}>{rowSaving ? "Saving… / جاري الحفظ" : "Absent / غائب"}</button><button className="secondary-button compact-button attendance-excused-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "excused")}>{rowSaving ? "Saving… / جاري الحفظ" : t("attendance.excused")}</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
+  const showAbsentOnly = new URLSearchParams(window.location.search).get("status") === "absent";
+  const groupStudents = students.filter((item) => {
+    if (selectedSession && item.group_id !== selectedSession.group_id) return false;
+    if (!showAbsentOnly) return true;
+    return records.some((record) => record.student_id === item.id && record.status === "absent");
+  });
+  return <section className="admin-editor attendance-panel"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label className="attendance-date-field" style={{ width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", marginLeft: 0, marginRight: 0 }}>Date / التاريخ<input type="date" style={{ width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", marginLeft: 0, marginRight: 0, display: "block" }} value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => onSessionIdChange(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {formatTimeOfDay(item.start_time, language)} إلى {formatTimeOfDay(item.end_time, language)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}{canSendAttendance ? <label className="whatsapp-receipt-option attendance-whatsapp-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendWhatsApp} onChange={(event) => setSendWhatsApp(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendAttendance")}</span></label> : null}<div className="academic-list">{groupStudents.map((student) => { const currentRecord = records.find((record) => record.student_id === student.id); const currentStatus = currentRecord?.status || "not_marked"; const feedback = rowFeedback[student.id]; const rowSaving = savingStudentId === student.id; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}{currentRecord?.whatsapp_notified === false ? <span className="whatsapp-not-sent-badge" title={t("whatsapp.notSent")}>🔕 {t("whatsapp.notSent")}</span> : null}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "present")}>{rowSaving ? "Saving… / جاري الحفظ" : "Present / حاضر"}</button><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "absent")}>{rowSaving ? "Saving… / جاري الحفظ" : "Absent / غائب"}</button><button className="secondary-button compact-button attendance-excused-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "excused")}>{rowSaving ? "Saving… / جاري الحفظ" : t("attendance.excused")}</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
 type CameraScannerToast = { tone: "success" | "error"; message: string };
@@ -9178,7 +9388,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     const controller = new AbortController();
     requestAbortRef.current = controller;
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/fees/scan-lookup`, { method: "POST", headers: { "Content-Type": "application/json", ...auth }, body: JSON.stringify({ value, mode }), signal: controller.signal });
+      const response = await fetch(`${API_BASE_URL}/admin/fees/scan-lookup`, { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json", ...auth }, body: JSON.stringify({ value, mode }), signal: controller.signal });
       const data = await response.json();
       if (!response.ok || !data.ok) {
         const error = paymentErrorMessage(data.status, data.message, t);
@@ -9321,7 +9531,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
     const discountAmount = isExempt ? 0 : Number(normalizeDigits(discountInput || "0"));
     try {
       const response = await fetch(`${API_BASE_URL}/admin/fees/payments`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey, ...auth }, body: JSON.stringify({ student_id: summary.id, discount_amount: discountAmount, is_exempt: isExempt, send_whatsapp: canSendReceipts && sendReceipt })
+        method: "POST", cache: "no-store", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey, ...auth }, body: JSON.stringify({ student_id: summary.id, discount_amount: discountAmount, is_exempt: isExempt, send_whatsapp: canSendReceipts && sendReceipt })
       });
       const data = await response.json();
       if (!response.ok || !data.ok) {
@@ -9351,7 +9561,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
       const idempotencyKey = advancePaymentKeyRef.current || createIdempotencyKey();
       advancePaymentKeyRef.current = idempotencyKey;
       const response = await fetch(`${API_BASE_URL}/admin/fees/advance-payments`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey, ...auth },
+        method: "POST", cache: "no-store", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey, ...auth },
         body: JSON.stringify({ student_id: advanceData.student.id, months: orderedMonths, send_whatsapp: canSendReceipts && sendReceipt })
       });
       const data = await response.json();
@@ -9364,7 +9574,7 @@ function FeesPanel({ session, language, t }: { session: TeacherSession; language
       setStatus(data.whatsapp?.reason === "invalid_phone" ? `${t("fees.advanceSaved")} — ${t("whatsapp.invalidPhone")}` : data.whatsapp?.queued ? `${t("fees.advanceSaved")} — ${t("whatsapp.receiptQueued")}` : t("fees.advanceSaved"));
       setSelectedMonths([]);
       setSendReceipt(canSendReceipts);
-      const refresh = await fetch(`${API_BASE_URL}/admin/fees/advance-options/${advanceData.student.id}`, { headers: auth });
+      const refresh = await fetch(`${API_BASE_URL}/admin/fees/advance-options/${advanceData.student.id}`, { cache: "no-store", headers: auth });
       const refreshed = await refresh.json();
       if (refresh.ok && refreshed.ok) setAdvanceData(refreshed);
       window.dispatchEvent(new Event("fees-updated"));
@@ -9854,10 +10064,12 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   const [pin, setPin] = useState("");
   const [newPin, setNewPin] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
+  const [savingPin, setSavingPin] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
   const [showChangePin, setShowChangePin] = useState(false);
   const [filters, setFilters] = useState<AuditFilters>(emptyFilters);
   const [appliedFilters, setAppliedFilters] = useState<AuditFilters>(emptyFilters);
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterOptions, setFilterOptions] = useState<{ users: any[]; groups: any[]; students: any[] }>({ users: [], groups: [], students: [] });
   // Kept for the legacy JSX below while the new Activity Center is returned above it.
   const [search, setSearch] = useState("");
@@ -9899,16 +10111,26 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
 
   async function savePin(event: React.FormEvent) {
     event.preventDefault(); setStatus("");
+    const normalizedPin = normalizeDigits(newPin).trim();
+    if (!/^\d{4}$/.test(normalizedPin)) { setStatus(t("audit.invalidPin")); return; }
+    if (!adminPassword.trim()) { setStatus(t("audit.adminPasswordRequired")); return; }
+    setSavingPin(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/audit-logs/pin`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ pin: newPin, current_password: adminPassword }) });
+      const response = await fetch(`${API_BASE_URL}/admin/audit-logs/pin`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ pin: normalizedPin, current_password: adminPassword }) });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.status || "pin_failed");
       setConfigured(true); setNewPin(""); setAdminPassword(""); setShowChangePin(false); setStatus(t("audit.pinSaved"));
-    } catch { setStatus(t("audit.invalidPin")); }
+    } catch (error) {
+      const errorStatus = error instanceof Error ? error.message : "";
+      if (errorStatus === "invalid_admin_password") setStatus(t("audit.invalidAdminPassword"));
+      else if (errorStatus === "invalid_pin") setStatus(t("audit.invalidPin"));
+      else setStatus(t("audit.pinSaveFailed"));
+    } finally { setSavingPin(false); }
   }
 
   async function unlock(event: React.FormEvent) {
     event.preventDefault(); setStatus("");
+    setUnlocking(true);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/audit-logs/unlock`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ pin }) });
       const data = await response.json();
@@ -9916,6 +10138,7 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
       setAccessToken(data.audit_access_token); setUnlocked(true); setPin(""); setCurrentPage(1);
       await Promise.all([loadLogs(1, data.audit_access_token, appliedFilters), loadFilterOptions(data.audit_access_token)]);
     } catch (error) { setStatus(error instanceof Error && error.message === "audit_pin_locked" ? t("audit.locked") : t("audit.invalidPin")); }
+    finally { setUnlocking(false); }
   }
 
   async function loadFilterOptions(token = accessToken, studentSearch = "") {
@@ -10144,16 +10367,16 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   };
 
   if (configured === null) return <section className="admin-editor audit-logs-panel"><p className="field-hint">{t("fees.reportLoadFailed")}</p></section>;
-  if (!configured || showChangePin) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{configured ? t("audit.changePin") : t("audit.setup")}</h2></div><form onSubmit={savePin} className="audit-pin-form"><label>{t("audit.pin")}<input value={newPin} onChange={(event) => setNewPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="new-password" /></label><label>{t("audit.adminPassword")}<input value={adminPassword} onChange={(event) => setAdminPassword(event.target.value)} type="password" autoComplete="current-password" /></label><div className="report-actions"><button className="primary-button" type="submit">{t("audit.setup")}</button>{configured ? <button className="secondary-button" type="button" onClick={() => setShowChangePin(false)}>{t("admin.cancel")}</button> : null}</div>{status ? <p className="form-error">{status}</p> : null}</form></section>;
-  if (!unlocked) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><form onSubmit={unlock} className="audit-pin-form"><label>{t("audit.pin")}<input value={pin} onChange={(event) => setPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><button className="primary-button" type="submit">{t("audit.unlock")}</button>{status ? <p className="form-error">{status}</p> : null}</form></section>;
+  if (!configured || showChangePin) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{configured ? t("audit.changePin") : t("audit.setup")}</h2></div><form onSubmit={savePin} className="audit-pin-form"><label>{t("audit.pin")}<input value={newPin} onChange={(event) => { setNewPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4)); if (status) setStatus(""); }} inputMode="numeric" type="password" maxLength={4} autoComplete="new-password" /></label><label>{t("audit.adminPassword")}<input value={adminPassword} onChange={(event) => { setAdminPassword(event.target.value); if (status) setStatus(""); }} type="password" autoComplete="current-password" /></label><div className="report-actions"><button className={"primary-button audit-action-button" + (status ? " audit-action-button-error" : "")} type="submit" disabled={savingPin}>{savingPin ? t("audit.savingPin") : status || t("audit.setup")}</button>{configured ? <button className="secondary-button" type="button" onClick={() => setShowChangePin(false)} disabled={savingPin}>{t("admin.cancel")}</button> : null}</div></form></section>;
+  if (!unlocked) return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><form onSubmit={unlock} className="audit-pin-form"><label>{t("audit.pin")}<input value={pin} onChange={(event) => { setPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4)); if (status) setStatus(""); }} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><button className={"primary-button audit-action-button" + (status ? " audit-action-button-error" : "")} type="submit" disabled={unlocking}>{unlocking ? t("audit.unlocking") : status || t("audit.unlock")}</button></form></section>;
   const selectedDetailRows = selectedLog ? detailRowsFor(selectedLog).filter((item) => item.key !== t("audit.detail.summary") && item.key !== t("audit.detail.actor")) : [];
   const selectedChangeRows: Array<{ field: string; before: string; after: string }> = selectedLog ? changeRowsFor(selectedLog) : [];
   const maintenancePanelForCenter = <details className="audit-maintenance audit-maintenance-center"><summary>{t("audit.maintenance")}</summary><form className="audit-maintenance-form" onSubmit={deleteMaintenance}><p className="audit-maintenance-warning">{t("audit.maintenanceWarning")}</p><div className="audit-maintenance-fields"><label>{t("audit.maintenanceFrom")}<input type="date" value={maintenanceFrom} onChange={(event) => { setMaintenanceFrom(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenanceTo")}<input type="date" value={maintenanceTo} onChange={(event) => { setMaintenanceTo(event.target.value); setMaintenanceCount(null); setMaintenanceStatus(""); }} /></label><label>{t("audit.maintenancePin")}<input value={maintenancePin} onChange={(event) => setMaintenancePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" /></label><label>{t("audit.maintenancePassword")}<input value={maintenancePassword} onChange={(event) => setMaintenancePassword(event.target.value)} type="password" autoComplete="current-password" /></label></div><label>{t("audit.maintenanceReason")}<textarea value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} placeholder={t("audit.maintenanceReasonPlaceholder")} rows={3} maxLength={500} /></label><label>{t("audit.maintenanceConfirmation")}<input value={maintenanceConfirmation} onChange={(event) => setMaintenanceConfirmation(event.target.value)} placeholder={t("audit.maintenanceConfirmationHint")} autoComplete="off" /></label><div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={maintenanceOperation !== "idle"} onClick={previewMaintenance}>{maintenanceOperation === "preview" ? t("audit.maintenancePreviewing") : t("audit.maintenancePreview")}</button><button className="danger-button compact-button" type="submit" disabled={maintenanceOperation !== "idle" || maintenanceCount === null}>{maintenanceOperation === "delete" ? t("audit.maintenanceDeleting") : t("audit.maintenanceDelete")}</button></div>{maintenanceCount !== null ? <p className="audit-maintenance-count">{t("audit.maintenanceCount", { count: String(maintenanceCount) })}</p> : null}{maintenanceStatus ? <p className={"audit-maintenance-status " + maintenanceStatusTone}>{maintenanceStatus}</p> : null}</form></details>;
   return <section className="admin-editor audit-logs-panel audit-center">
     <div className="audit-center-hero"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.activityCenter")}</h2><p>{t("audit.activityCenterDescription")}</p></div><div className="audit-center-hero-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); setSelectedLog(null); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div></div>
     <div className="audit-summary-grid"><article className="audit-summary-card audit-summary-total"><span>{t("audit.totalActivities")}</span><strong>{total.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.title")}</small></article><article className="audit-summary-card audit-summary-success"><span>{t("audit.successfulActivities")}</span><strong>{stats.success_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.success")}</small></article><article className="audit-summary-card audit-summary-failure"><span>{t("audit.failedActivities")}</span><strong>{stats.failure_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.failure")}</small></article><article className="audit-summary-card audit-summary-users"><span>{t("audit.activeUsers")}</span><strong>{stats.user_count.toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</strong><small>{t("audit.systemUser")}</small></article></div>
-    <form className="audit-filter-panel" onSubmit={applyFilters}><div className="audit-filter-heading"><button className="audit-filter-collapse-button" type="button" aria-expanded={filtersOpen} aria-controls="audit-filter-controls" aria-label={filtersOpen ? t("audit.collapseFilters") : t("audit.expandFilters")} onClick={() => setFiltersOpen((current) => !current)}><span aria-hidden="true">⌄</span></button><span className="audit-filter-hint">{loading ? t("audit.refreshing") : total.toLocaleString(language === "ar" ? "ar-EG" : "en-US") + " · " + t("audit.title")}</span></div><div id="audit-filter-controls" className={"audit-filter-collapse-content " + (filtersOpen ? "is-open" : "is-collapsed")}><div className="audit-filter-collapse-inner"><div className="audit-filter-grid"><label className="audit-filter-search">{t("audit.search")}<input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder={t("audit.studentSearchPlaceholder")} /></label><label>{t("audit.systemUser")}<select value={filters.userId} onChange={(event) => updateFilter("userId", event.target.value)}><option value="">{t("audit.allUsers")}</option>{filterOptions.users.map((user) => <option key={user.id} value={user.id}>{user.name || user.username || user.email}</option>)}</select></label><label>{t("audit.role")}<select value={filters.actorRole} onChange={(event) => updateFilter("actorRole", event.target.value)}><option value="">{t("audit.allRoles")}</option><option value="owner">{t("audit.role.owner")}</option><option value="admin">{t("audit.role.admin")}</option><option value="staff">{t("audit.role.staff")}</option></select></label><label>{t("audit.targetType")}<select value={filters.entityType} onChange={(event) => updateFilter("entityType", event.target.value)}><option value="">{t("audit.allTargetTypes")}</option>{["students", "groups", "attendance", "fees", "exams", "whatsapp", "settings", "login"].map((target) => <option key={target} value={target}>{targetLabel(target)}</option>)}</select></label><label>{t("audit.action")}<select value={filters.action} onChange={(event) => updateFilter("action", event.target.value)}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.outcome")}<select value={filters.outcome} onChange={(event) => updateFilter("outcome", event.target.value)}><option value="">{t("audit.allOutcomes")}</option><option value="success">{t("audit.success")}</option><option value="failure">{t("audit.failure")}</option></select></label><label>{t("audit.studentSearch")}<input list="audit-student-options" value={filters.student} onChange={(event) => { updateFilter("student", event.target.value); if (event.target.value.length >= 3) void loadFilterOptions(accessToken, event.target.value); }} placeholder={t("audit.studentSearchPlaceholder")} /></label><datalist id="audit-student-options">{filterOptions.students.map((student) => <option key={student.id} value={student.student_code || student.student_serial || student.full_name}>{student.full_name}{student.student_code ? " · " + student.student_code : ""}</option>)}</datalist><label>{t("audit.group")}<select value={filters.groupId} onChange={(event) => updateFilter("groupId", event.target.value)}><option value="">{t("audit.allGroups")}</option>{filterOptions.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>{t("audit.dateFrom")}<input type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} /></label></div>{filterChipItems.length ? <div className="audit-filter-chips"><span>{t("audit.activeFilters")}</span>{filterChipItems.map((chip) => <button key={String(chip.key)} type="button" onClick={() => { const next = { ...appliedFilters, [chip.key]: "" }; setFilters(next); setAppliedFilters(next); void loadLogs(1, accessToken, next); }} title={t("audit.removeFilter")}>{chip.label}: {chip.value} <b aria-hidden="true">×</b></button>)}</div> : null}<div className="audit-filter-actions"><button className="primary-button compact-button" type="submit" disabled={loading}>{loading ? t("audit.refreshing") : t("audit.applyFilters")}</button><button className="secondary-button compact-button" type="button" onClick={clearFilters} disabled={loading}>{t("audit.clearFilters")}</button></div></div></div></form>
-    <div className="audit-toolbar"><div><strong>{t("audit.title")}</strong><span>{t("audit.activityCenterDescription")}</span></div>{canExport ? <div className="audit-export-actions"><span>{t("audit.exportCurrent")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "current")}>{exportButtonLabel("csv", "current")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "current")}>{exportButtonLabel("xlsx", "current")}</button><span>{t("audit.exportAll")}:</span><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "all")}>{exportButtonLabel("csv", "all")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "all")}>{exportButtonLabel("xlsx", "all")}</button></div> : null}</div>
+    <form className="audit-filter-panel" onSubmit={applyFilters}><div className="audit-filter-heading"><button className="audit-filter-collapse-button" type="button" aria-expanded={filtersOpen} aria-controls="audit-filter-controls" aria-label={filtersOpen ? t("audit.collapseFilters") : t("audit.expandFilters")} onClick={() => setFiltersOpen((current) => !current)}><span className="audit-filter-toggle-copy"><strong>{t("audit.filters")}</strong><span className="audit-filter-hint">{loading ? t("audit.refreshing") : total.toLocaleString(language === "ar" ? "ar-EG" : "en-US") + " · " + t("audit.title")}</span></span><span className="audit-filter-collapse-icon" aria-hidden="true">⌄</span></button></div><div id="audit-filter-controls" className={"audit-filter-collapse-content " + (filtersOpen ? "is-open" : "is-collapsed")}><div className="audit-filter-collapse-inner"><div className="audit-filter-grid"><label className="audit-filter-search">{t("audit.search")}<input value={filters.search} onChange={(event) => updateFilter("search", event.target.value)} placeholder={t("audit.studentSearchPlaceholder")} /></label><label>{t("audit.systemUser")}<select value={filters.userId} onChange={(event) => updateFilter("userId", event.target.value)}><option value="">{t("audit.allUsers")}</option>{filterOptions.users.map((user) => <option key={user.id} value={user.id}>{user.name || user.username || user.email}</option>)}</select></label><label>{t("audit.role")}<select value={filters.actorRole} onChange={(event) => updateFilter("actorRole", event.target.value)}><option value="">{t("audit.allRoles")}</option><option value="owner">{t("audit.role.owner")}</option><option value="admin">{t("audit.role.admin")}</option><option value="staff">{t("audit.role.staff")}</option></select></label><label>{t("audit.targetType")}<select value={filters.entityType} onChange={(event) => updateFilter("entityType", event.target.value)}><option value="">{t("audit.allTargetTypes")}</option>{["students", "groups", "attendance", "fees", "exams", "whatsapp", "settings", "login"].map((target) => <option key={target} value={target}>{targetLabel(target)}</option>)}</select></label><label>{t("audit.action")}<select value={filters.action} onChange={(event) => updateFilter("action", event.target.value)}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.outcome")}<select value={filters.outcome} onChange={(event) => updateFilter("outcome", event.target.value)}><option value="">{t("audit.allOutcomes")}</option><option value="success">{t("audit.success")}</option><option value="failure">{t("audit.failure")}</option></select></label><label>{t("audit.studentSearch")}<input list="audit-student-options" value={filters.student} onChange={(event) => { updateFilter("student", event.target.value); if (event.target.value.length >= 3) void loadFilterOptions(accessToken, event.target.value); }} placeholder={t("audit.studentSearchPlaceholder")} /></label><datalist id="audit-student-options">{filterOptions.students.map((student) => <option key={student.id} value={student.student_code || student.student_serial || student.full_name}>{student.full_name}{student.student_code ? " · " + student.student_code : ""}</option>)}</datalist><label>{t("audit.group")}<select value={filters.groupId} onChange={(event) => updateFilter("groupId", event.target.value)}><option value="">{t("audit.allGroups")}</option>{filterOptions.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><label>{t("audit.dateFrom")}<input type="date" value={filters.dateFrom} onChange={(event) => updateFilter("dateFrom", event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={filters.dateTo} onChange={(event) => updateFilter("dateTo", event.target.value)} /></label></div>{filterChipItems.length ? <div className="audit-filter-chips"><span>{t("audit.activeFilters")}</span>{filterChipItems.map((chip) => <button key={String(chip.key)} type="button" onClick={() => { const next = { ...appliedFilters, [chip.key]: "" }; setFilters(next); setAppliedFilters(next); void loadLogs(1, accessToken, next); }} title={t("audit.removeFilter")}>{chip.label}: {chip.value} <b aria-hidden="true">×</b></button>)}</div> : null}<div className="audit-filter-actions"><button className="primary-button compact-button" type="submit" disabled={loading}>{loading ? t("audit.refreshing") : t("audit.applyFilters")}</button><button className="secondary-button compact-button" type="button" onClick={clearFilters} disabled={loading}>{t("audit.clearFilters")}</button></div></div></div></form>
+    <div className="audit-toolbar"><div><strong>{t("audit.title")}</strong><span>{t("audit.activityCenterDescription")}</span></div>{canExport ? <div className="audit-export-actions"><div className="audit-export-group"><span>{t("audit.exportCurrent")}:</span><div className="audit-export-buttons"><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "current")}>{exportButtonLabel("csv", "current")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "current")}>{exportButtonLabel("xlsx", "current")}</button></div></div><div className="audit-export-group"><span>{t("audit.exportAll")}:</span><div className="audit-export-buttons"><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("csv", "all")}>{exportButtonLabel("csv", "all")}</button><button className="secondary-button compact-button" type="button" disabled={Boolean(exportingKey)} onClick={() => void downloadExport("xlsx", "all")}>{exportButtonLabel("xlsx", "all")}</button></div></div></div> : null}</div>
     {logs.length ? <div className="audit-table-wrap"><table className="audit-activity-table"><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.target")}</th><th>{t("audit.outcome")}</th><th><span className="sr-only">{t("audit.viewDetails")}</span></th></tr></thead><tbody>{logs.map((log) => { const tone = eventTone(log); return <tr key={log.id} className={"audit-event-row audit-event-" + tone}><td data-label={t("audit.date")}><time dateTime={String(log.created_at)}>{formatAuditDate(log.created_at)}</time></td><td data-label={t("audit.user")}><strong>{log.actor_name || log.actor_username || t("audit.role.system")}</strong><small>{roleLabelForAudit(log.actor_role)}</small></td><td data-label={t("audit.action")}><span className={"audit-event-badge audit-event-badge-" + tone}>{actionLabel(log)}</span><small className="audit-action-description">{auditNarrativeFromDetails(String(log.action || "system_action"), log.details || {}, language, t, log.actor_name || log.actor_username || t("audit.role.system"))}</small></td><td data-label={t("audit.target")}><strong>{log.student_name || log.group_name || log.payment_id ? (log.student_name || log.group_name || t("audit.payment") + " #" + log.payment_id) : t("audit.noTarget")}</strong><small>{targetLabel(log.entity_type)}{log.student_code ? " · " + log.student_code : ""}{log.group_name && log.student_name ? " · " + log.group_name : ""}</small></td><td data-label={t("audit.outcome")}><span className={"audit-outcome audit-outcome-" + tone}>{String(log.outcome) === "failure" ? t("audit.failure") : t("audit.success")}</span></td><td data-label=""><button className="secondary-button compact-button audit-view-button" type="button" onClick={() => setSelectedLog(log)}>{t("audit.viewDetails")}</button></td></tr>; })}</tbody></table></div> : <p className="empty-state audit-empty-state">{t("audit.noLogs")}</p>}
     <div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={currentPage <= 1 || loading} onClick={() => void loadLogs(currentPage - 1)}>{"‹"}</button><span className="audit-pagination-label" dir={language === "ar" ? "rtl" : "ltr"}><span>{t("audit.page")}</span><b dir="ltr">{currentPage}</b><span>{t("audit.of")}</span><b dir="ltr">{totalPages}</b></span><button className="secondary-button compact-button" type="button" disabled={currentPage >= totalPages || loading} onClick={() => void loadLogs(currentPage + 1)}>{"›"}</button></div>
     {maintenancePanelForCenter}
@@ -10166,7 +10389,19 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
 }
 
 function FinanceReportsPanel({ session, language, t, canReverse }: { session: TeacherSession; language: Language; t: Translator; canReverse: boolean }) {
-  const [view, setView] = useState<"payments" | "overdue">("payments");
+  const [reportContext, setReportContext] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return { view: params.get("view") === "overdue" ? "overdue" as const : "payments" as const, groupId: params.get("group_id") || "", period: params.get("period") || "" };
+  });
+  useEffect(() => {
+    const syncLocation = () => {
+      const params = new URLSearchParams(window.location.search);
+      setReportContext({ view: params.get("view") === "overdue" ? "overdue" : "payments", groupId: params.get("group_id") || "", period: params.get("period") || "" });
+    };
+    window.addEventListener("popstate", syncLocation);
+    window.addEventListener("admin-location-change", syncLocation);
+    return () => { window.removeEventListener("popstate", syncLocation); window.removeEventListener("admin-location-change", syncLocation); };
+  }, []);
 
   return <div className="finance-reports-workspace">
     <div className="finance-reports-toolbar">
@@ -10175,11 +10410,11 @@ function FinanceReportsPanel({ session, language, t, canReverse }: { session: Te
         <p>{t("fees.reportsDescription")}</p>
       </div>
       <div className="internal-tabs finance-report-tabs" role="tablist" aria-label={t("admin.tabs.reports")}>
-        <button className={view === "payments" ? "active" : ""} type="button" role="tab" aria-selected={view === "payments"} onClick={() => setView("payments")}>{t("fees.paymentReportTab")}</button>
-        <button className={view === "overdue" ? "active" : ""} type="button" role="tab" aria-selected={view === "overdue"} onClick={() => setView("overdue")}>{t("fees.overdueReportTab")}</button>
+        <button className={reportContext.view === "payments" ? "active" : ""} type="button" role="tab" aria-selected={reportContext.view === "payments"} onClick={() => setReportContext((current) => ({ ...current, view: "payments" }))}>{t("fees.paymentReportTab")}</button>
+        <button className={reportContext.view === "overdue" ? "active" : ""} type="button" role="tab" aria-selected={reportContext.view === "overdue"} onClick={() => setReportContext((current) => ({ ...current, view: "overdue" }))}>{t("fees.overdueReportTab")}</button>
       </div>
     </div>
-    {view === "payments" ? <PaymentReportsPanel session={session} language={language} t={t} canReverse={canReverse} embedded /> : <LatePaymentsReportPanel session={session} t={t} embedded />}
+    {reportContext.view === "payments" ? <PaymentReportsPanel session={session} language={language} t={t} canReverse={canReverse} embedded /> : <LatePaymentsReportPanel key={`${reportContext.groupId}:${reportContext.period}`} session={session} t={t} embedded initialGroupId={reportContext.groupId} initialPeriod={reportContext.period} />}
   </div>;
 }
 
@@ -10200,6 +10435,7 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
   const [reversePin, setReversePin] = useState("");
   const [reversing, setReversing] = useState(false);
   const [reverseError, setReverseError] = useState(false);
+  const reversalKeyRef = React.useRef<{ signature: string; key: string } | null>(null);
   const searchFeedback = useActionFeedback();
   const exportFeedback = useActionFeedback();
   const auth = { Authorization: `Bearer ${session.token}` };
@@ -10216,7 +10452,7 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
         if (query.trim()) params.set("q", normalizeSearchText(query));
         if (group.trim()) params.set("group_id", group.trim());
         if (grade.trim()) params.set("grade_level", grade.trim());
-        const response = await fetch(`${API_BASE_URL}/admin/payments/report?${params.toString()}`, { headers: auth });
+      const response = await fetch(`${API_BASE_URL}/admin/payments/report?${params.toString()}`, { cache: "no-store", headers: auth });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error("report_failed");
         const nextRows = Array.isArray(data.payments) ? data.payments : [];
@@ -10271,12 +10507,32 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     setReversePin("");
     setReverseError(false);
     setStatus("");
+    reversalKeyRef.current = { signature: `${row.id}|`, key: createIdempotencyKey() };
   }
 
   function reversalErrorMessage(error: unknown) {
     const code = error instanceof Error ? error.message : "";
     const serverMessage = error instanceof Error ? (error as Error & { serverMessage?: string }).serverMessage : "";
     if (serverMessage) return serverMessage;
+    const localizedMessages: Record<string, string> = {
+      idempotency_conflict: t("fees.reversalIdempotencyConflict"),
+      idempotency_incomplete: t("fees.reversalInProgress"),
+      idempotency_in_progress: t("fees.reversalInProgress"),
+      payment_student_missing: t("fees.reversalStudentMissing"),
+      payment_group_missing: t("fees.reversalGroupMissing"),
+      payment_student_group_mismatch: t("fees.reversalStudentGroupMismatch"),
+      payment_history_incomplete: t("fees.reversalHistoryIncomplete"),
+      malformed_payment_months: t("fees.reversalMalformedMonths"),
+      duplicate_payment_month: t("fees.reversalDuplicateMonth"),
+      covered_total_mismatch: t("fees.reversalCoveredTotalMismatch"),
+      fee_due_not_found: t("fees.reversalDueNotFound"),
+      fee_due_relationship_invalid: t("fees.reversalDueRelationshipInvalid"),
+      invalid_covered_amount: t("fees.reversalInvalidCoveredAmount"),
+      fee_due_insufficient_paid: t("fees.reversalInsufficientDueBalance"),
+      fee_due_allocation_mismatch: t("fees.reversalAllocationMismatch"),
+      reversal_audit_log_failed: t("fees.reversalAuditLogFailed")
+    };
+    if (localizedMessages[code]) return localizedMessages[code];
     if (code === "unauthorized" || code === "http_401") return t("fees.reversalUnauthorized");
     if (code === "permission_required" || code === "http_403") return t("fees.reversalPermission");
     if (code === "already_reversed" || code === "http_409") return t("fees.reversalAlreadyReversed");
@@ -10299,11 +10555,14 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     const reason = reverseReason.trim();
     const securityPin = normalizeDigits(reversePin).trim();
     if (!canReverse || !reverseTarget || !Number.isSafeInteger(paymentId) || paymentId <= 0 || reason.length < 3 || !/^\d{4}$/.test(securityPin) || reversing) return;
+    const signature = `${paymentId}|${reason}`;
+    if (reversalKeyRef.current?.signature !== signature) reversalKeyRef.current = { signature, key: createIdempotencyKey() };
+    const idempotencyKey = reversalKeyRef.current.key;
     setReversing(true);
     setReverseError(false);
     setStatus("");
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/fees/payments/${paymentId}/reverse`, { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ reason, security_pin: securityPin }) });
+      const response = await fetch(`${API_BASE_URL}/admin/fees/payments/${paymentId}/reverse`, { method: "POST", cache: "no-store", headers: { ...auth, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ reason, security_pin: securityPin }) });
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.ok) {
         const errorCode = String(data?.status || (response.status ? `http_${response.status}` : "reverse_failed"));
@@ -10315,6 +10574,7 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
       setReverseTarget(null);
       setReverseReason("");
       setReversePin("");
+      reversalKeyRef.current = null;
       setStatus(t("fees.reversalSaved"));
       // The reversal is already committed. A failed refresh must not turn a
       // successful financial action into a misleading failure message.
@@ -10345,20 +10605,21 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     </div>
     <div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setToday}>{t("fees.today")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setThisMonth}>{t("fees.thisMonth")}</button><button className={`primary-button compact-button action-feedback-${searchFeedback.state} ${searchFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={loading || searchFeedback.state === "loading"} onClick={() => searchReport().catch(() => undefined)}>{searchButtonLabel}</button><button className={`secondary-button compact-button action-feedback-${exportFeedback.state} ${exportFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={!rows.length || exportFeedback.state === "loading"} onClick={exportCsv}>{exportButtonLabel}</button></div>
     <p className="report-total">{t("fees.totalPaid")}: {totalPaid.toFixed(2)} EGP · {t("fees.paymentCount")}: {paymentCount}</p>
-    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td>{row.amount} EGP</td><td><span className="payment-type-cell">{formatPaymentType(row)}</span></td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td>{canReverse ? <td><button className="secondary-button compact-button" type="button" disabled={reversing} onClick={() => openReverseDialog(row)}>{t("fees.reversePayment")}</button></td> : null}</tr>)}</tbody></table></div> : null}
+    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th><th>{t("fees.reversed")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td><span className={row.is_reversed ? "student-fee-payment-reversed" : undefined}>{row.amount} EGP</span></td><td><span className="payment-type-cell">{formatPaymentType(row)}</span></td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td><td>{row.is_reversed ? t("fees.reversed") : "—"}</td>{canReverse ? <td>{row.is_reversed ? "—" : <button className="secondary-button compact-button" type="button" disabled={reversing} onClick={() => openReverseDialog(row)}>{t("fees.reversePayment")}</button>}</td> : null}</tr>)}</tbody></table></div> : null}
     {status ? <p className="form-error">{status}</p> : null}
     {reverseTarget ? <div className="modal-backdrop"><form className="modal-card" role="dialog" aria-modal="true" onSubmit={reversePayment}><button className="modal-close-button" type="button" onClick={() => setReverseTarget(null)} disabled={reversing} aria-label={t("common.close")} title={t("common.close")}>×</button><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(false); }} rows={4} autoFocus required /></label><label>{t("fees.securityCode")}<input value={reversePin} onChange={(event) => { setReversePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4)); setReverseError(false); }} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" placeholder={t("fees.securityCodeHint")} required /></label>{reverseError ? <p className="form-error" role="alert">{status || t("fees.reversalFailed")}</p> : null}<div className="report-actions"><button className="primary-button" type="submit" disabled={reversing || reverseReason.trim().length < 3 || !/^\d{4}$/.test(normalizeDigits(reversePin).trim())}>{reverseButtonLabel}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></form></div> : null}
     </section>
   </div>;
 }
 
-function LatePaymentsReportPanel({ session, t, embedded = false }: { session: TeacherSession; t: Translator; embedded?: boolean }) {
+function LatePaymentsReportPanel({ session, t, embedded = false, initialGroupId = "", initialPeriod = "" }: { session: TeacherSession; t: Translator; embedded?: boolean; initialGroupId?: string; initialPeriod?: string }) {
   const now = new Date();
   const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  const [from, setFrom] = useState(monthStart);
+  const periodStart = /^\d{4}-\d{2}$/.test(initialPeriod) ? `${initialPeriod}-01` : monthStart;
+  const [from, setFrom] = useState(periodStart);
   const [to, setTo] = useState(localDateInputValue());
   const [query, setQuery] = useState("");
-  const [group, setGroup] = useState("");
+  const [group, setGroup] = useState(initialGroupId);
   const [grade, setGrade] = useState("");
   const [includeDisabled, setIncludeDisabled] = useState(false);
   const [rows, setRows] = useState<any[]>([]);
@@ -10371,16 +10632,16 @@ function LatePaymentsReportPanel({ session, t, embedded = false }: { session: Te
   const exportFeedback = useActionFeedback();
   const auth = { Authorization: `Bearer ${session.token}` };
 
-  async function runReport() {
+  async function runReport(nextFrom = from, nextTo = to, nextGroup = group) {
     return searchFeedback.run(async () => {
       setLoading(true); setStatus(""); setNoResults(false);
       try {
-        const params = new URLSearchParams({ date_from: from, date_to: to });
+        const params = new URLSearchParams({ date_from: nextFrom, date_to: nextTo });
         if (query.trim()) params.set("q", normalizeSearchText(query));
-        if (group.trim()) params.set("group_id", group.trim());
+        if (nextGroup.trim()) params.set("group_id", nextGroup.trim());
         if (grade.trim()) params.set("grade_level", grade.trim());
         if (includeDisabled) params.set("include_disabled", "true");
-        const response = await fetch(`${API_BASE_URL}/admin/payments/late?${params}`, { headers: auth });
+        const response = await fetch(`${API_BASE_URL}/admin/payments/late?${params}`, { cache: "no-store", headers: auth });
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error("late_report_failed");
         const nextRows = Array.isArray(data.students) ? data.students : [];
@@ -10393,7 +10654,16 @@ function LatePaymentsReportPanel({ session, t, embedded = false }: { session: Te
     });
   }
 
-  useEffect(() => { runReport().catch(() => undefined); }, []);
+  useEffect(() => {
+    const nextFrom = /^\d{4}-\d{2}$/.test(initialPeriod) ? `${initialPeriod}-01` : monthStart;
+    const nextTo = /^\d{4}-\d{2}$/.test(initialPeriod)
+      ? `${initialPeriod}-${String(new Date(Number(initialPeriod.slice(0, 4)), Number(initialPeriod.slice(5, 7)), 0).getDate()).padStart(2, "0")}`
+      : localDateInputValue();
+    setFrom(nextFrom);
+    setTo(nextTo);
+    setGroup(initialGroupId);
+    runReport(nextFrom, nextTo, initialGroupId).catch(() => undefined);
+  }, [initialGroupId, initialPeriod]);
 
   function exportCsv() {
     if (!rows.length || exportFeedback.state === "loading") return;
@@ -10976,7 +11246,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [students, setStudents] = useState<AdminStudent[]>([]);
   const [records, setRecords] = useState<ExamResultRecord[]>([]);
-  const [selectedGroup, setSelectedGroup] = useState("");
+  const [selectedGroup, setSelectedGroup] = useState(() => new URLSearchParams(window.location.search).get("group_id") || "");
   const [search, setSearch] = useState("");
   const [recordSearch, setRecordSearch] = useState("");
   const [recordsExpanded, setRecordsExpanded] = useState(false);
@@ -11001,10 +11271,24 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   const recordsQuery = useMemo(() => {
     const params = new URLSearchParams();
     if (selectedGroup) params.set("group_id", selectedGroup);
+    const locationParams = new URLSearchParams(window.location.search);
+    if (locationParams.get("exam_id")) params.set("exam_id", locationParams.get("exam_id") || "");
+    if (locationParams.get("maxScorePercentage")) params.set("maxScorePercentage", locationParams.get("maxScorePercentage") || "");
     if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
     if (recordDate) params.set("date", recordDate);
     return params.toString();
   }, [selectedGroup, recordDate, recordSearch]);
+
+  useEffect(() => {
+    const syncLocation = () => {
+      const params = new URLSearchParams(window.location.search);
+      setSelectedGroup(params.get("group_id") || "");
+      if (params.get("exam_id")) setRecordSearch("");
+    };
+    window.addEventListener("popstate", syncLocation);
+    window.addEventListener("admin-location-change", syncLocation);
+    return () => { window.removeEventListener("popstate", syncLocation); window.removeEventListener("admin-location-change", syncLocation); };
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -11429,6 +11713,7 @@ function Shell({
   const [activeNav, setActiveNav] = useState(() => getActiveNavKey());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isStudentAuthenticated = Boolean(onLogout && studentNotifications && studentNavigation);
+  const direction = language === "ar" ? "rtl" : "ltr";
 
   useEffect(() => {
     const updateActiveNav = () => setActiveNav(getActiveNavKey());
@@ -11471,13 +11756,13 @@ function Shell({
   ];
 
   return (
-    <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell auth-page-shell` : ""} ${pageVariant ? `${pageVariant}-page-shell` : ""}`} dir={language} lang={language}>
+    <div className={`app-shell ${onLogout ? "student-shell" : ""} ${headerVariant ? `${headerVariant}-shell auth-page-shell` : ""} ${pageVariant ? `${pageVariant}-page-shell` : ""}`} dir={direction} lang={language}>
       {pageVariant === "public" ? <ScienceBackdrop variant="student" /> : null}
       <header
         className={`site-header mobile-first-header ${isStudentAuthenticated ? "is-authenticated" : "is-guest"} ${language === "ar" ? "is-ar" : "is-en"} ${headerVariant ? `${headerVariant}-header` : ""}`}
-        dir={language}
+        dir={direction}
       >
-        <div className="header-identity" dir={language}>
+        <div className="header-identity" dir={direction}>
           <a
             className={`brand ${isStudentAuthenticated ? "is-profile-disabled" : "is-profile-interactive"}`}
             href={isStudentAuthenticated ? undefined : "/teacher/login"}
@@ -11914,7 +12199,7 @@ function StudentDashboard({
     setRefreshing(true);
     setRefreshStatus("");
     try {
-      const response = await fetch(`${API_BASE_URL}/student/me/dashboard`, { headers: studentAuthHeaders(student.student_code) });
+      const response = await fetch(`${API_BASE_URL}/student/me/dashboard`, { cache: "no-store", headers: studentAuthHeaders(student.student_code) });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(t("dashboard.refreshFailed"));
       const nextDashboard = result.dashboard as DashboardData;

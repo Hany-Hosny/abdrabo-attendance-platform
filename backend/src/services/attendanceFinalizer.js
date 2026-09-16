@@ -2,7 +2,9 @@ import crypto from "node:crypto";
 import { pool } from "../db/pool.js";
 import { auditLog } from "./audit.js";
 import { getAttendanceTimingDefaults } from "./systemSettings.js";
-import { getWhatsAppSettings, normalizeEgyptianPhone, resolveSpintax } from "./whatsapp.js";
+import { getWhatsAppSettings, normalizeEgyptianPhone, resolveSpintax, wakeWhatsAppWorker } from "./whatsapp.js";
+import { getAggregatedNotificationRecipients, upsertAggregatedNotification } from "./notifications.js";
+import { NotificationType } from "./notificationTypes.js";
 
 const FINALIZER_LOCK_KEY = "abdrabo-attendance-expiry-finalizer";
 const ABSENCE_QUEUE_BATCH_SIZE = 500;
@@ -84,11 +86,37 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
      WHERE notification_type = 'absence' AND source_id = ANY($1::bigint[])`,
     [sourceIds]
   );
+  const eligibleSourceIds = eligible.map((row) => row.source_id);
+  const failedEligibleSources = existing.rows
+    .filter((row) => row.status === "failed" && eligibleSourceIds.includes(Number(row.source_id)))
+    .map((row) => Number(row.source_id));
+  if (failedEligibleSources.length) {
+    await client.query(
+      `UPDATE whatsapp_notification_jobs
+       SET status = 'pending',
+           attempts = 0,
+           last_error = NULL,
+           next_attempt_at = NOW(),
+           sent_at = NULL,
+           lease_expires_at = NULL,
+           claim_token = NULL,
+           send_started_at = NULL,
+           template_index = NULL,
+           template_text = NULL,
+           rendered_message = NULL,
+           updated_at = NOW()
+       WHERE notification_type = 'absence'
+         AND source_id = ANY($1::bigint[])
+         AND status = 'failed'`,
+      [failedEligibleSources]
+    );
+  }
   const dispatchedSources = new Set(
     existing.rows
-      .filter((row) => ["pending", "processing", "sent", "failed", "skipped", "delivery_unknown"].includes(row.status))
+      .filter((row) => ["pending", "processing", "sent", "skipped", "delivery_unknown"].includes(row.status))
       .map((row) => Number(row.source_id))
   );
+  for (const sourceId of failedEligibleSources) dispatchedSources.add(sourceId);
   const pending = eligible.filter((row) => !dispatchedSources.has(row.source_id));
   const unresolvedPending = unresolved.filter((row) => !dispatchedSources.has(row.source_id));
 
@@ -219,6 +247,45 @@ async function processSession(sessionId, now = null) {
       return { skipped: true, reason: "session_not_closed" };
     }
 
+    const adminAbsenceResult = await client.query(
+      `SELECT s.group_id, COALESCE(g.display_name, g.name) AS group_name,
+          COUNT(DISTINCT ar.student_id)::int AS student_count
+       FROM attendance_sessions s
+       JOIN groups g ON g.id = s.group_id
+       JOIN attendance_records ar ON ar.session_id = s.id AND ar.status = 'absent'
+       JOIN students st ON st.id = ar.student_id AND st.is_active = TRUE AND st.deleted_at IS NULL
+       WHERE s.id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM attendance_records replacement
+           WHERE replacement.session_id = ar.session_id
+             AND replacement.student_id = ar.student_id
+             AND replacement.status IN ('present', 'late')
+         )
+       GROUP BY s.group_id, g.display_name, g.name`,
+      [session.session_id]
+    );
+    const adminAbsence = adminAbsenceResult.rows[0];
+    if (adminAbsence && Number(adminAbsence.student_count) > 0) {
+      const recipients = await getAggregatedNotificationRecipients({ type: NotificationType.ATTENDANCE_ABSENCE, groupId: session.group_id, db: client.query.bind(client) });
+      await upsertAggregatedNotification({
+        type: NotificationType.ATTENDANCE_ABSENCE,
+        groupId: session.group_id,
+        referenceId: String(session.session_id),
+        groupName: adminAbsence.group_name || session.group_name,
+        studentCount: Number(adminAbsence.student_count),
+        metadata: {
+          groupId: Number(session.group_id),
+          groupName: adminAbsence.group_name || session.group_name,
+          sessionId: Number(session.session_id),
+          sessionDate: sessionDateLabel(session.session_date),
+          studentCount: Number(adminAbsence.student_count),
+          reportFilter: { status: "absent", groupId: Number(session.group_id), sessionId: Number(session.session_id) }
+        },
+        recipients,
+        db: client.query.bind(client)
+      });
+    }
+
     const whatsappSettings = await getWhatsAppSettings(client.query.bind(client));
     if (!whatsappSettings.auto_send) {
       await client.query("COMMIT");
@@ -342,8 +409,10 @@ export async function finalizeExpiredAttendanceSessions({ now = null } = {}) {
       const result = await processSession(candidate.id, now);
       if (result?.session_id) finalized.push(result);
     }
+    const shouldWakeWorker = finalized.some((result) => Number(result?.queued_count || 0) > 0);
     await client.query("COMMIT");
     transactionStarted = false;
+    if (shouldWakeWorker) wakeWhatsAppWorker();
     return { finalized_sessions: finalized };
   } catch (error) {
     if (transactionStarted) await client.query("ROLLBACK").catch(() => undefined);

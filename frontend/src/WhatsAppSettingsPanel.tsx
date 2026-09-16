@@ -61,6 +61,7 @@ const fallbackAbsenceTemplates = ["تنبيه غياب - منصة مستر أح�
 
 type TemplateKey = "templates" | "grade_templates" | "receipt_templates" | "advance_payment_templates" | "absence_templates";
 type WhatsAppTemplateRow = { id: number; category: string; message_body: string; is_active?: boolean };
+type TemplateSaveError = Error & { requiredPlaceholder?: string; status?: string };
 type TemplateGroup = {
   key: TemplateKey;
   number: string;
@@ -284,6 +285,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
   const [pairing, setPairing] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [autoSendSaving, setAutoSendSaving] = useState(false);
   const [feedback, setFeedback] = useState<"idle" | "saved" | "error">("idle");
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<"templates" | "history">("templates");
@@ -411,21 +413,86 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
         body: JSON.stringify({ settings: settingsPayload })
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) throw new Error("save_failed");
-      const syncedAbsenceRows = await saveAbsenceTemplates(absenceTemplates);
+      if (!response.ok || !payload.ok) {
+        const failure = new Error(String(payload.status || "save_failed")) as TemplateSaveError;
+        failure.status = String(payload.status || "");
+        failure.requiredPlaceholder = String(payload.required_placeholder || "").trim() || undefined;
+        throw failure;
+      }
+      const absenceChanged = JSON.stringify(absenceTemplates) !== JSON.stringify(savedSettings.absence_templates);
+      const syncedAbsenceRows = absenceChanged ? await saveAbsenceTemplates(absenceTemplates) : [];
       const next = normalizeSettings(payload.settings);
-      next.absence_templates = syncedAbsenceRows.map((row) => normalizeTeacherDisplayName(row.message_body));
+      next.absence_templates = absenceChanged
+        ? syncedAbsenceRows.map((row) => normalizeTeacherDisplayName(row.message_body))
+        : absenceTemplates;
       setSettings(next); setSavedSettings(next); setFeedback("saved");
       window.setTimeout(() => setFeedback("idle"), 2200);
-    } catch (_error) { setFeedback("error"); setError(t("whatsapp.saveFailed")); }
+    } catch (error) {
+      setFeedback("error");
+      const templateError = error instanceof Error ? error as TemplateSaveError : null;
+      const requiredPlaceholder = templateError?.requiredPlaceholder;
+      const status = templateError?.status || templateError?.message;
+      setError(requiredPlaceholder
+        ? t("whatsapp.templateMissingPlaceholder", { placeholder: requiredPlaceholder })
+        : status === "duplicate_template"
+          ? t("whatsapp.duplicateTemplate")
+          : status === "invalid_template_length"
+            ? t("whatsapp.invalidTemplateLength")
+            : t("whatsapp.saveFailed"));
+    }
     finally { setSaving(false); }
   }
 
+  async function toggleAutoSend(enabled: boolean) {
+    if (!canManage || saving || autoSendSaving || enabled === settings.auto_send) return;
+    const previousValue = settings.auto_send;
+    setAutoSendSaving(true);
+    setFeedback("idle");
+    setError("");
+    setSettings((current) => ({ ...current, auto_send: enabled }));
+    try {
+      const { absence_templates: _absenceTemplates, ...savedSettingsPayload } = savedSettings;
+      const response = await fetch(`${API_BASE_URL}/whatsapp/settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ settings: { ...savedSettingsPayload, auto_send: enabled } })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error("auto_send_save_failed");
+      const persistedValue = payload.settings?.auto_send === true;
+      setSavedSettings((current) => ({ ...current, auto_send: persistedValue }));
+      setSettings((current) => ({ ...current, auto_send: persistedValue }));
+      setFeedback("saved");
+      window.setTimeout(() => setFeedback("idle"), 2200);
+    } catch (_error) {
+      setSettings((current) => ({ ...current, auto_send: previousValue }));
+      setFeedback("error");
+      setError(t("whatsapp.autoSendSaveFailed"));
+    } finally {
+      setAutoSendSaving(false);
+    }
+  }
+
   async function saveAbsenceTemplates(templates: string[]) {
+    if (new Set(templates.map((template) => template.trim())).size !== templates.length) {
+      const error = new Error("duplicate_template") as TemplateSaveError;
+      error.status = "duplicate_template";
+      throw error;
+    }
     const activeIds = new Set(absenceTemplateIds.filter((id): id is number => Number.isSafeInteger(id)));
     const requests: Promise<Response>[] = [];
     templates.forEach((messageBody, index) => {
       const id = absenceTemplateIds[index];
+      const existingRow = absenceTemplateRows.find((row) => row.message_body === messageBody);
+      if (existingRow && existingRow.id !== id) {
+        activeIds.add(existingRow.id);
+        requests.push(fetch(`${API_BASE_URL}/whatsapp/templates/${existingRow.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ is_active: true })
+        }));
+        return;
+      }
       if (id) {
         activeIds.add(id);
         requests.push(fetch(`${API_BASE_URL}/whatsapp/templates/${id}`, {
@@ -434,7 +501,6 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
           body: JSON.stringify({ message_body: messageBody, is_active: true })
         }));
       } else {
-        const existingRow = absenceTemplateRows.find((row) => row.message_body === messageBody);
         if (existingRow) {
           activeIds.add(existingRow.id);
           requests.push(fetch(`${API_BASE_URL}/whatsapp/templates/${existingRow.id}`, {
@@ -461,7 +527,21 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
       }
     });
     const responses = await Promise.all(requests);
-    if (responses.some((response) => !response.ok)) throw new Error("absence_templates_save_failed");
+    await Promise.all(responses.map(async (response) => {
+      const payload = await response.json().catch(() => ({}));
+      if (response.status === 400 && payload.status === "missing_required_placeholder") {
+        const error = new Error("missing_required_placeholder") as TemplateSaveError;
+        error.requiredPlaceholder = String(payload.required_placeholder || "").trim();
+        throw error;
+      }
+      if (payload.status === "duplicate_template" || payload.status === "invalid_template_length") {
+        const error = new Error(String(payload.status)) as TemplateSaveError;
+        error.status = String(payload.status);
+        throw error;
+      }
+      if (!response.ok || !payload.ok) throw new Error("absence_templates_save_failed");
+      return response;
+    }));
     const refreshedResponse = await fetch(`${API_BASE_URL}/whatsapp/templates?category=absence`, { headers: { Authorization: `Bearer ${token}` } });
     const refreshedPayload = await refreshedResponse.json().catch(() => ({}));
     if (!refreshedResponse.ok || !refreshedPayload.ok) throw new Error("absence_templates_load_failed");
@@ -543,7 +623,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     <section className="whatsapp-automation-section">
       <div className="settings-section-heading"><span>02</span><div><h3>{t("whatsapp.automationTitle")}</h3><p>{t("whatsapp.automationDescription")}</p></div></div>
       <div className="whatsapp-automation-grid">
-        <label className="whatsapp-toggle-card"><span><strong>{t("whatsapp.autoSendLabel")}</strong><small>{t("whatsapp.autoSendDescription")}</small></span><input type="checkbox" disabled={!canManage} checked={settings.auto_send} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, auto_send: event.target.checked })); }} /><i aria-hidden="true" /></label>
+        <label className="whatsapp-toggle-card"><span><strong>{t("whatsapp.autoSendLabel")}</strong><small>{t("whatsapp.autoSendDescription")}</small><em className={settings.auto_send ? "is-enabled" : "is-disabled"} aria-live="polite">{settings.auto_send ? t("whatsapp.autoSendEnabled") : t("whatsapp.autoSendDisabled")}</em></span><input type="checkbox" disabled={!canManage || saving || autoSendSaving} checked={settings.auto_send} onChange={(event) => void toggleAutoSend(event.target.checked)} aria-label={t("whatsapp.autoSendLabel")} /><i aria-hidden="true" /></label>
         <div className="whatsapp-delay-card"><div><strong>{t("whatsapp.delayLabel")}</strong><small>{t("whatsapp.delayDescription")}</small></div><div className="whatsapp-delay-control"><div className="whatsapp-delay-fields"><label><span>{t("whatsapp.minimum")}</span><input disabled={!canManage} type="number" min="2" max="60" value={settings.min_delay_seconds} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, min_delay_seconds: Number(event.target.value) })); }} /><em>{t("whatsapp.seconds")}</em></label><span>—</span><label><span>{t("whatsapp.maximum")}</span><input disabled={!canManage} type="number" min="2" max="60" value={settings.max_delay_seconds} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, max_delay_seconds: Number(event.target.value) })); }} /><em>{t("whatsapp.seconds")}</em></label></div><div className="whatsapp-delay-presets">{[[3, 6, "whatsapp.presetFast"], [5, 12, "whatsapp.presetBalanced"], [10, 30, "whatsapp.presetSafe"]].map(([min, max, label]) => <button className={settings.min_delay_seconds === min && settings.max_delay_seconds === max ? "active" : ""} key={label} type="button" disabled={!canManage} onClick={() => applyDelayPreset(Number(min), Number(max))}>{t(label as string)}</button>)}</div></div></div>
       </div>
     </section>

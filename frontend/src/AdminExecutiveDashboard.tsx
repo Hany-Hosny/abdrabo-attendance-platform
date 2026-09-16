@@ -277,13 +277,13 @@ export function AdminExecutiveDashboard({ token, language, t, can, onNavigate, o
     const params = new URLSearchParams({ period });
     if (groupId) params.set("group_id", groupId);
     if (period === "custom") { params.set("from", from); params.set("to", to); }
-    const summaryRequest = fetch(`${API_BASE_URL}/admin/dashboard/summary?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+    const summaryRequest = fetch(`${API_BASE_URL}/admin/dashboard/summary?${params.toString()}`, { cache: "no-store", headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.ok) throw new Error(response.status === 403 ? "forbidden" : "request_failed");
         return payload as DashboardData;
       });
-    const attentionRequest = canAlerts ? fetch(`${API_BASE_URL}/admin/dashboard/attention?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }).then(async (response) => {
+    const attentionRequest = canAlerts ? fetch(`${API_BASE_URL}/admin/dashboard/attention?${params.toString()}`, { cache: "no-store", headers: { Authorization: `Bearer ${token}` }, signal: controller.signal }).then(async (response) => {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || !payload.ok) throw new Error(response.status === 403 ? "forbidden" : "request_failed");
         return payload as { students: AttentionStudent[] };
