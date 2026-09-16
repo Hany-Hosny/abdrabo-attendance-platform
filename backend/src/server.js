@@ -30,6 +30,11 @@ let shuttingDown = false;
 const maintenanceTimers = [];
 assertProductionConfig();
 app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      "frame-src": ["'self'", "https://maps.google.com", "https://www.google.com"]
+    }
+  },
   hsts: process.env.NODE_ENV === "production" ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
   referrerPolicy: { policy: "strict-origin-when-cross-origin" },
   frameguard: { action: "deny" },

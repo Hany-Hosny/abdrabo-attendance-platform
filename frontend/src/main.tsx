@@ -4439,7 +4439,7 @@ function LandingPage({ language, t }: { language: Language; t: Translator }) {
           <section className="landing-hero landing-section" id="landing-home" aria-labelledby="landing-title">
             <div className="landing-hero-copy">
               <span className="landing-badge"><i aria-hidden="true" /><LandingDynamicText value={content.hero.badge} /></span>
-              <h1 id="landing-title"><LandingDynamicText value={content.hero.title} /></h1>
+              <h1 id="landing-title" className="landing-hero-title" style={{ fontVariantLigatures: "none" }}><LandingDynamicText value={content.hero.title} /></h1>
               <p><LandingDynamicText value={content.hero.subtitle} /></p>
               <div className="landing-hero-actions">
                 <a className="landing-primary-button" href="/login"><LandingDynamicText value={content.hero.primaryCtaText} /><span aria-hidden="true">↗</span></a>
@@ -5157,7 +5157,7 @@ function CenterLocationCard({ language, t }: CenterLocationCardProps) {
   const directionsUrl = center ? `https://www.google.com/maps/dir/?api=1&destination=${center.latitude},${center.longitude}` : "#";
   return <article className="content-panel contact-location-panel" aria-labelledby="contact-location-title">
     <div className="contact-location-copy"><span className="contact-section-kicker">{t("contact.locationTitle")}</span><h2 id="contact-location-title">{t("contact.locationTitle")}</h2><p>{t("contact.locationSubtitle")}</p></div>
-    {loading ? <div className="contact-location-map contact-location-map-skeleton animate-pulse bg-slate-800" aria-label={t("contact.locationMapLoading")} /> : center ? <div className="contact-location-map"><iframe className="contact-location-map-frame filter invert-[90%] hue-rotate-180 contrast-[85%] grayscale-[10%]" src={mapUrl} title={t("contact.locationTitle")} loading="lazy" onLoad={() => setMapLoading(false)} />{mapLoading ? <div className="contact-location-map-skeleton animate-pulse bg-slate-800" aria-hidden="true" /> : null}</div> : <div className="contact-location-fallback" role="status">{error ? t("contact.locationUnavailable") : t("contact.locationUnavailable")}</div>}
+    {loading ? <div className="contact-location-map"><div className="contact-location-map-skeleton animate-pulse bg-slate-800" aria-label={t("contact.locationMapLoading")} /></div> : center ? <div className="contact-location-map"><iframe className="contact-location-map-frame filter invert-[90%] hue-rotate-180 contrast-[85%] grayscale-[10%]" src={mapUrl} title={t("contact.locationTitle")} loading="lazy" onLoad={() => setMapLoading(false)} onError={() => setMapLoading(false)} />{mapLoading ? <div className="contact-location-map-skeleton animate-pulse bg-slate-800" aria-hidden="true" /> : null}</div> : <div className="contact-location-fallback" role="status">{error ? t("contact.locationUnavailable") : t("contact.locationUnavailable")}</div>}
     {center ? <div className="contact-location-footer"><address>{center.address}</address><a className="primary-button compact-button" href={directionsUrl} target="_blank" rel="noreferrer">{t("contact.getDirections")}</a></div> : null}
   </article>;
 }
