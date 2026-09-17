@@ -8,6 +8,7 @@ export const PERMISSIONS = Object.freeze([
   "students.delete",
   "attendance.view",
   "attendance.manage",
+  "attendance.cancel_sessions",
   "exams.view",
   "exams.manage",
   "homework.view",

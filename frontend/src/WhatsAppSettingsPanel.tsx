@@ -9,6 +9,7 @@ type WhatsAppSettings = {
   receipt_templates: string[];
   advance_payment_templates: string[];
   absence_templates: string[];
+  cancellation_templates: string[];
   min_delay_seconds: number;
   max_delay_seconds: number;
   portal_base_url?: string;
@@ -18,7 +19,7 @@ type WhatsAppStatus = {
   phone_number: string | null;
   has_qr?: boolean;
 };
-type Props = { token: string; language: Language; canManage?: boolean; canControlConnection?: boolean; t: Translator };
+type Props = { token: string; language: Language; canManage?: boolean; canCancelSessions?: boolean; canControlConnection?: boolean; t: Translator };
 type WhatsAppHistoryRow = {
   id: number;
   notification_type: string;
@@ -58,13 +59,14 @@ const fallbackGradeTemplates = ["نتيجة تقييم - مستر أحمد عب�
 const fallbackReceiptTemplates = ["إيصال سداد مصروفات - مستر أحمد عبدربه 🧾\nالسلام عليكم يا فندم، تم استلام مبلغ {amount_paid} ج.م سداداً لمصروفات شهر {month} للطالب: {student_name}.\nرقم الإيصال: {receipt_number}\nكود الطالب: {student_code}\nعرض الإيصال: {portal_link}\nشكراً لتعاونكم الدائم.", "سند قبض إلكتروني | مستر أحمد عبدربه\nتم بنجاح تسجيل دفعة مالية بقيمة {amount_paid} ج.م لحساب الطالب: {student_name} (سداد {month}).\nرقم السند: {receipt_number}\nالسجل المالي: {portal_link}\nالمرجع: {ref_code}", "إشعار تحصيل نقدية - مكتب مستر أحمد عبدربه:\nتم استلام مبلغ {amount_paid} جنيه لمصروفات {month} الخاصة بالطالب {student_name}.\nإيصال رقم: #{receipt_number}.\nمتابعة الحساب: {portal_link}"];
 const fallbackAdvancePaymentTemplates = ["إشعار دفع مقدم - مستر أحمد عبدربه 💳\nتم استلام مبلغ {amount_paid} ج.م كدفعة مقدمة للطالب: {student_name} عن شهور: {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}", "تم بنجاح تسجيل دفعة مالية مقدمة بقيمة {amount_paid} ج.م لحساب الطالب: {student_name}.\nالشهور المسددة: {months}\nسند رقم: {receipt_number}\nالمرجع: {ref_code}", "إيصال استلام نقدية (دفع مقدم) | مستر أحمد عبدربه\nالطالب: {student_name}\nالمبلغ: {amount_paid} جنيه\nالشهور: {months}\nالإيصال: #{receipt_number}\nالرابط: {portal_link}"];
 const fallbackAbsenceTemplates = ["تنبيه غياب - منصة مستر أحمد عبدربه\nلم يتم تسجيل حضور الطالب {student_name} في مجموعة {group_name} بتاريخ {date}.\nبرجاء التواصل مع إدارة المنصة.", "إشعار غياب الطالب {student_name}\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب في حصة {group_name} بتاريخ {date}.", "متابعة الحضور | {student_name}\nتم إغلاق جلسة {group_name} بتاريخ {date} دون تسجيل حضور الطالب."];
+const fallbackCancellationTemplates = ["تم إلغاء حصة مجموعة {group_name} يوم {scheduled_date} الساعة {scheduled_time}. وقت الإلغاء: {cancellation_time}. المرجع: {ref_code}", "نحيطكم علماً بإلغاء حصة {group_name} المقررة في {scheduled_date} الساعة {scheduled_time}. تم تسجيل الإلغاء في {cancellation_time}. المرجع: {ref_code}", "إشعار إلغاء حصة المجموعة {group_name}: {scheduled_date} الساعة {scheduled_time}. وقت تسجيل الإلغاء: {cancellation_time}. المرجع: {ref_code}"];
 
-type TemplateKey = "templates" | "grade_templates" | "receipt_templates" | "advance_payment_templates" | "absence_templates";
+type TemplateKey = "templates" | "grade_templates" | "receipt_templates" | "advance_payment_templates" | "absence_templates" | "cancellation_templates";
 type WhatsAppTemplateRow = { id: number; category: string; audience: "male" | "female" | "neutral"; slot_number: number | null; slot_key: string | null; is_fallback: boolean; content_version: number; message_body: string; is_active?: boolean };
 type TemplateSaveError = Error & { requiredPlaceholder?: string; status?: string };
 type TemplateGroup = {
   key: TemplateKey;
-  category: "attendance" | "absence" | "grade" | "receipt" | "advance_payment";
+  category: "attendance" | "absence" | "grade" | "receipt" | "advance_payment" | "cancellation";
   number: string;
   titleKey: string;
   descriptionKey: string;
@@ -76,7 +78,8 @@ const templateGroups: TemplateGroup[] = [
   { key: "absence_templates", category: "absence", number: "04", titleKey: "whatsapp.absenceTemplatesTitle", descriptionKey: "whatsapp.absenceTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{date}", "{group_name}", "{ref_code}", "{portal_link}"] },
   { key: "grade_templates", category: "grade", number: "05", titleKey: "whatsapp.gradeTemplatesTitle", descriptionKey: "whatsapp.gradeTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{exam_title}", "{score}", "{max_score}", "{percentage}", "{portal_link}", "{ref_code}"] },
   { key: "receipt_templates", category: "receipt", number: "06", titleKey: "whatsapp.receiptTemplatesTitle", descriptionKey: "whatsapp.receiptTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{month}", "{receipt_number}", "{portal_link}", "{ref_code}"] },
-  { key: "advance_payment_templates", category: "advance_payment", number: "07", titleKey: "whatsapp.advancePaymentTemplatesTitle", descriptionKey: "whatsapp.advancePaymentTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{months}", "{receipt_number}", "{portal_link}", "{ref_code}"] }
+  { key: "advance_payment_templates", category: "advance_payment", number: "07", titleKey: "whatsapp.advancePaymentTemplatesTitle", descriptionKey: "whatsapp.advancePaymentTemplatesDescription", placeholders: ["{student_name}", "{student_code}", "{amount_paid}", "{months}", "{receipt_number}", "{portal_link}", "{ref_code}"] },
+  { key: "cancellation_templates", category: "cancellation", number: "08", titleKey: "whatsapp.cancellationTemplatesTitle", descriptionKey: "whatsapp.cancellationTemplatesDescription", placeholders: ["{group_name}", "{scheduled_date}", "{scheduled_time}", "{cancellation_time}", "{ref_code}"] }
 ];
 
 const defaultSettings: WhatsAppSettings = {
@@ -86,6 +89,7 @@ const defaultSettings: WhatsAppSettings = {
   receipt_templates: fallbackReceiptTemplates.map(normalizeTeacherDisplayName),
   advance_payment_templates: fallbackAdvancePaymentTemplates.map(normalizeTeacherDisplayName),
   absence_templates: fallbackAbsenceTemplates.map(normalizeTeacherDisplayName),
+  cancellation_templates: fallbackCancellationTemplates,
   min_delay_seconds: 4,
   max_delay_seconds: 8
 };
@@ -104,6 +108,7 @@ function normalizeSettings(value: Partial<WhatsAppSettings> | undefined): WhatsA
     receipt_templates: normalizeTemplates(value?.receipt_templates, fallbackReceiptTemplates, "{amount_paid}"),
     advance_payment_templates: normalizeTemplates(value?.advance_payment_templates, fallbackAdvancePaymentTemplates, "{months}"),
     absence_templates: normalizeTemplates(value?.absence_templates, fallbackAbsenceTemplates, "{student_name}"),
+    cancellation_templates: normalizeTemplates(value?.cancellation_templates, fallbackCancellationTemplates, "{group_name}"),
     min_delay_seconds: Number.isInteger(Number(value?.min_delay_seconds)) ? Number(value?.min_delay_seconds) : 4,
     max_delay_seconds: Number.isInteger(Number(value?.max_delay_seconds)) ? Number(value?.max_delay_seconds) : 8,
     portal_base_url: String(value?.portal_base_url || window.location.origin).replace(/\/+$/, "")
@@ -114,7 +119,7 @@ function ChevronIcon({ open }: { open: boolean }) {
   return <svg className={`whatsapp-template-accordion-icon ${open ? "is-open" : ""}`} viewBox="0 0 24 24" aria-hidden="true"><path d={open ? "m6 15 6-6 6 6" : "m6 9 6 6 6-6"} /></svg>;
 }
 
-function WhatsAppMessageHistory({ token, language, canManage = false, t }: Pick<Props, "token" | "language" | "canManage" | "t">) {
+function WhatsAppMessageHistory({ token, language, canManage = false, canCancelSessions = false, t }: Pick<Props, "token" | "language" | "canManage" | "canCancelSessions" | "t">) {
   const [messages, setMessages] = useState<WhatsAppHistoryRow[]>([]);
   const [stats, setStats] = useState<WhatsAppHistoryStats>({ total: 0, sent: 0, failed: 0, pending: 0, delivery_unknown: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
@@ -129,6 +134,7 @@ function WhatsAppMessageHistory({ token, language, canManage = false, t }: Pick<
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [approvingId, setApprovingId] = useState<number | null>(null);
   const [retryFeedback, setRetryFeedback] = useState<{ id: number; kind: "success" | "error"; key: string } | null>(null);
 
   useEffect(() => {
@@ -225,6 +231,20 @@ function WhatsAppMessageHistory({ token, language, canManage = false, t }: Pick<
     }
   }
 
+  async function approveCancellationNotice(message: WhatsAppHistoryRow) {
+    if (!canCancelSessions || message.notification_type !== "cancellation" || message.status !== "review_required" || approvingId !== null) return;
+    setApprovingId(message.id); setRetryFeedback(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/whatsapp/jobs/${message.id}/cancellation-send`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error("whatsapp.cancellationReviewFailed");
+      setMessages((current) => current.map((item) => item.id === message.id ? { ...item, status: "pending" } : item));
+      setRetryFeedback({ id: message.id, kind: "success", key: "whatsapp.cancellationReviewQueued" });
+      window.setTimeout(() => setRetryFeedback((current) => current?.id === message.id ? null : current), 3000);
+    } catch (_error) { setRetryFeedback({ id: message.id, kind: "error", key: "whatsapp.cancellationReviewFailed" }); }
+    finally { setApprovingId(null); }
+  }
+
   const statCards = [
     { key: "total", label: "whatsapp.historyStatsTotal", tone: "total", icon: "◉" },
     { key: "sent", label: "whatsapp.historyStatsSent", tone: "sent", icon: "✓" },
@@ -244,8 +264,8 @@ function WhatsAppMessageHistory({ token, language, canManage = false, t }: Pick<
       })}
     </div>
     <div className="whatsapp-history-filters">
-      <label><span>{t("whatsapp.historyTypeLabel")}</span><select value={type} onChange={(event) => setType(event.target.value)}><option value="">{t("whatsapp.historyAllTypes")}</option><option value="attendance">{typeLabel("attendance")}</option><option value="absence">{typeLabel("absence")}</option><option value="grade">{typeLabel("grade")}</option><option value="receipt">{typeLabel("receipt")}</option><option value="advance_payment">{typeLabel("advance_payment")}</option></select></label>
-      <label><span>{t("whatsapp.historyStatusLabel")}</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">{t("whatsapp.historyAllStatuses")}</option><option value="sent">{statusLabel("sent")}</option><option value="pending">{statusLabel("pending")}</option><option value="processing">{statusLabel("processing")}</option><option value="failed">{statusLabel("failed")}</option><option value="skipped">{statusLabel("skipped")}</option><option value="delivery_unknown">{statusLabel("delivery_unknown")}</option></select></label>
+      <label><span>{t("whatsapp.historyTypeLabel")}</span><select value={type} onChange={(event) => setType(event.target.value)}><option value="">{t("whatsapp.historyAllTypes")}</option><option value="attendance">{typeLabel("attendance")}</option><option value="absence">{typeLabel("absence")}</option><option value="grade">{typeLabel("grade")}</option><option value="receipt">{typeLabel("receipt")}</option><option value="advance_payment">{typeLabel("advance_payment")}</option><option value="cancellation">{typeLabel("cancellation")}</option></select></label>
+      <label><span>{t("whatsapp.historyStatusLabel")}</span><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">{t("whatsapp.historyAllStatuses")}</option><option value="sent">{statusLabel("sent")}</option><option value="pending">{statusLabel("pending")}</option><option value="processing">{statusLabel("processing")}</option><option value="review_required">{statusLabel("review_required")}</option><option value="failed">{statusLabel("failed")}</option><option value="skipped">{statusLabel("skipped")}</option><option value="delivery_unknown">{statusLabel("delivery_unknown")}</option></select></label>
       <label className="whatsapp-history-search"><span>{t("whatsapp.historyStudentFilter")}</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("whatsapp.historyStudentPlaceholder")} /></label>
       <label><span>{t("whatsapp.historyFrom")}</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label>
       <label><span>{t("whatsapp.historyTo")}</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>
@@ -264,6 +284,7 @@ function WhatsAppMessageHistory({ token, language, canManage = false, t }: Pick<
             <dl><div><dt>{t("whatsapp.historyStudent")}</dt><dd>{message.student_name || "—"}{message.student_code ? ` (${message.student_code})` : ""}</dd></div><div><dt>{t("whatsapp.historyRecipient")}</dt><dd>{message.phone_number || "—"}</dd></div><div><dt>{t("whatsapp.historyReference")}</dt><dd>{message.ref_code}</dd></div><div><dt>{t("whatsapp.historyTemplate")}</dt><dd>{message.template_index == null ? "—" : `#${message.template_index + 1}`}</dd></div><div><dt>{t("whatsapp.historyCreated")}</dt><dd>{formatDate(message.created_at)}</dd></div>{message.sent_at ? <div><dt>{t("whatsapp.historySent")}</dt><dd>{formatDate(message.sent_at)}</dd></div> : null}</dl>
             <div><span className="whatsapp-history-label">{t("whatsapp.historyMessage")}</span><pre className="whatsapp-history-message" dir="auto">{message.rendered_message || "—"}</pre></div>
             {message.last_error ? <div className="whatsapp-history-error"><span className="whatsapp-history-label">{t("whatsapp.historyError")}</span><p>{message.last_error}</p></div> : null}
+            {canCancelSessions && message.notification_type === "cancellation" && message.status === "review_required" ? <div className="whatsapp-history-retry-row"><button className="primary-button compact-button" type="button" disabled={approvingId !== null} onClick={() => void approveCancellationNotice(message)}>{approvingId === message.id ? t("whatsapp.cancellationReviewSending") : t("whatsapp.cancellationReviewSend")}</button>{retryFeedback?.id === message.id ? <span className={`whatsapp-history-retry-feedback ${retryFeedback.kind}`} role="status">{t(retryFeedback.key)}</span> : null}</div> : null}
             {canManage && (["failed", "delivery_unknown"].includes(message.status) || retryFeedback?.id === message.id) ? <div className="whatsapp-history-retry-row">
               {["failed", "delivery_unknown"].includes(message.status) ? <button className={`primary-button compact-button whatsapp-history-retry-button ${retryingId === message.id ? "is-loading" : ""}`} type="button" onClick={() => void retryFailedMessage(message)} disabled={retryingId !== null}>
                 {retryingId === message.id ? t("whatsapp.historyRetrying") : t("whatsapp.historyRetry")}
@@ -277,7 +298,7 @@ function WhatsAppMessageHistory({ token, language, canManage = false, t }: Pick<
   </div>;
 }
 
-export function WhatsAppSettingsPanel({ token, language, canManage = false, canControlConnection = canManage, t }: Props) {
+export function WhatsAppSettingsPanel({ token, language, canManage = false, canCancelSessions = false, canControlConnection = canManage, t }: Props) {
   const [status, setStatus] = useState<WhatsAppStatus>({ status: "disconnected", phone_number: null });
   const [settings, setSettings] = useState<WhatsAppSettings>(defaultSettings);
   const [savedSettings, setSavedSettings] = useState<WhatsAppSettings>(defaultSettings);
@@ -292,7 +313,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
   const [feedback, setFeedback] = useState<"idle" | "saved" | "error">("idle");
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<"templates" | "history">("templates");
-  const [openTemplateGroups, setOpenTemplateGroups] = useState<Record<TemplateKey, boolean>>({ templates: false, absence_templates: false, grade_templates: false, receipt_templates: false, advance_payment_templates: false });
+  const [openTemplateGroups, setOpenTemplateGroups] = useState<Record<TemplateKey, boolean>>({ templates: false, absence_templates: false, grade_templates: false, receipt_templates: false, advance_payment_templates: false, cancellation_templates: false });
   const [absenceTemplateRows, setAbsenceTemplateRows] = useState<WhatsAppTemplateRow[]>([]);
   const [absenceTemplateIds, setAbsenceTemplateIds] = useState<Array<number | null>>([]);
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
@@ -332,7 +353,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
       const dbTemplates = assignmentRows.filter((item) => item.is_active !== false);
       const absenceRows = allTemplateRows.filter((item) => item.category === "absence" && item.message_body);
       const activeAbsenceRows = absenceRows.filter((item) => item.is_active !== false).slice(0, 4);
-      const categoryMap: Record<string, TemplateKey> = { attendance: "templates", absence: "absence_templates", grade: "grade_templates", receipt: "receipt_templates", advance_payment: "advance_payment_templates" };
+      const categoryMap: Record<string, TemplateKey> = { attendance: "templates", absence: "absence_templates", grade: "grade_templates", receipt: "receipt_templates", advance_payment: "advance_payment_templates", cancellation: "cancellation_templates" };
       dbTemplates.forEach((item: { category?: string; message_body?: string }) => {
         const key = item.category ? categoryMap[item.category] : undefined;
         if (key && key !== "absence_templates" && item.message_body) next[key] = [...next[key], String(item.message_body)].filter((value, index, values) => values.indexOf(value) === index).slice(0, 4);
@@ -411,7 +432,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     if (!canManage || saving || !dirty) return;
     setSaving(true); setFeedback("idle"); setError("");
     try {
-      const { absence_templates: _absenceTemplates, ...settingsPayload } = settings;
+      const { absence_templates: _absenceTemplates, cancellation_templates: _cancellationTemplates, ...settingsPayload } = settings;
       const response = await fetch(`${API_BASE_URL}/whatsapp/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -501,6 +522,9 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
       student_code: "A-1001",
       date: "04/09/2026",
       time: "06:00 PM",
+      scheduled_date: "04/09/2026",
+      scheduled_time: "06:00 PM",
+      cancellation_time: "04/09/2026 03:15 PM",
       group_name: t("whatsapp.sampleGroup"),
       exam_title: t("whatsapp.sampleExam"),
       score: "18",
@@ -524,7 +548,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
     setError("");
     setSettings((current) => ({ ...current, auto_send: enabled }));
     try {
-      const { absence_templates: _absenceTemplates, ...savedSettingsPayload } = savedSettings;
+      const { absence_templates: _absenceTemplates, cancellation_templates: _cancellationTemplates, ...savedSettingsPayload } = savedSettings;
       const response = await fetch(`${API_BASE_URL}/whatsapp/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -695,7 +719,7 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
         <button className={activeTab === "history" ? "active" : ""} type="button" role="tab" aria-selected={activeTab === "history"} onClick={() => setActiveTab("history")}>{t("whatsapp.historyTab")}</button>
       </div>
       <div className="settings-section-heading">{activeTab === "templates" ? <span>03–07</span> : null}<div><h3>{t(activeTab === "templates" ? "whatsapp.templatesTitle" : "whatsapp.messageHistoryTitle")}</h3><p>{t(activeTab === "templates" ? "whatsapp.templatesDescription" : "whatsapp.messageHistoryDescription")}</p></div></div>
-      {activeTab === "history" ? <WhatsAppMessageHistory token={token} language={language} canManage={canManage} t={t} /> : <>
+      {activeTab === "history" ? <WhatsAppMessageHistory token={token} language={language} canManage={canManage} canCancelSessions={canCancelSessions} t={t} /> : <>
         <div className="whatsapp-template-groups">
           {templateGroups.map((group) => {
             const isOpen = openTemplateGroups[group.key];
@@ -737,4 +761,33 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
       </>}
     </section>
   </section>;
+}
+
+export function CancellationReviewPanel({ token, language, t }: Pick<Props, "token" | "language" | "t">) {
+  const [messages, setMessages] = useState<WhatsAppHistoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [sendingId, setSendingId] = useState<number | null>(null);
+  const [feedback, setFeedback] = useState("");
+  const [refreshKey, setRefreshKey] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${API_BASE_URL}/whatsapp/history?type=cancellation&limit=100`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+      .then(async (response) => { const payload = await response.json().catch(() => ({})); if (!response.ok || !payload.ok) throw new Error("load_failed"); setMessages(Array.isArray(payload.messages) ? payload.messages : []); })
+      .catch((error) => { if (error?.name !== "AbortError") setFeedback(t("whatsapp.historyLoadFailed")); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [token, refreshKey]);
+  async function send(id: number) {
+    if (sendingId !== null) return;
+    setSendingId(id); setFeedback("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/whatsapp/jobs/${id}/cancellation-send`, { method: "POST", headers: { Authorization: `Bearer ${token}` } });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error("send_failed");
+      setFeedback(t("whatsapp.cancellationReviewQueued")); setRefreshKey((value) => value + 1);
+    } catch (_error) { setFeedback(t("whatsapp.cancellationReviewFailed")); }
+    finally { setSendingId(null); }
+  }
+  const formatDate = (value: string) => new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Cairo" }).format(new Date(value));
+  return <section className="admin-editor whatsapp-settings-panel" dir={language === "ar" ? "rtl" : "ltr"}><div className="section-heading"><div><p className="eyebrow">{t("whatsapp.historyType.cancellation")}</p><h2>{t("whatsapp.messageHistoryTitle")}</h2></div></div>{feedback ? <p role="status" className="form-hint">{feedback}</p> : null}{loading ? <p className="form-hint">{t("whatsapp.historyLoading")}</p> : messages.length ? <div className="whatsapp-history-list">{messages.map((message) => <article className="whatsapp-history-item" key={message.id}><div className="whatsapp-history-toggle"><span className="whatsapp-history-main"><strong>{message.student_name || message.student_code || t("whatsapp.historyUnknownStudent")}</strong><small>{message.ref_code} · {formatDate(message.created_at)}</small></span><span className={`whatsapp-history-status ${message.status}`}>{t(`whatsapp.historyStatus.${message.status}`)}</span></div><pre className="whatsapp-history-message" dir="auto">{message.rendered_message || message.template_text}</pre>{message.status === "review_required" ? <button type="button" className="primary-button compact-button" disabled={sendingId !== null} onClick={() => void send(message.id)}>{sendingId === message.id ? t("whatsapp.cancellationReviewSending") : t("whatsapp.cancellationReviewSend")}</button> : null}</article>)}</div> : <p className="form-hint">{t("whatsapp.historyEmpty")}</p>}</section>;
 }

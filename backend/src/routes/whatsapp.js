@@ -1,9 +1,11 @@
 import express from "express";
 import { z } from "zod";
 import { query } from "../db/pool.js";
-import { requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
+import { requireAnyPermission, requirePermission, requireRoles, requireTeacher } from "../middleware/requireTeacher.js";
 import { auditLog } from "../services/audit.js";
 import { hasPermission } from "../services/rbac.js";
+import { approveCancellationNoticeForSend } from "../services/attendanceCancellation.js";
+import { isGroupScopeRestricted, normalizeGroupIds } from "../services/groupAccess.js";
 import {
   disconnectWhatsApp,
   getWhatsAppQr,
@@ -21,8 +23,8 @@ import { WHATSAPP_TEMPLATE_AUDIENCES, WHATSAPP_TEMPLATE_CATEGORIES } from "../se
 export const whatsappRouter = express.Router();
 whatsappRouter.use(requireTeacher);
 
-const HISTORY_TYPES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment"]);
-const HISTORY_STATUSES = new Set(["pending", "processing", "sent", "failed", "skipped", "delivery_unknown"]);
+const HISTORY_TYPES = new Set(["attendance", "absence", "grade", "receipt", "advance_payment", "cancellation"]);
+const HISTORY_STATUSES = new Set(["pending", "processing", "sent", "failed", "skipped", "delivery_unknown", "review_required"]);
 const TEMPLATE_CATEGORIES = new Set(WHATSAPP_TEMPLATE_CATEGORIES);
 
 const batchExamSchema = z.object({
@@ -174,7 +176,7 @@ whatsappRouter.patch("/templates/:id", requirePermission("whatsapp.manage"), asy
   }
 });
 
-whatsappRouter.get("/history", requirePermission("whatsapp.view"), async (req, res, next) => {
+whatsappRouter.get("/history", requireAnyPermission("whatsapp.view", "attendance.cancel_sessions"), async (req, res, next) => {
   try {
     const values = [];
     const filters = [];
@@ -182,12 +184,17 @@ whatsappRouter.get("/history", requirePermission("whatsapp.view"), async (req, r
       values.push(value);
       filters.push(sql.replace("?", `$${values.length}`));
     };
-    const type = String(req.query.type || "").trim().toLowerCase();
+    const canViewAllHistory = hasPermission(req.teacher, "whatsapp.view");
+    const type = canViewAllHistory ? String(req.query.type || "").trim().toLowerCase() : "cancellation";
     const status = String(req.query.status || "").trim().toLowerCase();
     const search = String(req.query.search || "").trim().slice(0, 80);
     const from = String(req.query.from || "").trim();
     const to = String(req.query.to || "").trim();
     if (HISTORY_TYPES.has(type)) addFilter("j.notification_type = ?", type);
+    if (!canViewAllHistory && isGroupScopeRestricted(req.teacher)) {
+      values.push(normalizeGroupIds(req.teacher?.group_ids));
+      filters.push(`EXISTS (SELECT 1 FROM attendance_sessions access_session WHERE access_session.id = j.cancellation_session_id AND access_session.group_id = ANY($${values.length}::int[]))`);
+    }
     if (HISTORY_STATUSES.has(status)) addFilter("j.status = ?", status);
     if (/^\d{4}-\d{2}-\d{2}$/.test(from)) addFilter("j.created_at >= ?::date", from);
     if (/^\d{4}-\d{2}-\d{2}$/.test(to)) addFilter("j.created_at < (?::date + INTERVAL '1 day')", to);
@@ -236,12 +243,17 @@ whatsappRouter.get("/history", requirePermission("whatsapp.view"), async (req, r
   } catch (error) { next(error); }
 });
 
-whatsappRouter.get("/history/stats", requirePermission("whatsapp.view"), async (_req, res, next) => {
+whatsappRouter.get("/history/stats", requireAnyPermission("whatsapp.view", "attendance.cancel_sessions"), async (req, res, next) => {
   try {
+    const canViewAllHistory = hasPermission(req.teacher, "whatsapp.view");
+    const scoped = !canViewAllHistory;
+    const values = scoped ? [normalizeGroupIds(req.teacher?.group_ids)] : [];
     const result = await query(
-      `SELECT status, COUNT(*)::int AS count
-       FROM whatsapp_notification_jobs
-       GROUP BY status`
+      `SELECT j.status, COUNT(*)::int AS count
+       FROM whatsapp_notification_jobs j
+       ${scoped ? "JOIN attendance_sessions s ON s.id = j.cancellation_session_id" : ""}
+       WHERE ${scoped ? `j.notification_type = 'cancellation' AND s.group_id = ANY($1::int[])` : "TRUE"}
+       GROUP BY j.status`, values
     );
     const counts = Object.fromEntries(result.rows.map((row) => [row.status, Number(row.count) || 0]));
     const total = result.rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
@@ -276,6 +288,19 @@ whatsappRouter.post("/batch-exams", requirePermission("whatsapp.send_grades"), a
   try {
     const result = await enqueueGradeBatchNotifications({ resultIds: parsed.data.resultIds });
     res.status(200).json({ ok: true, ...result });
+  } catch (error) { next(error); }
+});
+
+whatsappRouter.post("/jobs/:id/cancellation-send", requirePermission("attendance.cancel_sessions"), async (req, res, next) => {
+  try {
+    const jobId = Number(req.params.id);
+    if (!Number.isSafeInteger(jobId) || jobId <= 0) return res.status(400).json({ ok: false, status: "invalid_job_id" });
+    const result = await approveCancellationNoticeForSend({ jobId, actor: req.teacher, request: req });
+    if (!result.ok) {
+      const status = result.reason === "not_found" ? 404 : result.reason === "group_access_forbidden" ? 403 : result.reason === "already_approved" ? 409 : 400;
+      return res.status(status).json({ ok: false, status: result.reason });
+    }
+    res.json(result);
   } catch (error) { next(error); }
 });
 

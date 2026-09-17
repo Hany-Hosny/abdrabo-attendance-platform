@@ -33,6 +33,18 @@ function parseCenterCoordinate(value, minimum, maximum) {
   return Number.isFinite(coordinate) && coordinate >= minimum && coordinate <= maximum ? coordinate : null;
 }
 
+adminAcademicRouter.get("/center", requirePermission("settings.manage"), async (_req, res, next) => {
+  try {
+    const result = await query(
+      "SELECT name, address, latitude, longitude FROM centers ORDER BY id ASC LIMIT 1"
+    );
+    if (!result.rowCount) return res.status(404).json({ ok: false, status: "center_not_found" });
+    return res.json({ ok: true, center: result.rows[0] });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 adminAcademicRouter.put("/center", requirePermission("settings.manage"), async (req, res, next) => {
   try {
     const address = String(req.body?.address || "").trim();
@@ -43,9 +55,12 @@ adminAcademicRouter.put("/center", requirePermission("settings.manage"), async (
     }
 
     const result = await query(
-      `UPDATE centers
+      `WITH current_center AS (
+         SELECT id FROM centers ORDER BY id ASC LIMIT 1
+       )
+       UPDATE centers
        SET address = $1, latitude = $2, longitude = $3
-       WHERE id = 1
+       WHERE id = (SELECT id FROM current_center)
        RETURNING name, address, latitude, longitude`,
       [address, latitude, longitude]
     );
@@ -496,6 +511,7 @@ adminAcademicRouter.put("/groups/:id", requirePermission("schedule.manage"), asy
       JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
       WHERE s.group_id = $1
         AND s.session_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+        AND s.status <> 'cancelled'
         AND cs.deleted_at IS NULL
       FOR UPDATE OF s`, [groupId]);
     const beforeSessionsById = new Map(todaySessions.rows.map((session) => [Number(session.id), session]));
@@ -701,7 +717,7 @@ adminAcademicRouter.get("/students", requirePermission("students.view"), async (
     const attendanceToday = `EXISTS (
       SELECT 1 FROM attendance_records ar
       JOIN attendance_sessions ats ON ats.id = ar.session_id
-      WHERE ar.student_id = s.id AND ats.session_date = ${todayCairo}
+      WHERE ar.student_id = s.id AND ats.status <> 'cancelled' AND ats.session_date = ${todayCairo}
         AND ar.status IN ('present', 'late')
     )`;
     if (quickFilter === "present_today") filters.push(attendanceToday);
@@ -710,7 +726,21 @@ adminAcademicRouter.get("/students", requirePermission("students.view"), async (
       SELECT 1 FROM payments p
       WHERE p.student_id = s.id
         AND NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id)
-        AND (p.is_exempt = TRUE OR p.discount_amount > 0)
+        AND (
+          p.is_exempt = TRUE
+          OR (
+            p.discount_amount > 0
+            AND COALESCE(
+              NULLIF((
+                SELECT SUM(NULLIF(payment_month.month_entry->>'amount', '')::numeric)
+                FROM jsonb_array_elements(
+                  CASE WHEN jsonb_typeof(p.payment_months) = 'array' THEN p.payment_months ELSE '[]'::jsonb END
+                ) AS payment_month(month_entry)
+              ), 0),
+              p.amount + p.discount_amount
+            ) > p.paid_amount
+          )
+        )
         AND COALESCE(p.paid_at, p.payment_date) >= date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') AT TIME ZONE 'Africa/Cairo'
         AND COALESCE(p.paid_at, p.payment_date) < (date_trunc('month', CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo') + INTERVAL '1 month') AT TIME ZONE 'Africa/Cairo'
     )`);
@@ -751,14 +781,15 @@ adminAcademicRouter.get("/students/:id/profile", setFinancialCacheHeaders, requi
     const canViewPaymentReports = hasPermission(req.teacher, "payments.reports.view");
     const canViewAttention = hasPermission(req.teacher, "dashboard.alerts.view");
     const [attendance, exams, notes, payments, threads, feeSummary] = await Promise.all([
-      canViewAttendance ? query(`SELECT s.id AS session_id, s.session_date, s.starts_at, s.closes_at,
+      canViewAttendance ? query(`SELECT s.id AS session_id, s.session_date, s.starts_at, s.closes_at, s.status AS session_status,
+          s.cancelled_at, s.cancelled_by, CASE WHEN s.status='cancelled' THEN 'cancelled' ELSE ar.status END AS status,
           s.original_starts_at, s.original_ends_at, s.rescheduled_at, cs.start_time, cs.end_time,
-          g.name AS group_name, COALESCE(NULLIF(TRIM(g.subject), ''), g.name) AS session_name, ar.status, ar.checkin_time, ar.whatsapp_notified
+          g.name AS group_name, COALESCE(NULLIF(TRIM(g.subject), ''), g.name) AS session_name, ar.checkin_time, ar.whatsapp_notified
         FROM attendance_sessions s
         JOIN groups g ON g.id = s.group_id
-        JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
-        LEFT JOIN attendance_records ar ON ar.session_id = s.id AND ar.student_id = $1
-        WHERE s.group_id = $2 AND s.schedule_id IS NOT NULL
+        LEFT JOIN class_schedules cs ON cs.id = s.schedule_id AND cs.group_id = s.group_id
+        LEFT JOIN attendance_records ar ON ar.session_id = s.id AND ar.student_id = $1 AND s.status <> 'cancelled'
+        WHERE s.group_id = $2
         ORDER BY s.session_date DESC, cs.start_time DESC`, [studentId, student.group_id]) : Promise.resolve({ rows: [] }),
       canViewEvaluations ? query(`SELECT e.id, e.title, e.exam_date, e.max_score, er.score, er.note, er.whatsapp_notified
         FROM exams e JOIN exam_results er ON er.exam_id = e.id AND er.student_id = $1
@@ -781,12 +812,13 @@ adminAcademicRouter.get("/students/:id/profile", setFinancialCacheHeaders, requi
         WHERE it.student_id = $1 GROUP BY it.id ORDER BY it.updated_at DESC`, [studentId]) : Promise.resolve({ rows: [] }),
       canViewPayments ? getFeeSummary(studentId, { ensure: false }) : Promise.resolve(null)
     ]);
-    const totalSessions = attendance.rows.length;
-    const presentCount = attendance.rows.filter((row) => row.status === "present" || row.status === "late").length;
-    const absentCount = attendance.rows.filter((row) => row.status === "absent").length;
-    const excusedCount = attendance.rows.filter((row) => row.status === "excused").length;
+    const metricAttendance = attendance.rows.filter((row) => row.session_status !== "cancelled");
+    const totalSessions = metricAttendance.length;
+    const presentCount = metricAttendance.filter((row) => row.status === "present" || row.status === "late").length;
+    const absentCount = metricAttendance.filter((row) => row.status === "absent").length;
+    const excusedCount = metricAttendance.filter((row) => row.status === "excused").length;
     const countedAttendanceSessions = presentCount + absentCount;
-    const attendanceRate = attendanceRateFromStatuses(attendance.rows);
+    const attendanceRate = attendanceRateFromStatuses(metricAttendance);
     const evaluationRows = exams.rows.filter((row) => Number(row.max_score) > 0 && Number.isFinite(Number(row.score)));
     const evaluationAverage = evaluationRows.length
       ? evaluationRows.reduce((sum, row) => sum + (Number(row.score) / Number(row.max_score)) * 100, 0) / evaluationRows.length

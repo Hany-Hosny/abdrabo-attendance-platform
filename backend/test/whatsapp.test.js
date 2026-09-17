@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { absenceCorrectionTransition, applyTemplate, buildStudentPortalLink, enqueueGradeNotificationInTransaction, formatWhatsAppMonthList, gradeQueuePreviewPayload, normalizeEgyptianPhone, normalizeManualRetryReason, paymentMonthsValue, resolveWhatsAppTemplate, validateWhatsAppSettings, validateWhatsAppTemplate } from "../src/services/whatsapp.js";
+import { absenceCorrectionTransition, applyTemplate, buildStudentPortalLink, enqueueCancellationNotificationsInTransaction, enqueueGradeNotificationInTransaction, formatWhatsAppMonthList, gradeQueuePreviewPayload, normalizeEgyptianPhone, normalizeManualRetryReason, paymentMonthsValue, resolveWhatsAppTemplate, validateWhatsAppSettings, validateWhatsAppTemplate } from "../src/services/whatsapp.js";
 import { WHATSAPP_TEMPLATE_CATALOG, WHATSAPP_TEMPLATE_CATEGORIES, normalizeStudentGender } from "../src/services/whatsappTemplateCatalog.js";
 import { hasPermission } from "../src/services/rbac.js";
 import { createStudentPortalAccessToken, hashStudentPortalAccessToken } from "../src/services/auth.js";
@@ -40,7 +40,7 @@ test("validates the required placeholder for each WhatsApp template category", (
   assert.equal(validateWhatsAppTemplate("advance_payment", "Paid: {amount_paid}").ok, false);
 });
 
-test("catalogue contains forty regular slots and five genuinely neutral fallbacks", () => {
+test("catalogue contains forty-eight regular slots and six genuinely neutral fallbacks", () => {
   assert.deepEqual(Object.keys(WHATSAPP_TEMPLATE_CATALOG), WHATSAPP_TEMPLATE_CATEGORIES);
   let regularCount = 0;
   for (const category of WHATSAPP_TEMPLATE_CATEGORIES) {
@@ -54,7 +54,7 @@ test("catalogue contains forty regular slots and five genuinely neutral fallback
     assert.equal(validateWhatsAppTemplate(category, WHATSAPP_TEMPLATE_CATALOG[category].neutral).ok, true);
     assert.doesNotMatch(WHATSAPP_TEMPLATE_CATALOG[category].neutral, /\b(الطالب|الطالبة|حضر|حضرت|له|لها)\b/);
   }
-  assert.equal(regularCount, 40);
+  assert.equal(regularCount, 48);
 });
 
 test("gender normalization maps invalid and unknown legacy values to the neutral route", () => {
@@ -187,6 +187,38 @@ test("single-grade enqueue rejects opted-out, inactive, and invalid-phone studen
   queries.length = 0;
   assert.deepEqual(await enqueueGradeNotificationInTransaction(client, { resultId: 10 }), { queued: false, reason: "invalid_phone" });
   assert.equal(queries.length, 1);
+});
+
+test("cancellation notice queue respects auto-send, active-student, opt-out, phone, and dedupe rules", async () => {
+  for (const [autoSend, expectedStatus] of [[true, "pending"], [false, "review_required"]]) {
+    const inserts = [];
+    const client = { query: async (sql, values = []) => {
+      if (sql.includes("FROM whatsapp_settings")) return { rowCount: 1, rows: [{ auto_send: autoSend }] };
+      if (sql.includes("FROM students")) {
+        assert.match(sql, /is_active = TRUE/);
+        assert.match(sql, /whatsapp_opted_out = FALSE/);
+        return { rowCount: 1, rows: [{ id: 22, guardian_phone: "01012345678" }] };
+      }
+      if (sql.includes("INSERT INTO whatsapp_notification_jobs")) {
+        inserts.push({ sql, values });
+        return { rowCount: 1, rows: [{ id: 80 }] };
+      }
+      throw new Error(`Unexpected cancellation queue query: ${sql}`);
+    } };
+    const result = await enqueueCancellationNotificationsInTransaction(client, {
+      session: { id: 17, group_id: 4, group_name: "Group A", starts_at: "2026-09-17T15:00:00Z", cancelled_at: "2026-09-17T14:00:00Z" },
+      actorId: 9
+    });
+    assert.equal(result.autoSend, autoSend);
+    assert.equal(autoSend ? result.queuedCount : result.reviewCount, 1);
+    assert.equal(inserts.length, 1);
+    assert.match(inserts[0].sql, /ON CONFLICT \(cancellation_session_id, student_id\)/);
+    assert.equal(inserts[0].values[5], expectedStatus);
+    const payload = JSON.parse(inserts[0].values[3]);
+    assert.equal(payload.session_id, 17);
+    assert.equal(payload.group_name, "Group A");
+    assert.ok(payload.scheduled_date && payload.scheduled_time && payload.cancellation_time);
+  }
 });
 
 test("absence correction fences an in-flight provider call as delivery_unknown", () => {

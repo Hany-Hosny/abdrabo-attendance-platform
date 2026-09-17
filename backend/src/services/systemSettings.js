@@ -6,6 +6,7 @@ const SETTING_DEFINITIONS = Object.freeze({
   attendance_open_before_minutes: Object.freeze({ type: "integer", defaultValue: 3, min: 0, max: 180 }),
   attendance_close_after_minutes: Object.freeze({ type: "integer", defaultValue: 20, min: 0, max: 240 }),
   attendance_alert_threshold: Object.freeze({ type: "integer", defaultValue: 70, min: 0, max: 100 }),
+  attendance_cancellation_cutoff_percentage: Object.freeze({ type: "integer", defaultValue: 60, min: 1, max: 90 }),
   evaluation_alert_threshold: Object.freeze({ type: "integer", defaultValue: 60, min: 0, max: 100 }),
   password_recovery_enabled: Object.freeze({ type: "boolean", defaultValue: false }),
   password_recovery_provider: Object.freeze({ type: "provider", defaultValue: "gmail-smtp" }),
@@ -16,6 +17,7 @@ export const SYSTEM_SETTING_KEYS = Object.freeze([
   "attendance_open_before_minutes",
   "attendance_close_after_minutes",
   "attendance_alert_threshold",
+  "attendance_cancellation_cutoff_percentage",
   "evaluation_alert_threshold"
 ]);
 export const PASSWORD_RECOVERY_SETTING_KEYS = Object.freeze([

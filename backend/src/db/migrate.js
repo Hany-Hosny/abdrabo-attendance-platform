@@ -208,6 +208,7 @@ export async function migrate() {
         'attendance_open_before_minutes',
         'attendance_close_after_minutes',
         'attendance_alert_threshold',
+        'attendance_cancellation_cutoff_percentage',
         'evaluation_alert_threshold',
         'password_recovery_enabled',
         'password_recovery_provider',
@@ -276,6 +277,9 @@ export async function migrate() {
   `);
 
   // 2. Add compatible columns and constraints for existing installations.
+  await query("ALTER TABLE system_settings DROP CONSTRAINT IF EXISTS system_settings_key_check");
+  await query("ALTER TABLE system_settings ADD CONSTRAINT system_settings_key_check CHECK (key IN ('attendance_open_before_minutes', 'attendance_close_after_minutes', 'attendance_alert_threshold', 'attendance_cancellation_cutoff_percentage', 'evaluation_alert_threshold', 'password_recovery_enabled', 'password_recovery_provider', 'password_recovery_from_email'))");
+  await query("INSERT INTO system_settings (key, value_json) VALUES ('attendance_cancellation_cutoff_percentage', '60'::jsonb) ON CONFLICT (key) DO NOTHING");
   await query(`
     SET search_path TO public;
 
@@ -322,6 +326,7 @@ export async function migrate() {
       'attendance_open_before_minutes',
       'attendance_close_after_minutes',
       'attendance_alert_threshold',
+      'attendance_cancellation_cutoff_percentage',
       'evaluation_alert_threshold',
       'password_recovery_enabled',
       'password_recovery_provider',
@@ -865,6 +870,11 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS grade_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS receipt_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS advance_payment_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ");
+  await query("ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS cancelled_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS cancellation_session_id INTEGER REFERENCES attendance_sessions(id) ON DELETE SET NULL");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS approved_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ");
   await query("ALTER TABLE students ADD COLUMN IF NOT EXISTS whatsapp_opted_out BOOLEAN NOT NULL DEFAULT FALSE");
   await query("COMMENT ON COLUMN students.billing_start_month IS 'First effective fee due month, normalized to YYYY-MM-01.'");
   await query("CREATE INDEX IF NOT EXISTS students_billing_start_month_idx ON students (billing_start_month)");
@@ -886,12 +896,12 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN phone_number DROP NOT NULL");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_notification_type_check");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_status_check");
-  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_status_check CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped', 'delivery_unknown'))");
-  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_status_check CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped', 'delivery_unknown', 'review_required'))");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation'))");
   await query("ALTER TABLE whatsapp_template_rotation DROP CONSTRAINT IF EXISTS whatsapp_template_rotation_notification_type_check");
-  await query("ALTER TABLE whatsapp_template_rotation ADD CONSTRAINT whatsapp_template_rotation_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
+  await query("ALTER TABLE whatsapp_template_rotation ADD CONSTRAINT whatsapp_template_rotation_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation'))");
   await query("ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_category_check");
-  await query("ALTER TABLE whatsapp_templates ADD CONSTRAINT whatsapp_templates_category_check CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment'))");
+  await query("ALTER TABLE whatsapp_templates ADD CONSTRAINT whatsapp_templates_category_check CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation'))");
   await query("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS audience TEXT NOT NULL DEFAULT 'neutral'");
   await query("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS slot_number INTEGER");
   await query("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS slot_key TEXT");
@@ -915,7 +925,9 @@ export async function migrate() {
   await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_templates_slot_key_idx ON whatsapp_templates(slot_key) WHERE slot_key IS NOT NULL");
   await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_templates_regular_slot_idx ON whatsapp_templates(category, audience, slot_number) WHERE audience IN ('male', 'female') AND slot_number IS NOT NULL");
   await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_templates_fallback_idx ON whatsapp_templates(category) WHERE is_fallback = TRUE");
-  await query("CREATE TABLE IF NOT EXISTS whatsapp_template_rotation_state (category TEXT NOT NULL CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment')), audience TEXT NOT NULL CHECK (audience IN ('male', 'female')), next_slot INTEGER NOT NULL DEFAULT 1 CHECK (next_slot BETWEEN 1 AND 4), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (category, audience))");
+  await query("CREATE TABLE IF NOT EXISTS whatsapp_template_rotation_state (category TEXT NOT NULL CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation')), audience TEXT NOT NULL CHECK (audience IN ('male', 'female')), next_slot INTEGER NOT NULL DEFAULT 1 CHECK (next_slot BETWEEN 1 AND 4), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), PRIMARY KEY (category, audience))");
+  await query("ALTER TABLE whatsapp_template_rotation_state DROP CONSTRAINT IF EXISTS whatsapp_template_rotation_state_category_check");
+  await query("ALTER TABLE whatsapp_template_rotation_state ADD CONSTRAINT whatsapp_template_rotation_state_category_check CHECK (category IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation'))");
   // Preserve the old category-wide cursor for the male pool on first
   // migration. Female pools have no prior independent cursor and start at
   // slot one. ON CONFLICT keeps later restarts from resetting either cursor.
@@ -935,6 +947,9 @@ export async function migrate() {
     ON whatsapp_notification_jobs(source_id)
     WHERE notification_type = 'grade' AND source_id IS NOT NULL
       AND status IN ('pending', 'processing')`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_cancellation_session_student_unique
+    ON whatsapp_notification_jobs(cancellation_session_id, student_id)
+    WHERE notification_type = 'cancellation' AND cancellation_session_id IS NOT NULL AND student_id IS NOT NULL`);
   await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_notification_jobs_claim_token_idx ON whatsapp_notification_jobs(claim_token) WHERE claim_token IS NOT NULL");
   await query("ALTER TABLE whatsapp_session_leases ADD COLUMN IF NOT EXISTS owner_id TEXT NOT NULL DEFAULT 'migration-recovery'");
   await query("ALTER TABLE whatsapp_session_leases ADD COLUMN IF NOT EXISTS owner_token TEXT NOT NULL DEFAULT 'migration-recovery'");

@@ -276,7 +276,7 @@ export async function getExecutiveDashboard({ period, from, to, groupId, user = 
     ), sessions AS (
       SELECT group_id, COUNT(*)::int AS session_count
       FROM attendance_sessions
-      WHERE session_date >= $1::date AND session_date < $2::date
+      WHERE status <> 'cancelled' AND session_date >= $1::date AND session_date < $2::date
       GROUP BY group_id
     ), attendance AS (
       SELECT ats.group_id,
@@ -284,7 +284,7 @@ export async function getExecutiveDashboard({ period, from, to, groupId, user = 
         COUNT(*) FILTER (WHERE ar.status IN ('present', 'late', 'absent'))::int AS counted_count
       FROM attendance_records ar JOIN attendance_sessions ats ON ats.id = ar.session_id
       JOIN students s ON s.id = ar.student_id AND s.is_active = TRUE AND s.deleted_at IS NULL
-      WHERE ats.session_date >= $1::date AND ats.session_date < $2::date
+      WHERE ats.status <> 'cancelled' AND ats.session_date >= $1::date AND ats.session_date < $2::date
       GROUP BY ats.group_id
     ), evaluations AS (
       SELECT e.group_id, AVG(CASE WHEN e.max_score > 0 THEN er.score / e.max_score * 100 END) AS evaluation_average
@@ -345,7 +345,7 @@ export async function getExecutiveDashboard({ period, from, to, groupId, user = 
         COUNT(*) FILTER (WHERE ar.status IN ('present', 'late', 'absent')) AS sessions,
         COUNT(*) FILTER (WHERE ar.status IN ('present', 'late')) AS attended
       FROM students_in_scope sis
-      LEFT JOIN attendance_sessions ats ON ats.group_id = sis.group_id AND ats.session_date >= $1::date AND ats.session_date < $2::date
+      LEFT JOIN attendance_sessions ats ON ats.group_id = sis.group_id AND ats.status <> 'cancelled' AND ats.session_date >= $1::date AND ats.session_date < $2::date
       LEFT JOIN attendance_records ar ON ar.session_id = ats.id AND ar.student_id = sis.id
       GROUP BY sis.id
     ), low_attendance AS (
@@ -452,19 +452,21 @@ export async function getDashboardData(studentId) {
     `
       SELECT
         ar.id,
-        ar.status,
+        s.id AS session_id,
+        CASE WHEN s.status = 'cancelled' THEN 'cancelled' ELSE ar.status END AS status,
         ar.checkin_time,
         ar.distance_meters,
         ar.is_suspicious,
         ar.whatsapp_notified,
-        s.session_date,
+        s.session_date, s.status AS session_status, s.cancelled_at,
         g.subject,
         g.name AS group_name
-      FROM attendance_records ar
-      JOIN attendance_sessions s ON s.id = ar.session_id
+      FROM attendance_sessions s
       JOIN groups g ON g.id = s.group_id
-      WHERE ar.student_id = $1 AND EXISTS (SELECT 1 FROM students active_student WHERE active_student.id = ar.student_id AND active_student.deleted_at IS NULL)
-      ORDER BY ar.checkin_time DESC
+      LEFT JOIN attendance_records ar ON ar.session_id = s.id AND ar.student_id = $1 AND s.status <> 'cancelled'
+      WHERE s.group_id = (SELECT group_id FROM students WHERE id = $1)
+        AND EXISTS (SELECT 1 FROM students active_student WHERE active_student.id = $1 AND active_student.deleted_at IS NULL)
+      ORDER BY s.session_date DESC
       LIMIT 10
     `,
     [studentId]

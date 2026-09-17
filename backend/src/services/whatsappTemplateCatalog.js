@@ -3,7 +3,8 @@ export const WHATSAPP_TEMPLATE_CATEGORIES = Object.freeze([
   "absence",
   "grade",
   "receipt",
-  "advance_payment"
+  "advance_payment",
+  "cancellation"
 ]);
 
 export const WHATSAPP_TEMPLATE_AUDIENCES = Object.freeze(["male", "female", "neutral"]);
@@ -13,7 +14,8 @@ export const WHATSAPP_TEMPLATE_PLACEHOLDERS = Object.freeze({
   absence: Object.freeze(["student_name", "student_code", "date", "group_name", "portal_link", "ref_code"]),
   grade: Object.freeze(["student_name", "student_code", "exam_title", "score", "max_score", "percentage", "portal_link", "ref_code"]),
   receipt: Object.freeze(["student_name", "student_code", "amount_paid", "month", "receipt_number", "portal_link", "ref_code"]),
-  advance_payment: Object.freeze(["student_name", "student_code", "amount_paid", "months", "receipt_number", "portal_link", "ref_code"])
+  advance_payment: Object.freeze(["student_name", "student_code", "amount_paid", "months", "receipt_number", "portal_link", "ref_code"]),
+  cancellation: Object.freeze(["group_name", "scheduled_date", "scheduled_time", "cancellation_time", "ref_code"])
 });
 
 export const WHATSAPP_REQUIRED_PLACEHOLDERS = Object.freeze({
@@ -21,7 +23,8 @@ export const WHATSAPP_REQUIRED_PLACEHOLDERS = Object.freeze({
   absence: ["student_name", "group_name", "date"],
   grade: ["student_name", "exam_title", "score", "max_score"],
   receipt: ["student_name", "amount_paid", "receipt_number"],
-  advance_payment: ["student_name", "amount_paid", "months", "receipt_number"]
+  advance_payment: ["student_name", "amount_paid", "months", "receipt_number"],
+  cancellation: ["group_name", "scheduled_date", "scheduled_time", "cancellation_time"]
 });
 
 const attendanceMale = [
@@ -94,12 +97,26 @@ const advanceFemale = [
   "تم تحديث حساب الطالبة {student_name} بدفعة مقدمة قدرها {amount_paid} ج.م للشهور {months}.\nرقم السند: {receipt_number}\nللمتابعة: {portal_link}\nالمرجع: {ref_code}"
 ];
 
+const cancellationMale = [
+  "نحيطكم علماً بإلغاء حصة مجموعة {group_name} المقررة يوم {scheduled_date} الساعة {scheduled_time}.\nوقت تسجيل الإلغاء: {cancellation_time}\nالمرجع: {ref_code}",
+  "تم إلغاء حصة {group_name}.\nموعد الحصة: {scheduled_date}، الساعة {scheduled_time}\nوقت الإلغاء: {cancellation_time}\nالمرجع: {ref_code}",
+  "إشعار إلغاء حصة\nالمجموعة: {group_name}\nالتاريخ والوقت: {scheduled_date} - {scheduled_time}\nوقت تسجيل الإلغاء: {cancellation_time}\nالمرجع: {ref_code}",
+  "نود إبلاغكم بإلغاء حصة {group_name} المحددة في {scheduled_date} الساعة {scheduled_time}.\nتم تسجيل الإلغاء في {cancellation_time}.\nالمرجع: {ref_code}"
+];
+
+const cancellationFemale = [...cancellationMale];
+
 export const WHATSAPP_TEMPLATE_CATALOG = Object.freeze({
   attendance: Object.freeze({ male: attendanceMale, female: attendanceFemale, neutral: "السادة أولياء الأمور، نود إبلاغكم بأنه تم تسجيل حضور باسم {student_name} في حصة {group_name} بتاريخ {date} الساعة {time}.\nرابط المتابعة: {portal_link}\nالمرجع: {ref_code}" }),
   absence: Object.freeze({ male: absenceMale, female: absenceFemale, neutral: "السادة أولياء الأمور، نود إبلاغكم بأنه لم يُسجل حضور باسم {student_name} في حصة {group_name} بتاريخ {date}.\nللمتابعة: {portal_link}\nالمرجع: {ref_code}" }),
   grade: Object.freeze({ male: gradeMale, female: gradeFemale, neutral: "نحيطكم علماً بظهور نتيجة باسم {student_name} في امتحان {exam_title}: {score} من {max_score} بنسبة {percentage}%.\nالتفاصيل: {portal_link}\nالمرجع: {ref_code}" }),
   receipt: Object.freeze({ male: receiptMale, female: receiptFemale, neutral: "تم تسجيل سداد بقيمة {amount_paid} ج.م باسم {student_name} عن {month}.\nرقم الإيصال: {receipt_number}\nكشف الحساب: {portal_link}\nالمرجع: {ref_code}" }),
-  advance_payment: Object.freeze({ male: advanceMale, female: advanceFemale, neutral: "تم تسجيل دفعة مقدمة بقيمة {amount_paid} ج.م باسم {student_name} عن الشهور {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}\nالمرجع: {ref_code}" })
+  advance_payment: Object.freeze({ male: advanceMale, female: advanceFemale, neutral: "تم تسجيل دفعة مقدمة بقيمة {amount_paid} ج.م باسم {student_name} عن الشهور {months}.\nرقم الإيصال: {receipt_number}\nمتابعة الحساب: {portal_link}\nالمرجع: {ref_code}" }),
+  cancellation: Object.freeze({
+    male: cancellationMale,
+    female: cancellationFemale,
+    neutral: "نحيطكم علماً بإلغاء حصة مجموعة {group_name} المقررة يوم {scheduled_date} الساعة {scheduled_time}.\nوقت تسجيل الإلغاء: {cancellation_time}\nالمرجع: {ref_code}"
+  })
 });
 
 export function normalizeStudentGender(value) {

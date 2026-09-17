@@ -11,7 +11,7 @@ import { createIdempotencyKey, normalizeScanValue, playScannerFeedback, type Sca
 import { isScannerDevToolsShortcut, scannerFunctionKeyFromEvent, scannerInputCharacter, useAttendanceScanner } from "./utils/attendanceScanner";
 import { AdminExecutiveDashboard } from "./AdminExecutiveDashboard";
 import { SystemSettingsPanel } from "./SystemSettingsPanel";
-import { WhatsAppSettingsPanel } from "./WhatsAppSettingsPanel";
+import { CancellationReviewPanel, WhatsAppSettingsPanel } from "./WhatsAppSettingsPanel";
 import { PasswordRecoveryDialog } from "./PasswordRecoveryDialog";
 import { PublicLayout } from "./PublicLayout";
 import type { PublicHeaderLabels, PublicLanguage, PublicTheme } from "./PublicHeader";
@@ -345,6 +345,8 @@ const translations = {
     "contact.directTitle": "تواصل مباشرة",
     "contact.directSubtitle": "اختر الطريقة المناسبة وسنسعد بالتواصل معك.",
     "contact.locationTitle": "موقع السنتر",
+    "contact.locationKicker": "تشرّفنا زيارتكم",
+    "contact.locationHeading": "اعثر على السنتر بسهولة",
     "contact.locationSubtitle": "اعرف موقعنا وتوجه إلينا بسهولة.",
     "contact.getDirections": "الاتجاهات",
     "contact.locationUnavailable": "بيانات الموقع غير متاحة حالياً. تواصل معنا وسنرسلها لك.",
@@ -571,12 +573,20 @@ const translations = {
     "whatsapp.historyType.grade": "نتيجة امتحان",
     "whatsapp.historyType.receipt": "إيصال مصروفات",
     "whatsapp.historyType.advance_payment": "دفع مقدم",
+    "whatsapp.historyType.cancellation": "إلغاء حصة",
     "whatsapp.historyStatus.sent": "تم الإرسال",
     "whatsapp.historyStatus.pending": "قيد الانتظار",
     "whatsapp.historyStatus.processing": "قيد التنفيذ",
     "whatsapp.historyStatus.failed": "فشل",
     "whatsapp.historyStatus.skipped": "تم التخطي",
     "whatsapp.historyStatus.delivery_unknown": "نتيجة غير مؤكدة",
+    "whatsapp.historyStatus.review_required": "بانتظار المراجعة",
+    "whatsapp.cancellationTemplatesTitle": "قوالب إلغاء الحصص",
+    "whatsapp.cancellationTemplatesDescription": "رسائل توضح إلغاء الحصة وموعدها ووقت تسجيل الإلغاء.",
+    "whatsapp.cancellationReviewSend": "مراجعة وإرسال الإشعار",
+    "whatsapp.cancellationReviewSending": "جاري اعتماد الإرسال...",
+    "whatsapp.cancellationReviewQueued": "تم اعتماد الإشعار وإضافته إلى قائمة الإرسال.",
+    "whatsapp.cancellationReviewFailed": "تعذر اعتماد الإشعار أو إرساله.",
     "whatsapp.attendanceTemplatesTitle": "قوالب إشعارات الحضور",
     "whatsapp.attendanceTemplatesDescription": "رسائل الحضور التي تصل إلى ولي الأمر بعد تسجيل حضور الطالب.",
     "whatsapp.absenceTemplatesTitle": "قوالب إشعارات الغياب",
@@ -668,6 +678,8 @@ const translations = {
     "settings.closeAfterDescription": "المدة الافتراضية المتاحة لتسجيل الحضور من بداية الحصة.",
     "settings.attendanceAlertLabel": "حد تنبيه الحضور",
     "settings.attendanceAlertDescription": "يظهر التنبيه عند انخفاض حضور الطالب عن هذه النسبة.",
+    "settings.cancellationCutoffLabel": "نسبة وقت إلغاء الحصة",
+    "settings.cancellationCutoffDescription": "آخر وقت للإلغاء محسوب من بداية الحصة ومدتها.",
     "settings.minutes": "دقيقة",
     "settings.evaluationTitle": "إعدادات التقييمات",
     "settings.evaluationDescription": "يُستخدم الحد التالي في تنبيهات متوسطات التقييم داخل لوحة التحكم.",
@@ -785,6 +797,17 @@ const translations = {
     "inbox.deleteFailed": "تعذر حذف المحادثات. حاول مرة أخرى.",
     "inbox.permission": "السماح للمساعد باستخدام الرسائل",
     "attendance.noRealSessions": "لا توجد حصص حقيقية لهذا اليوم.",
+    "attendance.cancelLesson": "إلغاء الحصة",
+    "attendance.sessionCancelled": "ملغاة",
+    "attendance.cancelledAt": "وقت الإلغاء",
+    "attendance.cancelLessonConfirm": "سيتم استبعاد الحصة بالكامل من تقارير الحضور وإخطار أولياء الأمور. هل تريد المتابعة؟",
+    "attendance.cancelLessonCutoff": "يمكن إلغاء الحصة حتى {{cutoff}}.",
+    "attendance.cancelledSession": "حصة ملغاة",
+    "attendance.cancellationLoading": "جاري إلغاء الحصة...",
+    "attendance.cancellationSuccess": "تم إلغاء الحصة وإضافة إشعارات أولياء الأمور.",
+    "attendance.cancellationReviewRequired": "تم إلغاء الحصة. إشعارات أولياء الأمور بانتظار المراجعة في سجل واتساب.",
+    "attendance.cancellationFailed": "تعذر إلغاء الحصة. قد تكون مهلة الإلغاء انتهت أو تم إلغاؤها بالفعل.",
+    "attendance.cancellationClosed": "انتهت مهلة إلغاء هذه الحصة.",
     "fees.title": "المصروفات",
     "fees.billingStageGrace": "مطلوب السداد",
     "fees.billingStageLate": "متأخر",
@@ -1083,6 +1106,8 @@ const translations = {
     "audit.action.attendanceChanged": "تم تغيير الحضور",
     "audit.action.attendanceScanned": "تم تنفيذ مسح الحضور",
     "audit.action.attendanceSessionCreated": "تم إنشاء جلسة حضور",
+    "audit.action.attendanceSessionCancelled": "تم إلغاء حصة حضور",
+    "audit.action.cancellationNoticeApproved": "تم اعتماد إرسال إشعار إلغاء الحصة",
     "audit.action.suspiciousScan": "تم تسجيل محاولة مسح مشبوهة",
     "audit.action.studentScanSerialRegenerated": "تم تجديد سريال مسح الطالب",
     "audit.action.studentPermanentlyAnonymized": "تم إخفاء بيانات الطالب نهائياً",
@@ -1520,6 +1545,7 @@ const translations = {
     "admin.permissionGroup.dashboard": "لوحة التحكم التنفيذية",
     "admin.permission.view": "عرض",
     "admin.permission.manage": "إدارة",
+    "admin.permission.cancelSessions": "إلغاء الحصص",
     "admin.permission.collect": "تسجيل دفع",
     "admin.permission.advance": "دفع مقدم",
     "admin.permission.sendAttendance": "إرسال إشعارات الحضور عبر واتساب",
@@ -1977,6 +2003,8 @@ const translations = {
     "contact.directTitle": "Connect directly",
     "contact.directSubtitle": "Choose the channel that works best for you.",
     "contact.locationTitle": "Center location",
+    "contact.locationKicker": "COME VISIT US",
+    "contact.locationHeading": "Find us on the map",
     "contact.locationSubtitle": "Find us quickly and get directions to the center.",
     "contact.getDirections": "Get directions",
     "contact.locationUnavailable": "Location details are temporarily unavailable. Contact us and we will share them with you.",
@@ -2203,12 +2231,20 @@ const translations = {
     "whatsapp.historyType.grade": "Exam result",
     "whatsapp.historyType.receipt": "Fee receipt",
     "whatsapp.historyType.advance_payment": "Advance payment",
+    "whatsapp.historyType.cancellation": "Lesson cancellation",
     "whatsapp.historyStatus.sent": "Sent",
     "whatsapp.historyStatus.pending": "Pending",
     "whatsapp.historyStatus.processing": "Processing",
     "whatsapp.historyStatus.failed": "Failed",
     "whatsapp.historyStatus.skipped": "Skipped",
     "whatsapp.historyStatus.delivery_unknown": "Delivery unknown",
+    "whatsapp.historyStatus.review_required": "Review required",
+    "whatsapp.cancellationTemplatesTitle": "Lesson cancellation templates",
+    "whatsapp.cancellationTemplatesDescription": "Messages identify the cancelled lesson, scheduled time, and cancellation time.",
+    "whatsapp.cancellationReviewSend": "Review and send notice",
+    "whatsapp.cancellationReviewSending": "Approving send...",
+    "whatsapp.cancellationReviewQueued": "Notice approved and added to the sending queue.",
+    "whatsapp.cancellationReviewFailed": "Could not approve or send this notice.",
     "whatsapp.attendanceTemplatesTitle": "Attendance notification templates",
     "whatsapp.attendanceTemplatesDescription": "Attendance messages sent to the guardian after a student is marked present.",
     "whatsapp.absenceTemplatesTitle": "Absence notification templates",
@@ -2300,6 +2336,8 @@ const translations = {
     "settings.closeAfterDescription": "Default attendance window from the start of a class.",
     "settings.attendanceAlertLabel": "Attendance alert threshold",
     "settings.attendanceAlertDescription": "Alerts appear when a student falls below this rate.",
+    "settings.cancellationCutoffLabel": "Lesson cancellation cutoff",
+    "settings.cancellationCutoffDescription": "The cutoff is calculated from the scheduled start time and lesson duration.",
     "settings.minutes": "minutes",
     "settings.evaluationTitle": "Evaluation settings",
     "settings.evaluationDescription": "This threshold is used by dashboard low-evaluation alerts.",
@@ -2417,6 +2455,17 @@ const translations = {
     "inbox.deleteFailed": "Could not delete the conversations. Please try again.",
     "inbox.permission": "Allow assistant to use Inbox",
     "attendance.noRealSessions": "No real class sessions for this date.",
+    "attendance.cancelLesson": "Cancel lesson",
+    "attendance.sessionCancelled": "Cancelled",
+    "attendance.cancelledAt": "Cancelled at",
+    "attendance.cancelLessonConfirm": "This will exclude the entire lesson from attendance reports and notify guardians. Continue?",
+    "attendance.cancelLessonCutoff": "This lesson can be cancelled through {{cutoff}}.",
+    "attendance.cancelledSession": "Cancelled lesson",
+    "attendance.cancellationLoading": "Cancelling lesson...",
+    "attendance.cancellationSuccess": "Lesson cancelled; guardian notices have been queued.",
+    "attendance.cancellationReviewRequired": "Lesson cancelled. Guardian notices are awaiting review in WhatsApp history.",
+    "attendance.cancellationFailed": "The lesson could not be cancelled. Its window may have closed or it may already be cancelled.",
+    "attendance.cancellationClosed": "The cancellation window for this lesson has passed.",
     "fees.title": "Fees",
     "fees.billingStageGrace": "Payment due",
     "fees.billingStageLate": "Late",
@@ -2715,6 +2764,8 @@ const translations = {
     "audit.action.attendanceChanged": "Attendance changed",
     "audit.action.attendanceScanned": "Attendance scan processed",
     "audit.action.attendanceSessionCreated": "Attendance session created",
+    "audit.action.attendanceSessionCancelled": "Attendance lesson cancelled",
+    "audit.action.cancellationNoticeApproved": "Cancellation notice send approved",
     "audit.action.suspiciousScan": "Suspicious scan recorded",
     "audit.action.studentScanSerialRegenerated": "Student scan serial regenerated",
     "audit.action.studentPermanentlyAnonymized": "Student data permanently anonymized",
@@ -3152,6 +3203,7 @@ const translations = {
     "admin.permissionGroup.dashboard": "Executive dashboard",
     "admin.permission.view": "View",
     "admin.permission.manage": "Manage",
+    "admin.permission.cancelSessions": "Cancel dated lessons",
     "admin.permission.collect": "Record payment",
     "admin.permission.advance": "Advance payment",
     "admin.permission.sendAttendance": "Send attendance notifications via WhatsApp",
@@ -3530,7 +3582,7 @@ type TranslationKey = keyof typeof translations.ar;
 type Translator = ReturnType<typeof createTranslator>;
 type PermissionKey =
   | "students.view" | "students.manage" | "students.delete"
-  | "attendance.view" | "attendance.manage"
+  | "attendance.view" | "attendance.manage" | "attendance.cancel_sessions"
   | "exams.view" | "exams.manage"
   | "homework.view" | "homework.manage"
   | "schedule.view" | "schedule.manage"
@@ -3542,7 +3594,7 @@ type PermissionKey =
   | "dashboard.view" | "dashboard.financial.view" | "dashboard.group_performance.view" | "dashboard.alerts.view" | "dashboard.activity.view";
 
 const allRbacPermissions: PermissionKey[] = [
-  "students.view", "students.manage", "students.delete", "attendance.view", "attendance.manage", "exams.view", "exams.manage",
+  "students.view", "students.manage", "students.delete", "attendance.view", "attendance.manage", "attendance.cancel_sessions", "exams.view", "exams.manage",
   "homework.view", "homework.manage", "schedule.view", "schedule.manage", "payments.view", "payments.collect", "payments.advance", "payments.reports.view", "payments.reverse",
   "messages.view", "messages.manage", "notes.view", "notes.manage", "users.view", "users.create", "users.edit", "users.disable",
   "users.delete", "activity_log.view", "activity_log.export", "whatsapp.view", "whatsapp.manage", "whatsapp.send_attendance", "whatsapp.send_grades", "whatsapp.send_receipts", "settings.manage", "dashboard.view", "dashboard.financial.view",
@@ -3551,7 +3603,7 @@ const allRbacPermissions: PermissionKey[] = [
 
 const permissionGroups: Array<{ label: TranslationKey; permissions: Array<{ key: PermissionKey; label: TranslationKey }> }> = [
   { label: "admin.permissionGroup.students", permissions: [{ key: "students.view", label: "admin.permission.view" }, { key: "students.manage", label: "admin.permission.manage" }, { key: "students.delete", label: "admin.permission.delete" }] },
-  { label: "admin.permissionGroup.attendance", permissions: [{ key: "attendance.view", label: "admin.permission.view" }, { key: "attendance.manage", label: "admin.permission.manage" }] },
+  { label: "admin.permissionGroup.attendance", permissions: [{ key: "attendance.view", label: "admin.permission.view" }, { key: "attendance.manage", label: "admin.permission.manage" }, { key: "attendance.cancel_sessions", label: "admin.permission.cancelSessions" }] },
   { label: "admin.permissionGroup.exams", permissions: [{ key: "exams.view", label: "admin.permission.view" }, { key: "exams.manage", label: "admin.permission.manage" }] },
   { label: "admin.permissionGroup.homework", permissions: [{ key: "homework.view", label: "admin.permission.view" }, { key: "homework.manage", label: "admin.permission.manage" }] },
   { label: "admin.permissionGroup.schedule", permissions: [{ key: "schedule.view", label: "admin.permission.view" }, { key: "schedule.manage", label: "admin.permission.manage" }] },
@@ -3969,6 +4021,7 @@ function attendanceStatusBadge(status: unknown, t: Translator) {
   if (value === "late") return { label: t("attendance.late"), className: "attendance-status-badge attendance-status-present" };
   if (value === "absent") return { label: t("attendance.absent"), className: "attendance-status-badge attendance-status-absent" };
   if (value === "excused") return { label: t("attendance.excused"), className: "attendance-status-badge attendance-status-excused" };
+  if (value === "cancelled") return { label: t("attendance.sessionCancelled"), className: "attendance-status-badge attendance-status-absent" };
   if (value === "pending_review") return { label: t("attendance.pendingReview"), className: "attendance-status-badge attendance-status-pending" };
   return { label: t("attendance.notMarked"), className: "attendance-status-badge attendance-status-not-marked" };
 }
@@ -5156,9 +5209,9 @@ function CenterLocationCard({ language, t }: CenterLocationCardProps) {
   const mapUrl = center ? `https://maps.google.com/maps?q=${encodeURIComponent(`${center.latitude},${center.longitude}`)}&hl=${language}&z=16&output=embed` : "";
   const directionsUrl = center ? `https://www.google.com/maps/dir/?api=1&destination=${center.latitude},${center.longitude}` : "#";
   return <article className="content-panel contact-location-panel" aria-labelledby="contact-location-title">
-    <div className="contact-location-copy"><span className="contact-section-kicker">{t("contact.locationTitle")}</span><h2 id="contact-location-title">{t("contact.locationTitle")}</h2><p>{t("contact.locationSubtitle")}</p></div>
+    <div className="contact-location-copy"><span className="contact-section-kicker">{t("contact.locationKicker")}</span><h2 id="contact-location-title">{t("contact.locationHeading")}</h2><p>{t("contact.locationSubtitle")}</p></div>
     {loading ? <div className="contact-location-map"><div className="contact-location-map-skeleton animate-pulse bg-slate-800" aria-label={t("contact.locationMapLoading")} /></div> : center ? <div className="contact-location-map"><iframe className="contact-location-map-frame filter invert-[90%] hue-rotate-180 contrast-[85%] grayscale-[10%]" src={mapUrl} title={t("contact.locationTitle")} loading="lazy" onLoad={() => setMapLoading(false)} onError={() => setMapLoading(false)} />{mapLoading ? <div className="contact-location-map-skeleton animate-pulse bg-slate-800" aria-hidden="true" /> : null}</div> : <div className="contact-location-fallback" role="status">{error ? t("contact.locationUnavailable") : t("contact.locationUnavailable")}</div>}
-    {center ? <div className="contact-location-footer"><address>{center.address}</address><a className="primary-button compact-button" href={directionsUrl} target="_blank" rel="noreferrer">{t("contact.getDirections")}</a></div> : null}
+    {center ? <div className="contact-location-footer"><address>{center.address}</address><a className="primary-button compact-button contact-directions-button" href={directionsUrl} target="_blank" rel="noreferrer"><span>{t("contact.getDirections")}</span><span className="contact-directions-arrow" aria-hidden="true">↗</span></a></div> : null}
   </article>;
 }
 
@@ -5314,6 +5367,7 @@ function PublicContentPage({
 
         {slug === "contact" ? (
           <section className="contact-layout" aria-label={view.title}>
+            <CenterLocationCard language={language} t={t} />
             <article className="content-panel contact-social-panel">
               <h2>{t("contact.directTitle")}</h2>
               <p>{t("contact.directSubtitle")}</p>
@@ -5333,8 +5387,7 @@ function PublicContentPage({
                 </a>
               </div>
             </article>
-            <CenterLocationCard language={language} t={t} />
-            <article className="content-panel contact-form-panel">
+            <article className="content-panel contact-form-panel" dir={language === "ar" ? "rtl" : "ltr"}>
               <h2>{t("contact.formTitle")}</h2>
               <p>{view.content.formIntro || t("contact.formSubtitle")}</p>
               <form onSubmit={submitContact}>
@@ -6173,15 +6226,15 @@ function TeacherDashboard({
     { id: "audit-logs", label: t("admin.tabs.auditLogs"), permission: "activity_log.view" },
     { id: "students", label: t("admin.tabs.students"), permission: "students.view" },
     { id: "groups", label: t("admin.tabs.groups"), permission: "schedule.view" },
-    { id: "attendance", label: t("admin.tabs.attendance"), permission: "attendance.view" },
+    { id: "attendance", label: t("admin.tabs.attendance"), permissions: ["attendance.view", "attendance.cancel_sessions"] },
     { id: "scanner", label: t("admin.tabs.scanner"), permission: "attendance.manage" },
     { id: "fees", label: t("admin.tabs.fees"), permission: "payments.view" },
     { id: "reports", label: t("admin.tabs.reports"), permission: "payments.reports.view" },
     { id: "exams", label: t("admin.tabs.exams"), permission: "exams.view" },
     { id: "inbox", label: t("admin.tabs.inbox"), permission: "messages.view" },
-    { id: "whatsapp", label: t("admin.tabs.whatsapp"), permission: "whatsapp.view" },
+    { id: "whatsapp", label: t("admin.tabs.whatsapp"), permissions: ["whatsapp.view", "attendance.cancel_sessions"] },
     { id: "settings", label: t("admin.tabs.settings"), permission: "settings.manage" }
-  ] satisfies Array<{ id: AdminTab; label: string; permission?: PermissionKey }>).filter((tab) => (!tab.permission || can(tab.permission)) && (tab.id !== "overview" || can("dashboard.view")) && (tab.id !== "reports" || can("payments.view")));
+  ] satisfies Array<{ id: AdminTab; label: string; permission?: PermissionKey; permissions?: PermissionKey[] }>).filter((tab) => (!tab.permission || can(tab.permission)) && (!tab.permissions || tab.permissions.some((permission) => can(permission))) && (tab.id !== "overview" || can("dashboard.view")) && (tab.id !== "reports" || can("payments.view")));
   const primaryAdminTabs = adminTabs.filter((tab) => ["overview", "students", "groups", "attendance", "scanner", "fees", "reports", "exams", "inbox"].includes(tab.id));
   const gearOrder: AdminTab[] = ["users", "add-user", "site-content", "audit-logs", "whatsapp", "settings"];
   const gearAdminTabs = gearOrder.map((id) => adminTabs.find((tab) => tab.id === id)).filter((tab): tab is (typeof adminTabs)[number] => Boolean(tab));
@@ -6497,13 +6550,14 @@ function TeacherDashboard({
             {activeTab === "site-content" && can("settings.manage") ? <SiteContentEditor session={session} language={language} t={t} onRegisterLeaveGuard={(guard) => { cmsLeaveGuardRef.current = guard; }} onConfirmLeave={() => { const pending = cmsPendingNavigationRef.current; cmsPendingNavigationRef.current = null; cmsLeaveGuardRef.current = null; if (pending) commitAdminNavigation(pending.tab, pending.studentId, pending.section); }} /> : null}
             {activeTab === "audit-logs" && can("activity_log.view") ? <AuditLogsPanel session={session} language={language} t={t} /> : null}
             {activeTab === "settings" && can("settings.manage") ? <SystemSettingsPanel token={session.token} language={language} isOwner={session.teacher.role === "owner"} t={(key, values) => t(key as TranslationKey, values)} /> : null}
-            {activeTab === "whatsapp" && can("whatsapp.view") ? <WhatsAppSettingsPanel token={session.token} language={language} canManage={can("whatsapp.manage")} canControlConnection={can("whatsapp.manage") && (session.teacher.role === "owner" || session.teacher.role === "admin")} t={(key, values) => t(key as TranslationKey, values)} /> : null}
+            {activeTab === "whatsapp" && can("whatsapp.view") ? <WhatsAppSettingsPanel token={session.token} language={language} canManage={can("whatsapp.manage")} canCancelSessions={can("attendance.cancel_sessions")} canControlConnection={can("whatsapp.manage") && (session.teacher.role === "owner" || session.teacher.role === "admin")} t={(key, values) => t(key as TranslationKey, values)} /> : null}
+            {activeTab === "whatsapp" && !can("whatsapp.view") && can("attendance.cancel_sessions") ? <CancellationReviewPanel token={session.token} language={language} t={(key, values) => t(key as TranslationKey, values)} /> : null}
             {activeTab === "groups" && can("schedule.view") ? <AcademicManager kind="groups" session={session} t={t} /> : null}
             {activeTab === "students" && can("students.view") ? <AcademicManager kind="students" session={session} t={t} /> : null}
             {activeTab === "scanner" && can("attendance.manage") ? <ScannerPanel session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} onOpenCamera={() => setCameraScannerOpen(true)} /> : null}
             {activeTab === "fees" && can("payments.view") ? <FeesPanel session={session} language={language} t={t} /> : null}
             {activeTab === "reports" && can("payments.view") && can("payments.reports.view") ? <FinanceReportsPanel session={session} language={language} t={t} canReverse={can("payments.reverse")} /> : null}
-            {activeTab === "attendance" && can("attendance.view") ? <AttendancePanel session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} onSessionIdChange={setSelectedAttendanceSessionId} /> : null}
+            {activeTab === "attendance" && (can("attendance.view") || can("attendance.cancel_sessions")) ? <AttendancePanel session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} onSessionIdChange={setSelectedAttendanceSessionId} canCancel={can("attendance.cancel_sessions")} canViewAttendance={can("attendance.view")} canManageAttendance={can("attendance.manage")} /> : null}
             {activeTab === "exams" && can("exams.view") ? <ExamResultsManager session={session} language={language} t={t} /> : null}
             {activeTab === "inbox" && can("messages.view") ? <StaffInboxControls session={session} language={language} t={t} onUnreadCountChange={setInboxUnread} /> : null}
             {activeTab !== "overview" && activeTab !== "attendance" && activeTab !== "exams" && activeTab !== "settings" && placeholderTitles[activeTab] ? (
@@ -8849,7 +8903,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
         <span><b>{t("admin.studentName")}</b>{profile.student.full_name}</span><span><b>{t("admin.studentCode")}</b><strong className="profile-student-code-value" dir="ltr">{profile.student.student_code || "—"}<button className="profile-copy-button" type="button" onClick={() => void handleCopy()} aria-label={t("admin.copyStudentCode")} title={t("admin.copyStudentCodeTitle")} disabled={!profile.student.student_code}>{isCopied ? <svg className="profile-copy-icon is-copied" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg> : <svg className="profile-copy-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M15 9V7a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /></svg>}</button></strong></span><span><b>{t("admin.scanSerial")}</b>{profile.student.scan_serial || "—"}</span><span><b>{t("admin.selectGroup")}</b>{profile.student.group_name || "—"}</span><span><b>{t("admin.grade")}</b>{profile.student.grade || "—"}</span><span><b>{t("admin.phone")}</b>{profile.student.phone || "—"}</span><span><b>{t("admin.guardianPhone")}</b>{profile.student.guardian_phone || "—"}</span><span><b>{t("admin.billingStartMonth")}</b>{formatBillingMonth(profile.student.billing_start_month, language)}</span><span><b>{t("admin.active")}</b>{recordStatusLabel(profile.student, t)}</span>
       </div></section>
       <section className="profile-section profile-label-section"><h3>{t("admin.labelDetails")}</h3><div className="profile-label-card"><StudentLabelPreview student={profile.student} />{sessionHasPermission(session, "students.manage") ? <div className="label-actions"><button className="secondary-button compact-button" type="button" onClick={printProfileLabel} disabled={labelPrinting || !labelScanSerial(profile.student)}>{labelPrinting ? t("admin.printingLabel") : t("admin.printLabel")}</button><button className="secondary-button compact-button" type="button" onClick={regenerateProfileScanSerial} disabled={serialRegenerating}>{serialRegenerating ? t("admin.updating") : t("admin.regenerateScanSerial")}</button></div> : null}</div></section>
-      {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.excusedCount")}</b>{profile.attendance.excused_count || 0}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{profileSessionTimeRange(row, language)}</span></small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
+      {profile.attendance ? <section className="profile-section" id="student360-attendance"><h3>{t("admin.attendanceSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.totalSessions")}</b>{profile.attendance.total_sessions}</span><span><b>{t("admin.presentCount")}</b>{profile.attendance.present_count}</span><span><b>{t("admin.absentCount")}</b>{profile.attendance.absent_count}</span><span><b>{t("admin.excusedCount")}</b>{profile.attendance.excused_count || 0}</span><span><b>{t("admin.attendancePercentage")}</b>{profilePercent(profile.attendance.attendance_percentage)}</span></div><h4>{t("admin.attendanceRecords")}</h4>{profile.attendance.records?.length ? <div className="profile-record-list">{profile.attendance.records.map((row: any) => <div className="profile-attendance-record" key={`${row.session_id}-${row.session_date}`}><div className="profile-record-primary"><strong>{profileSessionTitle(row)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small><span>{formatDateOnly(String(row.session_date || ""), language, "—")}</span><span>{profileSessionTimeRange(row, language)}</span>{row.cancelled_at ? <span>{t("attendance.cancelledAt")}: {formatDateTime(row.cancelled_at, language, "—")}</span> : null}</small></div><AttendanceStatusBadge status={row.status} t={t} /></div>)}</div> : <p className="empty-state">{t("admin.noProfileAttendance")}</p>}</section> : null}
       {profile.exams ? <section className="profile-section" id="student360-evaluations"><h3>{t("admin.examHistory")}</h3>{profile.exams?.length ? <div className="profile-record-list profile-exam-list">{profile.exams.map((row: any) => { const evaluation = scoreEvaluation(row.score, row.max_score, t); return <div className="profile-exam-record" key={row.id}><div className="profile-exam-details"><strong>{displayValue(row.title, language)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><small>{t("dashboard.latestExamDate")}: {formatDateOnly(String(row.exam_date || ""), language, "—")}</small>{row.note ? <small>{t("admin.assessment")}: {displayValue(row.note, language)}</small> : null}</div><div className="profile-exam-score">{row.score == null ? <strong>—</strong> : <><strong className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</strong>{evaluation ? <small className={`profile-exam-evaluation score-${evaluation.tone}`}>{evaluation.percentage.toFixed(0)}% — {evaluation.label}</small> : null}</>}</div></div>; })}</div> : <p className="empty-state">{t("admin.noProfileExams")}</p>}</section> : null}
       {profile.notes ? <section className="profile-section" id="student360-notes"><h3>{t("admin.notes")}</h3>{sessionHasPermission(session, "notes.manage") ? <form className="profile-note-form" onSubmit={saveNote}><textarea value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder={t("admin.notePlaceholder")} rows={3} /><button className="secondary-button compact-button" type="submit">{editingNoteId ? t("admin.editNote") : t("admin.addNote")}</button></form> : null}{profile.notes?.length ? <div className="profile-record-list">{profile.notes.map((note: any) => <div key={note.id}><span>{note.body}<small>{note.author_name} · {new Date(note.created_at).toLocaleString()}</small></span>{sessionHasPermission(session, "notes.manage") ? <div className="row-actions"><button className="secondary-button compact-button" type="button" onClick={() => { setEditingNoteId(Number(note.id)); setNoteBody(note.body); }}>{t("admin.editNote")}</button><button className="secondary-button compact-button" type="button" onClick={() => deleteNote(Number(note.id))}>{t("admin.deleteNote")}</button></div> : null}</div>)}</div> : <p className="empty-state">{t("admin.noProfileNotes")}</p>}</section> : null}
       {profile.fees ? <section className="profile-section" id="student360-payments"><h3>{t("admin.feesSummary")}</h3><div className="profile-stat-grid"><span><b>{t("admin.billingStartMonth")}</b>{formatBillingMonth(profile.fees.billing_start_month || profile.student.billing_start_month, language)}</span><span><b>{t("admin.billingStage")}</b><strong className={billingStageClass(profile.fees.billing_stage)}>{billingStageLabel(profile.fees.billing_stage, t)}</strong></span><span><b>{t("admin.monthlyFee")}</b>{money(profile.fees.fees_amount)}</span><span><b>{t("admin.requiredFees")}</b>{money(profile.fees.required_amount)}</span><span><b>{t("admin.paidFees")}</b>{money(profile.fees.paid_amount)}</span><span><b>{t("admin.remainingFees")}</b>{money(profile.fees.remaining_balance)}</span></div><h4>{t("admin.overdueMonths")}</h4><p>{(profile.fees.monthly_dues || []).filter((due: any) => Number(due.remaining_amount) > 0).map((due: any) => String(due.month).slice(0, 7)).join(" · ") || "—"}</p>{profile.fees.payments ? <><h4>{t("admin.paymentHistory")}</h4>{profile.fees.payments.length ? <div className="profile-record-list">{profile.fees.payments.map((row: any) => <div className="profile-payment-record" key={row.id}><div className="profile-payment-amount"><strong className={row.is_reversed ? "student-fee-payment-reversed" : undefined}>{money(row.amount)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</strong><span>{row.is_reversed ? t("fees.reversed") : row.payment_method || t("fees.normalPayment")}</span></div><div className="profile-record-primary"><span><b>{t("fees.paidBy")}:</b> {row.paid_by || "—"}</span><small><b>{t("fees.paymentDate")}:</b> {formatDateTime(String(row.paid_at || row.payment_date || ""), language, "—")}</small></div></div>)}</div> : <p className="empty-state">{t("admin.noProfilePayments")}</p>}</> : null}</section> : null}
@@ -8859,7 +8913,7 @@ function StudentProfileModal({ studentId, session, t, onClose, initialSection }:
   </section></div>, document.body);
 }
 
-function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdChange }: { session: TeacherSession; language: Language; t: Translator; selectedSessionId: string; onSessionIdChange: (sessionId: string) => void }) {
+function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdChange, canCancel, canViewAttendance, canManageAttendance }: { session: TeacherSession; language: Language; t: Translator; selectedSessionId: string; onSessionIdChange: (sessionId: string) => void; canCancel: boolean; canViewAttendance: boolean; canManageAttendance: boolean }) {
   const canSendAttendance = sessionHasPermission(session, "whatsapp.send_attendance");
   const [sendWhatsApp, setSendWhatsApp] = useState(true);
   const [date, setDate] = useState(() => new URLSearchParams(window.location.search).get("date") || localDateInputValue());
@@ -8869,11 +8923,13 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
   const [status, setStatus] = useState("");
   const [rowFeedback, setRowFeedback] = useState<Record<number, string>>({});
   const [savingStudentId, setSavingStudentId] = useState<number | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancellationFeedback, setCancellationFeedback] = useState<"success" | "review" | "error" | "">("");
   const selected = selectedSessionId;
   const headers = { Authorization: `Bearer ${session.token}` };
-  async function load() { const [sr, st] = await Promise.all([fetch(`${API_BASE_URL}/admin/attendance/sessions?date=${date}`, { headers }), fetch(`${API_BASE_URL}/admin/students`, { headers })]); const sd = await sr.json(), td = await st.json(); const nextSessions = Array.isArray(sd.sessions) ? sd.sessions : []; const now = Date.now(); const requestedSessionId = new URLSearchParams(window.location.search).get("sessionId") || selectedSessionId; const selectableSessions = nextSessions.filter((item: any) => { if (String(item.id) === requestedSessionId) return true; if (String(item.status || "").toLowerCase() !== "open") return false; const opensAt = Date.parse(String(item.opens_at || item.starts_at || "")); const closesAt = Date.parse(String(item.closes_at || "")); const endsAt = Date.parse(String(item.ends_at || "")); const end = [closesAt, endsAt].filter(Number.isFinite).reduce((latest, value) => Math.min(latest, value), Number.POSITIVE_INFINITY); return Number.isFinite(opensAt) && Number.isFinite(end) && now >= opensAt && now <= end; }); setSessions(selectableSessions); setStudents(Array.isArray(td.students) ? td.students : []); const nextSelected = requestedSessionId && selectableSessions.some((item: any) => String(item.id) === requestedSessionId) ? requestedSessionId : selectableSessions[0] ? String(selectableSessions[0].id) : ""; onSessionIdChange(nextSelected); }
+  async function load() { const sessionPath = canViewAttendance ? "/admin/attendance/sessions" : "/admin/attendance/cancellation-sessions"; const [sr, st] = await Promise.all([fetch(`${API_BASE_URL}${sessionPath}?date=${date}`, { headers }), canViewAttendance ? fetch(`${API_BASE_URL}/admin/students`, { headers }) : Promise.resolve(null)]); const sd = await sr.json(), td = st ? await st.json() : {}; const nextSessions = Array.isArray(sd.sessions) ? sd.sessions : []; const now = Date.now(); const requestedSessionId = new URLSearchParams(window.location.search).get("sessionId") || selectedSessionId; const selectableSessions = nextSessions.filter((item: any) => { if (String(item.id) === requestedSessionId || item.status === "cancelled" || item.cancellation_eligible) return true; if (String(item.status || "").toLowerCase() !== "open") return false; const opensAt = Date.parse(String(item.opens_at || item.starts_at || "")); const closesAt = Date.parse(String(item.closes_at || "")); const endsAt = Date.parse(String(item.ends_at || "")); const end = [closesAt, endsAt].filter(Number.isFinite).reduce((latest, value) => Math.min(latest, value), Number.POSITIVE_INFINITY); return Number.isFinite(opensAt) && Number.isFinite(end) && now >= opensAt && now <= end; }); setSessions(selectableSessions); setStudents(Array.isArray(td.students) ? td.students : []); const nextSelected = requestedSessionId && selectableSessions.some((item: any) => String(item.id) === requestedSessionId) ? requestedSessionId : selectableSessions[0] ? String(selectableSessions[0].id) : ""; onSessionIdChange(nextSelected); }
   async function loadRecords(id: string) { const r = await fetch(`${API_BASE_URL}/admin/attendance/sessions/${id}/records`, { headers }); const d = await r.json(); setRecords(Array.isArray(d.records) ? d.records : []); }
-  useEffect(() => { load().catch(() => setStatus("تعذر تحميل الحضور / Could not load attendance")); }, [date]);
+  useEffect(() => { load().catch(() => setStatus("تعذر تحميل الحضور / Could not load attendance")); }, [date, canViewAttendance]);
   useEffect(() => {
     const syncLocation = () => {
       const requestedDate = new URLSearchParams(window.location.search).get("date");
@@ -8883,7 +8939,7 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
     window.addEventListener("admin-location-change", syncLocation);
     return () => { window.removeEventListener("popstate", syncLocation); window.removeEventListener("admin-location-change", syncLocation); };
   }, [date]);
-  useEffect(() => { if (selected) loadRecords(selected).catch(() => undefined); else setRecords([]); }, [selected]);
+  useEffect(() => { if (selected && canViewAttendance) loadRecords(selected).catch(() => undefined); else setRecords([]); }, [selected, canViewAttendance]);
   async function mark(studentId: number, statusValue: string) {
     if (savingStudentId !== null) return;
     setSavingStudentId(studentId);
@@ -8901,6 +8957,18 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
       setSavingStudentId(null);
     }
   }
+  async function cancelLesson() {
+    if (!selectedSession || !canCancel || !selectedSession.cancellation_eligible || cancelling) return;
+    if (!window.confirm(t("attendance.cancelLessonConfirm"))) return;
+    setCancelling(true); setCancellationFeedback("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/attendance/sessions/${selectedSession.id}/cancel`, { method: "POST", headers });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw new Error(String(payload.status || "cancel_failed"));
+      setCancellationFeedback(payload.notices?.autoSend ? "success" : "review"); await load();
+    } catch (_error) { setCancellationFeedback("error"); }
+    finally { setCancelling(false); window.setTimeout(() => setCancellationFeedback(""), 4500); }
+  }
   const selectedSession = sessions.find((item) => String(item.id) === selected);
   const showAbsentOnly = new URLSearchParams(window.location.search).get("status") === "absent";
   const groupStudents = students.filter((item) => {
@@ -8908,7 +8976,7 @@ function AttendancePanel({ session, language, t, selectedSessionId, onSessionIdC
     if (!showAbsentOnly) return true;
     return records.some((record) => record.student_id === item.id && record.status === "absent");
   });
-  return <section className="admin-editor attendance-panel"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label className="attendance-date-field" style={{ width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", marginLeft: 0, marginRight: 0 }}>Date / التاريخ<input type="date" style={{ width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", marginLeft: 0, marginRight: 0, display: "block" }} value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => onSessionIdChange(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {formatTimeOfDay(item.start_time, language)} إلى {formatTimeOfDay(item.end_time, language)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}{canSendAttendance ? <label className="whatsapp-receipt-option attendance-whatsapp-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendWhatsApp} onChange={(event) => setSendWhatsApp(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendAttendance")}</span></label> : null}<div className="academic-list">{groupStudents.map((student) => { const currentRecord = records.find((record) => record.student_id === student.id); const currentStatus = currentRecord?.status || "not_marked"; const feedback = rowFeedback[student.id]; const rowSaving = savingStudentId === student.id; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}{currentRecord?.whatsapp_notified === false ? <span className="whatsapp-not-sent-badge" title={t("whatsapp.notSent")}>🔕 {t("whatsapp.notSent")}</span> : null}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "present")}>{rowSaving ? "Saving… / جاري الحفظ" : "Present / حاضر"}</button><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "absent")}>{rowSaving ? "Saving… / جاري الحفظ" : "Absent / غائب"}</button><button className="secondary-button compact-button attendance-excused-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "excused")}>{rowSaving ? "Saving… / جاري الحفظ" : t("attendance.excused")}</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div>{status ? <p className="form-error">{status}</p> : null}</section>;
+  return <section className="admin-editor attendance-panel"><div className="section-heading"><h2>Attendance / الحضور</h2></div><label className="attendance-date-field"><span>Date / التاريخ</span><input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label><label>Session / الحصة<select value={selected} onChange={(e) => onSessionIdChange(e.target.value)}><option value="">Select session / اختر الحصة</option>{sessions.map((item) => <option key={item.id} value={item.id}>{item.status === "cancelled" ? `${t("attendance.cancelledSession")} · ` : ""}{item.group_name} - {t(`days.${item.day_of_week}` as TranslationKey)} {formatTimeOfDay(item.start_time, language)} إلى {formatTimeOfDay(item.end_time, language)}</option>)}</select></label>{selectedSession ? <p className="field-hint">{selectedSession.status === "cancelled" ? t("attendance.cancelledSession") : formatSessionWindow(selectedSession, language)}</p> : <p className="field-hint">{t("attendance.noRealSessions")}</p>}{selectedSession && canCancel && selectedSession.status !== "cancelled" ? <div className="attendance-cancel-action"><p>{selectedSession.cancellation_eligible ? t("attendance.cancelLessonCutoff", { cutoff: formatDateTime(selectedSession.cancellation_cutoff_at, language, "—") }) : t("attendance.cancellationClosed")}</p>{selectedSession.cancellation_eligible ? <button className="secondary-button compact-button" type="button" onClick={() => void cancelLesson()} disabled={cancelling || savingStudentId !== null}>{cancelling ? t("attendance.cancellationLoading") : t("attendance.cancelLesson")}</button> : null}</div> : null}{cancellationFeedback ? <p className={`attendance-cancel-feedback ${cancellationFeedback}`} role="status">{t(cancellationFeedback === "success" ? "attendance.cancellationSuccess" : cancellationFeedback === "review" ? "attendance.cancellationReviewRequired" : "attendance.cancellationFailed")}</p> : null}{canManageAttendance && selectedSession?.status !== "cancelled" && canSendAttendance ? <label className="whatsapp-receipt-option attendance-whatsapp-option"><span className="whatsapp-receipt-switch"><input type="checkbox" checked={sendWhatsApp} onChange={(event) => setSendWhatsApp(event.target.checked)} /><i aria-hidden="true" /></span><span>{t("whatsapp.sendAttendance")}</span></label> : null}{canManageAttendance && selectedSession?.status !== "cancelled" ? <div className="academic-list">{groupStudents.map((student) => { const currentRecord = records.find((record) => record.student_id === student.id); const currentStatus = currentRecord?.status || "not_marked"; const feedback = rowFeedback[student.id]; const rowSaving = savingStudentId === student.id; return <article className="academic-row attendance-row" key={student.id}><div className="student-info"><strong>{student.full_name}{currentRecord?.whatsapp_notified === false ? <span className="whatsapp-not-sent-badge" title={t("whatsapp.notSent")}>🔕 {t("whatsapp.notSent")}</span> : null}</strong><span>{student.student_serial || student.student_code} · {student.group_name} · {student.grade}</span></div><div className="attendance-actions"><div className="attendance-buttons"><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "present")}>{rowSaving ? "Saving… / جاري الحفظ" : "Present / حاضر"}</button><button className="secondary-button compact-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "absent")}>{rowSaving ? "Saving… / جاري الحفظ" : "Absent / غائب"}</button><button className="secondary-button compact-button attendance-excused-button" disabled={!selected || savingStudentId !== null} onClick={() => void mark(student.id, "excused")}>{rowSaving ? "Saving… / جاري الحفظ" : t("attendance.excused")}</button><AttendanceStatusBadge status={currentStatus} t={t} /></div>{feedback ? <small className={`attendance-row-feedback ${feedback === t("attendance.alreadyRegistered") ? "duplicate" : "success"}`} role="status">{feedback}</small> : null}</div></article>; })}</div> : null}{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
 type CameraScannerToast = { tone: "success" | "error"; message: string };
@@ -9808,6 +9876,7 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     student_personal_data_purged: "audit.action.studentPurged",
     attendance_recorded: "audit.action.attendanceRecorded",
     attendance_session_auto_finalized: "audit.action.attendanceSessionAutoFinalized",
+    attendance_session_cancelled: "audit.action.attendanceSessionCancelled",
     attendance_session_auto_reopened: "audit.action.attendanceSessionAutoReopened",
     attendance_absence_notifications_queued: "audit.action.attendanceAbsenceNotificationsQueued",
     message_action: "audit.action.messageAction",
@@ -9856,6 +9925,7 @@ function auditActionKey(action: string, details: Record<string, unknown> = {}): 
     attendance_session_changed: "audit.action.attendanceSessionCreated",
     attendance_scanned: "audit.action.attendanceScanned",
     attendance_session_created: "audit.action.attendanceSessionCreated",
+    whatsapp_cancellation_notice_approved: "audit.action.cancellationNoticeApproved",
     suspicious_scan: "audit.action.suspiciousScan",
     student_scan_serial_regenerated: "audit.action.studentScanSerialRegenerated",
     student_permanently_anonymized: "audit.action.studentPermanentlyAnonymized",
@@ -12105,7 +12175,7 @@ function studentAttendanceRate(rows: Array<Record<string, any>>) {
 
 function studentTodayAttendance(rows: Array<Record<string, any>>) {
   const today = localDateInputValue();
-  return rows.find((row) => String(row.session_date || "").slice(0, 10) === today);
+  return rows.find((row) => row.status !== "cancelled" && String(row.session_date || "").slice(0, 10) === today);
 }
 
 function studentAverageScore(rows: Array<Record<string, any>>) {
@@ -12141,7 +12211,7 @@ function StudentOverviewPanel({
   language: Language;
   t: Translator;
 }) {
-  const latestAttendance = dashboard.attendance[0];
+  const latestAttendance = dashboard.attendance.find((row) => row.status !== "cancelled");
   const latestExam = dashboard.exams[0];
   const nextClass = dashboard.schedules[0];
   const paymentStatus = String(studentFees?.payment_status || studentFees?.summary?.payment_status || "");
@@ -12999,12 +13069,12 @@ function AttendanceTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id}>
+            <tr key={row.session_id || row.id}>
               <td>
                 {displayValue(row.subject, language)} - {displayValue(row.group_name, language)}
               </td>
               <td>{formatDateTime(row.session_date, language, t("dashboard.notCheckedIn"))}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td>
-              <td>{formatDateTime(row.checkin_time, language, t("dashboard.notCheckedIn"))}</td>
+              <td>{row.cancelled_at ? `${t("attendance.cancelledAt")}: ${formatDateTime(row.cancelled_at, language, "—")}` : formatDateTime(row.checkin_time, language, t("dashboard.notCheckedIn"))}</td>
               <td><AttendanceStatusBadge status={row.status} t={t} /></td>
             </tr>
           ))}

@@ -6,11 +6,12 @@ import { requireAnyPermission, requirePermission, requireRoles, requireTeacher }
 import { createAuditAccessToken, hashPassword, verifyAuditAccessToken, verifyPassword } from "../services/auth.js";
 import { ensureMonthlyFees, getAdvanceOptions, getFeeSummary, recordAdvancePayment, recordFullPayment, reversePayment } from "../services/fees.js";
 import { finalizeExpiredAttendanceSessions } from "../services/attendanceFinalizer.js";
+import { calculateSessionCancellationWindow, cancelAttendanceSession } from "../services/attendanceCancellation.js";
 import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { cairoDateString } from "../utils/time.js";
 import { assertAttendanceWindow } from "../utils/attendanceWindow.js";
 import { auditLog, verifyAuditPin } from "../services/audit.js";
-import { getAttendanceTimingDefaults } from "../services/systemSettings.js";
+import { getAttendanceTimingDefaults, readSystemSettings } from "../services/systemSettings.js";
 import { isValidScanValue, normalizeIdempotencyKey, normalizeScanValue, scanLookupValues } from "../utils/scan.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { hasPermission } from "../services/rbac.js";
@@ -741,11 +742,55 @@ operationsRouter.get("/attendance/sessions", requirePermission("attendance.view"
     const result = await query(`SELECT s.*, g.name AS group_name, COALESCE(g.grade_level,g.grade) AS grade_level,
       cs.day_of_week, cs.start_time, cs.end_time
       FROM attendance_sessions s
-      JOIN groups g ON g.id=s.group_id AND g.is_active=TRUE AND g.deleted_at IS NULL
-      JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
-        AND cs.is_active=TRUE AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER
+      JOIN groups g ON g.id=s.group_id
+      LEFT JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
+        AND cs.day_of_week=EXTRACT(DOW FROM s.session_date)::INTEGER
       WHERE s.session_date=$1${resultScopeClause} ORDER BY cs.start_time`, resultParams);
-    res.json({ ok: true, sessions: result.rows });
+    const cancellationSettings = await readSystemSettings();
+    const clock = await query("SELECT clock_timestamp() AS server_now");
+    const sessions = result.rows.map((session) => {
+      const window = calculateSessionCancellationWindow({ startsAt: session.starts_at, endsAt: session.ends_at, now: clock.rows[0].server_now, cutoffPercentage: cancellationSettings.settings.attendance_cancellation_cutoff_percentage });
+      return { ...session, cancellation_cutoff_percentage: cancellationSettings.settings.attendance_cancellation_cutoff_percentage, cancellation_cutoff_at: window.cutoffAt, cancellation_eligible: session.status !== "cancelled" && window.eligible };
+    });
+    res.json({ ok: true, server_now: clock.rows[0].server_now, sessions });
+  } catch (error) { next(error); }
+});
+
+operationsRouter.get("/attendance/cancellation-sessions", requirePermission("attendance.cancel_sessions"), async (req, res, next) => {
+  try {
+    const date = normalizeDigits(req.query.date || cairoDateString()).trim();
+    const groupId = req.query.group_id ? Number(normalizeDigits(req.query.group_id)) : null;
+    if (groupId && !hasGroupAccess(req.teacher, groupId)) return groupAccessDenied(res);
+    const scopedGroupIds = isGroupScopeRestricted(req.teacher) ? normalizeGroupIds(req.teacher.group_ids) : null;
+    const values = groupId ? [date, groupId] : [date];
+    const scope = groupId ? " AND s.group_id=$2" : "";
+    if (!groupId && scopedGroupIds) { values.push(scopedGroupIds); }
+    const scopeClause = `${scope}${!groupId && scopedGroupIds ? ` AND s.group_id=ANY($${values.length}::int[])` : ""}`;
+    const result = await query(`SELECT s.*, g.name AS group_name, COALESCE(g.grade_level,g.grade) AS grade_level,
+        cs.day_of_week, cs.start_time, cs.end_time
+      FROM attendance_sessions s
+      JOIN groups g ON g.id=s.group_id
+      LEFT JOIN class_schedules cs ON cs.id=s.schedule_id AND cs.group_id=s.group_id
+      WHERE s.session_date=$1${scopeClause}
+      ORDER BY COALESCE(cs.start_time, s.starts_at::time), s.id`, values);
+    const cancellationSettings = await readSystemSettings();
+    const clock = await query("SELECT clock_timestamp() AS server_now");
+    const sessions = result.rows.map((session) => {
+      const window = calculateSessionCancellationWindow({ startsAt: session.starts_at, endsAt: session.ends_at, now: clock.rows[0].server_now, cutoffPercentage: cancellationSettings.settings.attendance_cancellation_cutoff_percentage });
+      return { ...session, cancellation_cutoff_percentage: cancellationSettings.settings.attendance_cancellation_cutoff_percentage, cancellation_cutoff_at: window.cutoffAt, cancellation_eligible: session.status !== "cancelled" && window.eligible };
+    });
+    res.json({ ok: true, server_now: clock.rows[0].server_now, sessions });
+  } catch (error) { next(error); }
+});
+
+operationsRouter.post("/attendance/sessions/:id/cancel", requirePermission("attendance.cancel_sessions"), async (req, res, next) => {
+  try {
+    const result = await cancelAttendanceSession({ sessionId: Number(req.params.id), actor: req.teacher, request: req });
+    if (!result.ok) {
+      const status = result.reason === "not_found" ? 404 : result.reason === "group_access_forbidden" ? 403 : result.reason === "already_cancelled" ? 409 : result.reason === "cancellation_window_closed" ? 409 : 400;
+      return res.status(status).json({ ok: false, status: result.reason, cutoff_at: result.cutoff_at || null });
+    }
+    res.json(result);
   } catch (error) { next(error); }
 });
 
@@ -878,10 +923,14 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
   try {
     await client.query("BEGIN");
     const timing = await getAttendanceTimingDefaults(client.query.bind(client));
-    const lockedSession = await client.query("SELECT id, group_id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    const lockedSession = await client.query("SELECT id, group_id, status FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
     if (lockedSession.rowCount && !hasGroupAccess(user, lockedSession.rows[0].group_id)) {
       await client.query("ROLLBACK");
       return { groupAccessForbidden: true };
+    }
+    if (!lockedSession.rowCount || lockedSession.rows[0].status === "cancelled") {
+      await client.query("ROLLBACK");
+      return { cancelledSession: Boolean(lockedSession.rowCount) };
     }
     const result = await client.query(`INSERT INTO attendance_records (session_id,student_id,status,method,ip_address,device_id,idempotency_key,whatsapp_notified)
     SELECT $1,$2,$3,$4,$5,$6,$7,$8
@@ -1003,6 +1052,10 @@ async function resolveRequestedAttendanceSession({ sessionId, groupId, actorId, 
       return { status: "session_not_found" };
     }
     const session = sessionResult.rows[0];
+    if (session.status === "cancelled") {
+      await client.query("COMMIT");
+      return { status: "session_cancelled", session };
+    }
     if (Number(session.group_id) !== Number(groupId)) {
       await client.query("COMMIT");
       return { status: "wrong_group" };
@@ -1087,6 +1140,7 @@ async function resolveImplicitAttendanceSession({ groupId, actorId, request }) {
         AND cs.is_active=TRUE AND cs.deleted_at IS NULL
       WHERE s.group_id=$1
         AND s.session_date=(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date
+        AND s.status <> 'cancelled'
         AND cs.day_of_week=EXTRACT(DOW FROM (CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo'))::INTEGER
       ORDER BY s.starts_at, s.id
       FOR UPDATE OF s
@@ -1208,7 +1262,7 @@ async function correctManualAttendance({ sessionId, studentId, actorId, status, 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const session = await client.query("SELECT id, group_id FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
+    const session = await client.query("SELECT id, group_id, status FROM attendance_sessions WHERE id=$1 FOR UPDATE", [sessionId]);
     if (!session.rowCount) {
       await client.query("ROLLBACK");
       return null;
@@ -1216,6 +1270,10 @@ async function correctManualAttendance({ sessionId, studentId, actorId, status, 
     if (!hasGroupAccess(user, session.rows[0].group_id)) {
       await client.query("ROLLBACK");
       return { groupAccessForbidden: true };
+    }
+    if (session.rows[0].status === "cancelled") {
+      await client.query("ROLLBACK");
+      return { cancelledSession: true };
     }
     const membership = await client.query(
       "SELECT 1 FROM students WHERE id=$1 AND group_id=$2 AND deleted_at IS NULL FOR SHARE",
@@ -1289,10 +1347,12 @@ operationsRouter.post("/attendance/manual", requirePermission("attendance.manage
     if (!access.allowed) return groupAccessDenied(res);
     const corrected = await correctManualAttendance({ sessionId, studentId, actorId: req.teacher.id, status, ip: req.ip, whatsappNotified, request: req, user: req.teacher });
     if (corrected?.groupAccessForbidden) return groupAccessDenied(res);
+    if (corrected?.cancelledSession) return res.status(409).json({ ok: false, status: "session_cancelled" });
     if (corrected?.wrongGroup) return res.status(400).json({ok:false,status:"wrong_group"});
     if (corrected) return res.status(200).json({ok:true,record:corrected,corrected:true});
     const saved=await recordAttendance({sessionId,studentId,actorId:req.teacher.id,status,method:"manual",ip:req.ip,whatsappNotified,request:req,user:req.teacher});
     if (saved.groupAccessForbidden) return groupAccessDenied(res);
+    if (saved.cancelledSession) return res.status(409).json({ ok: false, status: "session_cancelled" });
     if (saved.corrected) return res.status(200).json({ok:true,record:saved.record,corrected:true});
     if (saved.duplicate) return res.status(409).json({ok:false,status:"duplicate_attendance"});
     res.status(201).json({ok:true,record:saved.record});

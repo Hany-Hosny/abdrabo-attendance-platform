@@ -319,12 +319,14 @@ studentRouter.get("/:id/attendance", async (req, res, next) => {
     if (!student || Number(student.id) !== Number(req.params.id)) return res.status(401).json({ ok: false, status: "unauthorized" });
     const result = await query(
       `
-        SELECT ar.*, s.session_date, s.starts_at, g.name AS group_name, g.subject
-        FROM attendance_records ar
-        JOIN attendance_sessions s ON s.id = ar.session_id
+        SELECT ar.*, s.id AS session_id, s.status AS session_status, s.cancelled_at,
+          CASE WHEN s.status = 'cancelled' THEN 'cancelled' ELSE ar.status END AS status,
+          s.session_date, s.starts_at, g.name AS group_name, g.subject
+        FROM attendance_sessions s
         JOIN groups g ON g.id = s.group_id
-        WHERE ar.student_id = $1
-        ORDER BY ar.checkin_time DESC
+        LEFT JOIN attendance_records ar ON ar.session_id = s.id AND ar.student_id = $1 AND s.status <> 'cancelled'
+        WHERE s.group_id = (SELECT group_id FROM students WHERE id = $1)
+        ORDER BY s.session_date DESC, s.starts_at DESC
       `,
       [req.params.id]
     );

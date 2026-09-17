@@ -7,6 +7,14 @@ test("Owner automatically has every permission", () => {
   assert.equal(hasPermission({ role: "owner", permissions: [] }, "payments.reverse"), true);
   assert.equal(canGrantPermissions({ role: "owner", permissions: [] }, ["users.delete", "settings.manage"]), true);
   DASHBOARD_PERMISSIONS.forEach((permission) => assert.equal(hasPermission({ role: "owner", permissions: [] }, permission), true));
+  assert.equal(hasPermission({ role: "owner", permissions: [] }, "attendance.cancel_sessions"), true);
+});
+
+test("dated-session cancellation is explicitly assignable to admins and scoped staff", () => {
+  assert.equal(DEFAULT_ADMIN_PERMISSIONS.includes("attendance.cancel_sessions"), true);
+  assert.equal(hasPermission({ role: "admin", permissions: ["attendance.cancel_sessions"] }, "attendance.cancel_sessions"), true);
+  assert.equal(hasPermission({ role: "staff", permissions: ["attendance.cancel_sessions"] }, "attendance.cancel_sessions"), true);
+  assert.equal(hasPermission({ role: "staff", permissions: [] }, "attendance.cancel_sessions"), false);
 });
 
 test("Normal admins do not inherit dashboard permissions from their role", () => {

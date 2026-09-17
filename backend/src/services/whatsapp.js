@@ -38,6 +38,11 @@ const DEFAULT_ABSENCE_TEMPLATES = Object.freeze([
   "*إشعار غياب*\n\nنحيط حضرتكم علماً بعدم تسجيل حضور الطالب *{student_name}* في حصة *{group_name}* بتاريخ *{date}*.\n\nرابط ملف المتابعة: {portal_link}\n*المرجع:* {ref_code}",
   "*متابعة الحضور*\n\nتم إغلاق جلسة *{group_name}* بتاريخ *{date}* دون تسجيل حضور الطالب *{student_name}*.\n\nرابط المتابعة: {portal_link}\n*رقم المرجع:* {ref_code}"
 ]);
+const DEFAULT_CANCELLATION_TEMPLATES = Object.freeze([
+  "تم إلغاء حصة {group_name} بتاريخ {scheduled_date} الساعة {scheduled_time}. وقت تسجيل الإلغاء: {cancellation_time}. المرجع: {ref_code}",
+  "إشعار إلغاء حصة مجموعة {group_name}. الموعد: {scheduled_date} الساعة {scheduled_time}. وقت الإلغاء: {cancellation_time}. المرجع: {ref_code}",
+  "نحيطكم علماً بإلغاء حصة {group_name} يوم {scheduled_date} الساعة {scheduled_time}. تم تسجيل الإلغاء في {cancellation_time}. المرجع: {ref_code}"
+]);
 
 const DEFAULT_SETTINGS = Object.freeze({
   auto_send: false,
@@ -884,6 +889,7 @@ function normalizeNotificationType(value) {
   if (["advance_payment", "advance-payment", "advance"].includes(type)) return "advance_payment";
   if (type === "attendance") return "attendance";
   if (type === "absence") return "absence";
+  if (type === "cancellation" || type === "cancelled_session") return "cancellation";
   return null;
 }
 
@@ -892,7 +898,8 @@ export const requiredPlaceholders = Object.freeze({
   absence: "student_name",
   grade: "exam_title",
   receipt: "amount_paid",
-  advance_payment: "months"
+  advance_payment: "months",
+  cancellation: "group_name"
 });
 
 export function validateWhatsAppTemplate(category, messageBody) {
@@ -925,7 +932,8 @@ const PREVIEW_REFERENCE_PREFIXES = Object.freeze({
   absence: "ABS",
   grade: "EXM",
   receipt: "REC",
-  advance_payment: "ADV"
+  advance_payment: "ADV",
+  cancellation: "CNL"
 });
 
 function notificationTypeFromReference(value) {
@@ -935,6 +943,7 @@ function notificationTypeFromReference(value) {
   if (reference.startsWith("ADV-")) return "advance_payment";
   if (reference.startsWith("ATT-")) return "attendance";
   if (reference.startsWith("ABS-")) return "absence";
+  if (reference.startsWith("CNL-")) return "cancellation";
   return null;
 }
 
@@ -1592,6 +1601,59 @@ async function enqueueJob({ notificationType, sourceId, studentId, phone, payloa
   return { queued: false, reason: "queue_conflict" };
 }
 
+export async function enqueueCancellationNotificationsInTransaction(client, { session, actorId = null }) {
+  const settings = await getWhatsAppSettings(client.query.bind(client));
+  const students = await client.query(`
+    SELECT id, guardian_phone
+    FROM students
+    WHERE group_id = $1 AND is_active = TRUE AND deleted_at IS NULL
+      AND whatsapp_opted_out = FALSE
+    ORDER BY id`, [session.group_id]);
+  const sessionId = Number(session.id || session.session_id);
+  const scheduled = cairoParts(session.starts_at);
+  const cancelled = cairoParts(session.cancelled_at);
+  let queuedCount = 0;
+  let reviewCount = 0;
+  let skippedCount = 0;
+  for (const student of students.rows) {
+    const phone = normalizeEgyptianPhone(student.guardian_phone);
+    const status = !phone ? "skipped" : settings.auto_send ? "pending" : "review_required";
+    const result = await client.query(`
+      INSERT INTO whatsapp_notification_jobs
+        (notification_type, cancellation_session_id, student_id, phone_number,
+         payload, ref_code, status, last_error, next_attempt_at, created_at, updated_at)
+      VALUES ('cancellation', $1, $2, $3, $4::jsonb, $5, $6, $7,
+        NOW(), NOW(), NOW())
+      ON CONFLICT (cancellation_session_id, student_id)
+        WHERE notification_type = 'cancellation' AND cancellation_session_id IS NOT NULL AND student_id IS NOT NULL
+      DO NOTHING
+      RETURNING id`, [
+      sessionId,
+      student.id,
+      phone,
+      JSON.stringify({
+        type: "cancellation",
+        session_id: sessionId,
+        group_name: session.group_name,
+        scheduled_date: scheduled.date,
+        scheduled_time: scheduled.time,
+        cancellation_time: `${cancelled.date} ${cancelled.time}`,
+        starts_at: session.starts_at,
+        cancelled_at: session.cancelled_at
+      }),
+      `CNL-${sessionId}-${student.id}`,
+      status,
+      phone ? null : "invalid_phone"
+    ]);
+    if (result.rowCount) {
+      if (status === "pending") queuedCount += 1;
+      else if (status === "review_required") reviewCount += 1;
+      else skippedCount += 1;
+    }
+  }
+  return { queuedCount, reviewCount, skippedCount, eligibleCount: students.rowCount, autoSend: settings.auto_send, actorId };
+}
+
 export async function enqueueAttendanceNotification({ attendanceRecordId, studentId }) {
   return enqueueAttendanceNotificationWithDb({ attendanceRecordId, studentId });
 }
@@ -1758,6 +1820,37 @@ async function markSendStartedWithResult(job, type, dbPool = pool) {
   const client = await dbPool.connect();
   try {
     await client.query("BEGIN");
+    if (type === "absence" || type === "cancellation") {
+      const scope = await client.query(`
+        SELECT COALESCE(j.cancellation_session_id, ar.session_id) AS session_id
+        FROM whatsapp_notification_jobs j
+        LEFT JOIN attendance_records ar ON ar.id = COALESCE(j.attendance_record_id, j.source_id)
+        WHERE j.id = $1 AND j.status = 'processing' AND j.claim_token = $2`, [job.id, job.claim_token]);
+      if (!scope.rowCount || !scope.rows[0].session_id) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "stale_claim" };
+      }
+      const lockedSession = await client.query(
+        "SELECT id, status FROM attendance_sessions WHERE id = $1 FOR UPDATE",
+        [scope.rows[0].session_id]
+      );
+      const cancelledAbsence = type === "absence" && lockedSession.rows[0]?.status === "cancelled";
+      const invalidCancellation = type === "cancellation" && lockedSession.rows[0]?.status !== "cancelled";
+      if (cancelledAbsence || invalidCancellation) {
+        const settled = await client.query(`
+          UPDATE whatsapp_notification_jobs
+          SET status = 'skipped', last_error = $3, next_attempt_at = NULL,
+              lease_expires_at = NULL, claim_token = NULL, send_started_at = NULL, updated_at = NOW()
+          WHERE id = $1 AND status = 'processing' AND claim_token = $2
+          RETURNING id`, [job.id, job.claim_token, cancelledAbsence ? "attendance_session_cancelled" : "cancellation_no_longer_eligible"]);
+        if (!settled.rowCount) {
+          await client.query("ROLLBACK");
+          return { ok: false, reason: "stale_claim" };
+        }
+        await client.query("COMMIT");
+        return { ok: false, reason: cancelledAbsence ? "attendance_session_cancelled" : "cancellation_no_longer_eligible", settledStatus: "skipped" };
+      }
+    }
     const currentJob = await client.query(
       `SELECT id, student_id
        FROM whatsapp_notification_jobs
@@ -1925,6 +2018,7 @@ async function auditWhatsAppJob(job, action, details = {}) {
       notification_type: notificationTypeForJob(job || {}),
       source_id: job?.source_id || null,
       attempts: Number(job?.attempts || 0),
+      approved_by: job?.approved_by || null,
       ...details
     }
   });
@@ -1972,6 +2066,28 @@ export async function revalidateWhatsAppJob(job, type, db = query) {
     if (source.rows[0]?.status === "excused") return { ok: false, reason: "attendance_excused" };
     if (!source.rowCount || source.rows[0].status !== "absent" || source.rows[0].session_status !== "closed") return { ok: false, reason: "absence_no_longer_eligible" };
     payload = { ...payload, group_name: source.rows[0].group_name, session_id: source.rows[0].session_id, event_time: source.rows[0].session_date };
+  } else if (type === "cancellation") {
+    const source = await execute(`
+      SELECT ats.id AS session_id, ats.status, ats.starts_at, ats.cancelled_at,
+        to_char(ats.session_date, 'YYYY-MM-DD') AS session_date,
+        COALESCE(NULLIF(TRIM(g.display_name), ''), NULLIF(TRIM(g.name), ''), '') AS group_name
+      FROM attendance_sessions ats
+      JOIN groups g ON g.id = ats.group_id
+      JOIN whatsapp_notification_jobs j ON j.cancellation_session_id = ats.id
+      WHERE j.id = $1 AND j.student_id = $2 AND ats.status = 'cancelled'`, [job.id, student.id]);
+    if (!source.rowCount) return { ok: false, reason: "cancellation_no_longer_eligible" };
+    const session = source.rows[0];
+    const scheduled = cairoParts(session.starts_at);
+    const cancelled = cairoParts(session.cancelled_at);
+    payload = {
+      ...payload,
+      group_name: session.group_name,
+      session_id: session.session_id,
+      scheduled_date: scheduled.date,
+      scheduled_time: scheduled.time,
+      cancellation_time: `${cancelled.date} ${cancelled.time}`,
+      event_time: session.cancelled_at
+    };
   } else if (type === "grade") {
     const source = await execute(`
       SELECT er.score, er.note, e.title AS exam_title, e.max_score, e.exam_date

@@ -15,6 +15,7 @@ test("system settings defaults preserve existing attendance and dashboard behavi
     attendance_open_before_minutes: 3,
     attendance_close_after_minutes: 20,
     attendance_alert_threshold: 70,
+    attendance_cancellation_cutoff_percentage: 60,
     evaluation_alert_threshold: 60
   });
 });
@@ -24,6 +25,8 @@ test("system settings validation normalizes supported partial updates", () => {
     attendance_close_after_minutes: 30,
     evaluation_alert_threshold: 55
   });
+  assert.deepEqual(validateSettingsPatch({ attendance_cancellation_cutoff_percentage: 90 }), { attendance_cancellation_cutoff_percentage: 90 });
+  assert.deepEqual(validateSettingsPatch({ attendance_cancellation_cutoff_percentage: 1 }), { attendance_cancellation_cutoff_percentage: 1 });
 });
 
 test("system settings validation rejects unsupported, malformed, and out-of-range values atomically", () => {
@@ -34,6 +37,8 @@ test("system settings validation rejects unsupported, malformed, and out-of-rang
   assert.throws(() => validateSettingsPatch({ attendance_open_before_minutes: 1.5 }), SettingsValidationError);
   assert.throws(() => validateSettingsPatch({}), SettingsValidationError);
   assert.throws(() => validateSettingsPatch({ attendance_close_after_minutes: [] }), SettingsValidationError);
+  assert.throws(() => validateSettingsPatch({ attendance_cancellation_cutoff_percentage: 91 }), SettingsValidationError);
+  assert.throws(() => validateSettingsPatch({ attendance_cancellation_cutoff_percentage: 0 }), SettingsValidationError);
 });
 
 function createSettingsDatabase(initial = {}) {

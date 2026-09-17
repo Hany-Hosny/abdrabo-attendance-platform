@@ -139,7 +139,7 @@ siteRouter.post("/contact", publicContactRateLimit, async (req, res, next) => {
 publicRouter.get("/center", async (_req, res, next) => {
   try {
     const result = await query(
-      "SELECT name, address, latitude, longitude FROM centers WHERE id = 1 LIMIT 1"
+      "SELECT name, address, latitude, longitude FROM centers ORDER BY id ASC LIMIT 1"
     );
     if (!result.rowCount) return res.status(404).json({ ok: false, status: "center_not_found" });
     return res.json(result.rows[0]);
