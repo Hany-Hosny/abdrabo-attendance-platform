@@ -73,8 +73,12 @@ async function withDatabase(run) {
       );
       CREATE TABLE whatsapp_notification_jobs (
         id BIGSERIAL PRIMARY KEY, notification_type TEXT NOT NULL, source_id BIGINT, student_id INTEGER,
-        status TEXT NOT NULL, claim_token TEXT, send_started_at TIMESTAMPTZ,
-        next_attempt_at TIMESTAMPTZ, lease_expires_at TIMESTAMPTZ, last_error TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()
+        status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 1, claim_token TEXT, send_started_at TIMESTAMPTZ,
+        next_attempt_at TIMESTAMPTZ, lease_expires_at TIMESTAMPTZ, last_error TEXT,
+        template_id BIGINT, template_version INTEGER, template_category TEXT,
+        template_audience TEXT, template_slot_number INTEGER, template_body_snapshot TEXT,
+        template_gender TEXT, template_index INTEGER, template_text TEXT, rendered_message TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
     await run({ db, rawPool, schema });
@@ -298,9 +302,60 @@ integrationTest("send-start fencing refuses a post-reversal receipt job", async 
   await withDatabase(async ({ db }) => {
     const paymentId = await seedCase(db);
     await reverse(db, paymentId, crypto.randomUUID());
-    await db.query("INSERT INTO whatsapp_notification_jobs (id, notification_type, source_id, student_id, status, claim_token) VALUES (1, 'receipt', $1, 1, 'processing', 'late-token')", [paymentId]);
-    assert.equal(await markSendStarted({ id: 1, source_id: paymentId, claim_token: "late-token" }, "receipt", db), false);
-    assert.equal((await db.query("SELECT send_started_at FROM whatsapp_notification_jobs WHERE id = 1")).rows[0].send_started_at, null);
+    await db.query("INSERT INTO whatsapp_notification_jobs (id, notification_type, source_id, student_id, status, claim_token, template_gender) VALUES (1, 'receipt', $1, 1, 'processing', 'late-token', 'male')", [paymentId]);
+    assert.equal(await markSendStarted({ id: 1, source_id: paymentId, student_id: 1, claim_token: "late-token", template_gender: "male" }, "receipt", db), false);
+    const job = (await db.query("SELECT status, last_error, send_started_at FROM whatsapp_notification_jobs WHERE id = 1")).rows[0];
+    assert.equal(job.status, "skipped");
+    assert.equal(job.last_error, "payment_reversed");
+    assert.equal(job.send_started_at, null);
+  });
+});
+
+integrationTest("send-start fencing skips missing, inactive, deleted, and opted-out students", async () => {
+  await withDatabase(async ({ db }) => {
+    const paymentId = await seedCase(db);
+    await db.query("INSERT INTO students (id, group_id, full_name, gender, is_active, deleted_at, whatsapp_opted_out) VALUES (2, 1, 'Inactive Student', 'male', FALSE, NULL, FALSE), (3, 1, 'Deleted Student', 'male', TRUE, NOW(), FALSE), (4, 1, 'Opted Out Student', 'male', TRUE, NULL, TRUE)");
+    const cases = [
+      { id: 1, studentId: 999, reason: "student_inactive" },
+      { id: 2, studentId: 2, reason: "student_inactive" },
+      { id: 3, studentId: 3, reason: "student_inactive" },
+      { id: 4, studentId: 4, reason: "whatsapp_opted_out" }
+    ];
+    for (const item of cases) {
+      await db.query(
+        "INSERT INTO whatsapp_notification_jobs (id, notification_type, source_id, student_id, status, claim_token, template_gender) VALUES ($1, 'receipt', $2, $3, 'processing', $4, 'male')",
+        [item.id, paymentId, item.studentId, `claim-${item.id}`]
+      );
+      assert.equal(await markSendStarted({ id: item.id, source_id: paymentId, student_id: item.studentId, claim_token: `claim-${item.id}`, template_gender: "male" }, "receipt", db), false);
+      const job = (await db.query("SELECT status, last_error, send_started_at FROM whatsapp_notification_jobs WHERE id = $1", [item.id])).rows[0];
+      assert.equal(job.status, "skipped");
+      assert.equal(job.last_error, item.reason);
+      assert.equal(job.send_started_at, null);
+    }
+  });
+});
+
+integrationTest("send-start fencing requeues a job when the student's gender changes", async () => {
+  await withDatabase(async ({ db }) => {
+    const paymentId = await seedCase(db);
+    await db.query("UPDATE students SET gender = 'female' WHERE id = 1");
+    await db.query(`INSERT INTO whatsapp_notification_jobs
+      (id, notification_type, source_id, student_id, status, claim_token, attempts,
+       template_id, template_version, template_category, template_audience,
+       template_slot_number, template_body_snapshot, template_gender, template_index,
+       template_text, rendered_message)
+      VALUES (1, 'receipt', $1, 1, 'processing', 'gender-token', 1,
+        12, 1, 'receipt', 'male', 1, 'old template', 'male', 0, 'old template', 'old rendered')`, [paymentId]);
+
+    assert.equal(await markSendStarted({ id: 1, source_id: paymentId, student_id: 1, claim_token: "gender-token", template_gender: "male" }, "receipt", db), false);
+    const job = (await db.query("SELECT status, attempts, claim_token, template_id, template_text, rendered_message, send_started_at FROM whatsapp_notification_jobs WHERE id = 1")).rows[0];
+    assert.equal(job.status, "pending");
+    assert.equal(job.attempts, 0);
+    assert.equal(job.claim_token, null);
+    assert.equal(job.template_id, null);
+    assert.equal(job.template_text, null);
+    assert.equal(job.rendered_message, null);
+    assert.equal(job.send_started_at, null);
   });
 });
 

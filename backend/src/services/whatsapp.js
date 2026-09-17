@@ -1753,24 +1753,81 @@ async function extendJobLease(job, phase, dbPool = pool, audit = auditWhatsAppJo
   return true;
 }
 
-export async function markSendStarted(job, type, dbPool = pool) {
-  if (!job?.id || !job.claim_token) return false;
+async function markSendStartedWithResult(job, type, dbPool = pool) {
+  if (!job?.id || !job.claim_token) return { ok: false, reason: "stale_claim" };
   const client = await dbPool.connect();
   try {
     await client.query("BEGIN");
-    const currentGender = await client.query(
-      `SELECT s.gender
-       FROM whatsapp_notification_jobs j
-       JOIN students s ON s.id = j.student_id
-       WHERE j.id = $1 AND j.status = 'processing' AND j.claim_token = $2
-       FOR UPDATE OF j, s`,
+    const currentJob = await client.query(
+      `SELECT id, student_id
+       FROM whatsapp_notification_jobs
+       WHERE id = $1 AND status = 'processing' AND claim_token = $2
+       FOR UPDATE`,
       [job.id, job.claim_token]
     );
-    if (currentGender.rowCount
-      && normalizeStudentGender(currentGender.rows[0].gender) !== normalizeStudentGender(job.template_gender)) {
+    if (!currentJob.rowCount) {
       await client.query("ROLLBACK");
-      return false;
+      return { ok: false, reason: "stale_claim" };
     }
+
+    const studentResult = currentJob.rows[0].student_id == null
+      ? { rowCount: 0, rows: [] }
+      : await client.query(
+        `SELECT gender, is_active, deleted_at, whatsapp_opted_out
+         FROM students
+         WHERE id = $1
+         FOR UPDATE`,
+        [currentJob.rows[0].student_id]
+      );
+
+    let rejectionReason = null;
+    let retryWithCurrentStudent = false;
+    if (!studentResult.rowCount || !studentResult.rows[0].is_active || studentResult.rows[0].deleted_at) {
+      rejectionReason = "student_inactive";
+    } else if (studentResult.rows[0].whatsapp_opted_out) {
+      rejectionReason = "whatsapp_opted_out";
+    } else if (normalizeStudentGender(studentResult.rows[0].gender) !== normalizeStudentGender(job.template_gender)) {
+      rejectionReason = "student_gender_changed";
+      retryWithCurrentStudent = true;
+    }
+
+    if (rejectionReason) {
+      const settled = retryWithCurrentStudent
+        ? await client.query(
+          `UPDATE whatsapp_notification_jobs
+           SET status = 'pending', attempts = GREATEST(attempts - 1, 0),
+               last_error = NULL, next_attempt_at = NOW(), lease_expires_at = NULL,
+               claim_token = NULL, send_started_at = NULL,
+               template_id = NULL, template_version = NULL, template_category = NULL,
+               template_audience = NULL, template_slot_number = NULL,
+               template_body_snapshot = NULL, template_gender = NULL,
+               template_index = NULL, template_text = NULL, rendered_message = NULL,
+               updated_at = NOW()
+           WHERE id = $1 AND status = 'processing' AND claim_token = $2
+           RETURNING id`,
+          [job.id, job.claim_token]
+        )
+        : await client.query(
+          `UPDATE whatsapp_notification_jobs
+           SET status = 'skipped', last_error = $3, next_attempt_at = NULL,
+               lease_expires_at = NULL, claim_token = NULL, send_started_at = NULL,
+               updated_at = NOW()
+           WHERE id = $1 AND status = 'processing' AND claim_token = $2
+           RETURNING id`,
+          [job.id, job.claim_token, rejectionReason]
+        );
+      if (!settled.rowCount) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "stale_claim" };
+      }
+      await client.query("COMMIT");
+      return {
+        ok: false,
+        reason: rejectionReason,
+        settledStatus: retryWithCurrentStudent ? "pending" : "skipped"
+      };
+    }
+
     if (type === "receipt" || type === "advance_payment") {
       const payment = await client.query(
         `SELECT p.id
@@ -1781,8 +1838,21 @@ export async function markSendStarted(job, type, dbPool = pool) {
         [job.source_id]
       );
       if (!payment.rowCount) {
-        await client.query("ROLLBACK");
-        return false;
+        const settled = await client.query(
+          `UPDATE whatsapp_notification_jobs
+           SET status = 'skipped', last_error = 'payment_reversed', next_attempt_at = NULL,
+               lease_expires_at = NULL, claim_token = NULL, send_started_at = NULL,
+               updated_at = NOW()
+           WHERE id = $1 AND status = 'processing' AND claim_token = $2
+           RETURNING id`,
+          [job.id, job.claim_token]
+        );
+        if (!settled.rowCount) {
+          await client.query("ROLLBACK");
+          return { ok: false, reason: "stale_claim" };
+        }
+        await client.query("COMMIT");
+        return { ok: false, reason: "payment_reversed", settledStatus: "skipped" };
       }
     }
     const result = await client.query(
@@ -1794,16 +1864,21 @@ export async function markSendStarted(job, type, dbPool = pool) {
     );
     if (!result.rowCount) {
       await client.query("ROLLBACK");
-      return false;
+      return { ok: false, reason: "stale_claim" };
     }
     await client.query("COMMIT");
-    return true;
+    return { ok: true };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
     client.release();
   }
+}
+
+export async function markSendStarted(job, type, dbPool = pool) {
+  const result = await markSendStartedWithResult(job, type, dbPool);
+  return result.ok;
 }
 
 async function completeSentJob(job, providerMessageId, dbPool = pool) {
@@ -2363,8 +2438,16 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
       await auditStale(job, "before_provider");
       return;
     }
-    if (!(await markSendStarted(job, type, dbPool))) {
-      await auditStale(job, "send_start");
+    const sendStart = await markSendStartedWithResult(job, type, dbPool);
+    if (!sendStart.ok) {
+      if (sendStart.settledStatus === "skipped") {
+        await cleanupJobPortalAccess(job, portalAccessToken, dbPool);
+        await auditJob(job, "whatsapp_job_skipped", { reason: sendStart.reason }).catch(() => undefined);
+      } else if (sendStart.settledStatus === "pending") {
+        await auditJob(job, "whatsapp_job_retry_scheduled", { reason: sendStart.reason }).catch(() => undefined);
+      } else {
+        await auditStale(job, "send_start");
+      }
       return;
     }
     if (portalAccessToken) {
