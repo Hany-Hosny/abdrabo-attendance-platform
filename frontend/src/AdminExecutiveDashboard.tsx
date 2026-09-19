@@ -25,6 +25,7 @@ type DashboardData = {
   permissions: { financial: boolean; groupPerformance: boolean; alerts: boolean; activity: boolean };
   summary: DashboardSummary | null;
   collection: { required: number; collected: number; remaining: number; rate: number | null } | null;
+  paymentReversals: { count: number; amount: number } | null;
   studentStatus: { paid: number; paidPercentage: number | null; overdue: number; overduePercentage: number | null } | null;
   groupPerformance: Array<{
     groupId: number;
@@ -164,7 +165,7 @@ function DashboardFilters({
 function KpiCard({ label, value, detail, change, tone, previousLabel }: { label: string; value: string; detail?: string; change?: number | null; tone: string; previousLabel: string }) {
   const changeText = signedChange(change);
   return <article className={`executive-kpi executive-kpi-${tone}`}>
-    <div className="executive-kpi-icon" aria-hidden="true">{tone === "income" || tone === "period" ? "▣" : tone === "paid" ? "✓" : tone === "overdue" ? "!" : "%"}</div>
+    <div className="executive-kpi-icon" aria-hidden="true">{tone === "income" || tone === "period" ? "▣" : tone === "paid" ? "✓" : tone === "overdue" ? "!" : tone === "reversal" ? "↩" : "%"}</div>
     <span>{label}</span>
     <strong>{value}</strong>
     {detail ? <small>{detail}</small> : null}
@@ -240,7 +241,7 @@ function NeedsAttentionPanel({ students, loading, error, t, language, onNavigate
     if (reason.type === "evaluation") return t("dashboard.attentionEvaluation", { value: percent(reason.value) });
     return t("dashboard.attentionPayment", { amount: currency(reason.amount, language) });
   }
-  return <section className="dashboard-panel needs-attention-panel"><div className="panel-heading"><div><h2>{t("dashboard.needsAttention")}</h2></div><span className="panel-icon panel-icon-alert">!</span></div>{loading ? <div className="attention-skeleton"><i /><i /><i /></div> : error ? <p className="dashboard-empty">{error}</p> : students?.length ? <div className="attention-list">{students.map((student) => <button type="button" className="attention-row" key={student.studentId} onClick={() => onNavigate("students", student.studentId, student.reasons[0]?.targetSection)}><span className="attention-avatar">{student.studentName.slice(0, 1)}</span><span className="attention-student"><strong>{student.studentName}</strong><small>{student.studentCode || "—"} · {student.groupName || "—"}</small><em>{student.reasons.map(reasonLabel).join(" · ")}</em></span><span className="attention-arrow">←</span></button>)}</div> : <p className="dashboard-empty">{t("dashboard.noAttention")}</p>}</section>;
+  return <section className="dashboard-panel needs-attention-panel"><div className="panel-heading"><div><h2>{t("dashboard.needsAttention")}</h2></div><span className="panel-icon panel-icon-alert">!</span></div><div className="needs-attention-body" tabIndex={0} aria-label={t("dashboard.needsAttention")}>{loading ? <div className="attention-skeleton"><i /><i /><i /></div> : error ? <p className="dashboard-empty">{error}</p> : students?.length ? <div className="attention-list">{students.map((student) => <button type="button" className="attention-row" key={student.studentId} onClick={() => onNavigate("students", student.studentId, student.reasons[0]?.targetSection)}><span className="attention-avatar">{student.studentName.slice(0, 1)}</span><span className="attention-student"><strong>{student.studentName}</strong><small>{student.studentCode || "—"} · {student.groupName || "—"}</small><em>{student.reasons.map(reasonLabel).join(" · ")}</em></span><span className="attention-arrow">←</span></button>)}</div> : <p className="dashboard-empty">{t("dashboard.noAttention")}</p>}</div></section>;
 }
 
 function DashboardSkeleton() {
@@ -308,12 +309,13 @@ export function AdminExecutiveDashboard({ token, language, t, can, onNavigate, o
     <DashboardFilters period={period} groupId={groupId} from={from} to={to} groups={data?.filters.groups || []} language={language} t={t} onPeriodChange={setPeriod} onGroupChange={setGroupId} onFromChange={setFrom} onToChange={setTo} />
     {loading && !data ? <DashboardSkeleton /> : null}
     {error ? <div className="dashboard-error"><strong>{error}</strong><button type="button" onClick={() => setReloadKey((value) => value + 1)}>{t("dashboard.retry")}</button></div> : null}
-    {data && financial && data.summary ? <div className="executive-kpi-grid">
+    {data && financial && data.summary ? <div className={`executive-kpi-grid ${data.paymentReversals?.count ? "has-reversal-kpi" : ""}`}>
       <KpiCard label={t("dashboard.totalIncome")} value={currency(data.summary.totalIncome, language)} tone="income" previousLabel={t("dashboard.previous")} />
       <KpiCard label={t("dashboard.periodIncome")} value={currency(data.summary.periodIncome, language)} tone="period" change={data.summary.comparison.periodIncome} previousLabel={t("dashboard.previous")} />
       <KpiCard label={t("dashboard.paidStudents")} value={String(data.summary.paidStudentsCount)} detail={percent(data.summary.paidStudentsPercentage)} tone="paid" change={data.summary.comparison.paidStudents} previousLabel={t("dashboard.previous")} />
       <KpiCard label={t("dashboard.overdueStudents")} value={String(data.summary.overdueStudentsCount)} detail={percent(data.summary.overdueStudentsPercentage)} tone="overdue" change={data.summary.comparison.overdueStudents} previousLabel={t("dashboard.previous")} />
       <KpiCard label={t("dashboard.collectionRate")} value={percent(data.summary.collectionRate)} tone="rate" change={data.summary.comparison.collectionRate} previousLabel={t("dashboard.previous")} />
+      {data.paymentReversals && data.paymentReversals.count > 0 ? <KpiCard label={t("dashboard.paymentReversals")} value={currency(data.paymentReversals.amount, language)} detail={`${data.paymentReversals.count} ${t(data.paymentReversals.count === 1 ? "dashboard.reversal" : "dashboard.reversals")}`} tone="reversal" previousLabel={t("dashboard.previous")} /> : null}
     </div> : null}
     {data ? <QuickActions t={t} can={can} onNavigate={onNavigate} /> : null}
     {data && !loading && !financial && !groupPerformance && !alerts && !activity ? <div className="dashboard-empty dashboard-empty-large">{t("dashboard.noData")}</div> : null}

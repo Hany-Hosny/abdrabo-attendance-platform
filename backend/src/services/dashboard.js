@@ -152,6 +152,7 @@ export function scopeDashboardPayload(payload, permissions = {}) {
     scoped.collection = null;
     scoped.previousCollection = null;
     scoped.studentStatus = null;
+    scoped.paymentReversals = null;
     scoped.revenueTrend = null;
     scoped.recentPayments = null;
     if (Array.isArray(scoped.groupPerformance)) {
@@ -218,6 +219,13 @@ export async function getExecutiveDashboard({ period, from, to, groupId, user = 
           COALESCE(SUM(p.amount) FILTER (WHERE COALESCE(p.paid_at, p.payment_date) >= ($7::date AT TIME ZONE 'Africa/Cairo') AND COALESCE(p.paid_at, p.payment_date) < ($8::date AT TIME ZONE 'Africa/Cairo')), 0) AS previous_income
         FROM payments p
         WHERE NOT EXISTS (SELECT 1 FROM payment_reversals pr WHERE pr.payment_id = p.id) ${paymentSelectedClause}
+      ), payment_reversal_summary AS (
+        SELECT COUNT(*)::int AS reversal_count, COALESCE(SUM(pr.original_amount), 0) AS reversal_amount
+        FROM payment_reversals pr
+        JOIN payments p ON p.id = pr.payment_id
+        WHERE pr.created_at >= ($5::date AT TIME ZONE 'Africa/Cairo')
+          AND pr.created_at < ($6::date AT TIME ZONE 'Africa/Cairo')
+          ${paymentSelectedClause}
       ), historical AS (
         SELECT COALESCE(SUM(p.amount), 0) AS total_income
         FROM payments p
@@ -235,8 +243,9 @@ export async function getExecutiveDashboard({ period, from, to, groupId, user = 
         (SELECT COUNT(*) FROM previous_dues WHERE collected_amount < required_amount) AS previous_overdue_students,
         (SELECT COUNT(*) FROM previous_dues) AS previous_applicable_students,
         period_payments.period_income, period_payments.previous_income,
+        payment_reversal_summary.reversal_count, payment_reversal_summary.reversal_amount,
         historical.total_income
-      FROM period_payments CROSS JOIN historical
+      FROM period_payments CROSS JOIN payment_reversal_summary CROSS JOIN historical
     `, values);
     const row = result.rows[0] || {};
     const required = numberOrZero(row.required_amount);
@@ -262,6 +271,10 @@ export async function getExecutiveDashboard({ period, from, to, groupId, user = 
       },
       collection: { required, collected, remaining: Math.max(0, required - collected), rate: percentage(collected, required) },
       previousCollection: { required: previousRequired, collected: previousCollected, rate: percentage(previousCollected, previousRequired) },
+      paymentReversals: {
+        count: numberOrZero(row.reversal_count),
+        amount: numberOrZero(row.reversal_amount)
+      },
       periodIncome: numberOrZero(row.period_income)
     };
   })() : Promise.resolve(null);
@@ -413,6 +426,7 @@ export async function getExecutiveDashboard({ period, from, to, groupId, user = 
     summary: financial?.summary || null,
     collection: financial?.collection || null,
     previousCollection: financial?.previousCollection || null,
+    paymentReversals: financial?.paymentReversals || null,
     studentStatus: financial ? {
       paid: financial.summary.paidStudentsCount,
       paidPercentage: financial.summary.paidStudentsPercentage,
