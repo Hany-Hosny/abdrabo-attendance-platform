@@ -38,6 +38,7 @@ test("financial dashboard payload is removed for group-only admins", () => {
     collection: { required: 1200, collected: 1000, remaining: 200, rate: 83.3 },
     previousCollection: { required: 900, collected: 800, rate: 88.8 },
     studentStatus: { paid: 4, overdue: 2 },
+    paymentReversals: { count: 2, amount: 200 },
     revenueTrend: [{ month: "2026-09", amount: 1000 }],
     recentPayments: [{ id: 1, amount: 100 }],
     groupPerformance: [{ groupId: 1, collectionRate: 83.3, overdueCount: 2, attendanceRate: 90 }],
@@ -48,6 +49,7 @@ test("financial dashboard payload is removed for group-only admins", () => {
   assert.equal(scoped.collection, null);
   assert.equal(scoped.previousCollection, null);
   assert.equal(scoped.studentStatus, null);
+  assert.equal(scoped.paymentReversals, null);
   assert.equal(scoped.revenueTrend, null);
   assert.equal(scoped.recentPayments, null);
   assert.deepEqual(scoped.groupPerformance, [{ groupId: 1, attendanceRate: 90 }]);

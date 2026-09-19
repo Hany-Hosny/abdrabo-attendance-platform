@@ -304,16 +304,39 @@ const groupSelect = `
   ) cs ON TRUE
 `;
 
+export async function getGroupsStudentSummary(user, db = query) {
+  const values = [];
+  const filters = ["TRUE"];
+  appendGroupScope(filters, values, user, "s.group_id");
+  const result = await db(`
+    SELECT
+      COUNT(*) FILTER (WHERE s.deleted_at IS NULL)::int AS total,
+      COUNT(*) FILTER (WHERE s.deleted_at IS NULL AND s.is_active = TRUE)::int AS active,
+      COUNT(*) FILTER (WHERE s.deleted_at IS NULL AND s.is_active = FALSE)::int AS disabled,
+      COUNT(*) FILTER (WHERE s.deleted_at IS NOT NULL)::int AS deleted
+    FROM students s
+    WHERE ${filters.join(" AND ")}
+  `, values);
+  const summary = result.rows[0] || {};
+  return {
+    total: Number(summary.total || 0),
+    active: Number(summary.active || 0),
+    disabled: Number(summary.disabled || 0),
+    deleted: Number(summary.deleted || 0)
+  };
+}
+
 adminAcademicRouter.get("/groups", requireAnyPermission("schedule.view", "students.view"), async (req, res, next) => {
   try {
     const groupValues = [];
     const groupFilters = ["g.deleted_at IS NULL"];
     appendGroupScope(groupFilters, groupValues, req.teacher, "g.id");
-    const [groups, centers] = await Promise.all([
+    const [groups, centers, studentSummary] = await Promise.all([
       query(`${groupSelect} WHERE ${groupFilters.join(" AND ")} ORDER BY g.created_at DESC`, groupValues),
-      query("SELECT id, name, address FROM centers ORDER BY id ASC LIMIT 1")
+      query("SELECT id, name, address FROM centers ORDER BY id ASC LIMIT 1"),
+      getGroupsStudentSummary(req.teacher)
     ]);
-    res.json({ ok: true, groups: groups.rows, centers: centers.rows });
+    res.json({ ok: true, groups: groups.rows, centers: centers.rows, studentSummary });
   } catch (error) {
     next(error);
   }

@@ -1918,6 +1918,12 @@
 .executive-kpi-paid { color: #36d89a; border-color: rgba(54, 216, 154, 0.28); }
 .executive-kpi-overdue { color: #ffae42; border-color: rgba(255, 174, 66, 0.3); }
 .executive-kpi-rate { color: #b480ec; border-color: rgba(180, 128, 236, 0.3); }
+.executive-kpi-reversal { color: #e88686; border-color: rgba(232, 134, 134, 0.32); }
+@media (min-width: 1081px) {
+  .executive-kpi-grid.has-reversal-kpi {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
 
 .executive-dashboard-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
 .collection-panel { grid-column: span 6; }
@@ -5972,6 +5978,70 @@ textarea {
   margin-top: 22px;
 }
 
+.groups-student-summary {
+  display: grid;
+  width: min(100%, 680px);
+  gap: 14px;
+  margin: 22px auto 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.groups-student-summary-total,
+.groups-student-summary-statuses,
+.groups-student-summary-statuses span {
+  display: flex;
+  align-items: center;
+}
+
+.groups-student-summary-total {
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.groups-student-summary-total span {
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+.groups-student-summary-total strong {
+  color: var(--accent-strong);
+  font-size: 26px;
+  font-variant-numeric: tabular-nums;
+}
+
+.groups-student-summary-statuses {
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.groups-student-summary-statuses span {
+  gap: 7px;
+  padding-inline: 14px;
+  border-inline-start: 1px solid var(--line);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.groups-student-summary-statuses span:first-child {
+  padding-inline-start: 0;
+  border-inline-start: 0;
+}
+
+.groups-student-summary-statuses b {
+  color: var(--text-secondary);
+}
+
+.groups-student-summary-statuses .groups-student-summary-active b {
+  color: #86efac;
+}
+
+.groups-student-summary-statuses .groups-student-summary-deleted b {
+  color: #ffb3a8;
+}
+
 .academic-row {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) auto minmax(220px, auto);
@@ -8798,6 +8868,38 @@ th {
     gap: 12px;
   }
 
+  .groups-student-summary-statuses {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .groups-student-summary {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .groups-student-summary-total {
+    flex-direction: column;
+    gap: 4px;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .groups-student-summary-total strong {
+    font-size: 34px;
+    line-height: 1;
+  }
+
+  .groups-student-summary-statuses span,
+  .groups-student-summary-statuses span:first-child {
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
   .attendance-row .attendance-actions {
     width: 100%;
   }
@@ -10820,11 +10922,15 @@ th {
 .quick-action-button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; border: 1px solid rgba(128, 170, 211, 0.16); border-radius: 8px; background: var(--surface-inset); color: var(--text); cursor: pointer; font-weight: 700; }
 .quick-action-button span { color: #69adff; font-size: 18px; }
 .quick-action-button:hover { border-color: rgba(105, 173, 255, 0.4); background: rgba(105, 173, 255, 0.08); }
-.needs-attention-panel { grid-column: span 6; }
+.needs-attention-panel { display: flex; flex-direction: column; grid-column: span 6; height: clamp(360px, 46vh, 480px); min-height: 0; }
+.needs-attention-panel > .panel-heading { flex: 0 0 auto; }
+.needs-attention-body { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-color: rgba(128, 170, 211, 0.45) transparent; scrollbar-width: thin; }
+.needs-attention-body:focus-visible { outline: 2px solid rgba(105, 173, 255, 0.7); outline-offset: -3px; }
 .attention-list, .attention-skeleton { display: grid; gap: 7px; padding: 6px 13px 13px; }
-.attention-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; padding: 9px; border: 1px solid rgba(255, 159, 63, 0.17); border-radius: 8px; background: rgba(255, 159, 63, 0.05); color: var(--text); cursor: pointer; text-align: start; }
+.attention-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 9px; width: 100%; flex-shrink: 0; padding: 9px; border: 1px solid rgba(255, 159, 63, 0.17); border-radius: 8px; background: rgba(255, 159, 63, 0.05); color: var(--text); cursor: pointer; text-align: start; }
 .attention-row:hover { background: rgba(255, 159, 63, 0.1); }
 .attention-student { display: grid; gap: 3px; min-width: 0; }
+.attention-student strong { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.35; }
 .attention-student small, .attention-student em { overflow: hidden; color: var(--muted); font-size: 11px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
 .attention-student em { color: #ffc15a; }
 .attention-arrow { color: #69adff; }
@@ -11220,6 +11326,7 @@ th {
   }
 
   .needs-attention-panel {
+    height: clamp(320px, 52dvh, 440px);
     border-color: rgba(255, 159, 63, 0.32);
   }
 
@@ -19030,4 +19137,55 @@ html[data-scanner-feedback="error"]::after {
   .center-location-footer .primary-button { width: 100%; }
   .contact-location-footer { grid-template-columns: minmax(0, 1fr); }
   .contact-location-footer .primary-button { width: 100%; }
+}
+
+/* Keep finance report controls compact on phones without changing report data flow. */
+@media (max-width: 767px) {
+  .admin-shell .payment-reports .payment-report-filters,
+  .admin-shell .late-payments-report .payment-report-filters {
+    grid-template-columns: minmax(0, 1fr) !important;
+    align-items: stretch;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .admin-shell .payment-reports .payment-report-filters > label,
+  .admin-shell .late-payments-report .payment-report-filters > label {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .admin-shell .payment-reports .payment-report-filters input,
+  .admin-shell .payment-reports .payment-report-filters select,
+  .admin-shell .late-payments-report .payment-report-filters input,
+  .admin-shell .late-payments-report .payment-report-filters select {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 48px;
+  }
+
+  .admin-shell .payment-reports .report-actions,
+  .admin-shell .late-payments-report .report-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  .admin-shell .payment-reports .report-actions > button,
+  .admin-shell .late-payments-report .report-actions > button {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    height: 48px;
+    margin-top: 0;
+    padding-inline: 8px;
+    white-space: normal;
+  }
 }

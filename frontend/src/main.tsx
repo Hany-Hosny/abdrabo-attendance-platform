@@ -190,6 +190,13 @@ type AdminGroup = {
   }>;
 };
 
+type StudentSummary = {
+  total: number;
+  active: number;
+  disabled: number;
+  deleted: number;
+};
+
 type AdminStudent = {
   id: number;
   group_id: number;
@@ -1312,6 +1319,9 @@ const translations = {
     "dashboard.paidStudents": "الطلاب الذين دفعوا",
     "dashboard.overdueStudents": "الطلاب المتأخرون عن الدفع",
     "dashboard.collectionRate": "نسبة التحصيل",
+    "dashboard.paymentReversals": "عكس الدفعات",
+    "dashboard.reversal": "عملية",
+    "dashboard.reversals": "عمليات",
     "dashboard.collectionStatus": "حالة التحصيل",
     "dashboard.required": "إجمالي المطلوب",
     "dashboard.collected": "تم تحصيله",
@@ -1454,6 +1464,7 @@ const translations = {
     "admin.role": "الدور",
     "admin.active": "نشط",
     "admin.total": "الإجمالي",
+    "admin.currentStudents": "إجمالي الطلاب الحاليين",
     "admin.groupDetails": "تفاصيل المجموعة",
     "admin.groupStatistics": "إحصائيات المجموعة",
     "admin.studentStatus": "حالة الطلاب",
@@ -2970,6 +2981,9 @@ const translations = {
     "dashboard.paidStudents": "Students who paid",
     "dashboard.overdueStudents": "Students overdue",
     "dashboard.collectionRate": "Collection rate",
+    "dashboard.paymentReversals": "Payment Reversals",
+    "dashboard.reversal": "reversal",
+    "dashboard.reversals": "reversals",
     "dashboard.collectionStatus": "Collection status",
     "dashboard.required": "Expected",
     "dashboard.collected": "Collected",
@@ -3112,6 +3126,7 @@ const translations = {
     "admin.role": "Role",
     "admin.active": "Active",
     "admin.total": "Total",
+    "admin.currentStudents": "Current Students",
     "admin.groupDetails": "Group details",
     "admin.groupStatistics": "Group statistics",
     "admin.studentStatus": "Student status",
@@ -7627,6 +7642,7 @@ function AcademicManager({
 }) {
   const language: Language = document.documentElement.lang === "en" ? "en" : "ar";
   const [groups, setGroups] = useState<AdminGroup[]>([]);
+  const [studentSummary, setStudentSummary] = useState<StudentSummary | null>(null);
   const [students, setStudents] = useState<AdminStudent[]>([]);
   const [centers, setCenters] = useState<Array<{ id: number; name: string }>>([]);
   const [groupForm, setGroupForm] = useState(emptyGroupForm);
@@ -7790,12 +7806,14 @@ function AcademicManager({
 
   async function loadData() {
     setStudentListLoading(true);
+    if (kind === "groups") setStudentSummary(null);
     try {
     const groupResponse = await fetch(`${API_BASE_URL}/admin/groups`, { headers });
-    const groupData = (await groupResponse.json()) as { ok: boolean; groups?: AdminGroup[]; centers?: Array<{ id: number; name: string }> };
+    const groupData = (await groupResponse.json()) as { ok: boolean; groups?: AdminGroup[]; centers?: Array<{ id: number; name: string }>; studentSummary?: StudentSummary };
     if (!groupResponse.ok || !groupData.ok) throw new Error(t("errors.loginFailed"));
     setGroups(groupData.groups || []);
     setCenters(groupData.centers || []);
+    if (kind === "groups" && groupData.studentSummary) setStudentSummary(groupData.studentSummary);
     if (!groupForm.center_id && groupData.centers?.[0]) setGroupForm((value) => ({ ...value, center_id: String(groupData.centers![0].id) }));
 
     const params = new URLSearchParams({ status: statusFilter });
@@ -8519,6 +8537,18 @@ function AcademicManager({
         {kind === "groups" && status ? <p className={status === t("admin.groupSaved") ? "lookup-result" : "form-error"} role="alert">{status}</p> : null}
         <div className="form-actions"><button className={`primary-button compact-button action-feedback-${saveState} ${saveState === "success" ? "success-button" : ""}`} type="submit" disabled={loading || saveState === "loading"}>{actionButtonText(saveState, { idle: editingId ? t("admin.update") : t("admin.create"), loading: editingId ? t("admin.updating") : t("admin.creating"), success: saveMode === "update" ? t("admin.updated") : t("admin.created"), error: t("admin.actionFailedSave") })}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={resetForm}>{t("admin.cancel")}</button> : null}</div>
       </form>
+
+      {kind === "groups" && studentSummary ? <section className="groups-student-summary" aria-label={t("admin.currentStudents")}>
+        <div className="groups-student-summary-total">
+          <span>{t("admin.currentStudents")}</span>
+          <strong>{studentSummary.total}</strong>
+        </div>
+        <div className="groups-student-summary-statuses">
+          <span className="groups-student-summary-active"><b>{t("admin.active")}</b>{studentSummary.active}</span>
+          <span><b>{t("admin.disabled")}</b>{studentSummary.disabled}</span>
+          <span className="groups-student-summary-deleted"><b>{t("admin.deleted")}</b>{studentSummary.deleted}</span>
+        </div>
+      </section> : null}
 
       {kind === "students" && session.teacher.role === "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons">{(["active","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
 
