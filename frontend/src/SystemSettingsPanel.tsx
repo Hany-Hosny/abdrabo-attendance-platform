@@ -128,6 +128,108 @@ function CenterLocationSettings({ token, language, t }: { token: string; languag
   </section>;
 }
 
+type GeminiConfig = { model: "gemini-3.6-flash" | "gemini-3.5-flash" | "gemini-2.5-pro"; apiKeyConfigured: boolean; encryptionConfigured: boolean };
+const geminiModels: GeminiConfig["model"][] = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-pro"];
+
+function GeminiSettingsPanel({ token, language, t }: { token: string; language: Language; t: Translator }) {
+  const endpoint = `${API_BASE_URL}/admin/settings/advanced/gemini`;
+  const [config, setConfig] = useState<GeminiConfig | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [model, setModel] = useState<GeminiConfig["model"]>("gemini-3.6-flash");
+  const [visible, setVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
+  const [message, setMessage] = useState("");
+  const [verified, setVerified] = useState(false);
+  const aiEnabled = verified && Boolean(apiKey.trim() || config?.apiKeyConfigured);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(endpoint, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.ok) throw new Error(payload.status || "load_failed");
+        return payload as GeminiConfig;
+      })
+      .then((next) => { setConfig(next); setModel(geminiModels.includes(next.model) ? next.model : "gemini-3.6-flash"); setVerified(Boolean(next.apiKeyConfigured)); })
+      .catch((error) => {
+        if (error?.name !== "AbortError") { setStatus("error"); setMessage(error?.message === "secret_storage_unavailable" ? t("settings.secretStorageUnavailable") : t("settings.geminiLoadFailed")); }
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [token]);
+
+  function resetVerification() {
+    setVerified(false); setStatus("idle"); setMessage("");
+  }
+
+  function connectionError(payload: any) {
+    const detail = String(payload?.message || "").trim();
+    if (payload?.status === "secret_storage_unavailable") return t("settings.secretStorageUnavailable");
+    if (payload?.status === "gemini_api_key_required") return t("settings.geminiKeyRequired");
+    return detail ? `${t("settings.geminiTestFailed")} ${detail}` : t("settings.geminiTestFailed");
+  }
+
+  async function testConnection() {
+    if (testing || saving) return;
+    if (!apiKey.trim() && !config?.apiKeyConfigured) { setStatus("error"); setMessage(t("settings.geminiKeyRequired")); return; }
+    setTesting(true); setStatus("idle"); setMessage("");
+    try {
+      const body: Record<string, string> = { model };
+      if (apiKey.trim()) body.apiKey = apiKey.trim();
+      const response = await fetch(`${endpoint}/test`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw payload;
+      setVerified(true); setStatus("success"); setMessage(t("settings.geminiTestSuccess"));
+      window.setTimeout(() => setStatus("idle"), 2200);
+    } catch (error) {
+      setVerified(false); setStatus("error"); setMessage(connectionError(error));
+    } finally { setTesting(false); }
+  }
+
+  async function save() {
+    if (saving || testing) return;
+    if (!verified) { setStatus("error"); setMessage(t("settings.geminiVerifyBeforeSave")); return; }
+    setSaving(true); setStatus("idle"); setMessage("");
+    try {
+      const body: Record<string, string> = { model };
+      if (apiKey.trim()) body.apiKey = apiKey.trim();
+      const response = await fetch(endpoint, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) throw payload;
+      setConfig(payload as GeminiConfig); setApiKey(""); setVisible(false); setVerified(true); setStatus("success"); setMessage(t("settings.geminiSaved"));
+      window.setTimeout(() => setStatus("idle"), 2200);
+    } catch (error) {
+      setStatus("error"); setMessage(connectionError(error));
+    } finally { setSaving(false); }
+  }
+
+  return <section className="settings-section gemini-settings-panel" dir={language === "ar" ? "rtl" : "ltr"}>
+    <div className="settings-section-heading"><span>06</span><div><h3>{t("settings.geminiTitle")}</h3><p>{t("settings.geminiDescription")}</p></div></div>
+    {loading ? <div className="system-settings-skeleton" aria-hidden="true"><i /><i /></div> : <>
+    <div className={`gemini-connection-state ${aiEnabled ? "is-active" : "is-pending"}`} role="status" aria-live="polite">
+      <i aria-hidden="true" />
+      <div><strong>{aiEnabled ? t("settings.geminiActive") : t("settings.geminiPending")}</strong><small>{aiEnabled ? `${t("settings.geminiActiveModel")}: ${model}` : t("settings.geminiPendingHint")}</small></div>
+    </div>
+    <div className="gemini-settings-content">
+      <label className="system-setting-field gemini-api-key-field"><span>{t("settings.geminiApiKey")}</span><small>{config?.apiKeyConfigured ? t("settings.geminiKeyConfigured") : t("settings.geminiKeyHint")}</small><div className="gemini-api-key-input"><input type={visible ? "text" : "password"} value={apiKey} onChange={(event) => { setApiKey(event.target.value); resetVerification(); }} placeholder={t("settings.geminiKeyPlaceholder")} autoComplete="new-password" spellCheck={false} /><button type="button" onClick={() => setVisible((current) => !current)} aria-label={visible ? t("settings.geminiHideKey") : t("settings.geminiShowKey")} title={visible ? t("settings.geminiHideKey") : t("settings.geminiShowKey")}><EyeIcon open={visible} /></button></div></label>
+      <label className="system-setting-field"><span>{t("settings.geminiModel")}</span><small>{t("settings.geminiModelHint")}</small><select value={model} onChange={(event) => { setModel(event.target.value as GeminiConfig["model"]); resetVerification(); }}>{geminiModels.map((value) => <option key={value} value={value}>{t(`settings.geminiModel.${value}`)}</option>)}</select></label>
+      <div className="gemini-settings-actions"><button className={`secondary-button compact-button gemini-test-button ${status === "success" && message === t("settings.geminiTestSuccess") ? "success-button" : ""}`} type="button" onClick={() => void testConnection()} disabled={testing || saving}>{testing ? <><SpinnerIcon />{t("settings.geminiTesting")}</> : status === "success" && message === t("settings.geminiTestSuccess") ? t("settings.geminiVerified") : t("settings.geminiTest")}</button><button className={`primary-button compact-button ${status === "success" && message === t("settings.geminiSaved") ? "success-button" : ""}`} type="button" onClick={() => void save()} disabled={testing || saving || !verified}>{saving ? <><SpinnerIcon />{t("settings.geminiSaving")}</> : status === "success" && message === t("settings.geminiSaved") ? t("settings.saved") : t("settings.geminiSave")}</button></div>
+      <p className={`gemini-status ${status === "success" ? "is-success" : status === "error" ? "is-error" : ""}`} role={status === "idle" ? undefined : "status"} aria-live="polite">{message || t("settings.geminiSecurityHint")}</p>
+    </div></>}
+  </section>;
+}
+
+function EyeIcon({ open }: { open: boolean }) {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.8 12s3.3-5.4 9.2-5.4S21.2 12 21.2 12 17.9 17.4 12 17.4 2.8 12 2.8 12Z" /><circle cx="12" cy="12" r="2.7" />{open ? null : <path d="M4 4 20 20" />}</svg>;
+}
+
+function SpinnerIcon() {
+  return <span className="gemini-spinner" aria-hidden="true" />;
+}
+
 function NumberSetting({ label, description, value, min, max, suffix, onChange }: {
   label: string;
   description: string;
@@ -213,6 +315,7 @@ export function SystemSettingsPanel({ token, language, isOwner = false, t }: Pro
       <section className="settings-section"><div className="settings-section-heading"><span>03</span><div><h3>{t("settings.evaluationTitle")}</h3><p>{t("settings.evaluationDescription")}</p></div></div><div className="system-settings-grid system-settings-grid-single"><NumberSetting label={t("settings.evaluationAlertLabel")} description={t("settings.evaluationAlertDescription")} value={settings.evaluation_alert_threshold} min={0} max={100} suffix="%" onChange={(value) => update("evaluation_alert_threshold", value)} /></div></section>
       <section className="settings-section settings-section-readonly"><div className="settings-section-heading"><span>04</span><div><h3>{t("settings.paymentsTitle")}</h3><p>{t("settings.paymentsDescription")}</p></div></div><div className="settings-note-grid"><div><strong>{t("settings.paymentFeesSource")}</strong><span>{t("settings.paymentFeesSourceDescription")}</span></div><div><strong>{t("settings.reversalSource")}</strong><span>{t("settings.reversalSourceDescription")}</span></div></div></section>
       <CenterLocationSettings token={token} language={language} t={t} />
+      {isOwner ? <GeminiSettingsPanel token={token} language={language} t={t} /> : null}
     </div>
     {isOwner ? <AdvancedPasswordRecoveryPanel token={token} t={t} open={advancedOpen} onToggle={() => setAdvancedOpen((value) => !value)} /> : null}
   </section>;

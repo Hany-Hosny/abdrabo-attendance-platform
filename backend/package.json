@@ -12,6 +12,7 @@
     "test:load": "node test/load-test.js"
   },
   "dependencies": {
+    "@google/genai": "^2.24.0",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

@@ -212,7 +212,8 @@ export async function migrate() {
         'evaluation_alert_threshold',
         'password_recovery_enabled',
         'password_recovery_provider',
-        'password_recovery_from_email'
+        'password_recovery_from_email',
+        'gemini_model'
       )),
       value_json JSONB NOT NULL,
       updated_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
@@ -278,7 +279,7 @@ export async function migrate() {
 
   // 2. Add compatible columns and constraints for existing installations.
   await query("ALTER TABLE system_settings DROP CONSTRAINT IF EXISTS system_settings_key_check");
-  await query("ALTER TABLE system_settings ADD CONSTRAINT system_settings_key_check CHECK (key IN ('attendance_open_before_minutes', 'attendance_close_after_minutes', 'attendance_alert_threshold', 'attendance_cancellation_cutoff_percentage', 'evaluation_alert_threshold', 'password_recovery_enabled', 'password_recovery_provider', 'password_recovery_from_email'))");
+  await query("ALTER TABLE system_settings ADD CONSTRAINT system_settings_key_check CHECK (key IN ('attendance_open_before_minutes', 'attendance_close_after_minutes', 'attendance_alert_threshold', 'attendance_cancellation_cutoff_percentage', 'evaluation_alert_threshold', 'password_recovery_enabled', 'password_recovery_provider', 'password_recovery_from_email', 'gemini_model'))");
   await query("INSERT INTO system_settings (key, value_json) VALUES ('attendance_cancellation_cutoff_percentage', '60'::jsonb) ON CONFLICT (key) DO NOTHING");
   await query(`
     SET search_path TO public;
@@ -330,7 +331,8 @@ export async function migrate() {
       'evaluation_alert_threshold',
       'password_recovery_enabled',
       'password_recovery_provider',
-      'password_recovery_from_email'
+      'password_recovery_from_email',
+      'gemini_model'
     ));
 
     ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_role_check;

@@ -3,6 +3,7 @@ import { requirePermission, requireRoles, requireTeacher } from "../middleware/r
 import { readSystemSettings, SettingsValidationError, updateSystemSettings } from "../services/systemSettings.js";
 import { createPasswordResetSecret, getPasswordRecoveryConfig, safePasswordRecoveryConfig, updatePasswordRecoveryConfig, rotatePasswordResetSecret } from "../services/passwordRecoveryConfig.js";
 import { sendPasswordRecoveryEmail, verifyGmailSmtp } from "../services/email.js";
+import { getGeminiConfig, safeGeminiConfig, testGeminiConfig, updateGeminiConfig } from "../services/geminiConfig.js";
 import { auditLog } from "../services/audit.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { ipKeyGenerator } from "express-rate-limit";
@@ -34,6 +35,7 @@ adminSettingsRouter.patch("/", async (req, res, next) => {
 
 const advancedSettingsAccess = [requireRoles("owner")];
 const passwordRecoveryTestRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 3, key: (req) => `password-recovery-test:${req.teacher?.id || "unknown"}:${ipKeyGenerator(req.ip || "unknown")}` });
+const geminiTestRateLimit = createRateLimiter({ windowMs: 15 * 60_000, max: 3, key: (req) => `gemini-test:${req.teacher?.id || "unknown"}:${ipKeyGenerator(req.ip || "unknown")}` });
 adminSettingsRouter.get("/advanced/password-recovery", ...advancedSettingsAccess, async (_req, res, next) => {
   try {
     return res.json({ ok: true, ...safePasswordRecoveryConfig(await getPasswordRecoveryConfig()) });
@@ -93,5 +95,40 @@ adminSettingsRouter.post("/advanced/password-recovery/test", ...advancedSettings
     return res.json({ ok: true, status: "tested" });
   } catch (_error) {
     return res.status(502).json({ ok: false, status: "email_provider_unavailable" });
+  }
+});
+
+adminSettingsRouter.get("/advanced/gemini", ...advancedSettingsAccess, async (_req, res, next) => {
+  try {
+    return res.json({ ok: true, ...safeGeminiConfig(await getGeminiConfig()) });
+  } catch (error) {
+    if (error?.name === "SecretStorageError") return res.status(503).json({ ok: false, status: "secret_storage_unavailable" });
+    return next(error);
+  }
+});
+
+adminSettingsRouter.post("/advanced/gemini/test", ...advancedSettingsAccess, geminiTestRateLimit, async (req, res, next) => {
+  try {
+    const result = await testGeminiConfig(req.body);
+    if (!result.ok) return res.status(502).json({ ok: false, status: "gemini_connection_failed", message: result.message });
+    await auditLog({ action: "advanced_settings_updated", actorId: req.teacher.id, details: { integration: "gemini", action: "connection_tested", result: "success" }, request: req });
+    return res.json({ ok: true, status: "tested" });
+  } catch (error) {
+    if (error?.message === "gemini_api_key_required") return res.status(400).json({ ok: false, status: "gemini_api_key_required" });
+    if (["invalid_gemini_payload", "invalid_gemini_model", "invalid_gemini_api_key"].includes(error?.message)) return res.status(400).json({ ok: false, status: "invalid_gemini_settings" });
+    if (error?.name === "SecretStorageError") return res.status(503).json({ ok: false, status: "secret_storage_unavailable" });
+    return next(error);
+  }
+});
+
+adminSettingsRouter.patch("/advanced/gemini", ...advancedSettingsAccess, async (req, res, next) => {
+  try {
+    return res.json({ ok: true, ...await updateGeminiConfig(req.body, { actorId: req.teacher.id, request: req }) });
+  } catch (error) {
+    if (error?.message === "gemini_api_key_required") return res.status(400).json({ ok: false, status: "gemini_api_key_required" });
+    if (["invalid_gemini_payload", "invalid_gemini_model", "invalid_gemini_api_key"].includes(error?.message)) return res.status(400).json({ ok: false, status: "invalid_gemini_settings" });
+    if (error?.message === "gemini_connection_failed") return res.status(502).json({ ok: false, status: "gemini_connection_failed", message: error.providerMessage || "gemini_connection_failed" });
+    if (error?.message === "secret_storage_unavailable") return res.status(503).json({ ok: false, status: "secret_storage_unavailable" });
+    return next(error);
   }
 });

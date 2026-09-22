@@ -16,6 +16,7 @@ import { adminNotificationsRouter } from "./routes/adminNotifications.js";
 import { operationsRouter } from "./routes/operations.js";
 import { inboxRouter, staffInboxRouter } from "./routes/inbox.js";
 import { whatsappRouter } from "./routes/whatsapp.js";
+import { assistantRouter } from "./routes/assistant.js";
 import { ensureMonthlyFees } from "./services/fees.js";
 import { finalizeExpiredAttendanceSessions } from "./services/attendanceFinalizer.js";
 import { purgeDeletedStudents } from "./services/studentCleanup.js";
@@ -105,6 +106,10 @@ app.use("/api/admin/settings", adminSettingsRouter);
 app.use("/api/admin/search", adminSearchRouter);
 app.use("/api/admin/notifications", adminNotificationsRouter);
 app.use("/api/admin", adminAcademicRouter);
+// Keep the public AI assistant ahead of the authenticated catch-all operations router.
+// Otherwise `/api/assistant/chat` is intercepted and returns a teacher 401 before
+// the Gemini route can validate the request or load its configured credentials.
+app.use("/api", assistantRouter);
 app.use("/api", operationsRouter);
 app.use("/api/admin", operationsRouter);
 app.use("/api/admin", staffInboxRouter);

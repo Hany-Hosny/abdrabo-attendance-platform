@@ -21,6 +21,8 @@ import { DEFAULT_HOME_CONTENT, fetchHomeContent, type LandingPageContent } from 
 import { registerServiceWorker } from "./registerServiceWorker";
 import { useEscapeKey } from "./utils/useEscapeKey";
 import { getNotificationAction } from "./utils/notificationActions";
+import { PublicChatWidget } from "./components/ai/PublicChatWidget";
+import { StudentHeaderAssistant } from "./components/ai/StudentHeaderAssistant";
 
 registerServiceWorker();
 
@@ -717,6 +719,35 @@ const translations = {
     "settings.saveLocation": "حفظ الموقع",
     "settings.mapPreview": "معاينة الخريطة",
     "settings.mapPreviewDescription": "تتحدث بعد توقف الكتابة مؤقتاً.",
+    "settings.geminiTitle": "إعدادات الذكاء الاصطناعي (AI Settings)",
+    "settings.geminiDescription": "إدارة اتصال Google Gemini الآمن لاستخدامه في تدفقات التقييم والتحليل.",
+    "settings.geminiApiKey": "مفتاح Gemini API",
+    "settings.geminiKeyHint": "يُشفّر المفتاح ويحفظ على الخادم فقط.",
+    "settings.geminiKeyConfigured": "تم حفظ مفتاح آمن مسبقاً. أدخل مفتاحاً جديداً لاستبداله.",
+    "settings.geminiKeyPlaceholder": "أدخل مفتاح Gemini API هنا...",
+    "settings.geminiShowKey": "إظهار المفتاح",
+    "settings.geminiHideKey": "إخفاء المفتاح",
+    "settings.geminiModel": "نموذج Gemini",
+    "settings.geminiModelHint": "اختَر النموذج الذي ستستخدمه مهام الذكاء الاصطناعي.",
+    "settings.geminiModel.gemini-3.6-flash": "gemini-3.6-flash (موصى به - سريع ومستقر للإنتاج)",
+    "settings.geminiModel.gemini-3.5-flash": "gemini-3.5-flash (أداء متقدم للمهام العلمية المعقدة)",
+    "settings.geminiModel.gemini-2.5-pro": "gemini-2.5-pro (تحليل عميق واستدلال متقدم)",
+    "settings.geminiTest": "فحص الاتصال",
+    "settings.geminiTesting": "جاري فحص الاتصال...",
+    "settings.geminiVerified": "تم التحقق",
+    "settings.geminiTestSuccess": "تم التحقق بنجاح! الاتصال يعمل بشكل ممتاز.",
+    "settings.geminiActive": "الذكاء الاصطناعي متصل وجاهز للعمل",
+    "settings.geminiActiveModel": "النموذج النشط",
+    "settings.geminiPending": "إعدادات الذكاء الاصطناعي تحتاج إلى فحص",
+    "settings.geminiPendingHint": "أدخل المفتاح ثم اضغط فحص الاتصال لتفعيل المساعد.",
+    "settings.geminiTestFailed": "فشل الاتصال: تأكد من صحة المفتاح.",
+    "settings.geminiKeyRequired": "أدخل مفتاح Gemini API أولاً.",
+    "settings.geminiVerifyBeforeSave": "افحص الاتصال بنجاح قبل حفظ الإعدادات.",
+    "settings.geminiSave": "حفظ الإعدادات",
+    "settings.geminiSaving": "جاري حفظ الإعدادات...",
+    "settings.geminiSaved": "تم حفظ إعدادات Gemini بنجاح.",
+    "settings.geminiLoadFailed": "تعذر تحميل إعدادات Gemini.",
+    "settings.geminiSecurityHint": "لن يظهر مفتاح Gemini المحفوظ في المتصفح.",
     "settings.safeDefaults": "القيم الافتراضية آمنة وتحافظ على السلوك الحالي.",
     "settings.save": "حفظ التغييرات",
     "settings.saving": "جاري الحفظ...",
@@ -2379,6 +2410,35 @@ const translations = {
     "settings.saveLocation": "Save location",
     "settings.mapPreview": "Map preview",
     "settings.mapPreviewDescription": "Updates after typing pauses.",
+    "settings.geminiTitle": "AI Settings",
+    "settings.geminiDescription": "Manage the secure Google Gemini connection used by evaluation and analysis workflows.",
+    "settings.geminiApiKey": "Gemini API key",
+    "settings.geminiKeyHint": "The key is encrypted and saved only on the server.",
+    "settings.geminiKeyConfigured": "A secure key is already saved. Enter a new key to replace it.",
+    "settings.geminiKeyPlaceholder": "Enter your Gemini API key here...",
+    "settings.geminiShowKey": "Show key",
+    "settings.geminiHideKey": "Hide key",
+    "settings.geminiModel": "Gemini model",
+    "settings.geminiModelHint": "Choose the model used for AI tasks.",
+    "settings.geminiModel.gemini-3.6-flash": "gemini-3.6-flash (Recommended — stable and fast for production)",
+    "settings.geminiModel.gemini-3.5-flash": "gemini-3.5-flash (Advanced performance for complex science tasks)",
+    "settings.geminiModel.gemini-2.5-pro": "gemini-2.5-pro (Deep analysis and advanced reasoning)",
+    "settings.geminiTest": "Test connection",
+    "settings.geminiTesting": "Testing connection...",
+    "settings.geminiVerified": "Verified",
+    "settings.geminiTestSuccess": "Verified successfully! The connection is working perfectly.",
+    "settings.geminiActive": "AI is connected and ready",
+    "settings.geminiActiveModel": "Active model",
+    "settings.geminiPending": "AI settings need a connection check",
+    "settings.geminiPendingHint": "Enter the key, then test the connection to enable the assistant.",
+    "settings.geminiTestFailed": "Connection failed: check that the key is correct.",
+    "settings.geminiKeyRequired": "Enter a Gemini API key first.",
+    "settings.geminiVerifyBeforeSave": "Test the connection successfully before saving these settings.",
+    "settings.geminiSave": "Save settings",
+    "settings.geminiSaving": "Saving settings...",
+    "settings.geminiSaved": "Gemini settings saved successfully.",
+    "settings.geminiLoadFailed": "Could not load Gemini settings.",
+    "settings.geminiSecurityHint": "A saved Gemini key is never shown in the browser.",
     "settings.safeDefaults": "Safe defaults preserve current application behavior.",
     "settings.save": "Save changes",
     "settings.saving": "Saving...",
@@ -4515,10 +4575,10 @@ function LandingPage({ language, t }: { language: Language; t: Translator }) {
               </div>
               <div className="landing-hero-note"><span aria-hidden="true">✦</span><span>{t("landing.gradesSubtitle")}</span></div>
             </div>
-            <div className="landing-hero-art" aria-hidden="true">
+            <div className="landing-hero-art" role="group" aria-label={isArabic ? "المساعد الذكي لمنصة العلوم" : "Science platform AI assistant"}>
               <div className="landing-art-orbit landing-art-orbit-one" />
               <div className="landing-art-orbit landing-art-orbit-two" />
-              <div className="landing-art-core"><span>ع</span></div>
+              <PublicChatWidget apiBaseUrl={API_BASE_URL} />
               <div className="landing-art-profile">
                 <img src="/assets/teacher-profile.png" alt="" />
                 <span><b>{t("landing.artSubject")}</b><small>{t("landing.artCaption")}</small></span>
@@ -12140,7 +12200,15 @@ function HomeworkPanel({ studentCode, t, language, refreshKey = 0 }: { studentCo
   if (error) return <div><p className="form-error">{t("homework.loadError")}</p><button className="secondary-button" type="button" onClick={loadHomework}>{t("homework.retry")}</button></div>;
   if (!homeworks.length) return <p className="empty-state">{t("homework.noAvailable")}</p>;
   const statusLabel = (status: string) => { const key = `homework.status.${status}` as TranslationKey; return key in translations.ar ? t(key) : status; };
-  return <div className="homework-list">{homeworks.map((homework, index) => <article className="homework-card" key={homework.id || index}><h3>{String(homework.title || "")}</h3>{homework.description ? <p>{String(homework.description)}</p> : null}<div className="homework-meta"><span>{statusLabel(String(homework.status || "new"))}</span>{homework.due_date ? <span>{t("homework.dueDate")}: {formatDateTime(String(homework.due_date), language, "—")}</span> : null}</div>{homework.attachment_url ? <a href={String(homework.attachment_url)} target="_blank" rel="noreferrer">{t("homework.attachment")}</a> : null}</article>)}</div>;
+  return <div className="homework-list">{homeworks.map((homework, index) => {
+    const status = String(homework.status || "new");
+    return <article className="homework-card student-homework-card" key={homework.id || index}>
+      <div className="student-card-header-row"><h3>{String(homework.title || "")}</h3><span className={`student-homework-status is-${status}`}>{statusLabel(status)}</span></div>
+      {homework.description ? <p>{String(homework.description)}</p> : null}
+      <div className="homework-meta">{homework.due_date ? <span>{t("homework.dueDate")}: {formatDateTime(String(homework.due_date), language, "—")}</span> : null}{homework.score != null ? <strong>{homework.score}</strong> : null}</div>
+      {homework.attachment_url ? <a className="student-card-action-link" href={String(homework.attachment_url)} target="_blank" rel="noreferrer">{t("homework.attachment")}</a> : null}
+    </article>;
+  })}</div>;
 }
 
 function StudentNotesPanel({ studentCode, language, t, onUnreadCountChange, refreshKey = 0 }: { studentCode: string; language: Language; t: Translator; onUnreadCountChange: (count: number) => void; refreshKey?: number }) {
@@ -12177,7 +12245,15 @@ function StudentNotesPanel({ studentCode, language, t, onUnreadCountChange, refr
   if (error) return <div><p className="form-error">{t("notes.loadError")}</p><button className="secondary-button compact-button" type="button" onClick={loadNotes}>{t("notes.refresh")}</button></div>;
   return <section className="student-notes-panel">
     <div className="notes-toolbar"><h3>{t("notes.title")}</h3><button className="secondary-button compact-button" type="button" onClick={loadNotes}>{t("notes.refresh")}</button></div>
-    {notes.length ? <div className="student-notes-list">{notes.map((note, index) => <article className={`student-note-card ${note.is_read ? "read" : "unread"}`} key={note.id || index}><p>{String(note.text || note.body || "")}</p><small className="student-note-meta">{note.creator_name || "Staff"} · {formatDateTime(note.created_at, language, "—")} · {note.is_read ? t("notes.read") : t("notes.unread")}</small></article>)}</div> : <p className="empty-state">{t("notes.noAvailable")}</p>}
+    {notes.length ? <div className="student-notes-list">{notes.map((note, index) => {
+      const attachmentUrl = note.attachment_url || note.material_url || note.file_url;
+      return <article className={`student-note-card ${note.is_read ? "read" : "unread"}`} key={note.id || index}>
+        <div className="student-card-header-row"><strong>{String(note.title || note.subject || t("notes.title"))}</strong><span className={`student-note-read-status ${note.is_read ? "is-read" : "is-unread"}`}>{note.is_read ? t("notes.read") : t("notes.unread")}</span></div>
+        <p>{String(note.text || note.body || "")}</p>
+        <small className="student-note-meta">{note.creator_name || "Staff"} · {formatDateTime(note.created_at, language, "—")}{note.file_size ? ` · ${note.file_size}` : ""}</small>
+        {attachmentUrl ? <a className="student-card-action-link" href={String(attachmentUrl)} target="_blank" rel="noreferrer">{t("homework.attachment")}</a> : null}
+      </article>;
+    })}</div> : <p className="empty-state">{t("notes.noAvailable")}</p>}
   </section>;
 }
 
@@ -12481,6 +12557,7 @@ function StudentDashboard({
             </p>
           </div>
           <div className="student-dashboard-header-actions">
+            <StudentHeaderAssistant studentName={student.full_name} grade={student.grade_level || student.grade} apiBaseUrl={API_BASE_URL} />
             <button className="digital-card-launch-button" type="button" onClick={() => setDigitalCardOpen(true)}>
               <DigitalCardIcon />
               <span>{t("dashboard.digitalCard")}</span>
@@ -12802,6 +12879,7 @@ function StudentFeesPanel({
   const unpaidCountLabel = unpaidMonths.length === 1
     ? t("studentFees.monthCountSingular", { count: String(unpaidMonths.length) })
     : t("studentFees.monthCountPlural", { count: String(unpaidMonths.length) });
+  const payments = Array.isArray(data.payments) ? data.payments : [];
   return <div className="student-fees-panel">
     <div className="fees-summary-grid">
       <Metric label={t("studentFees.currentCycleFee")} value={amount(summary.current_cycle_fee)} />
@@ -12818,8 +12896,65 @@ function StudentFeesPanel({
     <div className="student-fees-billing-meta"><span><b>{t("studentFees.billingStartMonth")}</b>{formatBillingMonth(summary.billing_start_month, language)}</span><span><b>{t("studentFees.billingStage")}</b><strong className={billingStageClass(summary.billing_stage)}>{billingStageLabel(summary.billing_stage, t)}</strong></span></div>
     <p className="student-fees-status"><span>{t("studentFees.status")}</span><strong className={statusClass}>{statusText}</strong></p>
     <h3>{t("studentFees.history")}</h3>
-    <div className="table-wrap"><table><thead><tr><th>{t("studentFees.date")}</th><th>{t("studentFees.time")}</th><th>{t("studentFees.amount")}</th><th>{t("studentFees.paidBy")}</th><th>{t("studentFees.coveredCycle")}</th><th>{t("studentFees.notes")}</th></tr></thead><tbody>{(data.payments || []).map((payment: any) => { const paidAt = payment.paid_at || payment.payment_date; const date = paidAt ? new Date(paidAt) : null; const isReversed = Boolean(payment.is_reversed); return <tr key={payment.id}><td>{date ? date.toLocaleDateString(language === "ar" ? "ar-EG" : "en-US") : "—"}{payment.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{date ? date.toLocaleTimeString(language === "ar" ? "ar-EG" : "en-US", { hour: "2-digit", minute: "2-digit" }) : "—"}</td><td><span className={isReversed ? "student-fee-payment-reversed" : undefined}>{amount(payment.amount)}</span>{isReversed ? <span className="student-fee-reversed-badge" role="status">{t("studentFees.reversedPayment")}</span> : null}</td><td>{payment.paid_by || "—"}</td><td>{coveredMonths(payment)}</td><td>{payment.notes || "—"}</td></tr>; })}{!data.payments?.length ? <EmptyRow columns={6} t={t} /> : null}</tbody></table></div>
+    <PaymentHistory payments={payments} amount={amount} coveredMonths={coveredMonths} language={language} t={t} />
   </div>;
+}
+
+function PaymentHistory({
+  payments,
+  amount,
+  coveredMonths,
+  language,
+  t
+}: {
+  payments: Array<Record<string, any>>;
+  amount: (value: unknown) => string;
+  coveredMonths: (payment: any) => string;
+  language: Language;
+  t: Translator;
+}) {
+  const locale = language === "ar" ? "ar-EG" : "en-US";
+  const paymentDate = (payment: Record<string, any>) => {
+    const value = payment.paid_at || payment.payment_date;
+    return value ? new Date(value) : null;
+  };
+  const formatTimestamp = (date: Date | null) => date
+    ? `${date.toLocaleDateString(locale)} · ${date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}`
+    : "—";
+
+  return <>
+    <div className="student-payment-history-desktop table-wrap">
+      <table>
+        <thead><tr><th>{t("studentFees.date")}</th><th>{t("studentFees.time")}</th><th>{t("studentFees.amount")}</th><th>{t("studentFees.paidBy")}</th><th>{t("studentFees.coveredCycle")}</th><th>{t("studentFees.notes")}</th></tr></thead>
+        <tbody>{payments.map((payment) => {
+          const date = paymentDate(payment);
+          const isReversed = Boolean(payment.is_reversed);
+          return <tr key={payment.id}><td>{date ? date.toLocaleDateString(locale) : "—"}{payment.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{date ? date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" }) : "—"}</td><td><span className={isReversed ? "student-fee-payment-reversed" : undefined}>{amount(payment.amount)}</span>{isReversed ? <span className="student-fee-reversed-badge" role="status">{t("studentFees.reversedPayment")}</span> : null}</td><td>{payment.paid_by || "—"}</td><td>{coveredMonths(payment)}</td><td>{payment.notes || "—"}</td></tr>;
+        })}{!payments.length ? <EmptyRow columns={6} t={t} /> : null}</tbody>
+      </table>
+    </div>
+    <div className="student-payment-history-mobile" aria-label={t("studentFees.history")}>
+      {payments.length ? payments.map((payment) => {
+        const isReversed = Boolean(payment.is_reversed);
+        const cardStatus = isReversed ? t("studentFees.reversedPayment") : t("studentFees.paidStatus");
+        const date = paymentDate(payment);
+        return <article className="student-payment-card" key={payment.id}>
+          <div className="student-payment-card-header">
+            <strong>{coveredMonths(payment)}</strong>
+            <span className={`student-payment-card-status ${isReversed ? "is-reversed" : "is-paid"}`}>{cardStatus}</span>
+          </div>
+          <div className="student-payment-card-amount">
+            <strong className={isReversed ? "student-fee-payment-reversed" : undefined}>{amount(payment.amount)}</strong>
+            {payment.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}
+          </div>
+          <div className="student-payment-card-footer">
+            <span><b>{t("studentFees.paidBy")}</b>{payment.paid_by || "—"}</span>
+            <span><b>{t("studentFees.time")}</b><time dateTime={date?.toISOString()}>{formatTimestamp(date)}</time></span>
+          </div>
+        </article>;
+      }) : <p className="empty-state">{t("empty.noData")}</p>}
+    </div>
+  </>;
 }
 
 function BarcodePreview({ value, displayValue = true }: { value: string; displayValue?: boolean }) {
@@ -13041,7 +13176,12 @@ function StudentInboxControls({ studentCode, language, t, onUnreadCountChange, r
     <div className="inbox-layout">
       <div className="inbox-list">
         <form onSubmit={sendNew} className="inbox-compose"><h3>{t("inbox.newMessage")}</h3><input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={t("inbox.subject")} /><textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder={t("inbox.message")} rows={3}/><button className={`primary-button ${sendState === "sent" ? "success-button" : ""}`} type="submit" disabled={sendState === "sending"}>{sendState === "sending" ? t("inbox.sending") : sendState === "sent" ? t("inbox.sentStatus") : t("inbox.send")}</button></form>
-        {threads.length ? threads.map((thread) => <button className={`inbox-thread ${selected?.id === thread.id ? "active" : ""}`} key={thread.id} type="button" onClick={() => openThread(thread)}><strong>{thread.subject}</strong><span>{thread.last_message}</span><em>{Number(thread.unread_count) > 0 ? t("inbox.unread") : t("inbox.read")}</em>{Number(thread.unread_count) > 0 ? <b>{thread.unread_count}</b> : null}</button>) : <p className="empty-state">{t("inbox.noMessages")}</p>}
+        {threads.length ? threads.map((thread) => <button className={`inbox-thread student-inbox-thread ${selected?.id === thread.id ? "active" : ""}`} key={thread.id} type="button" onClick={() => openThread(thread)}>
+          <span className="student-inbox-thread-header"><strong>{thread.sender_name || thread.creator_name || t("inbox.senderTeacher")}</strong><time dateTime={typeof thread.updated_at === "string" ? thread.updated_at : undefined}>{formatInboxTimestamp(thread.updated_at || thread.created_at, language)}</time></span>
+          <strong className="student-inbox-thread-subject">{thread.subject}</strong>
+          <span className="student-inbox-thread-preview">{thread.last_message || "—"}</span>
+          <em>{Number(thread.unread_count) > 0 ? t("inbox.unread") : t("inbox.read")}</em>{Number(thread.unread_count) > 0 ? <b>{thread.unread_count}</b> : null}
+        </button>) : <p className="empty-state">{t("inbox.noMessages")}</p>}
       </div>
       <div className="inbox-conversation">{selected ? <>
         <h3>{selected.subject}</h3>
@@ -13087,31 +13227,25 @@ function AttendanceTable({
   t: Translator;
 }) {
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>{t("table.class")}</th>
-            <th>{t("table.date")}</th>
-            <th>{t("table.checkinTime")}</th>
-            <th>{t("table.status")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.session_id || row.id}>
-              <td>
-                {displayValue(row.subject, language)} - {displayValue(row.group_name, language)}
-              </td>
-              <td>{formatDateTime(row.session_date, language, t("dashboard.notCheckedIn"))}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td>
-              <td>{row.cancelled_at ? `${t("attendance.cancelledAt")}: ${formatDateTime(row.cancelled_at, language, "—")}` : formatDateTime(row.checkin_time, language, t("dashboard.notCheckedIn"))}</td>
-              <td><AttendanceStatusBadge status={row.status} t={t} /></td>
-            </tr>
-          ))}
-          {!rows.length ? <EmptyRow columns={4} t={t} /> : null}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="student-attendance-desktop table-wrap">
+        <table>
+          <thead><tr><th>{t("table.class")}</th><th>{t("table.date")}</th><th>{t("table.checkinTime")}</th><th>{t("table.status")}</th></tr></thead>
+          <tbody>{rows.map((row) => <tr key={row.session_id || row.id}>
+            <td>{displayValue(row.subject, language)} - {displayValue(row.group_name, language)}</td>
+            <td>{formatDateTime(row.session_date, language, t("dashboard.notCheckedIn"))}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td>
+            <td>{row.cancelled_at ? `${t("attendance.cancelledAt")}: ${formatDateTime(row.cancelled_at, language, "—")}` : formatDateTime(row.checkin_time, language, t("dashboard.notCheckedIn"))}</td>
+            <td><AttendanceStatusBadge status={row.status} t={t} /></td>
+          </tr>)}{!rows.length ? <EmptyRow columns={4} t={t} /> : null}</tbody>
+        </table>
+      </div>
+      <div className="student-attendance-mobile" aria-label={t("dashboard.tabs.attendance")}>
+        {rows.length ? rows.map((row) => <article className="student-record-card" key={row.session_id || row.id}>
+          <div className="student-record-card-header"><div><strong>{displayValue(row.subject, language)}</strong><span>{displayValue(row.group_name, language)}</span></div><AttendanceStatusBadge status={row.status} t={t} /></div>
+          <div className="student-record-card-footer"><span>{formatDateTime(row.session_date, language, t("dashboard.notCheckedIn"))}</span><span>{row.cancelled_at ? `${t("attendance.cancelledAt")}: ${formatDateTime(row.cancelled_at, language, "—")}` : formatDateTime(row.checkin_time, language, t("dashboard.notCheckedIn"))}</span>{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</div>
+        </article>) : <p className="empty-state">{t("empty.noData")}</p>}
+      </div>
+    </>
   );
 }
 
@@ -13125,34 +13259,27 @@ function ExamsTable({
   t: Translator;
 }) {
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>{t("table.exam")}</th>
-            <th>{t("table.date")}</th>
-            <th>{t("table.score")}</th>
-            <th>{t("table.assessment")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id}>
-              <td>{displayValue(row.title, language)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td>
-              <td>{formatDateTime(row.exam_date, language, t("dashboard.notCheckedIn"))}</td>
-              <td>
-                <span className={`score-value score-${scoreEvaluation(row.score, row.max_score, t)?.tone || ""}`}>
-                  {row.score}/{row.max_score}
-                </span>
-                {scoreEvaluation(row.score, row.max_score, t) ? <small className="score-evaluation-label">{scoreEvaluation(row.score, row.max_score, t)?.label}</small> : null}
-              </td>
-              <td>{row.assessment || row.note ? displayValue(row.assessment || row.note, language) : "-"}</td>
-            </tr>
-          ))}
-          {!rows.length ? <EmptyRow columns={4} t={t} /> : null}
-        </tbody>
-      </table>
-    </div>
+    <>
+      <div className="student-exams-desktop table-wrap">
+        <table>
+          <thead><tr><th>{t("table.exam")}</th><th>{t("table.date")}</th><th>{t("table.score")}</th><th>{t("table.assessment")}</th></tr></thead>
+          <tbody>{rows.map((row) => {
+            const evaluation = scoreEvaluation(row.score, row.max_score, t);
+            return <tr key={row.id}><td>{displayValue(row.title, language)}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{formatDateTime(row.exam_date, language, t("dashboard.notCheckedIn"))}</td><td><span className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</span>{evaluation ? <small className="score-evaluation-label">{evaluation.label}</small> : null}</td><td>{row.assessment || row.note ? displayValue(row.assessment || row.note, language) : "-"}</td></tr>;
+          })}{!rows.length ? <EmptyRow columns={4} t={t} /> : null}</tbody>
+        </table>
+      </div>
+      <div className="student-exams-mobile" aria-label={t("dashboard.tabs.exams")}>
+        {rows.length ? rows.map((row) => {
+          const evaluation = scoreEvaluation(row.score, row.max_score, t);
+          return <article className="student-record-card student-exam-card" key={row.id}>
+            <div className="student-record-card-header"><strong>{displayValue(row.title, language)}</strong><div className="student-exam-score"><strong className={`score-value score-${evaluation?.tone || ""}`}>{row.score}/{row.max_score}</strong>{evaluation ? <span className={`student-exam-evaluation score-${evaluation.tone}`}>{evaluation.label}</span> : null}</div></div>
+            {row.assessment || row.note ? <p>{displayValue(row.assessment || row.note, language)}</p> : null}
+            <div className="student-record-card-footer"><time dateTime={typeof row.exam_date === "string" ? row.exam_date : undefined}>{formatDateTime(row.exam_date, language, t("dashboard.notCheckedIn"))}</time>{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</div>
+          </article>;
+        }) : <p className="empty-state">{t("empty.noData")}</p>}
+      </div>
+    </>
   );
 }
 
@@ -13166,31 +13293,43 @@ function ScheduleTable({
   t: Translator;
 }) {
   return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>{t("table.day")}</th>
-            <th>{t("table.subject")}</th>
-            <th>{t("table.group")}</th>
-            <th>{t("table.time")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={`${row.day_of_week}-${index}`}>
-              <td>{t(`days.${Number(row.day_of_week)}` as TranslationKey)}</td>
-              <td>{displayValue(row.subject, language)}</td>
-              <td>{displayValue(row.group_name, language)}</td>
-              <td>
-                {String(row.start_time).slice(0, 5)} - {String(row.end_time).slice(0, 5)}
-              </td>
+    <>
+      <div className="student-schedule-desktop table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>{t("table.day")}</th>
+              <th>{t("table.subject")}</th>
+              <th>{t("table.group")}</th>
+              <th>{t("table.time")}</th>
             </tr>
-          ))}
-          {!rows.length ? <EmptyRow columns={4} t={t} /> : null}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.day_of_week}-${index}`}>
+                <td>{t(`days.${Number(row.day_of_week)}` as TranslationKey)}</td>
+                <td>{displayValue(row.subject, language)}</td>
+                <td>{displayValue(row.group_name, language)}</td>
+                <td>{String(row.start_time).slice(0, 5)} - {String(row.end_time).slice(0, 5)}</td>
+              </tr>
+            ))}
+            {!rows.length ? <EmptyRow columns={4} t={t} /> : null}
+          </tbody>
+        </table>
+      </div>
+      <div className="student-schedule-mobile" aria-label={t("dashboard.tabs.schedule")}>
+        {rows.length ? rows.map((row, index) => <article className="student-schedule-card" key={`${row.day_of_week}-${index}`}>
+          <div className="student-schedule-card-identity">
+            <strong>{displayValue(row.subject, language)}</strong>
+            <span>{displayValue(row.group_name, language)}</span>
+          </div>
+          <div className="student-schedule-card-time">
+            <span>{t(`days.${Number(row.day_of_week)}` as TranslationKey)}</span>
+            <time dir="ltr">{String(row.start_time).slice(0, 5)} - {String(row.end_time).slice(0, 5)}</time>
+          </div>
+        </article>) : <p className="empty-state">{t("empty.noData")}</p>}
+      </div>
+    </>
   );
 }
 
