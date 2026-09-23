@@ -220,7 +220,7 @@ type AdminStudent = {
   purge_after?: string | null;
 };
 
-type SiteSlug = "about-teacher" | "about-center" | "contact";
+type SiteSlug = "about-teacher" | "contact";
 type AdminTab = "overview" | "add-user" | "users" | "site-content" | "students" | "groups" | "attendance" | "scanner" | "fees" | "reports" | "exams" | "inbox" | "audit-logs" | "whatsapp" | "settings";
 
 const adminTabIds: AdminTab[] = ["overview", "add-user", "users", "site-content", "students", "groups", "attendance", "scanner", "fees", "reports", "exams", "inbox", "audit-logs", "whatsapp", "settings"];
@@ -276,7 +276,6 @@ const translations = {
     "nav.studentLogin": "دخول الطالب",
     "nav.teacherLogin": "دخول المستر",
     "nav.aboutTeacher": "عن المستر",
-    "nav.aboutCenter": "عن السنتر",
     "nav.contact": "التواصل",
     "nav.home": "الرئيسية",
     "nav.exams": "الامتحانات",
@@ -1967,7 +1966,6 @@ const translations = {
     "nav.studentLogin": "Student Login",
     "nav.teacherLogin": "Teacher Login",
     "nav.aboutTeacher": "About Teacher",
-    "nav.aboutCenter": "About Center",
     "nav.contact": "Contact",
     "nav.home": "Home",
     "nav.exams": "Exams",
@@ -3791,25 +3789,6 @@ const fallbackSitePages: Record<SiteSlug, SitePage> = {
       stats: ["1200+ students taught", "92% score improvement rate", "Regular practice exams"]
     }
   },
-  "about-center": {
-    slug: "about-center",
-    title_ar: "عن السنتر",
-    title_en: "About Center",
-    subtitle_ar: "بيئة تعليمية مجهزة لحصص العلوم والمتابعة المنتظمة.",
-    subtitle_en: "A focused learning space for Science classes and regular follow-up.",
-    content_ar: {
-      intro: "السنتر يوفر نظام حضور واضح، مجموعات منظمة، ومتابعة مستمرة للطلاب.",
-      address: "عنوان السنتر - يتم تحديثه لاحقا",
-      groups: ["مجموعة السبت 6 مساء", "مجموعات إضافية حسب الجدول"],
-      features: ["منهج محدث", "تدريب امتحانات", "متابعة فردية", "شرح مسجل"]
-    },
-    content_en: {
-      intro: "The center provides clear attendance tracking, organized groups, and continuous student follow-up.",
-      address: "Center address - to be updated",
-      groups: ["Saturday 6 PM Group", "Additional groups based on schedule"],
-      features: ["Updated curriculum", "Exam practice", "Individual follow-up", "Recorded explanations"]
-    }
-  },
   contact: {
     slug: "contact",
     title_ar: "التواصل",
@@ -4112,7 +4091,7 @@ function WhatsAppNotSentBadge({ t }: { t: Translator }) {
 
 function getCurrentSiteSlug(path: string): SiteSlug | null {
   const slug = path.replace(/^\//, "");
-  return slug === "about-teacher" || slug === "about-center" || slug === "contact"
+  return slug === "about-teacher" || slug === "contact"
     ? slug
     : null;
 }
@@ -5370,11 +5349,7 @@ function PublicContentPage({
           <section className={`content-hero ${slug === "contact" ? "contact-hero" : ""}`}>
             {slug !== "contact" ? (
               <p className="eyebrow">
-                {t(
-                  `nav.${
-                    slug === "about-center" ? "aboutCenter" : "contact"
-                  }` as TranslationKey
-                )}
+                {t("nav.contact")}
               </p>
             ) : null}
             <h1>{view.title}</h1>
@@ -5408,35 +5383,6 @@ function PublicContentPage({
                 <span>{t("about.teacher.statResultsDescription")}</span>
               </article>
             </div>
-          </section>
-        ) : null}
-
-        {slug === "about-center" ? (
-          <section className="content-grid">
-            <article className="content-panel wide">
-              <span>{t("nav.aboutCenter")}</span>
-              <p>{view.content.intro}</p>
-            </article>
-            <article className="content-panel">
-              <span>{t("public.address")}</span>
-              <strong>{view.content.address}</strong>
-            </article>
-            <article className="content-panel">
-              <span>{t("public.availableGroups")}</span>
-              <ul>
-                {(view.content.groups || []).map((item: string) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-            <article className="content-panel wide">
-              <span>{t("public.features")}</span>
-              <div className="pill-row">
-                {(view.content.features || []).map((item: string) => (
-                  <span key={item}>{item}</span>
-                ))}
-              </div>
-            </article>
           </section>
         ) : null}
 
@@ -11314,7 +11260,6 @@ function SiteContentEditor({
   const pageOptions: Array<{ slug: "home" | SiteSlug; label: string }> = [
     { slug: "home", label: t("nav.home") },
     { slug: "about-teacher", label: t("nav.aboutTeacher") },
-    { slug: "about-center", label: t("nav.aboutCenter") },
     { slug: "contact", label: t("nav.contact") }
   ];
   const [page, setPage] = useState<"home" | SiteSlug>("home");
@@ -12178,7 +12123,6 @@ function Shell({
 function getActiveNavKey() {
   if (window.location.hash === "#student-login") return "student-login";
   if (window.location.pathname === "/about-teacher") return "about-teacher";
-  if (window.location.pathname === "/about-center") return "center";
   if (window.location.pathname === "/contact") return "contact";
   if (window.location.pathname.startsWith("/teacher")) return "teacher-login";
   if (window.location.pathname.startsWith("/student")) return "student-login";
@@ -12557,7 +12501,7 @@ function StudentDashboard({
             </p>
           </div>
           <div className="student-dashboard-header-actions">
-            <StudentHeaderAssistant studentName={student.full_name} grade={student.grade_level || student.grade} apiBaseUrl={API_BASE_URL} />
+            <StudentHeaderAssistant studentName={student.full_name} grade={student.grade_level || student.grade} studentToken={data.student_token} apiBaseUrl={API_BASE_URL} />
             <button className="digital-card-launch-button" type="button" onClick={() => setDigitalCardOpen(true)}>
               <DigitalCardIcon />
               <span>{t("dashboard.digitalCard")}</span>

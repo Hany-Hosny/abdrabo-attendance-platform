@@ -1,5 +1,5 @@
 export type PublicRouteKind = "landing" | "login" | "content";
-export type PublicPageSlug = "about-teacher" | "about-center" | "contact";
+export type PublicPageSlug = "about-teacher" | "contact";
 
 export interface PublicRoute {
   path: string;
@@ -12,7 +12,6 @@ export const publicRoutes: readonly PublicRoute[] = [
   { path: "/login", kind: "login" },
   { path: "/student/login", kind: "login" },
   { path: "/about-teacher", kind: "content", slug: "about-teacher" },
-  { path: "/about-center", kind: "content", slug: "about-center" },
   { path: "/contact", kind: "content", slug: "contact" }
 ];
 

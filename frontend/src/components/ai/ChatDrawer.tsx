@@ -24,6 +24,7 @@ type ChatDrawerProps = {
   onClose: () => void;
   sessionType: SessionType;
   studentContext?: StudentContext;
+  authToken?: string;
   apiBaseUrl?: string;
 };
 
@@ -53,6 +54,7 @@ export function ChatDrawer({
   onClose,
   sessionType,
   studentContext,
+  authToken,
   apiBaseUrl = "/api",
 }: ChatDrawerProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -140,6 +142,9 @@ export function ChatDrawer({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(sessionType === "student" && authToken
+            ? { Authorization: `Bearer ${authToken}` }
+            : {}),
         },
         body: JSON.stringify({
           messages: nextMessages,

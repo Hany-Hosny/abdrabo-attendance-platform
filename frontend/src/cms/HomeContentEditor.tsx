@@ -13,7 +13,7 @@ import { cloneHomeContent, fetchHomeContent, normalizeLocalizedHomeContent } fro
 import { useEscapeKey } from "../utils/useEscapeKey";
 
 type CmsTranslator = (key: string, values?: Record<string, string>) => string;
-type SitePageSlug = "home" | "about-teacher" | "about-center" | "contact";
+type SitePageSlug = "home" | "about-teacher" | "contact";
 type HomePageOption = { slug: SitePageSlug; label: string };
 type AccordionKey = "hero" | "grades" | "features" | "stats";
 

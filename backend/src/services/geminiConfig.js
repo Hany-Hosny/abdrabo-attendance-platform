@@ -7,7 +7,7 @@ const GEMINI_MODEL_SETTING = "gemini_model";
 // Keep only stable, currently-supported production model IDs. Retired model
 // values fall back to the default in getGeminiConfig until an admin saves a new selection.
 export const GEMINI_MODELS = Object.freeze(["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-pro"]);
-const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
 
 function executeWith(db) {
   return typeof db === "function" ? db : db.query.bind(db);

@@ -1346,6 +1346,7 @@ export async function migrate() {
   `);
   console.log("Admin user ensured");
 
+  const OFFICIAL_PUBLIC_WHATSAPP = "201010971994";
   const sitePages = [
     {
       slug: "about-teacher",
@@ -1372,38 +1373,19 @@ export async function migrate() {
       }
     },
     {
-      slug: "about-center",
-      title_ar: "عن السنتر",
-      title_en: "About Center",
-      subtitle_ar: "بيئة تعليمية مجهزة لحصص العلوم والمتابعة المنتظمة.",
-      subtitle_en: "A focused learning space for Science classes and regular follow-up.",
-      content_ar: {
-        intro: "السنتر يوفر نظام حضور واضح، مجموعات منظمة، ومتابعة مستمرة للطلاب.",
-        address: "عنوان السنتر - يتم تحديثه لاحقا",
-        groups: ["مجموعة السبت 6 مساء", "مجموعات إضافية حسب الجدول"],
-        features: ["منهج محدث", "تدريب امتحانات", "متابعة فردية", "شرح مسجل"]
-      },
-      content_en: {
-        intro: "The center provides clear attendance tracking, organized groups, and continuous student follow-up.",
-        address: "Center address - to be updated",
-        groups: ["Saturday 6 PM Group", "Additional groups based on schedule"],
-        features: ["Updated curriculum", "Exam practice", "Individual follow-up", "Recorded explanations"]
-      }
-    },
-    {
       slug: "contact",
       title_ar: "التواصل",
       title_en: "Contact",
       subtitle_ar: "للاستفسار عن المجموعات والحضور ودرجات الطلاب.",
       subtitle_en: "For questions about groups, attendance, and student scores.",
       content_ar: {
-        whatsapp: "01000000000",
+        whatsapp: OFFICIAL_PUBLIC_WHATSAPP,
         facebook: "facebook.com/abdrabo.science",
         youtube: "youtube.com/@abdrabo-science",
         formIntro: "اترك بياناتك وسيتم التواصل معك."
       },
       content_en: {
-        whatsapp: "01000000000",
+        whatsapp: OFFICIAL_PUBLIC_WHATSAPP,
         facebook: "facebook.com/abdrabo.science",
         youtube: "youtube.com/@abdrabo-science",
         formIntro: "Leave your details and we will contact you."
@@ -1437,6 +1419,17 @@ export async function migrate() {
       ]
     );
   }
+
+  await query("DELETE FROM site_pages WHERE slug = $1", ["about-" + "center"]);
+
+  await query(
+    `UPDATE site_pages
+     SET content_ar = jsonb_set(content_ar, '{whatsapp}', to_jsonb($1::text), TRUE),
+         content_en = jsonb_set(content_en, '{whatsapp}', to_jsonb($1::text), TRUE),
+         updated_at = NOW()
+     WHERE slug = 'contact' AND content_ar->>'whatsapp' = '01000000000'`,
+    [OFFICIAL_PUBLIC_WHATSAPP]
+  );
 
   await query(
     `INSERT INTO site_content (key, content, updated_at)
