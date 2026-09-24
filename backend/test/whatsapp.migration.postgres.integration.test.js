@@ -41,7 +41,7 @@ integrationTest("gender template migration is repeatable and preserves neutral l
         COUNT(*) FILTER (WHERE slot_key IS NULL AND is_fallback = FALSE)::int AS unassigned_count
       FROM whatsapp_templates
     `);
-    assert.deepEqual(firstCounts.rows[0], { regular_count: 40, fallback_count: 5, unassigned_count: 1 });
+    assert.deepEqual(firstCounts.rows[0], { regular_count: 48, fallback_count: 6, unassigned_count: 1 });
     const catalogueByCategory = await db.query(`
       SELECT category,
         COUNT(*) FILTER (WHERE is_fallback = FALSE AND slot_key IS NOT NULL)::int AS regular_count,
@@ -63,6 +63,7 @@ integrationTest("gender template migration is repeatable and preserves neutral l
       { category: "absence", regular_count: 8, fallback_count: 1, slots: [1, 2, 3, 4, 1, 2, 3, 4] },
       { category: "advance_payment", regular_count: 8, fallback_count: 1, slots: [1, 2, 3, 4, 1, 2, 3, 4] },
       { category: "attendance", regular_count: 8, fallback_count: 1, slots: [1, 2, 3, 4, 1, 2, 3, 4] },
+      { category: "cancellation", regular_count: 8, fallback_count: 1, slots: [1, 2, 3, 4, 1, 2, 3, 4] },
       { category: "grade", regular_count: 8, fallback_count: 1, slots: [1, 2, 3, 4, 1, 2, 3, 4] },
       { category: "receipt", regular_count: 8, fallback_count: 1, slots: [1, 2, 3, 4, 1, 2, 3, 4] }
     ]);
@@ -82,12 +83,13 @@ integrationTest("gender template migration is repeatable and preserves neutral l
         COUNT(*) FILTER (WHERE audience = 'male' AND message_body LIKE '%الطالبة%')::int AS female_in_male_count
       FROM whatsapp_templates
     `);
-    assert.deepEqual(secondCounts.rows[0], { regular_count: 40, fallback_count: 5, unassigned_count: 3, female_in_male_count: 0 });
+    assert.deepEqual(secondCounts.rows[0], { regular_count: 48, fallback_count: 6, unassigned_count: 3, female_in_male_count: 0 });
 
     const duplicateCheck = await db.query(`
-      SELECT category, message_body, COUNT(*)::int AS count
+      SELECT category, slot_key, COUNT(*)::int AS count
       FROM whatsapp_templates
-      GROUP BY category, message_body
+      WHERE slot_key IS NOT NULL
+      GROUP BY category, slot_key
       HAVING COUNT(*) > 1
     `);
     assert.equal(duplicateCheck.rowCount, 0);
@@ -98,7 +100,7 @@ integrationTest("gender template migration is repeatable and preserves neutral l
     `);
     assert.deepEqual(classifier.rows[0], { female_matches_male: false, male_matches_male: true });
     const rotations = await db.query("SELECT COUNT(*)::int AS count FROM whatsapp_template_rotation_state");
-    assert.equal(rotations.rows[0].count, 10);
+    assert.equal(rotations.rows[0].count, 12);
   } finally {
     await db?.end().catch(() => undefined);
     await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`).catch(() => undefined);

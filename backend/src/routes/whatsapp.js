@@ -15,9 +15,13 @@ import {
   enqueueGradeNotification,
   retryWhatsAppNotificationJob,
   updateWhatsAppSettings,
+  updateAttendanceNotificationsEnabled,
   resolveWhatsAppTemplate,
-  validateWhatsAppTemplate
+  validateWhatsAppTemplate,
+  enqueueCustomWhatsAppMessage,
+  searchCustomMessageStudents
 } from "../services/whatsapp.js";
+import { readRequiredPaymentIdempotencyKey } from "../utils/paymentIdempotency.js";
 import { WHATSAPP_TEMPLATE_AUDIENCES, WHATSAPP_TEMPLATE_CATEGORIES } from "../services/whatsappTemplateCatalog.js";
 
 export const whatsappRouter = express.Router();
@@ -30,6 +34,8 @@ const TEMPLATE_CATEGORIES = new Set(WHATSAPP_TEMPLATE_CATEGORIES);
 const batchExamSchema = z.object({
   resultIds: z.array(z.coerce.number().int().positive()).min(1).max(500)
 });
+
+const customMessageSchema = z.object({ studentId: z.coerce.number().int().positive(), message: z.string().max(2000) });
 
 function maskPhoneNumber(value) {
   const phone = String(value || "");
@@ -85,6 +91,74 @@ whatsappRouter.put("/settings", requirePermission("whatsapp.manage"), async (req
     if (String(error?.message || "").startsWith("invalid_")) return res.status(400).json({ ok: false, status: error.message });
     next(error);
   }
+});
+
+whatsappRouter.get("/attendance-notifications", requirePermission("whatsapp.send_attendance"), async (_req, res, next) => {
+  try {
+    const settings = await getWhatsAppSettings();
+    res.json({ ok: true, enabled: settings.attendance_notifications_enabled });
+  } catch (error) { next(error); }
+});
+
+whatsappRouter.put("/attendance-notifications", requirePermission("whatsapp.send_attendance"), async (req, res, next) => {
+  try {
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== "boolean") return res.status(400).json({ ok: false, status: "invalid_attendance_notifications_enabled" });
+    const persisted = await updateAttendanceNotificationsEnabled(enabled, {
+      actorId: req.teacher.id,
+      request: req,
+      audit: auditLog
+    });
+    res.json({ ok: true, enabled: persisted });
+  } catch (error) { next(error); }
+});
+
+whatsappRouter.get("/custom-messages/students", requirePermission("whatsapp.send_custom"), async (req, res, next) => {
+  try { res.json({ ok: true, students: await searchCustomMessageStudents(req.query.search) }); }
+  catch (error) { next(error); }
+});
+
+whatsappRouter.post("/custom-messages", requirePermission("whatsapp.send_custom"), async (req, res, next) => {
+  try {
+    const parsed = customMessageSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ ok: false, status: "invalid_custom_message" });
+    const idempotency = readRequiredPaymentIdempotencyKey(req, { allowBody: false });
+    if (idempotency.error) return res.status(400).json({ ok: false, status: idempotency.error });
+    const job = await enqueueCustomWhatsAppMessage({ ...parsed.data, actorId: req.teacher.id, idempotencyKey: idempotency.idempotencyKey });
+    await auditLog({ action: "whatsapp_custom_message_queued", actorId: req.teacher.id, studentId: job.student_id, request: req, details: { job_id: Number(job.id), notification_type: "custom_message", status: job.status } });
+    res.status(job.duplicate ? 200 : 202).json({ ok: true, job: { id: job.id, status: job.status, duplicate: job.duplicate } });
+  } catch (error) {
+    const statusByError = { custom_message_empty: 400, custom_message_too_long: 400, custom_message_student_ineligible: 422, custom_message_opted_out: 422, custom_message_invalid_phone: 422 };
+    if (statusByError[error?.message]) return res.status(statusByError[error.message]).json({ ok: false, status: error.message });
+    next(error);
+  }
+});
+
+whatsappRouter.get("/custom-messages/history", requirePermission("whatsapp.send_custom"), async (req, res, next) => {
+  try {
+    const values = [];
+    const filters = ["j.notification_type = 'custom_message'"];
+    const add = (sql, value) => { values.push(value); filters.push(sql.replace("?", `$${values.length}`)); };
+    const search = String(req.query.search || "").trim().slice(0, 80);
+    const status = String(req.query.status || "").trim();
+    const from = String(req.query.from || "").trim();
+    const to = String(req.query.to || "").trim();
+    if (search) { values.push(`%${search.toLowerCase()}%`); const parameter = `$${values.length}`; filters.push(`(LOWER(s.full_name) LIKE ${parameter} OR LOWER(s.student_code) LIKE ${parameter} OR LOWER(COALESCE(s.student_serial,'')) LIKE ${parameter})`); }
+    if (["pending", "processing", "sent", "failed", "delivery_unknown", "skipped"].includes(status)) add("j.status = ?", status);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(from)) add("j.created_at >= ?::date", from);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(to)) add("j.created_at < (?::date + INTERVAL '1 day')", to);
+    const result = await query(`SELECT j.id, j.status, j.attempts, j.last_error, j.created_at, j.sent_at, j.rendered_message,
+        s.full_name AS student_name, s.student_code, s.student_serial,
+        COALESCE(g.display_name, g.name) AS group_name, COALESCE(g.grade_level, g.grade) AS grade_level,
+        t.name AS sent_by
+      FROM whatsapp_notification_jobs j
+      LEFT JOIN students s ON s.id = j.student_id
+      LEFT JOIN groups g ON g.id = s.group_id
+      LEFT JOIN teachers t ON t.id = j.created_by_teacher_id
+      WHERE ${filters.join(" AND ")}
+      ORDER BY j.created_at DESC, j.id DESC LIMIT 100`, values);
+    res.json({ ok: true, messages: result.rows.map((row) => ({ ...row, last_error: row.last_error && /^[a-z0-9_:-]{1,80}$/i.test(row.last_error) ? row.last_error : row.last_error ? "delivery_failed" : null })) });
+  } catch (error) { next(error); }
 });
 
 whatsappRouter.get("/templates", requirePermission("whatsapp.view"), async (req, res, next) => {
@@ -249,7 +323,8 @@ whatsappRouter.get("/history/stats", requireAnyPermission("whatsapp.view", "atte
     const scoped = !canViewAllHistory;
     const values = scoped ? [normalizeGroupIds(req.teacher?.group_ids)] : [];
     const result = await query(
-      `SELECT j.status, COUNT(*)::int AS count
+      `SELECT j.status, COUNT(*)::int AS count,
+              COUNT(*) FILTER (WHERE j.status = 'skipped' AND j.last_error = 'auto_send_disabled')::int AS skipped_auto_send_disabled
        FROM whatsapp_notification_jobs j
        ${scoped ? "JOIN attendance_sessions s ON s.id = j.cancellation_session_id" : ""}
        WHERE ${scoped ? `j.notification_type = 'cancellation' AND s.group_id = ANY($1::int[])` : "TRUE"}
@@ -257,6 +332,7 @@ whatsappRouter.get("/history/stats", requireAnyPermission("whatsapp.view", "atte
     );
     const counts = Object.fromEntries(result.rows.map((row) => [row.status, Number(row.count) || 0]));
     const total = result.rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+    const skippedAutoSendDisabled = result.rows.reduce((sum, row) => sum + (Number(row.skipped_auto_send_disabled) || 0), 0);
     res.json({
       ok: true,
       stats: {
@@ -264,7 +340,8 @@ whatsappRouter.get("/history/stats", requireAnyPermission("whatsapp.view", "atte
         sent: counts.sent || 0,
         failed: counts.failed || 0,
         pending: (counts.pending || 0) + (counts.processing || 0),
-        delivery_unknown: counts.delivery_unknown || 0
+        delivery_unknown: counts.delivery_unknown || 0,
+        skipped_auto_send_disabled: skippedAutoSendDisabled
       }
     });
   } catch (error) { next(error); }

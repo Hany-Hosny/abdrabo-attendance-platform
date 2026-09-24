@@ -1,5 +1,5 @@
 import { query } from "../db/pool.js";
-import { authenticatedStudent } from "../services/studentAuth.js";
+import { authenticatedStudent, studentAuthFailure } from "../services/studentAuth.js";
 import { evaluateAttendanceWindow } from "../utils/attendanceWindow.js";
 
 export const ATTENDANCE_REQUIRED_MESSAGE = "يجب تسجيل الحضور في الحصة أولاً لأداء الاختبار.";
@@ -102,7 +102,7 @@ export async function verifySessionAttendance(studentId, db = query) {
 export async function requireActiveSessionAttendance(req, res, next) {
   try {
     const student = req.student || await authenticatedStudent(req);
-    if (!student) return res.status(401).json({ ok: false, status: "unauthorized" });
+    if (!student) return studentAuthFailure(req, res);
 
     const verification = await verifySessionAttendance(student.id);
     if (!verification.allowed) {

@@ -4,6 +4,7 @@ type Language = "ar" | "en";
 type Translator = (key: string, values?: Record<string, string>) => string;
 type WhatsAppSettings = {
   auto_send: boolean;
+  attendance_notifications_enabled: boolean;
   templates: string[];
   grade_templates: string[];
   receipt_templates: string[];
@@ -42,6 +43,7 @@ type WhatsAppHistoryStats = {
   failed: number;
   pending: number;
   delivery_unknown: number;
+  skipped_auto_send_disabled: number;
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "/api";
@@ -84,6 +86,7 @@ const templateGroups: TemplateGroup[] = [
 
 const defaultSettings: WhatsAppSettings = {
   auto_send: false,
+  attendance_notifications_enabled: true,
   templates: fallbackTemplates.map(normalizeTeacherDisplayName),
   grade_templates: fallbackGradeTemplates.map(normalizeTeacherDisplayName),
   receipt_templates: fallbackReceiptTemplates.map(normalizeTeacherDisplayName),
@@ -103,6 +106,7 @@ function normalizeSettings(value: Partial<WhatsAppSettings> | undefined): WhatsA
   };
   return {
     auto_send: value?.auto_send === true,
+    attendance_notifications_enabled: value?.attendance_notifications_enabled !== false,
     templates: normalizeTemplates(value?.templates, fallbackTemplates, "{student_name}"),
     grade_templates: normalizeTemplates(value?.grade_templates, fallbackGradeTemplates, "{exam_title}"),
     receipt_templates: normalizeTemplates(value?.receipt_templates, fallbackReceiptTemplates, "{amount_paid}"),
@@ -121,7 +125,7 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 function WhatsAppMessageHistory({ token, language, canManage = false, canCancelSessions = false, t }: Pick<Props, "token" | "language" | "canManage" | "canCancelSessions" | "t">) {
   const [messages, setMessages] = useState<WhatsAppHistoryRow[]>([]);
-  const [stats, setStats] = useState<WhatsAppHistoryStats>({ total: 0, sent: 0, failed: 0, pending: 0, delivery_unknown: 0 });
+  const [stats, setStats] = useState<WhatsAppHistoryStats>({ total: 0, sent: 0, failed: 0, pending: 0, delivery_unknown: 0, skipped_auto_send_disabled: 0 });
   const [statsLoading, setStatsLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [type, setType] = useState("");
@@ -174,10 +178,11 @@ function WhatsAppMessageHistory({ token, language, canManage = false, canCancelS
           sent: Number(nextStats.sent) || 0,
           failed: Number(nextStats.failed) || 0,
           pending: Number(nextStats.pending) || 0,
-          delivery_unknown: Number(nextStats.delivery_unknown) || 0
+          delivery_unknown: Number(nextStats.delivery_unknown) || 0,
+          skipped_auto_send_disabled: Number(nextStats.skipped_auto_send_disabled) || 0
         });
       })
-      .catch((reason) => { if (reason?.name !== "AbortError") setStats({ total: 0, sent: 0, failed: 0, pending: 0, delivery_unknown: 0 }); })
+      .catch((reason) => { if (reason?.name !== "AbortError") setStats({ total: 0, sent: 0, failed: 0, pending: 0, delivery_unknown: 0, skipped_auto_send_disabled: 0 }); })
       .finally(() => { if (!controller.signal.aborted) setStatsLoading(false); });
     return () => controller.abort();
   }, [refreshKey, token]);
@@ -250,7 +255,8 @@ function WhatsAppMessageHistory({ token, language, canManage = false, canCancelS
     { key: "sent", label: "whatsapp.historyStatsSent", tone: "sent", icon: "✓" },
     { key: "failed", label: "whatsapp.historyStatsFailed", tone: "failed", icon: "!" },
     { key: "pending", label: "whatsapp.historyStatsPending", tone: "pending", icon: "◌" },
-    { key: "delivery_unknown", label: "whatsapp.historyStatsDeliveryUnknown", tone: "delivery-unknown", icon: "?" }
+    { key: "delivery_unknown", label: "whatsapp.historyStatsDeliveryUnknown", tone: "delivery-unknown", icon: "?" },
+    { key: "skipped_auto_send_disabled", label: "whatsapp.historyStatsSkipped", tone: "skipped", icon: "–" }
   ] as const;
 
   return <div className="whatsapp-history-panel">

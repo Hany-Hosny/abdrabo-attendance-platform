@@ -119,6 +119,15 @@ function parseBoolean(value, fallback = true) {
   return typeof value === "boolean" ? value : fallback;
 }
 
+export function normalizeManualFreezeReason(value) {
+  const normalized = String(value ?? "")
+    .replace(/<[^>]*>/g, "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, 200);
+  return normalized || "manual_freeze";
+}
+
 function isValidIsoDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
@@ -692,15 +701,18 @@ adminAcademicRouter.get("/groups/:id/details", requirePermission("schedule.view"
     const group = await query(`${groupSelect} WHERE g.id=$1`, [groupId]);
     if (!group.rowCount) return res.status(404).json({ok:false,status:"not_found"});
     const schedules = await query("SELECT id,day_of_week,start_time,end_time,opens_before_minutes,closes_after_minutes,is_active FROM class_schedules WHERE group_id=$1 AND deleted_at IS NULL ORDER BY day_of_week,start_time", [groupId]);
-    const students = await query("SELECT id,full_name,student_serial,student_code,phone,guardian_phone,billing_start_month,is_active,deleted_at,purge_after FROM students WHERE group_id=$1 ORDER BY full_name", [groupId]);
+    const students = await query("SELECT id,full_name,student_serial,student_code,phone,guardian_phone,billing_start_month,is_active,absence_frozen,deleted_at,purge_after FROM students WHERE group_id=$1 ORDER BY full_name", [groupId]);
     res.json({ok:true,group:group.rows[0],schedules:schedules.rows,students:students.rows});
   } catch (error) { next(error); }
 });
 
 const studentSelect = `
   SELECT s.id, s.group_id, s.student_code, s.student_serial, s.scan_serial, s.qr_token, s.full_name, s.phone, s.guardian_phone, s.whatsapp_opted_out, s.gender,
-    s.billing_start_month::text AS billing_start_month, s.is_active, s.deleted_at, s.purge_after, s.created_at, g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
+    s.billing_start_month::text AS billing_start_month, s.is_active, s.absence_frozen, s.absence_frozen_at, s.absence_frozen_reason, s.absence_frozen_streak,
+    s.absence_frozen_by, COALESCE(NULLIF(TRIM(frozen_teacher.name), ''), frozen_teacher.username, frozen_teacher.email) AS absence_frozen_by_name,
+    s.absence_unfrozen_at, s.absence_unfrozen_by, s.deleted_at, s.purge_after, s.created_at, g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
   FROM students s JOIN groups g ON g.id = s.group_id
+  LEFT JOIN teachers frozen_teacher ON frozen_teacher.id = s.absence_frozen_by
 `;
 
 async function requireScopedStudent(req, res, next) {
@@ -734,7 +746,7 @@ adminAcademicRouter.get("/students", requirePermission("students.view"), async (
     const search = normalizeDigits(req.query.q || req.query.search || "").trim();
     const quickFilter = String(req.query.filter || "").trim();
     const values = [status];
-    const statusFilter = "(($1 = 'all') OR ($1 = 'deleted' AND s.deleted_at IS NOT NULL) OR ($1 = 'active' AND s.deleted_at IS NULL AND s.is_active=TRUE) OR ($1 = 'disabled' AND s.deleted_at IS NULL AND s.is_active=FALSE))";
+    const statusFilter = "(($1 = 'all') OR ($1 = 'deleted' AND s.deleted_at IS NOT NULL) OR ($1 = 'frozen' AND s.deleted_at IS NULL AND s.absence_frozen=TRUE) OR ($1 = 'active' AND s.deleted_at IS NULL AND s.is_active=TRUE AND s.absence_frozen=FALSE) OR ($1 = 'disabled' AND s.deleted_at IS NULL AND s.is_active=FALSE))";
     const filters = [statusFilter];
     const todayCairo = "(CURRENT_TIMESTAMP AT TIME ZONE 'Africa/Cairo')::date";
     const attendanceToday = `EXISTS (
@@ -1284,6 +1296,75 @@ adminAcademicRouter.patch("/students/:id/status", requirePermission("students.ma
     res.json({ ok: true });
   } catch (error) {
     next(error);
+  }
+});
+
+adminAcademicRouter.post("/students/:id/freeze", requirePermission("students.manage"), async (req, res, next) => {
+  try {
+    const studentId = Number(req.params.id);
+    const before = await query(
+      "SELECT id, group_id, absence_frozen, is_active, deleted_at FROM students WHERE id=$1",
+      [studentId]
+    );
+    if (!before.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    if (!hasGroupAccess(req.teacher, before.rows[0].group_id)) return groupAccessDenied(res);
+    if (before.rows[0].deleted_at) return res.status(409).json({ ok: false, status: "deleted_student" });
+    if (before.rows[0].absence_frozen) return res.json({ ok: true, already_frozen: true });
+
+    const reason = normalizeManualFreezeReason(req.body?.reason);
+    const result = await query(
+      `UPDATE students
+       SET absence_frozen = TRUE,
+           absence_frozen_at = NOW(),
+           absence_frozen_reason = $2,
+           absence_frozen_by = $3,
+           updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL AND absence_frozen = FALSE
+       RETURNING id, absence_frozen_at, absence_frozen_reason, absence_frozen_by`,
+      [studentId, reason, req.teacher.id]
+    );
+    if (!result.rowCount) return res.json({ ok: true, already_frozen: true });
+
+    await auditLog({
+      action: "student_absence_frozen",
+      actorId: req.teacher.id,
+      studentId,
+      details: { student_id: studentId, source: "manual", reason, status_after: "absence_frozen" },
+      request: req
+    });
+    return res.json({ ok: true, student: result.rows[0] });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+adminAcademicRouter.patch("/students/:id/absence-freeze", requirePermission("students.manage"), async (req, res, next) => {
+  try {
+    const studentId = Number(req.params.id);
+    const before = await query("SELECT id, group_id, absence_frozen, absence_frozen_at, absence_frozen_streak FROM students WHERE id=$1 AND deleted_at IS NULL", [studentId]);
+    if (!before.rowCount) return res.status(404).json({ ok: false, status: "not_found" });
+    if (!hasGroupAccess(req.teacher, before.rows[0].group_id)) return groupAccessDenied(res);
+    if (!before.rows[0].absence_frozen) return res.json({ ok: true, already_unfrozen: true });
+    const result = await query(
+      `UPDATE students
+       SET absence_frozen = FALSE,
+           absence_unfrozen_at = NOW(),
+           absence_unfrozen_by = $2,
+           updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id`,
+      [studentId, req.teacher.id]
+    );
+    await auditLog({
+      action: "student_absence_unfrozen",
+      actorId: req.teacher.id,
+      studentId,
+      details: { status_before: "absence_frozen", status_after: "active_portal", previous_streak: before.rows[0].absence_frozen_streak, previous_frozen_at: before.rows[0].absence_frozen_at },
+      request: req
+    });
+    return res.json({ ok: Boolean(result.rowCount) });
+  } catch (error) {
+    return next(error);
   }
 });
 

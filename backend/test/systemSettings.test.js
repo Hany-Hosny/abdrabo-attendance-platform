@@ -16,6 +16,7 @@ test("system settings defaults preserve existing attendance and dashboard behavi
     attendance_close_after_minutes: 20,
     attendance_alert_threshold: 70,
     attendance_cancellation_cutoff_percentage: 60,
+    absence_freeze_limit: 4,
     evaluation_alert_threshold: 60
   });
 });
@@ -27,6 +28,7 @@ test("system settings validation normalizes supported partial updates", () => {
   });
   assert.deepEqual(validateSettingsPatch({ attendance_cancellation_cutoff_percentage: 90 }), { attendance_cancellation_cutoff_percentage: 90 });
   assert.deepEqual(validateSettingsPatch({ attendance_cancellation_cutoff_percentage: 1 }), { attendance_cancellation_cutoff_percentage: 1 });
+  assert.deepEqual(validateSettingsPatch({ absence_freeze_limit: "٥" }), { absence_freeze_limit: 5 });
 });
 
 test("system settings validation rejects unsupported, malformed, and out-of-range values atomically", () => {
@@ -39,6 +41,9 @@ test("system settings validation rejects unsupported, malformed, and out-of-rang
   assert.throws(() => validateSettingsPatch({ attendance_close_after_minutes: [] }), SettingsValidationError);
   assert.throws(() => validateSettingsPatch({ attendance_cancellation_cutoff_percentage: 91 }), SettingsValidationError);
   assert.throws(() => validateSettingsPatch({ attendance_cancellation_cutoff_percentage: 0 }), SettingsValidationError);
+  assert.throws(() => validateSettingsPatch({ absence_freeze_limit: 0 }), SettingsValidationError);
+  assert.throws(() => validateSettingsPatch({ absence_freeze_limit: 21 }), SettingsValidationError);
+  assert.throws(() => validateSettingsPatch({ absence_freeze_limit: 1.5 }), SettingsValidationError);
 });
 
 function createSettingsDatabase(initial = {}) {
@@ -105,6 +110,14 @@ test("partial settings update persists only requested values and audits one chan
   assert.equal(db.auditEntries.length, 1);
   assert.deepEqual(db.auditEntries[0].details.changes, result.changes);
   assert.equal(request.auditLogged, undefined);
+});
+
+test("absence freeze limit persists through the centralized settings store", async () => {
+  const db = createSettingsDatabase({ absence_freeze_limit: 4 });
+  const result = await updateSystemSettings({ absence_freeze_limit: 5 }, { actorId: 7, db, request: {} , audit: async () => undefined });
+  assert.equal(db.values.get("absence_freeze_limit"), 5);
+  assert.equal(result.settings.absence_freeze_limit, 5);
+  assert.deepEqual(result.changes, [{ setting: "absence_freeze_limit", previous_value: 4, new_value: 5 }]);
 });
 
 test("invalid settings are rejected before database access", async () => {

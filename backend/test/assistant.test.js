@@ -190,7 +190,8 @@ test("assistant instructions require concise plain-text answers and clarificatio
   const instruction = calls.generation[0].config.systemInstruction;
   assert.match(instruction, /نصًا عاديًا فقط/);
   assert.match(instruction, /ممنوع Markdown/);
-  assert.match(instruction, /سطر إلى ثلاثة أسطر/);
+  assert.match(instruction, /أقل قدر من النص اللازم للإجابة الكاملة/);
+  assert.match(instruction, /أجب عن كل جزء بوضوح/);
   assert.match(instruction, /سؤال توضيح واحدًا قصيرًا/);
   assert.match(instruction, /المصدر authoritative/);
   assert.match(instruction, /Should أو Expected أو Example أو Instruction/);
@@ -294,6 +295,81 @@ test("deterministic center responses bypass Gemini and clarify combined schedule
   assert.match(combined.payload.message.content, /تحب مواعيد أنهي صف أو مجموعة؟/);
   assert.equal(calls.config, 0);
   assert.equal(calls.provider, 0);
+});
+
+test("deterministic center and WhatsApp requests return both requested facts", async () => {
+  process.env.ASSISTANT_MAINTENANCE_MODE = "false";
+  const { calls, handler } = deterministicHarness({
+    center: { name: "سنتر المعادي", address: "شارع النصر" },
+    pages: [{ slug: "contact", contentAr: { whatsapp: "201010971994" } }],
+    home: null
+  });
+  const response = await invoke(handler, validRequest({ messages: [{ role: "user", content: "مكان السنتر ورقم الواتساب" }] }));
+  assert.equal(response.payload.model, "system");
+  assert.match(response.payload.message.content, /سنتر المعادي/);
+  assert.match(response.payload.message.content, /201010971994/);
+  assert.equal(calls.provider, 0);
+});
+
+test("deterministic public answers compose price and schedule for the requested grade", async () => {
+  process.env.ASSISTANT_MAINTENANCE_MODE = "false";
+  const { calls, handler } = providerHarness({
+    catalog: [
+      { displayName: "أولى إعدادي A", grade: "الصف الأول الإعدادي", monthlyFee: 120, schedules: [{ dayOfWeek: 6, startTime: "14:00", endTime: "15:00" }] },
+      { displayName: "أولى إعدادي B", grade: "الصف الأول الإعدادي", monthlyFee: 150, schedules: [{ dayOfWeek: 2, startTime: "17:00", endTime: "18:00" }] },
+      { displayName: "ثانية إعدادي", grade: "الصف الثاني الإعدادي", monthlyFee: 200, schedules: [{ dayOfWeek: 0, startTime: "16:00", endTime: "17:00" }] }
+    ]
+  });
+  const response = await invoke(handler, validRequest({ messages: [{ role: "user", content: "أولى إعدادي بكام ومواعيدها إيه؟" }] }));
+  assert.equal(response.payload.model, "system");
+  assert.match(response.payload.message.content, /120/);
+  assert.match(response.payload.message.content, /150/);
+  assert.match(response.payload.message.content, /السبت/);
+  assert.match(response.payload.message.content, /الثلاثاء/);
+  assert.doesNotMatch(response.payload.message.content, /ثانية إعدادي/);
+  assert.equal(calls.generation.length, 0);
+});
+
+test("public private multi-intent questions require login without leaking data", async () => {
+  process.env.ASSISTANT_MAINTENANCE_MODE = "false";
+  const { calls, handler } = providerHarness({});
+  const response = await invoke(handler, validRequest({ messages: [{ role: "user", content: "عليا كام وغبت كام مرة؟" }] }));
+  assert.equal(response.payload.model, "system");
+  assert.match(response.payload.message.content, /رصيدك وحضورك/);
+  assert.equal(calls.generation.length, 0);
+});
+
+test("authenticated student multi-intent answers compose trusted financial and attendance data", async () => {
+  process.env.ASSISTANT_MAINTENANCE_MODE = "false";
+  const { calls, handler } = providerHarness({
+    resolveStudent: async () => ({ id: 9, group_id: 4 }),
+    loadStudentAssistantContext: async () => ({
+      financial: { remainingBalance: 275 },
+      attendance: { absent: 2, attendanceRate: 80 }
+    })
+  });
+  const response = await invoke(handler, validRequest({ sessionType: "student", messages: [{ role: "user", content: "عليا كام ونسبة حضوري كام؟" }] }), { authorization: "Bearer token" });
+  assert.equal(response.payload.model, "system");
+  assert.match(response.payload.message.content, /275/);
+  assert.match(response.payload.message.content, /غيابك 2/);
+  assert.match(response.payload.message.content, /80%/);
+  assert.equal(calls.generation.length, 0);
+});
+
+test("authenticated student multi-intent answers compose exams and homework", async () => {
+  process.env.ASSISTANT_MAINTENANCE_MODE = "false";
+  const { calls, handler } = providerHarness({
+    resolveStudent: async () => ({ id: 9, group_id: 4 }),
+    loadStudentAssistantContext: async () => ({
+      exams: [{ title: "اختبار العلوم", score: 18, maxScore: 20 }],
+      homework: [{ title: "واجب الفصل الأول", status: "new" }]
+    })
+  });
+  const response = await invoke(handler, validRequest({ sessionType: "student", messages: [{ role: "user", content: "درجاتي والواجب اللي عليا" }] }), { authorization: "Bearer token" });
+  assert.equal(response.payload.model, "system");
+  assert.match(response.payload.message.content, /اختبار العلوم/);
+  assert.match(response.payload.message.content, /واجب الفصل الأول/);
+  assert.equal(calls.generation.length, 0);
 });
 
 test("official links, registration, and teacher information bypass Gemini", async () => {

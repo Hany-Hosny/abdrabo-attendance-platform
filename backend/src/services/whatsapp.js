@@ -46,6 +46,7 @@ const DEFAULT_CANCELLATION_TEMPLATES = Object.freeze([
 
 const DEFAULT_SETTINGS = Object.freeze({
   auto_send: false,
+  attendance_notifications_enabled: true,
   templates: [...DEFAULT_TEMPLATES],
   grade_templates: [...DEFAULT_GRADE_TEMPLATES],
   receipt_templates: [...DEFAULT_RECEIPT_TEMPLATES],
@@ -257,6 +258,7 @@ function normalizeSettings(row) {
   const max = Number(row?.max_delay_seconds);
   return {
     auto_send: row?.auto_send === true,
+    attendance_notifications_enabled: row?.attendance_notifications_enabled !== false,
     templates,
     grade_templates: gradeTemplates,
     receipt_templates: receiptTemplates,
@@ -270,6 +272,7 @@ function normalizeSettings(row) {
 export function validateWhatsAppSettings(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("invalid_whatsapp_settings");
   if (typeof input.auto_send !== "boolean") throw new Error("invalid_auto_send");
+  if (input.attendance_notifications_enabled !== undefined && typeof input.attendance_notifications_enabled !== "boolean") throw new Error("invalid_attendance_notifications_enabled");
   if (!Array.isArray(input.templates) || input.templates.length < 3 || input.templates.length > 4) throw new Error("invalid_templates");
   const rawTemplates = input.templates.map((template) => String(template ?? "").trim());
   if (rawTemplates.some((template) => template.length < 5 || template.length > 2000)) throw new Error("invalid_template_length");
@@ -287,12 +290,49 @@ export function validateWhatsAppSettings(input) {
   const min = Number(input.min_delay_seconds);
   const max = Number(input.max_delay_seconds);
   if (!Number.isInteger(min) || !Number.isInteger(max) || min < 2 || max > 60 || min > max) throw new Error("invalid_delay_range");
-  return { auto_send: input.auto_send, templates, grade_templates: gradeTemplates, receipt_templates: receiptTemplates, advance_payment_templates: advancePaymentTemplates, min_delay_seconds: min, max_delay_seconds: max };
+  return { auto_send: input.auto_send, attendance_notifications_enabled: input.attendance_notifications_enabled !== false, templates, grade_templates: gradeTemplates, receipt_templates: receiptTemplates, advance_payment_templates: advancePaymentTemplates, min_delay_seconds: min, max_delay_seconds: max };
 }
 
 export async function getWhatsAppSettings(db = query) {
-  const result = await db("SELECT auto_send, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds FROM whatsapp_settings WHERE id = 1");
+  const result = await db("SELECT auto_send, attendance_notifications_enabled, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds FROM whatsapp_settings WHERE id = 1");
   return normalizeSettings(result.rows[0]);
+}
+
+export async function updateAttendanceNotificationsEnabled(enabled, { actorId = null, request = null, db = pool, audit } = {}) {
+  if (typeof enabled !== "boolean") throw new Error("invalid_attendance_notifications_enabled");
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const before = await getWhatsAppSettings(client.query.bind(client));
+    await client.query(
+      `INSERT INTO whatsapp_settings (id, attendance_notifications_enabled, updated_by, updated_at)
+       VALUES (1, $1, $2, NOW())
+       ON CONFLICT (id) DO UPDATE SET
+         attendance_notifications_enabled = EXCLUDED.attendance_notifications_enabled,
+         updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+      [enabled, actorId]
+    );
+    const after = await getWhatsAppSettings(client.query.bind(client));
+    if (audit && before.attendance_notifications_enabled !== after.attendance_notifications_enabled) {
+      await audit({
+        db: client,
+        action: "whatsapp_attendance_notifications_setting_updated",
+        actorId,
+        details: {
+          previous: before.attendance_notifications_enabled,
+          next: after.attendance_notifications_enabled
+        },
+        request
+      });
+    }
+    await client.query("COMMIT");
+    return after.attendance_notifications_enabled;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function updateWhatsAppSettings(input, { actorId, request = null, db = pool, audit } = {}) {
@@ -301,15 +341,19 @@ export async function updateWhatsAppSettings(input, { actorId, request = null, d
   try {
     await client.query("BEGIN");
     const before = await getWhatsAppSettings(client.query.bind(client));
+    const attendanceNotificationsEnabled = Object.hasOwn(input, "attendance_notifications_enabled")
+      ? settings.attendance_notifications_enabled
+      : before.attendance_notifications_enabled;
     await client.query(
-      `INSERT INTO whatsapp_settings (id, auto_send, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds, updated_by, updated_at)
-       VALUES (1, $1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6, $7, $8, NOW())
-       ON CONFLICT (id) DO UPDATE SET auto_send = EXCLUDED.auto_send, templates = EXCLUDED.templates,
+      `INSERT INTO whatsapp_settings (id, auto_send, attendance_notifications_enabled, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds, updated_by, updated_at)
+       VALUES (1, $1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7, $8, $9, NOW())
+       ON CONFLICT (id) DO UPDATE SET auto_send = EXCLUDED.auto_send,
+         attendance_notifications_enabled = EXCLUDED.attendance_notifications_enabled, templates = EXCLUDED.templates,
          grade_templates = EXCLUDED.grade_templates, receipt_templates = EXCLUDED.receipt_templates,
          advance_payment_templates = EXCLUDED.advance_payment_templates,
          min_delay_seconds = EXCLUDED.min_delay_seconds, max_delay_seconds = EXCLUDED.max_delay_seconds,
          updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
-      [settings.auto_send, JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates), settings.min_delay_seconds, settings.max_delay_seconds, actorId || null]
+      [settings.auto_send, attendanceNotificationsEnabled, JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates), settings.min_delay_seconds, settings.max_delay_seconds, actorId || null]
     );
     await client.query(`
       INSERT INTO whatsapp_templates (category, message_body, is_active, audience, is_fallback)
@@ -323,11 +367,12 @@ export async function updateWhatsAppSettings(input, { actorId, request = null, d
         WHERE existing.category = source.category AND existing.message_body = item.value
       )
     `, [JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates)]);
-    if (audit && JSON.stringify(before) !== JSON.stringify(settings)) {
-      await audit({ db: client, action: "whatsapp_settings_updated", actorId, details: { previous: before, next: settings }, request });
+    const nextSettings = { ...settings, attendance_notifications_enabled: attendanceNotificationsEnabled };
+    if (audit && JSON.stringify(before) !== JSON.stringify(nextSettings)) {
+      await audit({ db: client, action: "whatsapp_settings_updated", actorId, details: { previous: before, next: nextSettings }, request });
     }
     await client.query("COMMIT");
-    return { ...settings, portal_base_url: publicAppUrl };
+    return { ...nextSettings, portal_base_url: publicAppUrl };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -757,6 +802,12 @@ export async function connectWhatsApp() {
         state.qr = null;
         state.phoneNumber = normalizeEgyptianPhone(socket.user?.id?.split(":")[0]) || socket.user?.id?.split(":")[0] || null;
         armConnectedWatchdog(socket);
+        await query(
+          `UPDATE whatsapp_notification_jobs
+           SET next_attempt_at = NOW(), updated_at = NOW()
+           WHERE status = 'pending' AND last_error = 'whatsapp_disconnected'`
+        ).catch((error) => console.error("Failed to wake disconnected WhatsApp jobs", safeWorkerError(error)));
+        wakeWhatsAppWorker();
         console.log("WhatsApp connected");
       }
       if (connection === "close") {
@@ -890,6 +941,7 @@ function normalizeNotificationType(value) {
   if (type === "attendance") return "attendance";
   if (type === "absence") return "absence";
   if (type === "cancellation" || type === "cancelled_session") return "cancellation";
+  if (type === "custom_message") return "custom_message";
   return null;
 }
 
@@ -936,6 +988,15 @@ const PREVIEW_REFERENCE_PREFIXES = Object.freeze({
   cancellation: "CNL"
 });
 
+const DISPLAY_REFERENCE_PREFIXES = Object.freeze({
+  attendance: "ATT",
+  absence: "ABS",
+  grade: "GRD",
+  receipt: "PAY",
+  advance_payment: "ADV",
+  cancellation: "CAN"
+});
+
 function notificationTypeFromReference(value) {
   const reference = String(value || "").trim().toUpperCase();
   if (reference.startsWith("GRD-") || reference.startsWith("EXM-")) return "grade";
@@ -975,6 +1036,28 @@ export function resolveSpintax(template, values = {}) {
   return applyTemplate(expanded, values);
 }
 
+function displayReferenceDate(value) {
+  const date = new Date(value || Date.now());
+  if (Number.isNaN(date.getTime())) return "000000";
+  return date.toISOString().slice(2, 10).replaceAll("-", "");
+}
+
+export function buildWhatsAppDisplayReference({ type, date, id }) {
+  const normalizedType = normalizeNotificationType(type);
+  const prefix = DISPLAY_REFERENCE_PREFIXES[normalizedType] || "MSG";
+  const numericId = Number(id);
+  const suffix = Number.isSafeInteger(numericId) && numericId > 0 ? String(numericId).padStart(3, "0") : "000";
+  return `${prefix}-${displayReferenceDate(date)}-${suffix}`;
+}
+
+function displayReferenceForJob(job, type) {
+  return buildWhatsAppDisplayReference({
+    type,
+    date: job.payload?.event_time || job.payload?.checkin_time || job.payload?.exam_date || job.payload?.scheduled_date || job.created_at,
+    id: job.source_id || job.attendance_record_id || job.cancellation_session_id || job.id
+  });
+}
+
 export async function resolveWhatsAppTemplate({ category, audience = "neutral", slotNumber = null, values = {}, sourceId = "preview", db = query }) {
   const normalizedCategory = normalizeNotificationType(category);
   const rows = await activeTemplateRows(normalizedCategory, db);
@@ -986,10 +1069,11 @@ export async function resolveWhatsAppTemplate({ category, audience = "neutral", 
   const uniqueHash = crypto.createHash("sha256").update(entropy).digest("hex").slice(0, 16);
   const referencePrefix = PREVIEW_REFERENCE_PREFIXES[normalizedCategory] || "MSG";
   const reference = `${referencePrefix}-${Date.now()}-${selected.id}-${uniqueHash}`;
-  const safeValues = { ...values, portal_link: "[secure-link-preview]", ref_code: reference };
+  const displayReference = buildWhatsAppDisplayReference({ type: normalizedCategory, date: Date.now(), id: sourceId });
+  const safeValues = { ...values, portal_link: "[secure-link-preview]", ref_code: displayReference };
   const rendered = resolveSpintax(selected.message_body, safeValues);
-  const message = templateHasPlaceholder(selected.message_body, "ref_code") ? rendered : `${rendered}\n\nRef:${reference}`;
-  return { id: Number(selected.id), audience: selected.audience, slot_number: selected.slot_number, message, reference };
+  const message = templateHasPlaceholder(selected.message_body, "ref_code") ? rendered : `${rendered}\n\nRef:${displayReference}`;
+  return { id: Number(selected.id), audience: selected.audience, slot_number: selected.slot_number, message, reference, displayReference };
 }
 
 function compileWhatsAppMessage(_type, template, values) {
@@ -1251,6 +1335,7 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const settings = await getWhatsAppSettings(client.query.bind(client));
     const hydrated = await client.query(`
       SELECT er.id AS result_id, er.score, e.title AS exam_title, e.max_score, e.exam_date,
         s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone,
@@ -1275,7 +1360,7 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
         continue;
       }
       const phone = normalizeEgyptianPhone(row.guardian_phone);
-      if (!phone) {
+      if (settings.auto_send && !phone) {
         ignored.push({ resultId, reason: "invalid_phone", studentName: row.student_name });
         continue;
       }
@@ -1336,6 +1421,29 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
       };
     });
 
+    if (!settings.auto_send) {
+      const skippedResultIds = [];
+      for (const row of queueRows) {
+        const skipped = await enqueueJob({
+          notificationType: "grade",
+          sourceId: row.resultId,
+          studentId: row.studentId,
+          phone: row.phoneNumber,
+          payload: row.payload,
+          refCode: row.refCode,
+          db: client.query.bind(client),
+          wake: false,
+          autoSend: false
+        });
+        if (skipped.status === "skipped" && skipped.reason === "auto_send_disabled") skippedResultIds.push(row.resultId);
+      }
+      if (skippedResultIds.length) {
+        await client.query("UPDATE exam_results SET whatsapp_notified = FALSE WHERE id = ANY($1::int[])", [skippedResultIds]);
+      }
+      await client.query("COMMIT");
+      return { queuedCount: 0, skippedCount: skippedResultIds.length, ignoredCount: ignored.length, ignored, queuedResultIds: [], errors: [] };
+    }
+
     const inserted = await client.query(`
       INSERT INTO whatsapp_notification_jobs
         (notification_type, source_id, student_id, phone_number, payload, ref_code, status,
@@ -1378,6 +1486,7 @@ export async function enqueueGradeBatchNotifications({ resultIds }) {
 }
 
 export async function enqueueGradeNotificationInTransaction(client, { resultId }) {
+  const settings = await getWhatsAppSettings(client.query.bind(client));
   const hydrated = await client.query(`
     SELECT er.id AS result_id, er.score, er.note, e.title AS exam_title,
       e.max_score, e.exam_date, s.id AS student_id, s.full_name AS student_name,
@@ -1392,22 +1501,9 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
   if (!row.is_active || row.deleted_at) return { queued: false, reason: "student_inactive" };
   if (row.whatsapp_opted_out === true) return { queued: false, reason: "whatsapp_opted_out" };
   const normalizedPhone = normalizeEgyptianPhone(row.guardian_phone);
-  if (!normalizedPhone) return { queued: false, reason: "invalid_phone" };
+  if (settings.auto_send && !normalizedPhone) return { queued: false, reason: "invalid_phone" };
 
-  const active = await client.query(`
-    SELECT id, status, ref_code, payload, rendered_message
-    FROM whatsapp_notification_jobs
-    WHERE notification_type = 'grade' AND source_id = $1
-      AND status IN ('pending', 'processing')
-    ORDER BY id DESC
-    LIMIT 1
-    FOR UPDATE`, [resultId]);
-  if (active.rows[0]?.status === "processing") {
-    return { queued: false, reason: "already_queued", job_id: active.rows[0].id, status: active.rows[0].status, ref_code: active.rows[0].ref_code };
-  }
-  if (active.rows[0]) await scrubGradePortalLinkInTransaction(client, active.rows[0]);
-
-    const rawPhone = String(row.guardian_phone || "").trim();
+  const rawPhone = String(row.guardian_phone || "").trim();
   const phone = normalizedPhone;
   const maxScore = Number(row.max_score);
   const score = Number(row.score);
@@ -1429,6 +1525,36 @@ export async function enqueueGradeNotificationInTransaction(client, { resultId }
     whatsapp_opted_out: row.whatsapp_opted_out === true,
     event_time: row.exam_date
   });
+
+  if (!settings.auto_send) {
+    const skipped = await enqueueJob({
+      notificationType: "grade",
+      sourceId: row.result_id,
+      studentId: row.student_id,
+      phone,
+      refCode,
+      payload,
+      db: client.query.bind(client),
+      wake: false,
+      autoSend: false
+    });
+    await client.query("UPDATE exam_results SET whatsapp_notified = FALSE WHERE id = $1", [row.result_id]);
+    return { ...skipped, ref_code: skipped.ref_code || refCode, result_id: row.result_id };
+  }
+
+  const active = await client.query(`
+    SELECT id, status, ref_code, payload, rendered_message
+    FROM whatsapp_notification_jobs
+    WHERE notification_type = 'grade' AND source_id = $1
+      AND status IN ('pending', 'processing')
+    ORDER BY id DESC
+    LIMIT 1
+    FOR UPDATE`, [resultId]);
+  if (active.rows[0]?.status === "processing") {
+    return { queued: false, reason: "already_queued", job_id: active.rows[0].id, status: active.rows[0].status, ref_code: active.rows[0].ref_code };
+  }
+  if (active.rows[0]) await scrubGradePortalLinkInTransaction(client, active.rows[0]);
+
   const values = [
     row.student_id,
     phone,
@@ -1481,8 +1607,7 @@ export async function retryWhatsAppNotificationJob({ jobId, actorId = null, reas
       await client.query("COMMIT");
       return { ok: false, reason: "delivery_unknown_requires_confirmation", job_id: job.id, status: job.status, ref_code: job.ref_code };
     }
-    const retryableInvalidPhone = job.status === "skipped" && job.last_error === "invalid_phone";
-    if (job.status !== "failed" && job.status !== "delivery_unknown" && !retryableInvalidPhone) {
+    if (!isRetryableWhatsAppNotificationJob(job)) {
       await client.query("COMMIT");
       return { ok: true, reason: "already_active", status: job.status, job_id: job.id, ref_code: job.ref_code };
     }
@@ -1539,11 +1664,11 @@ function notificationRefCode(prefix, dateValue, id, unique = false) {
   return `${prefix}-${date}-${id}${unique ? `-${Date.now()}-${randomInteger(100, 999)}` : ""}`;
 }
 
-async function enqueueJob({ notificationType, sourceId, studentId, phone, payload, refCode, attendanceRecordId = null, db = query, wake = true, dedupeCompleted = false }) {
+async function enqueueJob({ notificationType, sourceId, studentId, phone, payload, refCode, attendanceRecordId = null, db = query, wake = true, dedupeCompleted = false, autoSend = null, disabledReason = "auto_send_disabled" }) {
   const execute = typeof db === "function" ? db : db.query.bind(db);
   const queuedPayload = { ...(payload || {}), type: notificationType };
   const existing = await execute(
-    `SELECT id, status, ref_code
+    `SELECT id, status, last_error, ref_code
      FROM whatsapp_notification_jobs
      WHERE notification_type = $1 AND source_id = $2
      ORDER BY id DESC
@@ -1551,6 +1676,66 @@ async function enqueueJob({ notificationType, sourceId, studentId, phone, payloa
     [notificationType, sourceId]
   );
   const previous = existing.rows[0];
+  const resolvedAutoSend = autoSend == null
+    ? (await getWhatsAppSettings(execute)).auto_send
+    : autoSend === true;
+
+  // This is evaluated at the business-event boundary. A disabled automated
+  // message is retained for audit/history, but it must never enter the worker.
+  if (!resolvedAutoSend) {
+    if (previous?.status === "skipped" && previous?.last_error === disabledReason) {
+      return { queued: false, skipped: true, reason: disabledReason, job_id: previous.id, status: previous.status, ref_code: previous.ref_code };
+    }
+    if (previous?.status === "pending") {
+      const skipped = await execute(
+        `UPDATE whatsapp_notification_jobs
+         SET status = 'skipped', last_error = $2,
+             lease_expires_at = NULL, claim_token = NULL,
+             send_started_at = NULL, updated_at = NOW()
+         WHERE id = $1 AND status = 'pending'
+         RETURNING id, status, ref_code`,
+        [previous.id, disabledReason]
+      );
+      if (skipped.rowCount) return { queued: false, skipped: true, reason: disabledReason, job_id: skipped.rows[0].id, status: skipped.rows[0].status, ref_code: skipped.rows[0].ref_code };
+    }
+    if (previous?.status === "processing") {
+      // The worker performs the claim-fenced recheck immediately before send.
+      return { queued: false, reason: "already_processing", job_id: previous.id, status: previous.status, ref_code: previous.ref_code };
+    }
+    if (dedupeCompleted && (previous?.status === "sent" || previous?.status === "skipped")) {
+      return { queued: false, reason: previous.status === "sent" ? "already_sent" : "already_processed", job_id: previous.id, status: previous.status, ref_code: previous.ref_code };
+    }
+    if (previous?.status === "delivery_unknown") {
+      return { queued: false, reason: "delivery_unknown_requires_confirmation", job_id: previous.id, status: previous.status, ref_code: previous.ref_code };
+    }
+    if (previous?.status === "failed") {
+      const skipped = await execute(
+        `UPDATE whatsapp_notification_jobs
+         SET student_id = $2, phone_number = $3, payload = $4::jsonb, ref_code = $5,
+             status = 'skipped', last_error = $6, attempts = 0,
+             sent_at = NULL, lease_expires_at = NULL,
+             claim_token = NULL, send_started_at = NULL, updated_at = NOW()
+         WHERE id = $1 AND status = 'failed'
+         RETURNING id, status, ref_code`,
+        [previous.id, studentId, phone || null, JSON.stringify(queuedPayload), refCode, disabledReason]
+      );
+      if (skipped.rowCount) return { queued: false, skipped: true, reason: disabledReason, job_id: skipped.rows[0].id, status: skipped.rows[0].status, ref_code: skipped.rows[0].ref_code };
+    }
+    const insertedSkipped = await execute(
+      `INSERT INTO whatsapp_notification_jobs
+        (notification_type, source_id, attendance_record_id, student_id, phone_number, payload, ref_code,
+         status, last_error)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, 'skipped', $8)
+       ON CONFLICT DO NOTHING
+       RETURNING id, status, ref_code`,
+      [notificationType, sourceId, attendanceRecordId, studentId, phone || null, JSON.stringify(queuedPayload), refCode, disabledReason]
+    );
+    if (insertedSkipped.rowCount) {
+      return { queued: false, skipped: true, reason: disabledReason, job_id: insertedSkipped.rows[0].id, status: insertedSkipped.rows[0].status, ref_code: insertedSkipped.rows[0].ref_code };
+    }
+    return { queued: false, reason: "queue_conflict" };
+  }
+
   if (previous?.status === "pending" || previous?.status === "processing") {
     return { queued: false, reason: "already_queued", job_id: previous.id, status: previous.status, ref_code: previous.ref_code };
   }
@@ -1601,6 +1786,52 @@ async function enqueueJob({ notificationType, sourceId, studentId, phone, payloa
   return { queued: false, reason: "queue_conflict" };
 }
 
+export const CUSTOM_WHATSAPP_MESSAGE_MAX_LENGTH = 2000;
+
+export async function enqueueCustomWhatsAppMessage({ studentId, message, actorId, idempotencyKey, db = query, wake = true }) {
+  const execute = typeof db === "function" ? db : db.query.bind(db);
+  const text = String(message ?? "").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "").trim();
+  if (!text) throw new Error("custom_message_empty");
+  if (text.length > CUSTOM_WHATSAPP_MESSAGE_MAX_LENGTH) throw new Error("custom_message_too_long");
+  if (!Number.isSafeInteger(Number(actorId)) || Number(actorId) <= 0) throw new Error("custom_message_sender_required");
+  if (!/^[-A-Za-z0-9_:]{8,128}$/.test(String(idempotencyKey || ""))) throw new Error("invalid_idempotency_key");
+  const existing = await execute("SELECT id, status, student_id, created_at FROM whatsapp_notification_jobs WHERE idempotency_key = $1", [idempotencyKey]);
+  if (existing.rowCount) return { ...existing.rows[0], duplicate: true };
+  const studentResult = await execute(`SELECT id, full_name, student_code, guardian_phone, whatsapp_opted_out, is_active, deleted_at
+    FROM students WHERE id = $1`, [studentId]);
+  const student = studentResult.rows[0];
+  if (!student || !student.is_active || student.deleted_at) throw new Error("custom_message_student_ineligible");
+  if (student.whatsapp_opted_out) throw new Error("custom_message_opted_out");
+  const phone = normalizeEgyptianPhone(student.guardian_phone);
+  if (!phone) throw new Error("custom_message_invalid_phone");
+  const refCode = `CUS-${Date.now()}-${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const inserted = await execute(`INSERT INTO whatsapp_notification_jobs
+      (notification_type, source_id, student_id, created_by_teacher_id, idempotency_key, phone_number, payload, ref_code, rendered_message, status)
+    VALUES ('custom_message', NULL, $1, $2, $3, $4, $5::jsonb, $6, $7, 'pending')
+    ON CONFLICT DO NOTHING
+    RETURNING id, status, student_id, created_at`, [student.id, actorId, idempotencyKey, phone, JSON.stringify({ type: "custom_message", message: text }), refCode, text]);
+  if (!inserted.rowCount) {
+    const duplicate = await execute("SELECT id, status, student_id, created_at FROM whatsapp_notification_jobs WHERE idempotency_key = $1", [idempotencyKey]);
+    if (duplicate.rowCount) return { ...duplicate.rows[0], duplicate: true };
+    throw new Error("custom_message_enqueue_conflict");
+  }
+  if (wake) wakeWhatsAppWorker();
+  return { ...inserted.rows[0], duplicate: false };
+}
+
+export async function searchCustomMessageStudents(search, db = query) {
+  const term = String(search || "").trim().slice(0, 80);
+  if (term.length < 2) return [];
+  const result = await db(`SELECT s.id, s.full_name, s.student_code, s.student_serial,
+      s.guardian_phone, COALESCE(g.display_name, g.name) AS group_name,
+      COALESCE(g.grade_level, g.grade) AS grade_level
+    FROM students s LEFT JOIN groups g ON g.id = s.group_id
+    WHERE s.is_active = TRUE AND s.deleted_at IS NULL
+      AND (s.full_name ILIKE $1 OR s.student_code ILIKE $1 OR s.student_serial ILIKE $1)
+    ORDER BY s.full_name LIMIT 20`, [`%${term}%`]);
+  return result.rows.map((row) => ({ ...row, phone_number: row.guardian_phone ? `${String(row.guardian_phone).slice(0, 3)}****${String(row.guardian_phone).slice(-2)}` : null, guardian_phone: undefined }));
+}
+
 export async function enqueueCancellationNotificationsInTransaction(client, { session, actorId = null }) {
   const settings = await getWhatsAppSettings(client.query.bind(client));
   const students = await client.query(`
@@ -1613,11 +1844,14 @@ export async function enqueueCancellationNotificationsInTransaction(client, { se
   const scheduled = cairoParts(session.starts_at);
   const cancelled = cairoParts(session.cancelled_at);
   let queuedCount = 0;
-  let reviewCount = 0;
   let skippedCount = 0;
   for (const student of students.rows) {
     const phone = normalizeEgyptianPhone(student.guardian_phone);
-    const status = !phone ? "skipped" : settings.auto_send ? "pending" : "review_required";
+    // Automated cancellation notices follow the same event-time policy as
+    // every other automated WhatsApp notification. Auto Send wins over the
+    // connection state and over later manual review.
+    const status = !settings.auto_send ? "skipped" : !phone ? "skipped" : "pending";
+    const lastError = !settings.auto_send ? "auto_send_disabled" : !phone ? "invalid_phone" : null;
     const result = await client.query(`
       INSERT INTO whatsapp_notification_jobs
         (notification_type, cancellation_session_id, student_id, phone_number,
@@ -1643,15 +1877,14 @@ export async function enqueueCancellationNotificationsInTransaction(client, { se
       }),
       `CNL-${sessionId}-${student.id}`,
       status,
-      phone ? null : "invalid_phone"
+      lastError
     ]);
     if (result.rowCount) {
       if (status === "pending") queuedCount += 1;
-      else if (status === "review_required") reviewCount += 1;
       else skippedCount += 1;
     }
   }
-  return { queuedCount, reviewCount, skippedCount, eligibleCount: students.rowCount, autoSend: settings.auto_send, actorId };
+  return { queuedCount, reviewCount: 0, skippedCount, eligibleCount: students.rowCount, autoSend: settings.auto_send, actorId };
 }
 
 export async function enqueueAttendanceNotification({ attendanceRecordId, studentId }) {
@@ -1661,7 +1894,6 @@ export async function enqueueAttendanceNotification({ attendanceRecordId, studen
 async function enqueueAttendanceNotificationWithDb({ attendanceRecordId, studentId, db = query, wake = true }) {
   const execute = typeof db === "function" ? db : db.query.bind(db);
   const settings = await getWhatsAppSettings(execute);
-  if (!settings.auto_send) return { queued: false, reason: "disabled" };
   const result = await execute(`
     SELECT ar.id AS attendance_record_id, ar.status, ar.checkin_time, st.id AS student_id,
       st.full_name AS student_name, st.student_code, st.guardian_phone,
@@ -1674,19 +1906,22 @@ async function enqueueAttendanceNotificationWithDb({ attendanceRecordId, student
   const row = result.rows[0];
   if (!row) return { queued: false, reason: "not_eligible" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
-  if (!phone) return { queued: false, reason: "invalid_phone" };
+  const sendAllowed = settings.auto_send && settings.attendance_notifications_enabled;
+  if (sendAllowed && !phone) return { queued: false, reason: "invalid_phone" };
   const refCode = notificationRefCode("ATT", row.checkin_time, row.attendance_record_id);
   const queue = await enqueueJob({
     notificationType: "attendance",
     sourceId: row.attendance_record_id,
     attendanceRecordId: row.attendance_record_id,
     studentId: row.student_id,
-    phone,
+    phone: phone || (sendAllowed ? null : String(row.guardian_phone || "not_provided").trim() || "not_provided"),
     payload: { student_name: row.student_name, student_code: row.student_code, group_name: row.group_name, checkin_time: row.checkin_time },
     refCode,
     db: execute,
     wake,
-    dedupeCompleted: true
+    dedupeCompleted: true,
+    autoSend: sendAllowed,
+    disabledReason: settings.auto_send ? "attendance_notifications_disabled" : "auto_send_disabled"
   });
   return { ...queue, ref_code: queue.ref_code || refCode };
 }
@@ -1695,7 +1930,12 @@ export async function enqueueAttendanceNotificationInTransaction(client, { atten
   return enqueueAttendanceNotificationWithDb({ attendanceRecordId, studentId, db: client.query.bind(client), wake: false });
 }
 
+export async function enqueueAttendanceNotificationForTest({ attendanceRecordId, studentId, db }) {
+  return enqueueAttendanceNotificationWithDb({ attendanceRecordId, studentId, db, wake: false });
+}
+
 export async function enqueueGradeNotification({ resultId }) {
+  const settings = await getWhatsAppSettings(query);
   const result = await query(`
     SELECT er.id AS result_id, er.score, e.title AS exam_title, e.max_score, e.exam_date,
       s.id AS student_id, s.full_name AS student_name, s.student_code, s.guardian_phone
@@ -1706,7 +1946,7 @@ export async function enqueueGradeNotification({ resultId }) {
   const row = result.rows[0];
   if (!row) return { queued: false, reason: "not_found" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
-  if (!phone) return { queued: false, reason: "invalid_phone" };
+  if (settings.auto_send && !phone) return { queued: false, reason: "invalid_phone" };
   const maxScore = Number(row.max_score);
   const score = Number(row.score);
   const percentage = maxScore > 0 ? ((score / maxScore) * 100).toFixed(1).replace(/\.0$/, "") : "0";
@@ -1715,12 +1955,13 @@ export async function enqueueGradeNotification({ resultId }) {
   const queue = await enqueueJob({ notificationType: "grade", sourceId: row.result_id, studentId: row.student_id, phone, refCode, payload: {
     student_name: row.student_name, student_code: row.student_code, exam_title: row.exam_title,
     score, max_score: maxScore, percentage, event_time: row.exam_date
-  } });
+  }, autoSend: settings.auto_send });
   return { ...queue, ref_code: queue.ref_code || refCode };
 }
 
 async function enqueuePaymentNotificationWithDb({ paymentId, paymentType, notificationType, referencePrefix, db = query, wake = true }) {
   const execute = typeof db === "function" ? db : db.query.bind(db);
+  const settings = await getWhatsAppSettings(execute);
   const result = await execute(`
     SELECT p.id AS payment_id, p.amount, p.paid_amount, p.discount_amount, p.is_exempt, p.payment_reference,
       p.payment_months, p.payment_date, p.paid_at,
@@ -1733,10 +1974,10 @@ async function enqueuePaymentNotificationWithDb({ paymentId, paymentType, notifi
   const row = result.rows[0];
   if (!row) return { queued: false, reason: "not_found" };
   const phone = normalizeEgyptianPhone(row.guardian_phone);
-  if (!phone) return { queued: false, reason: "invalid_phone" };
+  if (settings.auto_send && !phone) return { queued: false, reason: "invalid_phone" };
   const month = paymentMonthsValue(row.payment_months, row.payment_date, row.paid_at);
   const refCode = notificationRefCode(referencePrefix, row.payment_date, row.payment_id, true);
-  const queue = await enqueueJob({ notificationType, sourceId: row.payment_id, studentId: row.student_id, phone, refCode, dedupeCompleted: true, db: execute, wake, payload: {
+  const queue = await enqueueJob({ notificationType, sourceId: row.payment_id, studentId: row.student_id, phone, refCode, dedupeCompleted: true, db: execute, wake, autoSend: settings.auto_send, payload: {
     student_name: row.student_name, student_code: row.student_code, amount_paid: Number(row.paid_amount ?? row.amount).toFixed(2),
     discount_amount: Number(row.discount_amount || 0).toFixed(2), is_exempt: row.is_exempt === true,
     payment_status: row.is_exempt ? "exempt" : Number(row.discount_amount || 0) > 0 ? "discounted" : "paid",
@@ -1798,6 +2039,21 @@ async function updateJob(id, status, fields = {}, claimToken, dbPool = pool) {
     updated_at = NOW()
     WHERE id = $1 AND status = 'processing' AND claim_token = $7
     RETURNING id`, [id, status, fields.error || null, fields.nextAttemptAt || null, fields.phoneNumber || null, fields.providerMessageId || null, claimToken]);
+  return result.rowCount > 0;
+}
+
+async function deferDisconnectedJob(job, dbPool = pool) {
+  const result = await dbPool.query(
+    `UPDATE whatsapp_notification_jobs
+     SET status = 'pending', attempts = GREATEST(attempts - 1, 0),
+         last_error = 'whatsapp_disconnected',
+         next_attempt_at = NOW() + INTERVAL '30 seconds',
+         lease_expires_at = NULL, claim_token = NULL, send_started_at = NULL,
+         updated_at = NOW()
+     WHERE id = $1 AND status = 'processing' AND claim_token = $2
+     RETURNING id`,
+    [job.id, job.claim_token]
+  );
   return result.rowCount > 0;
 }
 
@@ -2396,6 +2652,12 @@ export function normalizeManualRetryReason(value) {
   return { ok: true, value: reason };
 }
 
+export function isRetryableWhatsAppNotificationJob(job) {
+  return job?.status === "failed"
+    || job?.status === "delivery_unknown"
+    || (job?.status === "skipped" && job?.last_error === "invalid_phone");
+}
+
 async function markDeliveryUnknown(job, reason, providerMessageId = null, dbPool = pool, audit = auditWhatsAppJob) {
   const updated = await updateJob(job.id, "delivery_unknown", {
     error: "delivery_unknown",
@@ -2436,20 +2698,25 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
       else await auditStale(job, "unsupported_type");
       return;
     }
-    if (!settings.auto_send && (type === "attendance" || type === "absence")) {
-      const updated = await updateJob(job.id, "skipped", { error: "auto_send_disabled" }, job.claim_token, dbPool);
-      if (updated) await auditJob(job, "whatsapp_job_skipped", { reason: "auto_send_disabled" });
-      else await auditStale(job, "auto_send_disabled");
+    const policySkipReason = type === "custom_message" && !job.created_by_teacher_id
+      ? "custom_message_sender_missing"
+      : !settings.auto_send && type !== "custom_message"
+      ? "auto_send_disabled"
+      : type === "attendance" && settings.attendance_notifications_enabled === false
+        ? "attendance_notifications_disabled"
+        : null;
+    if (policySkipReason) {
+      const updated = await updateJob(job.id, "skipped", { error: policySkipReason }, job.claim_token, dbPool);
+      if (updated) await auditJob(job, "whatsapp_job_skipped", { reason: policySkipReason });
+      else await auditStale(job, policySkipReason);
       return;
     }
     if (!connected()) {
-      const attempts = Number(job.attempts || 0);
-      const retry = attempts < 3;
-      const updated = await updateJob(job.id, retry ? "pending" : "failed", {
-        error: "whatsapp_disconnected",
-        nextAttemptAt: retry ? new Date(Date.now() + 10_000) : null
-      }, job.claim_token, dbPool);
-      if (updated) await auditJob(job, retry ? "whatsapp_job_retry_scheduled" : "whatsapp_job_failed", { reason: "whatsapp_disconnected" });
+      // A disconnected local WhatsApp session is not a delivery attempt. Keep
+      // the PostgreSQL outbox item durable and restore the claim increment so
+      // temporary disconnections never exhaust the real provider retry budget.
+      const deferred = await deferDisconnectedJob(job, dbPool);
+      if (deferred) await auditJob(job, "whatsapp_job_deferred", { reason: "whatsapp_disconnected" });
       else await auditStale(job, "whatsapp_disconnected");
       return;
     }
@@ -2472,7 +2739,9 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
       await auditStale(job, "grade_portal_link_scrub");
       return;
     }
-    const selection = await selectAndPersistWhatsAppTemplate({ job, type, dbPool });
+    const selection = type === "custom_message"
+      ? { ok: true, eligibility, assignment: { id: null, content_version: null, message_body: String(eligibility.payload?.message || ""), audience: "neutral", slot_number: null, gender: null } }
+      : await selectAndPersistWhatsAppTemplate({ job, type, dbPool });
     if (!selection.ok) {
       const terminalReason = selection.stale ? "stale_claim" : selection.reason || "whatsapp_template_configuration_missing";
       const updated = selection.stale
@@ -2507,7 +2776,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
     const parts = cairoParts(payload.event_time || payload.checkin_time);
     const studentCode = String(payload.student_code || "").trim();
     portalAccessToken = createStudentPortalAccessToken();
-    const portalLink = buildStudentPortalLink(job.student_id, studentCode, portalAccessToken);
+    const portalLink = type === "custom_message" ? "" : buildStudentPortalLink(job.student_id, studentCode, portalAccessToken);
     const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
     const formattedPayload = {
       ...payload,
@@ -2523,8 +2792,9 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
         return { month: formattedMonths, months: formattedMonths };
       })() : {})
     };
-    const templateValues = { ...formattedPayload, ...parts, ref_code: job.ref_code, student_code: studentCode, portal_link: portalLink };
-    const renderedBody = compileWhatsAppMessage(type, template, templateValues).trim();
+    const displayReference = displayReferenceForJob(job, type);
+    const templateValues = { ...formattedPayload, ...parts, ref_code: displayReference, student_code: studentCode, portal_link: portalLink };
+    const renderedBody = type === "custom_message" ? String(payload.message || "").trim() : compileWhatsAppMessage(type, template, templateValues).trim();
     const body = portalLink && !templateHasPlaceholder(template, "portal_link") ? `${renderedBody}\n${portalLink}` : renderedBody;
     const adjustmentLine = type === "receipt" && (payload.is_exempt === true || Number(payload.discount_amount || 0) > 0)
       ? payload.is_exempt === true
@@ -2532,7 +2802,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
         : (locale === "ar-EG" ? `الخصم المطبق: ${payload.discount_amount} ج.م` : `Discount applied: ${payload.discount_amount} EGP`)
       : "";
     const adjustedBody = adjustmentLine && !body.includes(adjustmentLine) ? `${body}\n${adjustmentLine}` : body;
-    const footer = locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
+    const footer = type === "custom_message" ? "" : locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
     const finalBody = adjustedBody.includes(footer) ? adjustedBody : `${adjustedBody}\n\n${footer}`;
     const contentUpdated = await dbPool.query(
       `UPDATE whatsapp_notification_jobs
@@ -2552,6 +2822,31 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
       || !(await renewOwnership())
       || !(await verifyOwnership())) {
       await auditStale(job, "before_provider");
+      return;
+    }
+    if (!connected()) {
+      const deferred = await deferDisconnectedJob(job, dbPool);
+      if (deferred) await auditJob(job, "whatsapp_job_deferred", { reason: "whatsapp_disconnected" });
+      else await auditStale(job, "whatsapp_disconnected_before_provider");
+      return;
+    }
+    // Re-read the setting immediately before crossing the provider boundary.
+    // This closes the race where an administrator disables automated sending
+    // after the job was queued or rendered but before it is actually sent.
+    const deliverySettings = settingsOverride || await getWhatsAppSettings(dbPool.query.bind(dbPool));
+    const deliverySkipReason = type === "custom_message" && !job.created_by_teacher_id
+      ? "custom_message_sender_missing"
+      : !deliverySettings.auto_send && type !== "custom_message"
+      ? "auto_send_disabled"
+      : type === "attendance" && deliverySettings.attendance_notifications_enabled === false
+        ? "attendance_notifications_disabled"
+        : null;
+    if (deliverySkipReason) {
+      const updated = await updateJob(job.id, "skipped", { error: deliverySkipReason }, job.claim_token, dbPool);
+      if (updated) {
+        await cleanupJobPortalAccess(job, portalAccessToken, dbPool);
+        await auditJob(job, "whatsapp_job_skipped", { reason: deliverySkipReason });
+      } else await auditStale(job, `${deliverySkipReason}_before_provider`);
       return;
     }
     const sendStart = await markSendStartedWithResult(job, type, dbPool);

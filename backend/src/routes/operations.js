@@ -17,7 +17,7 @@ import { createRateLimiter } from "../middleware/rateLimit.js";
 import { hasPermission } from "../services/rbac.js";
 import { ipKeyGenerator } from "express-rate-limit";
 import { enqueueAttendanceNotificationInTransaction, settleAbsenceNotificationJobsForCorrection, wakeWhatsAppWorker } from "../services/whatsapp.js";
-import { MANUAL_ATTENDANCE_STATUSES } from "../utils/attendanceStatus.js";
+import { ATTENDANCE_REPORT_STATUSES, MANUAL_ATTENDANCE_STATUSES } from "../utils/attendanceStatus.js";
 import { missingPaymentIdempotencyMessage, readRequiredPaymentIdempotencyKey } from "../utils/paymentIdempotency.js";
 import { appendGroupScope, hasGroupAccess, isGroupScopeRestricted, normalizeGroupIds } from "../services/groupAccess.js";
 import { setFinancialCacheHeaders } from "../utils/cacheHeaders.js";
@@ -36,6 +36,12 @@ const recentScannerRequests = new Map();
 
 function groupAccessDenied(res) {
   return res.status(403).json({ ok: false, status: "group_access_forbidden" });
+}
+
+function attendanceNotificationWasConsidered(result) {
+  return Boolean(result?.queued
+    || ["already_queued", "already_sent"].includes(result?.reason)
+    || (result?.reason === "already_processed" && result?.status !== "skipped"));
 }
 
 function paymentReversalFailure(res, error) {
@@ -355,6 +361,194 @@ operationsRouter.get("/payments/report", requirePermission("payments.view"), req
       LEFT JOIN payment_reversals pr ON pr.payment_id = p.id
       WHERE ${filters.join(" AND ")} ORDER BY ${paymentTimestamp} DESC`, values);
     res.json({ ok: true, payments: result.rows, total_paid: result.rows.filter((row) => !row.is_reversed).reduce((sum, row) => sum + Number(row.amount), 0), payment_count: result.rowCount });
+  } catch (error) { next(error); }
+});
+
+function reportDate(value) {
+  const normalized = normalizeDigits(value || "").trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
+}
+
+function attendanceReportSearch(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  return { text: `%${normalizedSearch(raw)}%`, nationalIdHash: crypto.createHash("sha256").update(normalizeDigits(raw).trim()).digest("hex") };
+}
+
+operationsRouter.get("/reports/options", requireAnyPermission("attendance.view", "payments.reports.view"), async (req, res, next) => {
+  try {
+    const values = [];
+    const filters = ["g.is_active = TRUE", "g.deleted_at IS NULL"];
+    appendGroupScope(filters, values, req.teacher, "g.id");
+    const groups = await query(`
+      SELECT g.id, COALESCE(g.display_name, g.name) AS name, g.grade,
+        COALESCE(g.grade_level, g.grade) AS grade_level
+      FROM groups g
+      WHERE ${filters.join(" AND ")}
+      ORDER BY COALESCE(g.display_name, g.name), g.id
+    `, values);
+    const gradeValues = [...new Set(groups.rows.map((row) => String(row.grade_level || "").trim()).filter(Boolean))].sort();
+    res.json({ ok: true, groups: groups.rows, grades: gradeValues });
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function runAttendanceReport(req, res, next, reportType) {
+  try {
+    const values = [];
+    const filters = [
+      "s.status = 'closed'",
+      "s.status <> 'cancelled'",
+      reportType === "absence" ? "s.absence_dispatched = TRUE" : `ar.status IN (${ATTENDANCE_REPORT_STATUSES.map((status) => `'${status}'`).join(", ")})`
+    ];
+    if (reportType === "absence") {
+      filters.push("ar.status = 'absent'");
+      filters.push(`NOT EXISTS (
+        SELECT 1 FROM attendance_records replacement
+        WHERE replacement.session_id = ar.session_id
+          AND replacement.student_id = ar.student_id
+          AND replacement.status IN ('present', 'late')
+      )`);
+    }
+    const from = reportDate(req.query.from || req.query.date_from);
+    const to = reportDate(req.query.to || req.query.date_to);
+    if (from) { values.push(from); filters.push(`s.session_date >= $${values.length}::date`); }
+    if (to) { values.push(to); filters.push(`s.session_date <= $${values.length}::date`); }
+    const groupId = Number(normalizeDigits(req.query.groupId || req.query.group_id || ""));
+    if (Number.isSafeInteger(groupId) && groupId > 0) { values.push(groupId); filters.push(`s.group_id = $${values.length}`); }
+    const grade = normalizedSearch(req.query.grade || req.query.grade_level);
+    if (grade) { values.push(`%${grade}%`); filters.push(`COALESCE(g.grade_level, g.grade) ILIKE $${values.length}`); }
+    const search = attendanceReportSearch(req.query.search || req.query.q);
+    if (search) {
+      values.push(search.text); const textParam = `$${values.length}`;
+      values.push(search.nationalIdHash); const hashParam = `$${values.length}`;
+      filters.push(`(
+        COALESCE(ar.student_name_snapshot, st.full_name) ILIKE ${textParam}
+        OR COALESCE(ar.student_code_snapshot, st.student_code) ILIKE ${textParam}
+        OR st.student_serial ILIKE ${textParam}
+        OR st.scan_serial ILIKE ${textParam}
+        OR st.phone ILIKE ${textParam}
+        OR st.guardian_phone ILIKE ${textParam}
+        OR COALESCE(g.display_name, g.name) ILIKE ${textParam}
+        OR COALESCE(g.grade_level, g.grade) ILIKE ${textParam}
+        OR st.national_id_hash = ${hashParam}
+      )`);
+    }
+    appendGroupScope(filters, values, req.teacher, "s.group_id");
+    const exportMode = String(req.query.export || "").toLowerCase() === "true" || String(req.query.export || "") === "1";
+    const requestedLimit = Number(normalizeDigits(req.query.limit || ""));
+    const limit = exportMode ? 50_000 : Math.min(Math.max(Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? requestedLimit : 50, 1), 200);
+    const offsetValue = Number(normalizeDigits(req.query.offset || ""));
+    const offset = exportMode ? 0 : Math.max(Number.isSafeInteger(offsetValue) && offsetValue >= 0 ? offsetValue : 0, 0);
+    const baseSql = `
+      FROM attendance_records ar
+      JOIN attendance_sessions s ON s.id = ar.session_id
+      JOIN students st ON st.id = ar.student_id
+      JOIN groups g ON g.id = s.group_id
+      WHERE ${filters.join(" AND ")}
+    `;
+    const count = await query(`SELECT COUNT(*)::int AS total ${baseSql}`, values);
+    const dataValues = [...values, limit, offset];
+    const result = await query(`
+      SELECT ar.id AS attendance_record_id, s.id AS session_id, s.session_date,
+        s.starts_at, s.closes_at, ar.status,
+        COALESCE(ar.student_name_snapshot, st.full_name) AS student_name,
+        COALESCE(ar.student_code_snapshot, st.student_code) AS student_code,
+        st.student_serial, st.scan_serial,
+        COALESCE(g.display_name, g.name) AS group_name,
+        COALESCE(g.grade_level, g.grade) AS grade_level
+      ${baseSql}
+      ORDER BY s.session_date DESC, s.starts_at DESC, student_name ASC, ar.id ASC
+      LIMIT $${dataValues.length - 1} OFFSET $${dataValues.length}
+    `, dataValues);
+    res.json({ ok: true, report: reportType, rows: result.rows, pagination: { total: Number(count.rows[0]?.total || 0), limit, offset, has_more: offset + result.rowCount < Number(count.rows[0]?.total || 0) } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+operationsRouter.get("/reports/attendance", requireAnyPermission("attendance.view", "payments.reports.view"), (req, res, next) => runAttendanceReport(req, res, next, "attendance"));
+operationsRouter.get("/reports/absence", requireAnyPermission("attendance.view", "payments.reports.view"), (req, res, next) => runAttendanceReport(req, res, next, "absence"));
+
+// Historical settlement report only. A payment may cover several months; the
+// month filter selects the settlement when that month is covered and never
+// attempts to allocate its discount across those months.
+operationsRouter.get("/reports/special-financial", requirePermission("payments.view"), requirePermission("payments.reports.view"), async (req, res, next) => {
+  try {
+    const values = [];
+    const filters = ["(p.is_exempt = TRUE OR p.discount_amount > 0)"];
+    const paymentTimestamp = "COALESCE(p.paid_at, p.payment_date::timestamp AT TIME ZONE 'Africa/Cairo')";
+    const add = (sql, value) => { values.push(value); filters.push(sql.replaceAll("?", `$${values.length}`)); };
+    const from = reportDate(req.query.from || req.query.date_from);
+    const to = reportDate(req.query.to || req.query.date_to);
+    if (from) add(`${paymentTimestamp} >= (?::date::timestamp AT TIME ZONE 'Africa/Cairo')`, from);
+    if (to) add(`${paymentTimestamp} < (((?::date + INTERVAL '1 day')::timestamp) AT TIME ZONE 'Africa/Cairo')`, to);
+    const groupId = Number(normalizeDigits(req.query.groupId || req.query.group_id || ""));
+    if (Number.isSafeInteger(groupId) && groupId > 0) add("p.group_id = ?", groupId);
+    const grade = normalizedSearch(req.query.grade || req.query.grade_level);
+    if (grade) add("COALESCE(p.grade_level_snapshot, COALESCE(g.grade_level, g.grade)) ILIKE ?", `%${grade}%`);
+    const type = String(req.query.type || "").trim();
+    if (type === "exempt") filters.push("p.is_exempt = TRUE");
+    if (type === "discount") filters.push("p.is_exempt = FALSE AND p.discount_amount > 0");
+    const month = normalizeDigits(req.query.month || "").trim();
+    if (/^\d{4}-\d{2}$/.test(month)) add(`EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p.payment_months) = 'array' THEN p.payment_months ELSE '[]'::jsonb END) AS covered(month_data) WHERE LEFT(COALESCE(covered.month_data->>'month', covered.month_data->>'billing_month', covered.month_data->>'due_month', ''), 7) = ?)`, month);
+    const reversal = String(req.query.reversal || req.query.reversal_state || "active").toLowerCase();
+    if (reversal === "reversed") filters.push("pr.id IS NOT NULL");
+    else if (reversal !== "all" && reversal !== "include") filters.push("pr.id IS NULL");
+    const search = attendanceReportSearch(req.query.search || req.query.q);
+    if (search) {
+      values.push(search.text); const textParam = `$${values.length}`;
+      values.push(search.nationalIdHash); const hashParam = `$${values.length}`;
+      filters.push(`(
+        COALESCE(p.student_name_snapshot, s.full_name) ILIKE ${textParam}
+        OR COALESCE(p.student_code_snapshot, s.student_code) ILIKE ${textParam}
+        OR COALESCE(p.student_serial_snapshot, s.student_serial) ILIKE ${textParam}
+        OR COALESCE(p.scan_serial_snapshot, s.scan_serial) ILIKE ${textParam}
+        OR s.phone ILIKE ${textParam} OR s.guardian_phone ILIKE ${textParam}
+        OR COALESCE(p.group_name_snapshot, COALESCE(g.display_name, g.name)) ILIKE ${textParam}
+        OR COALESCE(p.grade_level_snapshot, COALESCE(g.grade_level, g.grade)) ILIKE ${textParam}
+        OR s.national_id_hash = ${hashParam}
+      )`);
+    }
+    appendGroupScope(filters, values, req.teacher, "p.group_id");
+    const exportMode = ["true", "1"].includes(String(req.query.export || "").toLowerCase());
+    const requestedLimit = Number(normalizeDigits(req.query.limit || ""));
+    const limit = exportMode ? 50_000 : Math.min(Math.max(Number.isSafeInteger(requestedLimit) && requestedLimit > 0 ? requestedLimit : 50, 1), 200);
+    const requestedOffset = Number(normalizeDigits(req.query.offset || ""));
+    const offset = exportMode ? 0 : Math.max(Number.isSafeInteger(requestedOffset) && requestedOffset >= 0 ? requestedOffset : 0, 0);
+    const baseSql = `
+      FROM payments p
+      LEFT JOIN students s ON s.id = p.student_id
+      LEFT JOIN groups g ON g.id = p.group_id
+      LEFT JOIN teachers u ON u.id = COALESCE(p.paid_by, p.recorded_by)
+      LEFT JOIN payment_reversals pr ON pr.payment_id = p.id
+      WHERE ${filters.join(" AND ")}
+    `;
+    const [count, summary, result] = await Promise.all([
+      query(`SELECT COUNT(*)::int AS total ${baseSql}`, values),
+      query(`SELECT COUNT(*)::int AS total_operations,
+          COUNT(*) FILTER (WHERE p.is_exempt = TRUE)::int AS full_exemptions,
+          COUNT(*) FILTER (WHERE p.is_exempt = FALSE AND p.discount_amount > 0)::int AS discounts,
+          COALESCE(SUM(p.discount_amount), 0) AS total_treatment_value
+        ${baseSql} AND pr.id IS NULL`, values),
+      query(`SELECT p.id, ${paymentTimestamp} AS paid_at, p.amount, p.paid_amount, p.discount_amount, p.is_exempt, p.payment_months, p.notes,
+          (p.paid_amount + p.discount_amount) AS gross_amount, (pr.id IS NOT NULL) AS is_reversed,
+          pr.created_at AS reversed_at,
+          COALESCE(p.student_name_snapshot, s.full_name) AS student_name,
+          COALESCE(p.student_code_snapshot, s.student_code) AS student_code,
+          COALESCE(p.student_serial_snapshot, s.student_serial) AS student_serial,
+          COALESCE(p.scan_serial_snapshot, s.scan_serial) AS scan_serial,
+          COALESCE(p.group_name_snapshot, COALESCE(g.display_name, g.name)) AS group_name,
+          COALESCE(p.grade_level_snapshot, COALESCE(g.grade_level, g.grade)) AS grade_level,
+          COALESCE(u.name, u.username, u.email, 'Staff') AS recorded_by,
+          CASE WHEN p.is_exempt THEN 'exempt' ELSE 'discount' END AS treatment_type
+        ${baseSql}
+        ORDER BY ${paymentTimestamp} DESC, p.id DESC
+        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+        [...values, limit, offset])
+    ]);
+    res.json({ ok: true, rows: result.rows, summary: summary.rows[0], pagination: { total: Number(count.rows[0]?.total || 0), limit, offset, has_more: offset + result.rowCount < Number(count.rows[0]?.total || 0) } });
   } catch (error) { next(error); }
 });
 
@@ -1000,7 +1194,7 @@ async function recordAttendance({ sessionId, studentId, actorId, method = "scann
   let whatsapp = null;
   if ((status === "present" || status === "late") && whatsappNotified) {
     whatsapp = await enqueueAttendanceNotificationInTransaction(client, { attendanceRecordId: result.rows[0].id, studentId });
-    const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+    const considered = attendanceNotificationWasConsidered(whatsapp);
     await client.query("UPDATE attendance_records SET whatsapp_notified = $2 WHERE id = $1", [result.rows[0].id, considered]);
     result.rows[0].whatsapp_notified = considered;
   }
@@ -1234,7 +1428,7 @@ async function correctSystemAbsence({ sessionId, studentId, actorId, ip, deviceI
     const whatsapp = whatsappNotified
       ? await enqueueAttendanceNotificationInTransaction(client, { attendanceRecordId: corrected.rows[0].id, studentId })
       : null;
-    const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+    const considered = attendanceNotificationWasConsidered(whatsapp);
     await client.query("UPDATE attendance_records SET whatsapp_notified = $2 WHERE id = $1", [corrected.rows[0].id, considered]);
     await settleAbsenceNotificationJobsForCorrection({
       client,
@@ -1311,7 +1505,7 @@ async function correctManualAttendance({ sessionId, studentId, actorId, status, 
     let whatsapp = null;
     if (whatsappNotified && (status === "present" || status === "late")) {
       whatsapp = await enqueueAttendanceNotificationInTransaction(client, { attendanceRecordId: updated.rows[0].id, studentId });
-      const considered = Boolean(whatsapp?.queued || ["already_queued", "already_sent", "already_processed"].includes(whatsapp?.reason));
+      const considered = attendanceNotificationWasConsidered(whatsapp);
       await client.query("UPDATE attendance_records SET whatsapp_notified = $2 WHERE id = $1", [updated.rows[0].id, considered]);
       updated.rows[0].whatsapp_notified = considered;
     }
@@ -1338,7 +1532,9 @@ async function correctManualAttendance({ sessionId, studentId, actorId, status, 
 operationsRouter.post("/attendance/manual", requirePermission("attendance.manage"), async (req, res, next) => {
   try {
     const sessionId=Number(normalizeDigits(req.body?.session_id)), studentId=Number(normalizeDigits(req.body?.student_id)), status=String(req.body?.status||"present");
-    const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
+    // The persisted attendance preference is enforced by the enqueue service.
+    // Ignore client-provided send_whatsapp so callers cannot bypass that policy.
+    const whatsappNotified = hasPermission(req.teacher, "whatsapp.send_attendance");
     if (!sessionId || !studentId || !MANUAL_ATTENDANCE_STATUSES.includes(status)) return res.status(400).json({ok:false,status:"invalid_attendance_payload"});
     const check = await query("SELECT 1 FROM attendance_sessions s JOIN students st ON st.group_id=s.group_id WHERE s.id=$1 AND st.id=$2", [sessionId,studentId]);
     if (!check.rowCount) return res.status(400).json({ok:false,status:"wrong_group"});
@@ -1434,7 +1630,7 @@ operationsRouter.post("/scanner/attendance", scannerRateLimit, requirePermission
     if (isRecentScannerDuplicate(req.teacher.id, token, idempotencyKey)) {
       return res.status(200).json({ ok: true, status: "ignored_hardware_bounce" });
     }
-    const whatsappNotified = req.body?.send_whatsapp !== false && hasPermission(req.teacher, "whatsapp.send_attendance");
+    const whatsappNotified = hasPermission(req.teacher, "whatsapp.send_attendance");
     const corrected = await correctSystemAbsence({ sessionId: sessionResult.rows[0].id, studentId: student.id, actorId: req.teacher.id, ip: req.ip, deviceId, idempotencyKey, whatsappNotified, request: req, user: req.teacher });
     if (corrected) {
       return res.json({ ok: true, status: "attendance_recorded", student: publicStudent, record: corrected, corrected: true });

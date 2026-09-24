@@ -209,11 +209,18 @@ export async function migrate() {
         'attendance_close_after_minutes',
         'attendance_alert_threshold',
         'attendance_cancellation_cutoff_percentage',
+        'absence_freeze_limit',
         'evaluation_alert_threshold',
         'password_recovery_enabled',
         'password_recovery_provider',
         'password_recovery_from_email',
-        'gemini_model'
+        'gemini_model',
+        'ai_provider_gemini',
+        'ai_provider_groq',
+        'ai_provider_mistral',
+        'ai_provider_openrouter',
+        'ai_provider_cloudflare',
+        'ai_routing_strategy'
       )),
       value_json JSONB NOT NULL,
       updated_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
@@ -279,8 +286,8 @@ export async function migrate() {
 
   // 2. Add compatible columns and constraints for existing installations.
   await query("ALTER TABLE system_settings DROP CONSTRAINT IF EXISTS system_settings_key_check");
-  await query("ALTER TABLE system_settings ADD CONSTRAINT system_settings_key_check CHECK (key IN ('attendance_open_before_minutes', 'attendance_close_after_minutes', 'attendance_alert_threshold', 'attendance_cancellation_cutoff_percentage', 'evaluation_alert_threshold', 'password_recovery_enabled', 'password_recovery_provider', 'password_recovery_from_email', 'gemini_model'))");
-  await query("INSERT INTO system_settings (key, value_json) VALUES ('attendance_cancellation_cutoff_percentage', '60'::jsonb) ON CONFLICT (key) DO NOTHING");
+  await query("ALTER TABLE system_settings ADD CONSTRAINT system_settings_key_check CHECK (key IN ('attendance_open_before_minutes', 'attendance_close_after_minutes', 'attendance_alert_threshold', 'attendance_cancellation_cutoff_percentage', 'evaluation_alert_threshold', 'password_recovery_enabled', 'password_recovery_provider', 'password_recovery_from_email', 'gemini_model', 'absence_freeze_limit', 'ai_provider_gemini', 'ai_provider_groq', 'ai_provider_mistral', 'ai_provider_openrouter', 'ai_provider_cloudflare', 'ai_routing_strategy'))");
+  await query("INSERT INTO system_settings (key, value_json) VALUES ('attendance_cancellation_cutoff_percentage', '60'::jsonb), ('absence_freeze_limit', '4'::jsonb) ON CONFLICT (key) DO NOTHING");
   await query(`
     SET search_path TO public;
 
@@ -328,11 +335,18 @@ export async function migrate() {
       'attendance_close_after_minutes',
       'attendance_alert_threshold',
       'attendance_cancellation_cutoff_percentage',
+      'absence_freeze_limit',
       'evaluation_alert_threshold',
       'password_recovery_enabled',
       'password_recovery_provider',
       'password_recovery_from_email',
-      'gemini_model'
+      'gemini_model',
+      'ai_provider_gemini',
+      'ai_provider_groq',
+      'ai_provider_mistral',
+      'ai_provider_openrouter',
+      'ai_provider_cloudflare',
+      'ai_routing_strategy'
     ));
 
     ALTER TABLE teachers DROP CONSTRAINT IF EXISTS teachers_role_check;
@@ -357,6 +371,13 @@ export async function migrate() {
     ALTER TABLE students ADD COLUMN IF NOT EXISTS purge_after TIMESTAMPTZ;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS billing_start_month DATE;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_frozen BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_frozen_at TIMESTAMPTZ;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_frozen_reason TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_frozen_streak INTEGER;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_frozen_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_unfrozen_at TIMESTAMPTZ;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_unfrozen_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL;
     ALTER TABLE students DROP CONSTRAINT IF EXISTS students_gender_check;
     ALTER TABLE students ADD CONSTRAINT students_gender_check CHECK (gender IN ('male', 'female', 'unknown'));
 
@@ -770,6 +791,7 @@ export async function migrate() {
     CREATE TABLE IF NOT EXISTS whatsapp_settings (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       auto_send BOOLEAN NOT NULL DEFAULT FALSE,
+      attendance_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
       templates JSONB NOT NULL DEFAULT '[]'::jsonb,
       grade_templates JSONB NOT NULL DEFAULT '[]'::jsonb,
       receipt_templates JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -781,6 +803,8 @@ export async function migrate() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CHECK (min_delay_seconds <= max_delay_seconds)
     );
+    ALTER TABLE whatsapp_settings
+      ADD COLUMN IF NOT EXISTS attendance_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE;
     CREATE TABLE IF NOT EXISTS whatsapp_auth_state (
       session_id TEXT NOT NULL,
       key_id TEXT NOT NULL,
@@ -796,6 +820,8 @@ export async function migrate() {
       source_id BIGINT,
       attendance_record_id BIGINT UNIQUE REFERENCES attendance_records(id) ON DELETE CASCADE,
       student_id INTEGER REFERENCES students(id) ON DELETE SET NULL,
+      created_by_teacher_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      idempotency_key TEXT,
       phone_number TEXT NOT NULL,
       payload JSONB NOT NULL DEFAULT '{}'::jsonb,
       ref_code TEXT NOT NULL UNIQUE,
@@ -899,7 +925,10 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_notification_type_check");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_status_check");
   await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_status_check CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped', 'delivery_unknown', 'review_required'))");
-  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation'))");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS created_by_teacher_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS idempotency_key TEXT");
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_notification_jobs_idempotency_key_idx ON whatsapp_notification_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation', 'custom_message'))");
   await query("ALTER TABLE whatsapp_template_rotation DROP CONSTRAINT IF EXISTS whatsapp_template_rotation_notification_type_check");
   await query("ALTER TABLE whatsapp_template_rotation ADD CONSTRAINT whatsapp_template_rotation_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation'))");
   await query("ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_category_check");

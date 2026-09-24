@@ -11,7 +11,7 @@ export function PublicChatWidget({ apiBaseUrl }: PublicChatWidgetProps) {
     <div className="landing-ai-orb-control" dir="rtl">
       {welcomeVisible ? (
         <div className="landing-ai-tooltip" role="status">
-          <span>اسأل المساعد الذكي 👋</span>
+          <span>👋 اسأل المساعد الذكي</span>
           <button type="button" onClick={() => setWelcomeVisible(false)} aria-label="إغلاق التلميح">×</button>
         </div>
       ) : null}

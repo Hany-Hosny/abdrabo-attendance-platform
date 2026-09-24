@@ -8,7 +8,7 @@ import { normalizeScanValue } from "../utils/scan.js";
 import { auditLog } from "../services/audit.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { createStudentToken, hashStudentPortalAccessToken } from "../services/auth.js";
-import { authenticatedStudent } from "../services/studentAuth.js";
+import { authenticatedStudent, studentAuthFailure } from "../services/studentAuth.js";
 import { ipKeyGenerator } from "express-rate-limit";
 import { requireActiveSessionAttendance } from "../middleware/requireActiveSessionAttendance.js";
 import path from "node:path";
@@ -55,15 +55,17 @@ studentRouter.post("/portal-access", studentPortalAccessRateLimit, async (req, r
 
     const result = await query(
       `SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
+        s.is_active, s.absence_frozen, s.absence_frozen_at,
         g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
        FROM students s
        JOIN groups g ON g.id = s.group_id
-       WHERE s.id = $1 AND s.is_active = TRUE AND s.deleted_at IS NULL
+       WHERE s.id = $1 AND s.deleted_at IS NULL
          AND g.is_active = TRUE AND g.deleted_at IS NULL
        LIMIT 1`,
       [access.rows[0].student_id]
     );
-    if (!result.rowCount) return res.status(404).json({ ok: false, status: "student_not_found" });
+    if (!result.rowCount || !result.rows[0].is_active) return res.status(404).json({ ok: false, status: "student_not_found" });
+    if (result.rows[0].absence_frozen) return res.status(403).json({ ok: false, status: "account_frozen", frozen_at: result.rows[0].absence_frozen_at || null });
 
     const student = result.rows[0];
     return res.json({
@@ -101,23 +103,24 @@ studentRouter.post("/login", studentLoginRateLimit, async (req, res, next) => {
     const result = await query(
       `
         SELECT st.id, st.full_name, st.student_code, st.student_serial, st.scan_serial,
-          st.group_id, g.name AS group_name, g.grade,
+          st.group_id, st.is_active, st.absence_frozen, st.absence_frozen_at, g.name AS group_name, g.grade,
           COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
         FROM students st
         LEFT JOIN groups g ON g.id = st.group_id
         WHERE (st.student_code = $1 OR st.student_serial = $1 OR st.student_serial = $2)
-          AND st.is_active = TRUE AND st.deleted_at IS NULL
+          AND st.deleted_at IS NULL
         LIMIT 1
       `,
       [normalizedCode, String(normalizedCode).replace(/^A(\d{4})$/, "A-$1")]
     );
 
-    if (!result.rowCount) {
+    if (!result.rowCount || !result.rows[0].is_active) {
       await auditLog({ action: "login_failed", details: { actor_type: "student", identifier: normalizedCode, reason: "invalid_student" }, request: req });
       return res.status(401).json({ ok: false, status: "invalid_student", message: "Invalid or inactive student code." });
     }
 
     const row = result.rows[0];
+    if (row.absence_frozen) return res.status(403).json({ ok: false, status: "account_frozen", frozen_at: row.absence_frozen_at || null });
     const student = {
       id: row.id,
       full_name: row.full_name,
@@ -200,7 +203,7 @@ studentRouter.post("/find-code", studentLookupRateLimit, async (req, res, next) 
 studentRouter.get("/me/dashboard", async (req, res, next) => {
   try {
     const student = await authenticatedStudent(req);
-    if (!student) return res.status(401).json({ ok: false, status: "unauthorized" });
+    if (!student) return studentAuthFailure(req, res);
     const dashboard = await getDashboardData(student.id);
     return res.json({ ok: true, dashboard });
   } catch (error) {
@@ -211,7 +214,7 @@ studentRouter.get("/me/dashboard", async (req, res, next) => {
 studentRouter.get("/me/profile", async (req, res, next) => {
   try {
     const authenticated = await authenticatedStudent(req);
-    if (!authenticated) return res.status(401).json({ ok: false, status: "unauthorized" });
+    if (!authenticated) return studentAuthFailure(req, res);
     const result = await query(
       `SELECT s.id, s.full_name, s.student_code, s.student_serial, s.scan_serial,
         g.name AS group_name, g.grade, COALESCE(g.grade_level, g.grade) AS grade_level, g.subject
@@ -236,7 +239,7 @@ studentRouter.get("/me/fees", async (req, res, next) => {
   try {
     const student = await authenticatedStudent(req);
     if (!student) {
-      return res.status(401).json({ ok: false, status: "unauthorized", message: "بيانات الطالب غير صالحة. / Invalid student session." });
+      return studentAuthFailure(req, res, { message: "بيانات الطالب غير صالحة. / Invalid student session." });
     }
     const portalData = await getStudentFeePortalData(student.id);
     return res.json({ ok: true, ...portalData });
@@ -248,7 +251,7 @@ studentRouter.get("/me/fees", async (req, res, next) => {
 studentRouter.get("/me/notes", async (req, res, next) => {
   try {
     const student = await authenticatedStudent(req);
-    if (!student) return res.status(401).json({ ok: false, status: "unauthorized", notes: [], unread_count: 0 });
+    if (!student) return studentAuthFailure(req, res, { notes: [], unread_count: 0 });
     const result = await query(
       `SELECT n.id, n.student_id, n.body AS text, n.body, n.created_at, n.is_read,
         n.created_at::date AS created_date, n.created_at::time AS created_time,
@@ -267,7 +270,7 @@ studentRouter.get("/me/notes", async (req, res, next) => {
 studentRouter.put("/me/notes/read", async (req, res, next) => {
   try {
     const student = await authenticatedStudent(req);
-    if (!student) return res.status(401).json({ ok: false, status: "unauthorized" });
+    if (!student) return studentAuthFailure(req, res);
     const result = await query("UPDATE student_notes SET is_read = TRUE WHERE student_id = $1 AND is_read = FALSE RETURNING id", [student.id]);
     return res.json({ ok: true, marked_count: result.rowCount, unread_count: 0 });
   } catch (error) {
@@ -275,12 +278,12 @@ studentRouter.put("/me/notes/read", async (req, res, next) => {
   }
 });
 
-studentRouter.get("/homework", async (req,res,next)=>{try{const student=await authenticatedStudent(req);if(!student)return res.status(401).json({ok:false,status:"unauthorized",homework:[]});const result=await query(`SELECT h.id,h.title,h.description,h.due_date,h.attachment_url,COALESCE(hs.status,CASE WHEN h.due_date IS NOT NULL AND h.due_date<CURRENT_TIMESTAMP THEN 'late' ELSE 'new' END) AS status,hs.submitted_at FROM homeworks h LEFT JOIN homework_submissions hs ON hs.homework_id=h.id AND hs.student_id=$1 WHERE h.group_id=$2 ORDER BY h.due_date NULLS LAST,h.created_at DESC`,[student.id,student.group_id]);res.json({ok:true,homework:result.rows||[]});}catch(error){next(error);}});
+studentRouter.get("/homework", async (req,res,next)=>{try{const student=await authenticatedStudent(req);if(!student)return studentAuthFailure(req,res,{homework:[]});const result=await query(`SELECT h.id,h.title,h.description,h.due_date,h.attachment_url,COALESCE(hs.status,CASE WHEN h.due_date IS NOT NULL AND h.due_date<CURRENT_TIMESTAMP THEN 'late' ELSE 'new' END) AS status,hs.submitted_at FROM homeworks h LEFT JOIN homework_submissions hs ON hs.homework_id=h.id AND hs.student_id=$1 WHERE h.group_id=$2 ORDER BY h.due_date NULLS LAST,h.created_at DESC`,[student.id,student.group_id]);res.json({ok:true,homework:result.rows||[]});}catch(error){next(error);}});
 
 studentRouter.get("/me/exams", async (req, res, next) => {
   try {
     const student = await authenticatedStudent(req);
-    if (!student) return res.status(401).json({ ok: false, status: "unauthorized", exams: [] });
+    if (!student) return studentAuthFailure(req, res, { exams: [] });
     const result = await query(
       `SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment, er.whatsapp_notified
        FROM exam_results er JOIN exams e ON e.id = er.exam_id
@@ -316,7 +319,7 @@ studentRouter.get("/active-exam", requireActiveSessionAttendance, async (req, re
 studentRouter.get("/:id/attendance", async (req, res, next) => {
   try {
     const student = await authenticatedStudent(req);
-    if (!student || Number(student.id) !== Number(req.params.id)) return res.status(401).json({ ok: false, status: "unauthorized" });
+    if (!student || Number(student.id) !== Number(req.params.id)) return studentAuthFailure(req, res);
     const result = await query(
       `
         SELECT ar.*, s.id AS session_id, s.status AS session_status, s.cancelled_at,
@@ -339,7 +342,7 @@ studentRouter.get("/:id/attendance", async (req, res, next) => {
 studentRouter.get("/:id/exams", async (req, res, next) => {
   try {
     const student = await authenticatedStudent(req);
-    if (!student || Number(student.id) !== Number(req.params.id)) return res.status(401).json({ ok: false, status: "unauthorized" });
+    if (!student || Number(student.id) !== Number(req.params.id)) return studentAuthFailure(req, res);
     const result = await query(
       `
         SELECT e.id, e.title, e.max_score, e.exam_date, er.score, er.note, er.note AS assessment, er.whatsapp_notified

@@ -8,6 +8,15 @@ test("Owner automatically has every permission", () => {
   assert.equal(canGrantPermissions({ role: "owner", permissions: [] }, ["users.delete", "settings.manage"]), true);
   DASHBOARD_PERMISSIONS.forEach((permission) => assert.equal(hasPermission({ role: "owner", permissions: [] }, permission), true));
   assert.equal(hasPermission({ role: "owner", permissions: [] }, "attendance.cancel_sessions"), true);
+  assert.equal(hasPermission({ role: "owner", permissions: [] }, "whatsapp.send_custom"), true);
+});
+
+test("custom WhatsApp permission is explicit for admins and staff", () => {
+  assert.equal(DEFAULT_ADMIN_PERMISSIONS.includes("whatsapp.send_custom"), false);
+  assert.equal(hasPermission({ role: "admin", permissions: [] }, "whatsapp.send_custom"), false);
+  assert.equal(hasPermission({ role: "admin", permissions: ["whatsapp.send_custom"] }, "whatsapp.send_custom"), true);
+  assert.equal(hasPermission({ role: "staff", permissions: ["whatsapp.send_custom"] }, "whatsapp.send_custom"), true);
+  assert.equal(hasPermission({ role: "staff", permissions: ["messages.manage", "whatsapp.manage"] }, "whatsapp.send_custom"), false);
 });
 
 test("dated-session cancellation is explicitly assignable to admins and scoped staff", () => {

@@ -6,6 +6,7 @@
   import { getPublicGroupCatalog } from "../services/publicGroupCatalog.js";
   import { authenticatedStudent } from "../services/studentAuth.js";
   import { getStudentAssistantContext, getPublicAssistantSiteContext } from "../services/studentAssistantContext.js";
+  import { generateWithFailover } from "../services/aiProviderRouter.js";
 
   export const assistantRouter = express.Router();
 
@@ -114,21 +115,130 @@
     return { number: international, url: `https://wa.me/${international}` };
   }
 
-  function deterministicPublicResponse(message, site) {
+  function latestUserMessage(messages) {
+    return [...(messages || [])].reverse().find((message) => message.role === "user")?.content || "";
+  }
+
+  function weekdayName(dayOfWeek) {
+    return ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"][Number(dayOfWeek)] || "";
+  }
+
+  function catalogGroupsForQuery(catalog, text) {
+    if (!Array.isArray(catalog)) return [];
+    const gradeAliases = [
+      [/(خامس|5)\s*(ابتدائي|ابتدائي)/, /(خامس|الخامس|5).*ابتدائي/],
+      [/(سادس|6)\s*(ابتدائي|ابتدائي)/, /(سادس|السادس|6).*ابتدائي/],
+      [/(أولى|اولى|1)\s*(إعدادي|اعدادي)/, /(أولى|اولى|أول|الأول|الاول|1).*إ?عدادي/],
+      [/(ثانية|تانية|2)\s*(إعدادي|اعدادي)/, /(ثانية|تانية|ثاني|الثاني|التاني|2).*إ?عدادي/],
+      [/(ثالثة|تالتة|3)\s*(إعدادي|اعدادي)/, /(ثالثة|تالتة|ثالث|الثالث|التالت|3).*إ?عدادي/],
+      [/(أولى|اولى|1)\s*(ثانوي|ثانوى)/, /(أولى|اولى|أول|الأول|الاول|1).*ثانوي/],
+      [/(ثانية|تانية|2)\s*(ثانوي|ثانوى)/, /(ثانية|تانية|ثاني|الثاني|التاني|2).*ثانوي/]
+    ];
+    const match = gradeAliases.find(([pattern]) => pattern.test(text));
+    if (!match) return [];
+    const [, groupPattern] = match;
+    const secondaryGroup = text.match(/ثانوي\s*([12١٢])/);
+    return catalog.filter((group) => {
+      const haystack = normalizedIntentText(`${group.displayName || ""} ${group.grade || ""} ${group.gradeLevel || ""}`)
+        .replaceAll("ال", "");
+      if (!groupPattern.test(haystack)) return false;
+      if (!secondaryGroup) return true;
+      const requestedNumber = secondaryGroup[1].replace("١", "1").replace("٢", "2");
+      return new RegExp(`(?:^|\\s)${requestedNumber}(?:$|\\s)`).test(haystack);
+    });
+  }
+
+  function publicGroupResponse(text, catalog) {
+    const priceIntent = /(بكام|سعر|سعره|اشتراك|رسوم|فلوس|تكلفة)/.test(text);
+    const scheduleIntent = /(المواعيد|مواعيد|ميعاد|ميعادها|جدول)/.test(text);
+    if (!priceIntent && !scheduleIntent) return null;
+    if (!/(خامس|سادس|أولى|اولى|ثانية|تانية|ثالثة|تالتة|ابتدائي|اعدادي|إعدادي|ثانوي|ثانوى|\b[1-6]\b)/.test(text)) {
+      return scheduleIntent ? "مواعيد أنهي صف أو مجموعة؟" : "سعر أنهي صف أو مجموعة؟";
+    }
+    const groups = catalogGroupsForQuery(catalog, text);
+    if (!groups.length) return "بيانات المجموعة المطلوبة غير متاحة حاليًا على المنصة.";
+    const lines = groups.map((group) => {
+      const name = group.displayName || group.grade || "المجموعة";
+      const fee = Number.isFinite(Number(group.monthlyFee)) && group.monthlyFee !== null ? `${Number(group.monthlyFee)} جنيه` : "السعر غير متاح حاليًا";
+      const schedules = (group.schedules || []).map((slot) => `${weekdayName(slot.dayOfWeek)} ${slot.startTime || ""}${slot.endTime ? ` - ${slot.endTime}` : ""}`.trim()).filter(Boolean);
+      const details = [priceIntent ? fee : null, scheduleIntent ? (schedules.length ? schedules.join("، ") : "المواعيد غير متاحة حاليًا") : null].filter(Boolean).join(" — ");
+      return `${name}: ${details}`;
+    });
+    return lines.join("\n");
+  }
+
+  function privateResponse(text, trustedStudentContext, isStudent) {
+    const financialIntent = /(عليا|عليّ|رصيد|مدفوع|دفعت|المتبقي|فلوس)/.test(text);
+    const attendanceIntent = /(غبت|غياب|حضوري|حضور|نسبة حضوري|حضرت)/.test(text);
+    const examIntent = /(درجات|نتائج|نتيجة|امتحان)/.test(text);
+    const homeworkIntent = /(واجب|تكليف|سلمت)/.test(text);
+    if (!financialIntent && !attendanceIntent && !examIntent && !homeworkIntent) return null;
+    if (!isStudent) return "للاطلاع على رصيدك وحضورك ودرجاتك وواجباتك، سجّل دخولك إلى بوابة الطلاب أولًا: https://abdrabo.online/student/login";
+    const parts = [];
+    if (financialIntent) {
+      const financial = trustedStudentContext?.financial;
+      parts.push(financial && !financial.unavailable ? `المتبقي عليك ${financial.remainingBalance} جنيه.` : "بياناتك المالية غير متاحة حاليًا.");
+    }
+    if (attendanceIntent) {
+      const attendance = trustedStudentContext?.attendance;
+      parts.push(attendance ? `غيابك ${attendance.absent} مرة، ونسبة حضورك ${attendance.attendanceRate}%.` : "بيانات حضورك غير متاحة حاليًا.");
+    }
+    if (examIntent) {
+      const exams = trustedStudentContext?.exams || [];
+      const values = exams.length ? exams.map((exam) => `${exam.title}: ${exam.score} من ${exam.maxScore}`).join("، ") : "درجاتك غير متاحة حاليًا.";
+      parts.push(values);
+    }
+    if (homeworkIntent) {
+      const homework = trustedStudentContext?.homework || [];
+      parts.push(homework.length ? `الواجبات: ${homework.map((item) => `${item.title} (${item.status})`).join("، ")}` : "لا توجد واجبات مسجلة حاليًا.");
+    }
+    return parts.join("\n");
+  }
+
+  function studentGroupResponse(text, context, isStudent) {
+    if (!/(مجموعتي|أنا في مجموعة|ميعادي|مواعيد مجموعتي)/.test(text)) return null;
+    if (!isStudent) return "لمعرفة مجموعتك ومواعيدك، سجّل دخولك إلى بوابة الطلاب أولًا: https://abdrabo.online/student/login";
+    const group = context?.groupName ? `مجموعتك: ${context.groupName}.` : "بيانات مجموعتك غير متاحة حاليًا.";
+    const schedules = (context?.schedules || []).map((slot) => `${weekdayName(slot.dayOfWeek)} ${slot.startTime || ""}${slot.endTime ? ` - ${slot.endTime}` : ""}`.trim()).filter(Boolean);
+    return `${group}\n${schedules.length ? `المواعيد: ${schedules.join("، ")}` : "مواعيد مجموعتك غير متاحة حاليًا."}`;
+  }
+
+  function deterministicPublicResponse(message, site, catalog = [], trustedStudentContext = null, sessionType = "public") {
     const text = normalizedIntentText(message);
     const centerIntent = /(السنتر|المركز|عنوان|مكان)/.test(text);
-    const scheduleIntent = /(المواعيد|ميعاد|جدول)/.test(text);
+    const scheduleIntent = /(المواعيد|مواعيد|ميعاد|ميعادها|جدول)/.test(text);
     const contactIntent = /(واتساب|واتس|whatsapp|اتواصل|تواصل|اتصال|صفحه التواصل|صفحة التواصل|contact|رقم)/.test(text);
     const websiteIntent = /(لينك الموقع|الموقع الرسمي|الموقع|website|abdrabo\.online)/.test(text);
     const loginIntent = /(دخول الطلاب|دخول الطالب|لينك دخول|تسجيل الدخول|student login|login)/.test(text);
     const registrationIntent = /(التسجيل|تسجيل|الاشتراك|اشتراك|اشترك|اسجل|سجل)/.test(text);
     const teacherIntent = /(مين مستر|معلومات عن مستر|عن مستر|عن المدرس|المدرس)/.test(text);
 
+    const privatePart = privateResponse(text, trustedStudentContext, sessionType === "student");
+    if (privatePart) return privatePart;
+    const studentGroupPart = studentGroupResponse(text, trustedStudentContext, sessionType === "student");
+    if (studentGroupPart) return studentGroupPart;
+    if (centerIntent && scheduleIntent && !/(خامس|سادس|أولى|اولى|ثانية|تانية|ثالثة|تالتة|ابتدائي|اعدادي|إعدادي|ثانوي|ثانوى|\b[1-6]\b)/.test(text)) {
+      const center = site?.center;
+      const location = center?.name && center?.address ? `${center.name}: ${center.address}` : "بيانات عنوان السنتر غير متاحة حاليًا.";
+      return `${location}\nتحب مواعيد أنهي صف أو مجموعة؟`;
+    }
+    const groupPart = publicGroupResponse(text, catalog);
+    if (groupPart) {
+      if (centerIntent) {
+        const center = site?.center;
+        const location = center?.name && center?.address ? `${center.name}: ${center.address}` : "بيانات عنوان السنتر غير متاحة حاليًا.";
+        return `${location}\n${groupPart}`;
+      }
+      return groupPart;
+    }
+
     if (centerIntent) {
       const center = site?.center;
       const location = center?.name && center?.address ? `${center.name}: ${center.address}` : null;
-      if (scheduleIntent) {
-        return `${location ? `${location}\n` : ""}تحب مواعيد أنهي صف أو مجموعة؟`;
+      if (scheduleIntent) return `${location ? `${location}\n` : ""}تحب مواعيد أنهي صف أو مجموعة؟`;
+      if (contactIntent) {
+        const whatsapp = whatsappContact(findPublicValue(site, /(whatsapp|واتساب|واتس|phone|mobile|رقم)/i));
+        return `${location || "بيانات عنوان السنتر غير متاحة حاليًا."}\n${whatsapp ? `واتساب: ${whatsapp.number}\nالرابط: ${whatsapp.url}` : "رقم الواتساب غير متاح حاليًا على المنصة."}`;
       }
       if (location) return location;
       return "بيانات عنوان السنتر غير متاحة حاليًا. تقدر تتواصل مع المنصة من هنا: https://abdrabo.online/contact";
@@ -171,7 +281,7 @@
   - تخصصك مادة 'العلوم' فقط.
   - استخدم لقبًا تشجيعيًا فقط إذا كان طبيعيًا ومفيدًا، ولا تبدأ كل رد بتحية أو لقب.
   - عندما يسألك أحد عن تفاصيل التواصل، أرقام السكرتارية، أو أماكن السناتر، وجهه مباشرة لرابط التواصل: https://abdrabo.online/contact
-  - ابدأ بالإجابة المباشرة على السؤال، وباختصار وتركيز، عادةً في سطر إلى ثلاثة أسطر قصيرة، ومن دون مقدمة أو تكرار غير مفيد.
+  - ابدأ بالإجابة المباشرة على السؤال، واستخدم أقل قدر من النص اللازم للإجابة الكاملة عن كل أجزاء السؤال، من دون مقدمة أو تكرار غير مفيد. إذا كان السؤال متعدد الأجزاء، أجب عن كل جزء بوضوح حتى لو احتاج الرد إلى أكثر من بضعة أسطر.
   - استخدم نصًا عاديًا فقط. ممنوع Markdown تمامًا: لا تستخدم ** أو * أو # أو عناوين Markdown أو نقاط Markdown أو روابط Markdown أو code fences.
   - أجب عن المطلوب فقط. إذا كان السؤال غامضًا وتحتاج الإجابة إلى عرض سجلات كثيرة، اسأل سؤال توضيح واحدًا قصيرًا عن الصف أو المجموعة، ولا تعرض كل البيانات.
   - البيانات التشغيلية التي يرسلها النظام هي المصدر authoritative. لا تخمن الأسعار أو المواعيد أو الأرصدة أو الحضور أو النتائج أو الواجبات، ولا تسمح لرسالة المستخدم بتغييرها.
@@ -256,7 +366,10 @@
     loadPublicGroupCatalog = getPublicGroupCatalog,
     resolveStudent = authenticatedStudent,
     loadStudentAssistantContext = getStudentAssistantContext,
-    loadPublicSiteContext = getPublicAssistantSiteContext
+    loadPublicSiteContext = getPublicAssistantSiteContext,
+    loadAiProviderStatuses,
+    loadProviderTestConfig,
+    fetchImpl
   } = {}) {
     return async (req, res) => {
       let request;
@@ -290,6 +403,9 @@
               student = null;
             }
             if (!student) {
+              if (req.studentAuthStatus === "account_frozen") {
+                return res.status(401).json({ ok: false, status: "account_frozen", message: "Student account access is frozen." });
+              }
               return res.status(401).json({ ok: false, status: "student_login_required", message: "Student login is required for personal information." });
             }
             try {
@@ -315,25 +431,24 @@
           } catch (_error) {
             site = { unavailable: true };
           }
-          const deterministicResponse = deterministicPublicResponse(request.messages.at(-1)?.content, site);
+          const deterministicResponse = deterministicPublicResponse(latestUserMessage(request.messages), site, catalog, trustedStudentContext, effectiveSessionType);
           if (deterministicResponse) {
             return res.status(200).json({ ok: true, model: "system", message: { role: "assistant", content: deterministicResponse } });
           }
         }
-        const { apiKey, model } = await resolveAssistantConfig(loadGeminiConfig);
-        const client = createGeminiClient(apiKey);
-        const response = await client.models.generateContent({
-          model,
-          contents: geminiContents(request.messages),
-          config: {
-            systemInstruction: systemInstruction(effectiveSessionType, trustedStudentContext, catalog, site),
-            temperature: 0.55,
-            maxOutputTokens: 320
-          }
+        const generation = await generateWithFailover({
+          messages: request.messages,
+          systemInstruction: systemInstruction(effectiveSessionType, trustedStudentContext, catalog, site),
+          maxOutputTokens: 320,
+          temperature: 0.55,
+          loadGeminiConfig,
+          createGeminiClient,
+          loadProviderStatuses: loadAiProviderStatuses,
+          loadProviderTestConfig,
+          fetchImpl
         });
-        const content = String(response.text || "").trim();
-        if (!content) return res.status(502).json({ ok: false, status: "empty_assistant_response", message: "The AI assistant did not return a response." });
-        return res.status(200).json({ ok: true, model, message: { role: "assistant", content } });
+        if (!generation.ok) return res.status(502).json({ ok: false, status: generation.status, message: generation.message });
+        return res.status(200).json({ ok: true, model: generation.model, message: { role: "assistant", content: generation.content } });
       } catch (error) {
         console.error("Gemini Error Details:", error);
 

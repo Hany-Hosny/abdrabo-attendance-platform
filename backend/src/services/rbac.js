@@ -37,6 +37,7 @@ export const PERMISSIONS = Object.freeze([
   "whatsapp.send_attendance",
   "whatsapp.send_grades",
   "whatsapp.send_receipts",
+  "whatsapp.send_custom",
   "settings.manage",
   "dashboard.view",
   "dashboard.financial.view",
@@ -67,7 +68,8 @@ const DEFAULT_ADMIN_EXCLUDED_PERMISSIONS = new Set([
   ...DASHBOARD_PERMISSIONS,
   "payments.collect",
   "payments.advance",
-  "payments.reports.view"
+  "payments.reports.view",
+  "whatsapp.send_custom"
 ]);
 
 // Dashboard permissions are intentionally excluded from the normal admin default.

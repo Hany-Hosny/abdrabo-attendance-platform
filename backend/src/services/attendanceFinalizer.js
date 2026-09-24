@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { pool } from "../db/pool.js";
 import { auditLog } from "./audit.js";
 import { getAttendanceTimingDefaults } from "./systemSettings.js";
+import { readSystemSettings } from "./systemSettings.js";
 import { getWhatsAppSettings, normalizeEgyptianPhone, wakeWhatsAppWorker } from "./whatsapp.js";
 import { getAggregatedNotificationRecipients, upsertAggregatedNotification } from "./notifications.js";
 import { NotificationType } from "./notificationTypes.js";
@@ -20,7 +21,7 @@ function sessionDateLabel(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
 }
 
-async function queueAbsenceNotifications(client, session, absentStudents) {
+export async function queueAbsenceNotifications(client, session, absentStudents, { autoSend = true } = {}) {
   const eligible = [];
   const unresolved = [];
   for (const student of absentStudents) {
@@ -35,7 +36,7 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
       session_id: Number(session.session_id),
       event_time: session.session_date
     };
-    if (!phoneNumber) {
+    if (!phoneNumber && autoSend) {
       unresolved.push({
         source_id: sourceId,
         attendance_record_id: sourceId,
@@ -71,6 +72,50 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
      WHERE notification_type = 'absence' AND source_id = ANY($1::bigint[])`,
     [sourceIds]
   );
+  if (!autoSend) {
+    const alreadyRecorded = new Set(existing.rows.map((row) => Number(row.source_id)));
+    const skipped = absentStudents
+      .filter((student) => !alreadyRecorded.has(Number(student.attendance_record_id)))
+      .map((student) => {
+        const sourceId = Number(student.attendance_record_id);
+        const studentId = Number(student.student_id);
+        return {
+          source_id: sourceId,
+          attendance_record_id: sourceId,
+          student_id: studentId,
+          phone_number: normalizeEgyptianPhone(student.guardian_phone),
+          payload: {
+            type: "absence",
+            student_name: student.student_name,
+            student_code: student.student_code,
+            group_name: session.group_name,
+            session_id: Number(session.session_id),
+            event_time: session.session_date
+          },
+          ref_code: absenceReference(studentId)
+        };
+      });
+    let insertedCount = 0;
+    for (let offset = 0; offset < skipped.length; offset += ABSENCE_QUEUE_BATCH_SIZE) {
+      const batch = skipped.slice(offset, offset + ABSENCE_QUEUE_BATCH_SIZE);
+      const inserted = await client.query(
+        `INSERT INTO whatsapp_notification_jobs
+          (notification_type, source_id, attendance_record_id, student_id, phone_number,
+           payload, ref_code, status, last_error, next_attempt_at, created_at, updated_at)
+         SELECT 'absence', row.source_id, row.attendance_record_id, row.student_id,
+           row.phone_number, row.payload, row.ref_code, 'skipped', 'auto_send_disabled', NOW(), NOW(), NOW()
+         FROM jsonb_to_recordset($1::jsonb) AS row(
+           source_id bigint, attendance_record_id bigint, student_id integer,
+           phone_number text, payload jsonb, ref_code text
+         )
+         ON CONFLICT DO NOTHING`,
+        [JSON.stringify(batch)]
+      );
+      insertedCount += inserted.rowCount;
+    }
+    return { queuedCount: 0, unresolvedCount: 0, skippedCount: insertedCount };
+  }
+
   const eligibleSourceIds = eligible.map((row) => row.source_id);
   const failedEligibleSources = existing.rows
     .filter((row) => row.status === "failed" && eligibleSourceIds.includes(Number(row.source_id)))
@@ -145,6 +190,70 @@ async function queueAbsenceNotifications(client, session, absentStudents) {
   }
 
   return { queuedCount: insertedCount, unresolvedCount: unresolved.length };
+}
+
+export function calculateAbsenceStreak(records) {
+  let streak = 0;
+  for (const record of records || []) {
+    const status = String(record?.status || "");
+    if (!status || status === "pending_review" || status === "rejected") {
+      streak = 0;
+      continue;
+    }
+    if (status === "absent") streak += 1;
+    else if (status === "present" || status === "late" || status === "excused") streak = 0;
+  }
+  return streak;
+}
+
+export async function evaluateAbsenceFreeze(client, studentId, groupId) {
+  const studentResult = await client.query(
+    `SELECT id, absence_frozen, absence_unfrozen_at
+     FROM students
+     WHERE id = $1 AND group_id = $2 AND is_active = TRUE AND deleted_at IS NULL
+     FOR UPDATE`,
+    [studentId, groupId]
+  );
+  const student = studentResult.rows[0];
+  if (!student || student.absence_frozen) return null;
+
+  const { settings } = await readSystemSettings(client);
+  const limit = Number(settings.absence_freeze_limit || 4);
+  const records = await client.query(
+    `SELECT s.id AS session_id, ar.status
+     FROM attendance_sessions s
+     LEFT JOIN attendance_records ar
+       ON ar.session_id = s.id AND ar.student_id = $1
+     WHERE s.group_id = $2
+       AND s.status = 'closed'
+       AND ($3::timestamptz IS NULL OR COALESCE(s.ends_at, s.created_at) > $3::timestamptz)
+     ORDER BY s.session_date ASC, s.id ASC`,
+    [studentId, groupId, student.absence_unfrozen_at || null]
+  );
+
+  const streak = calculateAbsenceStreak(records.rows);
+  if (streak < limit) return null;
+
+  const updated = await client.query(
+    `UPDATE students
+     SET absence_frozen = TRUE,
+         absence_frozen_at = NOW(),
+         absence_frozen_reason = 'consecutive_absence_limit',
+         absence_frozen_streak = $3,
+         absence_frozen_by = NULL,
+         updated_at = NOW()
+     WHERE id = $1 AND group_id = $2 AND absence_frozen = FALSE
+     RETURNING id, absence_frozen_at, absence_frozen_streak`,
+    [studentId, groupId, streak]
+  );
+  if (!updated.rowCount) return null;
+  await auditLog({
+    db: client,
+    action: "student_absence_frozen",
+    studentId,
+    details: { source: "automatic_absence_limit", reason: "consecutive_absence_limit", streak, limit, group_id: Number(groupId), status_after: "absence_frozen" }
+  });
+  return { studentId: Number(studentId), streak, limit };
 }
 
 async function processSession(sessionId, now = null) {
@@ -272,10 +381,6 @@ async function processSession(sessionId, now = null) {
     }
 
     const whatsappSettings = await getWhatsAppSettings(client.query.bind(client));
-    if (!whatsappSettings.auto_send) {
-      await client.query("COMMIT");
-      return { session_id: session.session_id, queued_count: 0, deferred: true, reason: "auto_send_disabled" };
-    }
 
     const absentResult = await client.query(
       `SELECT absence.id AS attendance_record_id, st.id AS student_id,
@@ -295,8 +400,25 @@ async function processSession(sessionId, now = null) {
        ORDER BY st.id`,
       [session.session_id, session.group_id]
     );
+    const freezeCandidates = await client.query(
+      `SELECT DISTINCT absence.student_id
+       FROM attendance_records absence
+       JOIN students st ON st.id = absence.student_id
+       WHERE absence.session_id = $1
+         AND absence.status = 'absent'
+         AND st.group_id = $2
+         AND st.is_active = TRUE
+         AND st.deleted_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM attendance_records replacement
+           WHERE replacement.session_id = absence.session_id
+             AND replacement.student_id = absence.student_id
+             AND replacement.status IN ('present', 'late', 'excused')
+         )`,
+      [session.session_id, session.group_id]
+    );
 
-    const queueResult = await queueAbsenceNotifications(client, session, absentResult.rows);
+    const queueResult = await queueAbsenceNotifications(client, session, absentResult.rows, { autoSend: whatsappSettings.auto_send });
     // Finalization is complete once every eligible absence has been evaluated.
     // Invalid phone numbers remain visible in audit details instead of making
     // the same closed session retry forever on every finalizer run.
@@ -306,6 +428,12 @@ async function processSession(sessionId, now = null) {
        WHERE id = $1 AND status = 'closed' AND absence_dispatched = FALSE`,
       [session.session_id]
     );
+
+    const frozenStudents = [];
+    for (const student of freezeCandidates.rows) {
+      const frozen = await evaluateAbsenceFreeze(client, student.student_id, session.group_id);
+      if (frozen) frozenStudents.push(frozen);
+    }
 
     await auditLog({
       db: client,
@@ -322,13 +450,14 @@ async function processSession(sessionId, now = null) {
         absence_notification_count: queueResult.queuedCount,
         eligible_absence_count: absentResult.rowCount,
         unresolved_absence_count: queueResult.unresolvedCount,
+        skipped_auto_send_disabled_count: queueResult.skippedCount || 0,
         status_after: "closed",
         absence_dispatched: true
       }
     });
 
     await client.query("COMMIT");
-    return { session_id: session.session_id, queued_count: queueResult.queuedCount, unresolved_count: queueResult.unresolvedCount };
+    return { session_id: session.session_id, queued_count: queueResult.queuedCount, unresolved_count: queueResult.unresolvedCount, skipped_count: queueResult.skippedCount || 0, frozen_count: frozenStudents.length };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     console.error(`Failed to finalize attendance session ${sessionId}`, error.stack || error);

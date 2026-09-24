@@ -47,6 +47,7 @@ async function withFeeDatabase(run) {
         student_serial TEXT,
         student_code TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        billing_start_month DATE,
         is_active BOOLEAN NOT NULL DEFAULT TRUE,
         deleted_at TIMESTAMPTZ
       );
@@ -100,6 +101,7 @@ integrationTest("fee portal uses one repeatable-read snapshot across summary and
 
     const concurrent = await rawPool.connect();
     await concurrent.query(`SET search_path TO ${schema}, public`);
+    await concurrent.query("BEGIN");
     const snapshotPool = {
       query: db.query.bind(db),
       async connect() {
