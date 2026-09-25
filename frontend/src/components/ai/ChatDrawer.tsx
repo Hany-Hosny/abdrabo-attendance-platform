@@ -28,6 +28,11 @@ type ChatDrawerProps = {
   apiBaseUrl?: string;
 };
 
+type QuickSuggestion = {
+  message: string;
+  actionId: string;
+};
+
 type ApiResponse = {
   ok?: boolean;
   message?:
@@ -37,16 +42,16 @@ type ApiResponse = {
     | string;
 };
 
-const publicSuggestions = [
-  "مكان السنتر والمواعيد",
-  "تفاصيل منهج أولى ثانوي",
-  "طريقة الاشتراك والتسجيل",
+const publicSuggestions: QuickSuggestion[] = [
+  { message: "مكان السنتر والمواعيد", actionId: "center_location_and_schedule" },
+  { message: "تفاصيل منهج أولى ثانوي", actionId: "curriculum_first_secondary" },
+  { message: "طريقة الاشتراك والتسجيل", actionId: "registration_info" },
 ];
 
-const studentSuggestions = [
-  "اشرح لي قانون بقاء المادة",
-  "عندي سؤال في الواجب",
-  "نصائح للامتحان القادم",
+const studentSuggestions: QuickSuggestion[] = [
+  { message: "اشرح لي قانون بقاء المادة", actionId: "teaching_question" },
+  { message: "عندي سؤال في الواجب", actionId: "teaching_question" },
+  { message: "نصائح للامتحان القادم", actionId: "exam_lookup" },
 ];
 
 export function ChatDrawer({
@@ -114,7 +119,7 @@ export function ChatDrawer({
     };
   }, [isOpen, onClose]);
 
-  async function sendMessage(nextContent = input) {
+  async function sendMessage(nextContent = input, actionId?: string) {
     const content = nextContent.trim();
 
     if (!content || sending) {
@@ -150,6 +155,7 @@ export function ChatDrawer({
           messages: nextMessages,
           sessionType,
           studentContext,
+          ...(actionId ? { action_id: actionId } : {}),
         }),
       });
 
@@ -247,11 +253,11 @@ export function ChatDrawer({
         {suggestions.map((suggestion) => (
           <button
             type="button"
-            key={suggestion}
+            key={`${suggestion.actionId}-${suggestion.message}`}
             disabled={sending}
-            onClick={() => void sendMessage(suggestion)}
+            onClick={() => void sendMessage(suggestion.message, suggestion.actionId)}
           >
-            {suggestion}
+            {suggestion.message}
           </button>
         ))}
       </div>

@@ -51,7 +51,7 @@ export function PublicLayout({
           onNavigate={onNavigate}
         />
         {children}
-        <footer className="landing-footer public-footer" dir="ltr" lang="en">{footerText}</footer>
+        <footer className="landing-footer public-footer site-signature" dir="ltr" lang="en">{footerText}</footer>
       </div>
     </div>
   );

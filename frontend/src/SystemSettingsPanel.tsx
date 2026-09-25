@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { AiProviderInstancesPanel } from "./components/ai/AiProviderInstancesPanel";
 
 type Language = "ar" | "en";
 type Translator = (key: string, values?: Record<string, string>) => string;
@@ -465,7 +466,7 @@ export function SystemSettingsPanel({ token, language, isOwner = false, t }: Pro
       <section className="settings-section"><div className="settings-section-heading"><span>03</span><div><h3>{t("settings.evaluationTitle")}</h3><p>{t("settings.evaluationDescription")}</p></div></div><div className="system-settings-grid system-settings-grid-single"><NumberSetting label={t("settings.evaluationAlertLabel")} description={t("settings.evaluationAlertDescription")} value={settings.evaluation_alert_threshold} min={0} max={100} suffix="%" onChange={(value) => update("evaluation_alert_threshold", value)} /></div></section>
       <section className="settings-section settings-section-readonly"><div className="settings-section-heading"><span>04</span><div><h3>{t("settings.paymentsTitle")}</h3><p>{t("settings.paymentsDescription")}</p></div></div><div className="settings-note-grid"><div><strong>{t("settings.paymentFeesSource")}</strong><span>{t("settings.paymentFeesSourceDescription")}</span></div><div><strong>{t("settings.reversalSource")}</strong><span>{t("settings.reversalSourceDescription")}</span></div></div></section>
       <CenterLocationSettings token={token} language={language} t={t} />
-      {isOwner ? <MultiProviderSettingsPanel token={token} language={language}><GeminiSettingsPanel token={token} language={language} t={t} embedded /></MultiProviderSettingsPanel> : null}
+      {isOwner ? <AiProviderInstancesPanel token={token} language={language} /> : null}
     </div>
     {isOwner ? <AdvancedPasswordRecoveryPanel token={token} t={t} open={advancedOpen} onToggle={() => setAdvancedOpen((value) => !value)} /> : null}
   </section>;

@@ -6,6 +6,8 @@ import { sendPasswordRecoveryEmail, verifyGmailSmtp } from "../services/email.js
 import { getGeminiConfig, safeGeminiConfig, testGeminiConfig, updateGeminiConfig } from "../services/geminiConfig.js";
 import { getAiProviderStatuses, getAiProviderTestConfig, getAiRoutingStrategy, updateAiProviderCredential, updateAiProviderSettings, updateAiRoutingStrategy } from "../services/aiProviderRegistry.js";
 import { testAiProviderConnection } from "../services/aiProviderAdapters.js";
+import { discoverAiProvider } from "../services/aiProviderAdapters.js";
+import { createAiProviderInstance, deleteAiProviderInstance, getAiProviderInstance, listAiProviderInstances, updateAiProviderHealth, updateAiProviderInstance } from "../services/aiProviderInstances.js";
 import { auditLog } from "../services/audit.js";
 import { createRateLimiter } from "../middleware/rateLimit.js";
 import { ipKeyGenerator } from "express-rate-limit";
@@ -46,6 +48,44 @@ function normalizeGeminiTestFailure(value) {
   if (detail.includes("404") || detail.includes("model")) return "provider_model_unavailable";
   return "provider_unavailable";
 }
+adminSettingsRouter.get("/advanced/ai/instances", ...advancedSettingsAccess, async (_req, res, next) => {
+  try { return res.json({ ok: true, providers: await listAiProviderInstances(), routingStrategy: await getAiRoutingStrategy() }); } catch (error) { return next(error); }
+});
+adminSettingsRouter.post("/advanced/ai/instances/discover", ...advancedSettingsAccess, async (req, res, next) => {
+  try {
+    const providerType = String(req.body?.providerType || "");
+    const result = await discoverAiProvider(providerType, { credentials: req.body?.credentials || {}, providerConfig: req.body?.providerConfig || {} });
+    return res.status(result.valid ? 200 : 502).json({ ok: result.valid, ...result });
+  } catch (error) { if (error?.message === "invalid_ai_provider") return res.status(400).json({ ok: false, status: error.message }); return next(error); }
+});
+adminSettingsRouter.post("/advanced/ai/instances", ...advancedSettingsAccess, async (req, res, next) => {
+  try { return res.status(201).json({ ok: true, provider: await createAiProviderInstance(req.body, { actorId: req.teacher.id, request: req }) }); }
+  catch (error) { if (String(error?.message || "").startsWith("invalid_ai_provider")) return res.status(400).json({ ok: false, status: error.message }); return next(error); }
+});
+adminSettingsRouter.patch("/advanced/ai/instances/:instanceId", ...advancedSettingsAccess, async (req, res, next) => {
+  try { return res.json({ ok: true, provider: await updateAiProviderInstance(req.params.instanceId, req.body, { actorId: req.teacher.id, request: req }) }); }
+  catch (error) { if (error?.message === "ai_provider_instance_not_found") return res.status(404).json({ ok: false, status: error.message }); if (String(error?.message || "").startsWith("invalid_ai_provider")) return res.status(400).json({ ok: false, status: error.message }); return next(error); }
+});
+adminSettingsRouter.delete("/advanced/ai/instances/:instanceId", ...advancedSettingsAccess, async (req, res, next) => {
+  try { return res.json({ ok: true, ...(await deleteAiProviderInstance(req.params.instanceId, { actorId: req.teacher.id, request: req })) }); }
+  catch (error) { if (error?.message === "ai_provider_instance_not_found") return res.status(404).json({ ok: false, status: error.message }); return next(error); }
+});
+adminSettingsRouter.post("/advanced/ai/instances/:instanceId/discover", ...advancedSettingsAccess, async (req, res, next) => {
+  try {
+    const instance = await getAiProviderInstance(req.params.instanceId, { includeCredentials: true });
+    const result = await discoverAiProvider(instance.providerType, { credentials: instance.credentials, providerConfig: instance.providerConfig });
+    return res.status(result.valid ? 200 : 502).json({ ok: result.valid, ...result });
+  } catch (error) { if (error?.message === "ai_provider_instance_not_found") return res.status(404).json({ ok: false, status: error.message }); return next(error); }
+});
+adminSettingsRouter.post("/advanced/ai/instances/:instanceId/test", ...advancedSettingsAccess, async (req, res, next) => {
+  try {
+    const instance = await getAiProviderInstance(req.params.instanceId, { includeCredentials: true });
+    const result = await testAiProviderConnection(instance.providerType, { credentials: instance.credentials, model: instance.modelId, timeoutMs: instance.timeoutMs, providerConfig: instance.providerConfig });
+    await updateAiProviderHealth(instance.id, { ok: result.ok, failureStatus: result.status, outcome: result });
+    const configurationFailure = ["provider_not_configured", "provider_auth_failed", "provider_permission_denied", "provider_model_unavailable"].includes(result.status);
+    return res.status(result.ok ? 200 : configurationFailure ? 400 : 502).json({ ...result, providerInstanceId: instance.id });
+  } catch (error) { if (error?.message === "ai_provider_instance_not_found") return res.status(404).json({ ok: false, status: error.message }); return next(error); }
+});
 adminSettingsRouter.get("/advanced/ai/providers", ...advancedSettingsAccess, async (_req, res, next) => {
   try {
     return res.json({ ok: true, providers: await getAiProviderStatuses(), routingStrategy: await getAiRoutingStrategy() });

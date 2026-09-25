@@ -7,14 +7,22 @@ export async function authenticatedStudent(req, db = query) {
   const token = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   const tokenPayload = verifyStudentToken(token);
   if (tokenPayload) {
-    const result = await db("SELECT id, group_id, is_active, absence_frozen FROM students WHERE id=$1 AND deleted_at IS NULL LIMIT 1", [tokenPayload.sub]);
+    const result = await db("SELECT id, group_id, is_active, absence_frozen, auth_version FROM students WHERE id=$1 AND deleted_at IS NULL LIMIT 1", [tokenPayload.sub]);
     const student = result.rows[0];
     if (student?.absence_frozen) {
       req.studentAuthStatus = "account_frozen";
       return null;
     }
-    return student && student.is_active !== false ? student : null;
+    if (!student || student.is_active === false) return null;
+    if (tokenPayload.ver === undefined) {
+      if (Number(student.auth_version || 0) !== 0) return null;
+    } else if (Number(tokenPayload.ver) !== Number(student.auth_version || 0)) {
+      return null;
+    }
+    return student;
   }
+
+  if (token) return null;
 
   // Student identity must come from the signed session token by default. A
   // header-only fallback is an explicit opt-in for legacy local tooling.

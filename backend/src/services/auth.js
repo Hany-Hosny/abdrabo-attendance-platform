@@ -43,7 +43,12 @@ export function createTeacherToken(teacher) {
 
 export function createStudentToken(student) {
   const header = base64UrlEncode({ alg: "HS256", typ: "JWT" });
-  const payload = base64UrlEncode({ sub: Number(student.id), type: "student", exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60 });
+  const payload = base64UrlEncode({
+    sub: Number(student.id),
+    type: "student",
+    ...(Number.isInteger(Number(student.auth_version)) ? { ver: Number(student.auth_version) } : {}),
+    exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60
+  });
   const unsignedToken = `${header}.${payload}`;
   return `${unsignedToken}.${signToken(unsignedToken)}`;
 }

@@ -6,7 +6,7 @@ import { getGeminiConfig, GEMINI_MODELS, DEFAULT_GEMINI_MODEL } from "./geminiCo
 const AI_PROVIDER_SETTING_KEYS = Object.freeze({ gemini: "ai_provider_gemini", groq: "ai_provider_groq", mistral: "ai_provider_mistral", openrouter: "ai_provider_openrouter", cloudflare: "ai_provider_cloudflare" });
 const AI_PROVIDER_SECRET_KEYS = Object.freeze({ groq: "ai_provider_groq_key", mistral: "ai_provider_mistral_key", openrouter: "ai_provider_openrouter_key", cloudflare: "ai_provider_cloudflare_token" });
 export const AI_ROUTING_SETTING_KEY = "ai_routing_strategy";
-export const AI_ROUTING_STRATEGIES = Object.freeze(["failover"]);
+export const AI_ROUTING_STRATEGIES = Object.freeze(["adaptive_parallel", "sequential_fallback", "full_parallel", "failover"]);
 const DEFAULT_TIMEOUT_MS = 12_000;
 
 export const AI_PROVIDERS = Object.freeze({
@@ -92,7 +92,7 @@ export async function getAiProviderStatuses({ db = query, loadGeminiConfig = get
 export async function getAiRoutingStrategy(db = query) {
   const { settings } = await readProviderRows(db);
   const value = settings.get(AI_ROUTING_SETTING_KEY)?.value_json;
-  return AI_ROUTING_STRATEGIES.includes(value) ? value : "failover";
+  return AI_ROUTING_STRATEGIES.includes(value) ? value : "adaptive_parallel";
 }
 
 export async function getAiProviderTestConfig(providerId, db = query) {

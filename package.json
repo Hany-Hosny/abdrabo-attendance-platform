@@ -6,7 +6,9 @@
     "dev": "concurrently \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
     "build": "npm run build --workspace frontend",
     "start": "npm run start --workspace backend",
-    "migrate": "npm run migrate --workspace backend"
+    "migrate": "npm run migrate --workspace backend",
+    "qa:visual": "playwright test --config=qa/playwright.config.ts",
+    "qa:visual:report": "playwright show-report qa/artifacts/report"
   },
   "workspaces": [
     "shared",
@@ -14,6 +16,7 @@
     "backend"
   ],
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "concurrently": "^9.0.1"

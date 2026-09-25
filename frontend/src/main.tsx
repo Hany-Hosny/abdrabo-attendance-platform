@@ -31,6 +31,7 @@ const APP_DOWNLOAD_URL = `${API_BASE_URL.replace(/\/$/, "")}/app/download`;
 const LANGUAGE_STORAGE_KEY = "abdrabo_language";
 const THEME_STORAGE_KEY = "abdrabo_theme";
 const STUDENT_SESSION_STORAGE_KEY = "student_session";
+const STUDENT_LOCKOUT_STORAGE_KEY = "student_login_lockouts";
 const ADMIN_SESSION_STORAGE_KEY = "admin_session";
 const TEACHER_SESSION_STORAGE_KEY = "teacher_session";
 const ASSISTANT_SESSION_STORAGE_KEY = "assistant_session";
@@ -143,6 +144,17 @@ type TeacherSession = {
     group_ids?: number[];
   };
 };
+
+type StudentSelection = {
+  id: number;
+  full_name: string;
+  student_code: string;
+  group_name?: string;
+  grade?: string;
+  grade_level?: string;
+};
+
+type StudentAuthIdentity = Pick<StudentSelection, "full_name" | "group_name" | "grade" | "grade_level">;
 
 type AdminUser = {
   id: number;
@@ -387,15 +399,35 @@ const translations = {
     "student.codePlaceholder": "أدخل كود الطالب",
     "student.enterButton": "دخول",
     "student.enteringButton": "جاري الدخول...",
+    "student.pinLabel": "الرقم السري المكون من ٤ أرقام",
+    "student.pinPlaceholder": "أدخل ٤ أرقام",
+    "student.confirmPinLabel": "تأكيد الرقم السري",
+    "student.guardianPhoneLabel": "رقم هاتف ولي الأمر المسجل",
+    "student.guardianPhonePlaceholder": "أدخل رقم هاتف ولي الأمر",
+    "student.pinRequired": "أدخل الرقم السري للمتابعة",
+    "student.pinSetupRequired": "أنشئ رقمًا سريًا من ٤ أرقام لأول دخول",
+    "student.createPin": "إنشاء الرقم السري",
+    "student.resetPin": "تعيين رقم سري جديد",
+    "student.forgotPin": "نسيت الرقم السري؟",
+    "student.verifyGuardian": "تحقق من البيانات",
+    "student.back": "رجوع",
+    "student.guardianLocked": "تم تجاوز عدد المحاولات المسموح بها. حاول مرة أخرى بعد 5 دقائق، أو تواصل مع الإدارة إذا كانت البيانات المسجلة لديك غير صحيحة.",
+    "student.pinLocked": "تم تجاوز عدد المحاولات المسموح بها. حاول مرة أخرى بعد 5 دقائق.",
+    "student.guardianUnavailable": "تعذر إكمال التحقق تلقائيًا. برجاء التواصل مع الإدارة لمراجعة البيانات المسجلة.",
+    "student.guardianSelectionTitle": "اختيار الطالب",
+    "student.guardianSelectionPrompt": "وجدنا أكثر من طالب مرتبط برقم ولي الأمر. اختر الطالب الذي تريد المتابعة معه:",
+    "student.guardianSelectionLoading": "جاري تأكيد الاختيار...",
+    "student.retryCountdown": "حاول مجدداً بعد ({{time}})",
     "student.findCodeButton": "معرفة كود الطالب",
     "student.lookupTitle": "معرفة كود الطالب",
-    "student.lookupHelp": "أدخل الرقم القومي أو رقم ولي الأمر للاستعلام مؤقتا.",
-    "student.lookupPlaceholder": "الرقم القومي أو رقم ولي الأمر",
+    "student.lookupHelp": "أدخل رقم هاتف ولي الأمر لعرض أكواد الطلاب المرتبطين به.",
+    "student.lookupPlaceholder": "رقم هاتف ولي الأمر",
     "student.lookupButton": "استعلام عن الكود",
     "student.lookupLoading": "جاري الاستعلام...",
     "student.lookupResult": "الاستعلام التجريبي: A1001",
     "student.lookupFound": "كود الطالب: {{code}}",
     "student.lookupNotFound": "لم يتم العثور على كود مطابق.",
+    "student.lookupMultipleFound": "تم العثور على أكثر من طالب مرتبط بهذا الرقم. اختر الطالب:",
     "student.copyCode": "نسخ الكود",
     "student.codeCopied": "تم نسخ الكود",
     "student.copyFailed": "تعذر نسخ الكود. اضغط مطولاً على الكود لنسخه.",
@@ -1616,6 +1648,7 @@ const translations = {
     "admin.permanentlyDeleted": "تم الحذف",
     "admin.purgeDaysLeft": "سيتم الحذف النهائي بعد {{days}} يوم",
     "admin.status": "الحالة",
+    "admin.more": "المزيد",
     "admin.resetPassword": "إعادة تعيين كلمة المرور",
     "admin.disable": "تعطيل",
     "admin.enable": "تفعيل",
@@ -1762,6 +1795,12 @@ const translations = {
     "admin.groupDeletePinLocked": "تم قفل رمز الحماية مؤقتًا. حاول مرة أخرى لاحقًا.",
     "admin.groupDeletePinNotConfigured": "لم يتم إعداد رمز الحماية.",
     "admin.studentSaved": "تم حفظ الطالب. الكود: {{code}}",
+    "admin.resetPin": "إعادة ضبط الرقم السري",
+    "admin.resettingPin": "جاري إعادة ضبط الرقم السري...",
+    "admin.pinReset": "تمت إعادة ضبط الرقم السري بنجاح.",
+    "admin.resetPinConfirmTitle": "إعادة ضبط الرقم السري",
+    "admin.resetPinConfirmDescription": "هل تريد إعادة ضبط الرقم السري لهذا الطالب؟\n\nسيتم إلغاء الرقم السري الحالي، وسيحتاج الطالب إلى التحقق برقم ولي الأمر وإنشاء رقم سري جديد.",
+    "admin.confirmPinReset": "تأكيد إعادة الضبط",
     "admin.noGroups": "لا توجد مجموعات بعد.",
     "admin.noStudents": "لا يوجد طلاب بعد.",
     "admin.searchStudents": "ابحث باسم الطالب أو الكود أو الهاتف أو المجموعة",
@@ -2167,15 +2206,35 @@ const translations = {
     "student.codePlaceholder": "Enter student code",
     "student.enterButton": "Enter",
     "student.enteringButton": "Signing in...",
+    "student.pinLabel": "4-digit PIN",
+    "student.pinPlaceholder": "Enter 4 digits",
+    "student.confirmPinLabel": "Confirm PIN",
+    "student.guardianPhoneLabel": "Registered guardian phone",
+    "student.guardianPhonePlaceholder": "Enter guardian phone",
+    "student.pinRequired": "Enter your PIN to continue",
+    "student.pinSetupRequired": "Create a 4-digit PIN for your first login",
+    "student.createPin": "Create PIN",
+    "student.resetPin": "Set new PIN",
+    "student.forgotPin": "Forgot PIN?",
+    "student.verifyGuardian": "Verify details",
+    "student.back": "Back",
+    "student.guardianLocked": "Too many attempts. Please try again in 5 minutes, or contact administration if your registered information is incorrect.",
+    "student.pinLocked": "Too many attempts. Please try again in 5 minutes.",
+    "student.guardianUnavailable": "Automatic verification could not be completed. Please contact administration to review the registered information.",
+    "student.guardianSelectionTitle": "Choose a student",
+    "student.guardianSelectionPrompt": "More than one student is linked to this guardian number. Choose the student you want to continue with:",
+    "student.guardianSelectionLoading": "Confirming selection...",
+    "student.retryCountdown": "Try again in ({{time}})",
     "student.findCodeButton": "Find Student Code",
     "student.lookupTitle": "Find Student Code",
-    "student.lookupHelp": "Enter the national ID or guardian phone number for a temporary lookup.",
-    "student.lookupPlaceholder": "National ID or guardian phone",
+    "student.lookupHelp": "Enter the guardian phone number to view the codes linked to it.",
+    "student.lookupPlaceholder": "Guardian phone number",
     "student.lookupButton": "Look up code",
     "student.lookupLoading": "Looking up...",
     "student.lookupResult": "Demo lookup result: A1001",
     "student.lookupFound": "Student code: {{code}}",
     "student.lookupNotFound": "No matching student code was found.",
+    "student.lookupMultipleFound": "More than one student is linked to this number. Choose a student:",
     "student.copyCode": "Copy code",
     "student.codeCopied": "Code copied",
     "student.copyFailed": "Could not copy the code. Press and hold the code to copy it.",
@@ -3396,6 +3455,7 @@ const translations = {
     "admin.permanentlyDeleted": "Deleted",
     "admin.purgeDaysLeft": "Permanent deletion in {{days}} days",
     "admin.status": "Status",
+    "admin.more": "More",
     "admin.resetPassword": "Reset Password",
     "admin.disable": "Disable",
     "admin.enable": "Enable",
@@ -3543,6 +3603,12 @@ const translations = {
     "admin.groupDeletePinLocked": "The security code is temporarily locked. Try again later.",
     "admin.groupDeletePinNotConfigured": "Set up the security code first.",
     "admin.studentSaved": "Student saved. Code: {{code}}",
+    "admin.resetPin": "Reset PIN",
+    "admin.resettingPin": "Resetting PIN...",
+    "admin.pinReset": "PIN reset successfully.",
+    "admin.resetPinConfirmTitle": "Reset PIN",
+    "admin.resetPinConfirmDescription": "Do you want to reset this student's PIN?\n\nThe current PIN will be invalidated. The student will need to verify the guardian phone number and create a new PIN.",
+    "admin.confirmPinReset": "Confirm PIN reset",
     "admin.noGroups": "No groups yet.",
     "admin.noStudents": "No students yet.",
     "admin.searchStudents": "Search by student name, code, phone, or group",
@@ -4875,6 +4941,249 @@ function StudentFrozenAccountModal({
   );
 }
 
+function StudentAuthFlow({
+  language,
+  t,
+  onAuthenticated,
+  onFrozen,
+  onFindCode
+}: {
+  language: Language;
+  t: Translator;
+  onAuthenticated: (data: LoginResponse) => void;
+  onFrozen: (date?: string | null) => void;
+  onFindCode: () => void;
+}) {
+  const [code, setCode] = useState("");
+  const [phone, setPhone] = useState("");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [phase, setPhase] = useState<"code" | "pin" | "guardian" | "student_selection" | "new_pin">("code");
+  const [recovery, setRecovery] = useState(false);
+  const [oneTimeToken, setOneTimeToken] = useState("");
+  const [selectionToken, setSelectionToken] = useState("");
+  const [selectionStudents, setSelectionStudents] = useState<StudentSelection[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<StudentAuthIdentity | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [retryUntil, setRetryUntil] = useState(0);
+  const [retryCode, setRetryCode] = useState("");
+  const [retrySeconds, setRetrySeconds] = useState(0);
+
+  function readLockouts() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(STUDENT_LOCKOUT_STORAGE_KEY) || "{}");
+      return parsed && typeof parsed === "object" ? parsed as Record<string, number> : {};
+    } catch (_error) {
+      return {};
+    }
+  }
+
+  function lockoutForCode(studentCode: string) {
+    if (!studentCode) return 0;
+    const expiresAt = Number(readLockouts()[studentCode] || 0);
+    if (expiresAt > Date.now()) return expiresAt;
+    if (expiresAt) {
+      const lockouts = readLockouts();
+      delete lockouts[studentCode];
+      localStorage.setItem(STUDENT_LOCKOUT_STORAGE_KEY, JSON.stringify(lockouts));
+    }
+    return 0;
+  }
+
+  function selectLockout(studentCode: string) {
+    const expiresAt = lockoutForCode(studentCode);
+    setRetryUntil(expiresAt);
+    setRetryCode(expiresAt ? studentCode : "");
+    setRetrySeconds(expiresAt ? Math.ceil((expiresAt - Date.now()) / 1000) : 0);
+  }
+
+  useEffect(() => {
+    if (!retryUntil) {
+      setRetrySeconds(0);
+      return undefined;
+    }
+    const updateCountdown = () => {
+      const remaining = Math.max(0, Math.ceil((retryUntil - Date.now()) / 1000));
+      setRetrySeconds(remaining);
+      if (remaining === 0) {
+        const lockouts = readLockouts();
+        if (retryCode) delete lockouts[retryCode];
+        localStorage.setItem(STUDENT_LOCKOUT_STORAGE_KEY, JSON.stringify(lockouts));
+        setRetryUntil(0);
+        setRetryCode("");
+      }
+    };
+    updateCountdown();
+    const timer = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(timer);
+  }, [retryCode, retryUntil]);
+
+  const normalizedCode = normalizeStudentCode(code);
+
+  useEffect(() => {
+    selectLockout(normalizedCode);
+  }, [normalizedCode]);
+
+  function startLockout(retryAfterSeconds: number) {
+    if (!normalizedCode) return;
+    const durationSeconds = Math.max(1, Math.ceil(Number(retryAfterSeconds) || 300));
+    const expiresAt = Date.now() + durationSeconds * 1000;
+    const lockouts = readLockouts();
+    lockouts[normalizedCode] = expiresAt;
+    localStorage.setItem(STUDENT_LOCKOUT_STORAGE_KEY, JSON.stringify(lockouts));
+    selectLockout(normalizedCode);
+  }
+
+  function formatCountdown(totalSeconds: number) {
+    const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+    const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+    return `${minutes}:${seconds}`;
+  }
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (loading || retrySeconds > 0 || phase === "student_selection") return;
+    setLoading(true); setError("");
+    try {
+      let response: Response;
+      if (phase === "code" || phase === "pin") {
+        response = await fetch(`${API_BASE_URL}/student/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ student_code: normalizedCode, ...(phase === "pin" ? { pin: normalizeDigits(pin) } : {}) }) });
+      } else if (phase === "guardian") {
+        response = await fetch(`${API_BASE_URL}/student/pin/${recovery ? "recover" : "verify-guardian"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ student_code: normalizedCode, guardian_phone: normalizeDigits(phone) }) });
+      } else {
+        response = await fetch(`${API_BASE_URL}/student/pin/${recovery ? "recover/complete" : "setup"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [recovery ? "recovery_token" : "setup_token"]: oneTimeToken, new_pin: normalizeDigits(pin), confirm_pin: normalizeDigits(confirmPin) }) });
+      }
+      const data = await response.json() as LoginResponse & { setup_token?: string; recovery_token?: string; selection_token?: string; students?: StudentSelection[]; retry_after?: number; expires_in?: number };
+      if (!response.ok) {
+        if (data.status === "account_frozen") return onFrozen(data.frozen_at);
+        const isRateLimited = response.status === 429 || data.status === "rate_limited" || data.status === "guardian_verification_locked" || data.status === "pin_login_locked";
+        if (isRateLimited) {
+          startLockout(Number(data.retry_after || response.headers.get("Retry-After") || 300));
+          setError("");
+          return;
+        }
+        if (data.status === "guardian_verification_unavailable") throw new Error(t("student.guardianUnavailable"));
+        throw new Error(data.status === "invalid_student" ? t("dashboard.invalidStudent") : data.status === "invalid_pin" ? t("errors.loginFailed") : data.message || t("errors.loginFailed"));
+      }
+      if (phase === "code") {
+        if (data.student) setSelectedStudent({ full_name: data.student.full_name, group_name: data.student.group_name, grade: data.student.grade, grade_level: data.student.grade_level });
+        if (data.status === "pin_setup_required") { setPhase("guardian"); setRecovery(false); }
+        else if (data.status === "pin_required") setPhase("pin");
+        else if (data.student_token) onAuthenticated(data);
+      } else if (phase === "pin") {
+        if (data.student_token) onAuthenticated(data);
+      } else if (phase === "guardian") {
+        if (data.status === "student_selection_required" && data.selection_token && Array.isArray(data.students)) {
+          setSelectionToken(data.selection_token);
+          setSelectionStudents(data.students);
+          setSelectedStudentId(null);
+          setPhase("student_selection");
+        } else {
+          if (data.student) setSelectedStudent({ full_name: data.student.full_name, group_name: data.student.group_name, grade: data.student.grade, grade_level: data.student.grade_level });
+          setOneTimeToken(String(data.setup_token || data.recovery_token || "")); setPhase("new_pin");
+        }
+      } else if (data.student_token) onAuthenticated(data);
+    } catch (nextError) { setError(nextError instanceof Error ? nextError.message : t("errors.loginFailed")); }
+    finally { setLoading(false); }
+  };
+
+  async function selectStudent(studentId: number) {
+    if (loading || !selectionToken) return;
+    setSelectedStudentId(studentId);
+    const chosenStudent = selectionStudents.find((student) => student.id === studentId);
+    if (chosenStudent) setSelectedStudent(chosenStudent);
+    setLoading(true); setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/student/pin/select-student`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selection_token: selectionToken, purpose: recovery ? "pin_recovery" : "pin_setup", student_id: studentId })
+      });
+      const data = await response.json() as LoginResponse & { setup_token?: string; recovery_token?: string };
+      if (!response.ok) throw new Error(data.message || t("errors.loginFailed"));
+      setOneTimeToken(String(data.setup_token || data.recovery_token || ""));
+      setSelectionToken("");
+      setSelectionStudents([]);
+      setSelectedStudentId(null);
+      setPhase("new_pin");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : t("errors.loginFailed"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const title = phase === "code" ? t("student.loginTitle") : phase === "pin" ? t("student.pinRequired") : phase === "guardian" ? t("student.guardianPhoneLabel") : phase === "student_selection" ? t("student.guardianSelectionTitle") : recovery ? t("student.resetPin") : t("student.pinSetupRequired");
+  const selectedStudentMeta = selectedStudent ? [selectedStudent.grade_level || selectedStudent.grade, selectedStudent.group_name].filter(Boolean).join(" — ") : "";
+  return <main className="teacher-auth public-student-login" dir={language === "ar" ? "rtl" : "ltr"}>
+    <section className="login-card teacher-login-card student-login-card" aria-labelledby="student-login-title">
+      <h1 id="student-login-title" className={phase === "student_selection" ? "student-selection-title" : undefined}>{title}</h1>
+      {phase === "new_pin" ? <div className="student-auth-selected-context" aria-label={selectedStudent?.full_name || normalizedCode}>
+        <strong dir={selectedStudent ? undefined : "ltr"}>{selectedStudent?.full_name || normalizedCode}</strong>
+        {selectedStudentMeta ? <span>{selectedStudentMeta}</span> : null}
+      </div> : null}
+      <form onSubmit={submit}>
+        {phase === "code" || phase === "pin" ? <label className="student-auth-field-label student-code-field-label" htmlFor="student-code">{t("student.codeLabel")}<input id="student-code" dir="ltr" value={code} onChange={(event) => { const nextValue = normalizeScanValue(event.target.value); setCode(nextValue); selectLockout(normalizeStudentCode(nextValue)); }} placeholder={t("student.codePlaceholder")} autoComplete="off" autoFocus={phase === "code"} /></label> : null}
+        {phase === "pin" ? <><label className="student-auth-field-label" htmlFor="student-pin">{t("student.pinLabel")}<input id="student-pin" dir="ltr" type="password" inputMode="numeric" autoComplete="one-time-code" maxLength={4} value={pin} onChange={(event) => setPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} placeholder={t("student.pinPlaceholder")} /></label><button className="secondary-button" type="button" onClick={() => { setRecovery(true); setPhase("guardian"); setPin(""); setError(""); }}>{t("student.forgotPin")}</button></> : null}
+        {phase === "guardian" ? <label className="student-auth-field-label" htmlFor="guardian-phone">{t("student.guardianPhoneLabel")}<input id="guardian-phone" dir="ltr" inputMode="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(normalizeDigits(event.target.value))} placeholder={t("student.guardianPhonePlaceholder")} /></label> : null}
+        {phase === "student_selection" ? <div className="student-guardian-selection" aria-live="polite"><p>{t("student.guardianSelectionPrompt")}</p><div className="student-guardian-selection-list">{selectionStudents.map((student) => <button className={`student-guardian-choice ${selectedStudentId === student.id ? "is-selected" : ""}`} type="button" key={student.id} disabled={loading} onClick={() => void selectStudent(student.id)}><strong>{student.full_name}</strong><span>{[student.grade_level || student.grade, student.group_name].filter(Boolean).join(" — ")}</span></button>)}</div>{loading ? <p className="student-guardian-selection-loading">{t("student.guardianSelectionLoading")}</p> : null}</div> : null}
+        {phase === "new_pin" ? <><label className="student-auth-field-label" htmlFor="new-pin">{t("student.pinLabel")}<input id="new-pin" dir="ltr" type="password" inputMode="numeric" autoComplete="new-password" maxLength={4} value={pin} onChange={(event) => setPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} placeholder={t("student.pinPlaceholder")} /></label><label className="student-auth-field-label" htmlFor="confirm-pin">{t("student.confirmPinLabel")}<input id="confirm-pin" dir="ltr" type="password" inputMode="numeric" autoComplete="new-password" maxLength={4} value={confirmPin} onChange={(event) => setConfirmPin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4))} /></label></> : null}
+        {error ? <p className="student-auth-error" role="alert" aria-live="polite" dir={language === "ar" ? "rtl" : "ltr"}><span aria-hidden="true">!</span>{error}</p> : null}
+        {phase !== "student_selection" ? <button className={`primary-button ${retrySeconds > 0 ? "student-login-button-locked" : ""}`} disabled={loading || retrySeconds > 0} type="submit">{retrySeconds > 0 ? t("student.retryCountdown", { time: formatCountdown(retrySeconds) }) : loading ? t("student.enteringButton") : phase === "guardian" ? t("student.verifyGuardian") : phase === "new_pin" ? (recovery ? t("student.resetPin") : t("student.createPin")) : t("student.enterButton")}</button> : null}
+        {phase === "code" ? <button className="secondary-button student-login-lookup-button" type="button" onClick={onFindCode}>{t("student.findCodeButton")}</button> : null}
+        {phase !== "code" ? <button className="secondary-button" type="button" disabled={loading} onClick={() => { setPhase("code"); setRecovery(false); setOneTimeToken(""); setSelectionToken(""); setSelectionStudents([]); setSelectedStudentId(null); setSelectedStudent(null); setError(""); }}>{t("student.back")}</button> : null}
+      </form>
+    </section>
+  </main>;
+}
+
+function StudentCodeLookupModal({
+  open,
+  lookupValue,
+  lookupError,
+  lookupResult,
+  lookupStudentCode,
+  lookupStudents,
+  lookupCopied,
+  lookupLoading,
+  t,
+  onClose,
+  onChange,
+  onSubmit,
+  onCopy
+}: {
+  open: boolean;
+  lookupValue: string;
+  lookupError: string;
+  lookupResult: string;
+  lookupStudentCode: string;
+  lookupStudents: StudentSelection[];
+  lookupCopied: boolean;
+  lookupLoading: boolean;
+  t: Translator;
+  onClose: () => void;
+  onChange: (value: string) => void;
+  onSubmit: (event: React.FormEvent) => void;
+  onCopy: (studentCode?: string) => void;
+}) {
+  if (!open) return null;
+  return <div className="modal-backdrop" role="presentation">
+    <section className="modal student-code-lookup-modal" role="dialog" aria-modal="true" aria-labelledby="lookup-title">
+      <button className="close-button" aria-label={t("student.close")} type="button" onClick={onClose}>×</button>
+      <h2 id="lookup-title">{t("student.lookupTitle")}</h2>
+      <p>{t("student.lookupHelp")}</p>
+      <form onSubmit={onSubmit}>
+        <input value={lookupValue} onChange={(event) => onChange(event.target.value)} placeholder={t("student.lookupPlaceholder")} inputMode="numeric" autoComplete="off" autoFocus maxLength={11} />
+        {lookupError ? <p className="form-error">{lookupError}</p> : null}
+        <button className="primary-button" type="submit" disabled={lookupLoading}>{lookupLoading ? t("student.lookupLoading") : t("student.lookupButton")}</button>
+        {lookupStudents.length ? <div className="student-code-lookup-list" aria-live="polite">{lookupStudents.length > 1 ? <p className="lookup-result">{t("student.lookupMultipleFound")}</p> : null}{lookupStudents.map((student) => <div className="student-code-lookup-choice" key={student.id}><div><strong>{student.full_name}</strong><span className="student-code-lookup-meta"><span>{[student.grade_level || student.grade, student.group_name].filter(Boolean).join(" — ") || "—"}</span><b dir="ltr">{student.student_code}</b></span></div><button className="copy-code-button" type="button" onClick={() => onCopy(student.student_code)} aria-label={`${t("student.copyCode")} ${student.student_code}`}>{lookupCopied && lookupStudentCode === student.student_code ? t("student.codeCopied") : t("student.copyCode")}</button></div>)}</div> : lookupStudentCode ? <div className="student-code-lookup-list" aria-live="polite"><div className="student-code-lookup-choice"><div><strong>{lookupResult}</strong><span className="student-code-lookup-meta"><b dir="ltr">{lookupStudentCode}</b></span></div><button className="copy-code-button" type="button" onClick={() => onCopy()} aria-label={t("student.copyCode")}>{lookupCopied ? t("student.codeCopied") : t("student.copyCode")}</button></div></div> : lookupResult ? <p className="lookup-result" aria-live="polite">{lookupResult}</p> : null}
+      </form>
+    </section>
+  </div>;
+}
+
 function App() {
   const [path, setPath] = useState(() => window.location.pathname);
   const [language, setLanguageState] = useState<Language>(() => {
@@ -4886,6 +5195,7 @@ function App() {
   const [lookupError, setLookupError] = useState("");
   const [lookupResult, setLookupResult] = useState("");
   const [lookupStudentCode, setLookupStudentCode] = useState("");
+  const [lookupStudents, setLookupStudents] = useState<StudentSelection[]>([]);
   const [lookupCopied, setLookupCopied] = useState(false);
   const lookupCopyResetTimer = useRef<number | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -5031,6 +5341,7 @@ function App() {
     setLookupError("");
     setLookupResult("");
     setLookupStudentCode("");
+    setLookupStudents([]);
     setLookupCopied(false);
     if (lookupCopyResetTimer.current !== null) {
       window.clearTimeout(lookupCopyResetTimer.current);
@@ -5090,6 +5401,7 @@ function App() {
     setLookupError("");
     setLookupResult("");
     setLookupStudentCode("");
+    setLookupStudents([]);
     setLookupCopied(false);
 
     if (!value) {
@@ -5102,18 +5414,8 @@ function App() {
       return;
     }
 
-    if (value.length === 11 && !/^\d{11}$/.test(value)) {
+    if (value.length !== 11) {
       setLookupError(t("errors.phoneLength"));
-      return;
-    }
-
-    if (value.length === 14 && !/^\d{14}$/.test(value)) {
-      setLookupError(t("errors.nationalIdLength"));
-      return;
-    }
-
-    if (value.length !== 11 && value.length !== 14) {
-      setLookupError(t("errors.lookupLength"));
       return;
     }
 
@@ -5124,11 +5426,16 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier: value })
       });
-      const data = (await response.json()) as { ok: boolean; student_code?: string };
-      setLookupStudentCode(data.ok && data.student_code ? data.student_code : "");
+      const data = (await response.json()) as { ok: boolean; student_code?: string; students?: StudentSelection[] };
+      const students = data.ok && Array.isArray(data.students) ? data.students : [];
+      setLookupStudents(students);
+      setLookupStudentCode(data.ok && data.student_code ? data.student_code : students.length === 1 ? students[0].student_code : "");
       setLookupResult(
         data.ok && data.student_code
           ? t("student.lookupFound", { code: data.student_code })
+          : students.length === 1
+            ? t("student.lookupFound", { code: students[0].student_code })
+            : students.length > 1 ? ""
           : t("student.lookupNotFound")
       );
     } catch (_error) {
@@ -5138,15 +5445,16 @@ function App() {
     }
   }
 
-  async function copyLookupStudentCode() {
-    if (!lookupStudentCode) return;
+  async function copyLookupStudentCode(studentCodeToCopy = lookupStudentCode) {
+    if (!studentCodeToCopy) return;
+    setLookupStudentCode(studentCodeToCopy);
 
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(lookupStudentCode);
+        await navigator.clipboard.writeText(studentCodeToCopy);
       } else {
         const copyField = document.createElement("textarea");
-        copyField.value = lookupStudentCode;
+        copyField.value = studentCodeToCopy;
         copyField.setAttribute("readonly", "");
         copyField.style.position = "fixed";
         copyField.style.opacity = "0";
@@ -5340,6 +5648,20 @@ function App() {
 
     return (
       <PublicLayout {...publicLayoutProps} variant="auth">
+        <StudentAuthFlow
+          language={language}
+          t={t}
+          onAuthenticated={(data) => { saveStudentSession(data); setLoginData(data); navigate("/student/dashboard"); }}
+          onFrozen={(date) => { setFrozenDate(date || null); setFrozenModalOpen(true); }}
+          onFindCode={openLookupModal}
+        />
+        <StudentCodeLookupModal open={lookupOpen} lookupValue={lookupValue} lookupError={lookupError} lookupResult={lookupResult} lookupStudentCode={lookupStudentCode} lookupStudents={lookupStudents} lookupCopied={lookupCopied} lookupLoading={lookupLoading} t={t} onClose={closeLookupModal} onChange={(value) => { setLookupValue(normalizeDigits(value).replace(/\D/g, "").slice(0, 11)); setLookupError(""); setLookupResult(""); }} onSubmit={handleLookup} onCopy={(studentCode) => void copyLookupStudentCode(studentCode)} />
+        {frozenAccountModal}
+      </PublicLayout>
+    );
+
+    return (
+      <PublicLayout {...publicLayoutProps} variant="auth">
         <main className="teacher-auth public-student-login" id="student-login">
           <section className="login-card teacher-login-card student-login-card" aria-labelledby="student-login-title">
             <h1 id="student-login-title">{t("student.loginTitle")}</h1>
@@ -5391,7 +5713,7 @@ function App() {
                   <div className="lookup-result-row" aria-live="polite">
                     <p className="lookup-result">{lookupResult}</p>
                     {lookupStudentCode ? (
-                      <button className="copy-code-button" type="button" onClick={copyLookupStudentCode} aria-label={t("student.copyCode")}>
+                      <button className="copy-code-button" type="button" onClick={() => void copyLookupStudentCode()} aria-label={t("student.copyCode")}>
                         {lookupCopied ? t("student.codeCopied") : t("student.copyCode")}
                       </button>
                     ) : null}
@@ -5433,6 +5755,23 @@ function App() {
         onAccountFrozen={handleStudentAccountFrozen}
         t={t}
       />
+    );
+  }
+
+  if (!loginData?.student) {
+    return (
+      <Shell language={language} setLanguage={setLanguage} t={t} headerVariant="teacher-auth">
+        <ScienceBackdrop variant="student" />
+        <StudentAuthFlow
+          language={language}
+          t={t}
+          onAuthenticated={(data) => { saveStudentSession(data); setLoginData(data); navigate("/student/dashboard"); }}
+          onFrozen={(date) => { setFrozenDate(date || null); setFrozenModalOpen(true); }}
+          onFindCode={openLookupModal}
+        />
+        <StudentCodeLookupModal open={lookupOpen} lookupValue={lookupValue} lookupError={lookupError} lookupResult={lookupResult} lookupStudentCode={lookupStudentCode} lookupStudents={lookupStudents} lookupCopied={lookupCopied} lookupLoading={lookupLoading} t={t} onClose={closeLookupModal} onChange={(value) => { setLookupValue(normalizeDigits(value).replace(/\D/g, "").slice(0, 11)); setLookupError(""); setLookupResult(""); }} onSubmit={handleLookup} onCopy={(studentCode) => void copyLookupStudentCode(studentCode)} />
+        {frozenAccountModal}
+      </Shell>
     );
   }
 
@@ -5501,7 +5840,7 @@ function App() {
                       <button
                         className="copy-code-button"
                         type="button"
-                        onClick={copyLookupStudentCode}
+                        onClick={() => void copyLookupStudentCode()}
                       aria-label={t("student.copyCode")}
                     >
                       {lookupCopied ? t("student.codeCopied") : t("student.copyCode")}
@@ -6271,7 +6610,7 @@ function NotificationsManagementCenter({ session, language, t, onBack }: { sessi
         }) : <div className="notifications-empty"><span className="notifications-empty-icon" aria-hidden="true">✓</span><h2>{t("dashboard.notificationsEmpty")}</h2><p>{t("dashboard.notificationsEmptyHint")}</p></div>}
       </section>
     </main>
-    <footer className="site-footer" dir="ltr" lang="en">© 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny</footer>
+    <footer className="site-footer site-signature" dir="ltr" lang="en">© 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny</footer>
   </div>;
 }
 
@@ -6886,7 +7225,7 @@ function TeacherDashboard({
           </AnimatedTabPanel>
         </section>
       </main>
-      <footer className="site-footer" dir="ltr" lang="en">
+      <footer className="site-footer site-signature" dir="ltr" lang="en">
         © 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny
       </footer>
       <MobileScannerModal open={cameraScannerOpen} onClose={() => setCameraScannerOpen(false)} session={session} language={language} t={t} selectedSessionId={selectedAttendanceSessionId} />
@@ -6999,6 +7338,7 @@ function UsersTeamManager({
   const [userRowNotice, setUserRowNotice] = useState<{ userId: number; message: string } | null>(null);
   const userRowNoticeTimer = useRef<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<RecordStatusFilter>("active");
+  const [openUserActionsId, setOpenUserActionsId] = useState<number | null>(null);
   const [transferTarget, setTransferTarget] = useState<AdminUser | null>(null);
   const [transferPassword, setTransferPassword] = useState("");
   const editorFormRef = useRef<HTMLFormElement>(null);
@@ -7519,10 +7859,23 @@ function UsersTeamManager({
                 {!actionsLocked && !user.deleted_at ? <button className="secondary-button compact-button user-action user-action-primary" type="button" onClick={() => startEdit(user)}>
                   {t("admin.editUser")}
                 </button> : null}
-                {!actionsLocked && !user.deleted_at ? <button className="secondary-button compact-button user-action user-action-secondary" type="button" onClick={() => setResetPasswordId(user.id)}>
+                {!targetIsOwner ? <button
+                  className="secondary-button compact-button user-action user-action-more"
+                  type="button"
+                  aria-expanded={openUserActionsId === user.id}
+                  aria-controls={`user-actions-${user.id}`}
+                  onClick={() => setOpenUserActionsId((current) => current === user.id ? null : user.id)}
+                >
+                  {t("admin.more")}
+                </button> : null}
+                {targetIsOwner ? <button className="secondary-button compact-button user-action user-action-secondary" type="button" onClick={() => setResetPasswordId(user.id)}>
                   {t("admin.resetPassword")}
                 </button> : null}
-                {!actionsLocked && !user.deleted_at && !isCurrentUser ? (
+                <div id={`user-actions-${user.id}`} className={`user-secondary-actions ${openUserActionsId === user.id ? "is-open" : ""}`}>
+                {!targetIsOwner && !user.deleted_at ? <button className="secondary-button compact-button user-action user-action-secondary" type="button" onClick={() => setResetPasswordId(user.id)}>
+                  {t("admin.resetPassword")}
+                </button> : null}
+                {!targetIsOwner && !user.deleted_at && !isCurrentUser ? (
                   <button
                     className={`secondary-button compact-button user-action ${user.is_active ? "user-action-warning" : "user-action-success"} action-feedback-${userActionState(`status:${user.id}`)}`}
                     type="button"
@@ -7580,6 +7933,7 @@ function UsersTeamManager({
                   </button>
                 ) : null}
                 {isOwner && !targetIsOwner && !user.deleted_at && !actionsLocked ? <button className="secondary-button compact-button user-action user-action-secondary" type="button" onClick={() => { setTransferTarget(user); setTransferPassword(""); setStatus(""); }} disabled={loading}>{t("admin.transferOwnership")}</button> : null}
+                </div>
               </div> : null}
               {resetPasswordId === user.id && !actionsLocked ? (
                 <div className="password-reset-row">
@@ -7820,6 +8174,7 @@ type StudentCardProps = {
   onOpenProfile: (studentId: number) => void;
   onEdit: (student: AdminStudent) => void;
   onPrint: (student: AdminStudent) => void;
+  onResetPin: (student: AdminStudent) => void;
   onFreeze: (student: AdminStudent) => void;
   onStatus: (student: AdminStudent) => void;
   onDelete: (student: AdminStudent) => void;
@@ -7827,13 +8182,14 @@ type StudentCardProps = {
   onPermanentDelete: (student: AdminStudent) => void;
 };
 
-function StudentActionIcon({ name }: { name: "edit" | "printer" | "power" | "trash" | "restore" | "freeze" }) {
+function StudentActionIcon({ name }: { name: "edit" | "printer" | "power" | "trash" | "restore" | "freeze" | "key" }) {
   const commonProps = { className: "student-card-action-icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
   if (name === "edit") return <svg {...commonProps}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>;
   if (name === "printer") return <svg {...commonProps}><path d="M6 9V2h12v7" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 14h12v8H6z" /></svg>;
   if (name === "power") return <svg {...commonProps}><path d="M18.36 6.64a9 9 0 1 1-12.73 0" /><path d="M12 2v10" /></svg>;
   if (name === "restore") return <svg {...commonProps}><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v6h6" /></svg>;
   if (name === "freeze") return <svg {...commonProps}><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" /></svg>;
+  if (name === "key") return <svg {...commonProps}><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8M16 5l3 3M14 7l3 3" /></svg>;
   return <svg {...commonProps}><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 15H6L5 6" /><path d="M10 11v6M14 11v6" /></svg>;
 }
 
@@ -7849,6 +8205,7 @@ function StudentCard({
   onOpenProfile,
   onEdit,
   onPrint,
+  onResetPin,
   onFreeze,
   onStatus,
   onDelete,
@@ -7858,18 +8215,20 @@ function StudentCard({
   const isDeleted = Boolean(student.deleted_at);
   const statusKey = `status:${student.id}`;
   const printKey = `print:${student.id}`;
+  const resetPinKey = `reset-pin:${student.id}`;
   const freezeKey = `freeze:${student.id}`;
   const deleteKey = `delete:${student.id}`;
   const restoreKey = `restore:${student.id}`;
   const permanentDeleteKey = `permanent-delete:${student.id}`;
   const statusState = getActionState(statusKey);
   const printState = getActionState(printKey);
+  const resetPinState = getActionState(resetPinKey);
   const freezeState = getActionState(freezeKey);
   const deleteState = getActionState(deleteKey);
   const restoreState = getActionState(restoreKey);
   const permanentDeleteState = getActionState(permanentDeleteKey);
   const actionIsBusy = (state: ActionButtonState) => state !== "idle";
-  const anyActionBusy = [statusState, printState, freezeState, deleteState, restoreState, permanentDeleteState].some(actionIsBusy);
+  const anyActionBusy = [statusState, printState, resetPinState, freezeState, deleteState, restoreState, permanentDeleteState].some(actionIsBusy);
   const code = student.student_serial || student.student_code;
   const phone = student.phone || student.guardian_phone;
 
@@ -7923,6 +8282,9 @@ function StudentCard({
             </button> : null}
             {canManage && student.qr_token ? <button className={`secondary-button compact-button student-card-action action-feedback-${printState}`} type="button" disabled={anyActionBusy} onClick={() => onPrint(student)}>
               <StudentActionIcon name="printer" /><span className="student-card-action-label">{actionButtonText(printState, { idle: t("admin.printLabel"), loading: t("admin.printingLabel"), success: t("admin.labelReady"), error: t("admin.actionFailedSave") })}</span>
+            </button> : null}
+            {canManage ? <button className={`secondary-button compact-button student-card-action action-feedback-${resetPinState}`} type="button" disabled={anyActionBusy} onClick={() => onResetPin(student)}>
+              <StudentActionIcon name="key" /><span className="student-card-action-label">{actionButtonText(resetPinState, { idle: t("admin.resetPin"), loading: t("admin.resettingPin"), success: t("admin.pinReset"), error: t("admin.actionFailedSave") })}</span>
             </button> : null}
             {canManage ? <button className={`secondary-button compact-button student-card-action action-feedback-${freezeState}`} type="button" disabled={anyActionBusy} onClick={() => onFreeze(student)}>
               <StudentActionIcon name="freeze" /><span className="student-card-action-label">{actionButtonText(freezeState, { idle: student.absence_frozen ? t("admin.unfreeze") : t("admin.freeze"), loading: student.absence_frozen ? t("admin.unfreezing") : t("admin.freezing"), success: student.absence_frozen ? t("admin.unfrozen") : t("admin.frozenSuccessfully"), error: t("admin.actionFailedSave") })}</span>
@@ -7981,6 +8343,7 @@ function AcademicManager({
   const [permanentBulkDeleteRetention, setPermanentBulkDeleteRetention] = useState<StudentRetention>({ ...defaultStudentRetention });
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<AdminStudent | null>(null);
   const [permanentDeleteRetention, setPermanentDeleteRetention] = useState<StudentRetention>({ ...defaultStudentRetention });
+  const [resetPinTarget, setResetPinTarget] = useState<AdminStudent | null>(null);
   const [groupDeletePinTarget, setGroupDeletePinTarget] = useState<AdminGroup | null>(null);
   const [groupDeletePin, setGroupDeletePin] = useState("");
   const bulkDeleteFeedback = useActionFeedback();
@@ -7992,6 +8355,7 @@ function AcademicManager({
   const studentActionTimers = useRef<Record<string, number>>({});
   const [studentCardNotices, setStudentCardNotices] = useState<Record<number, StudentCardNotice | undefined>>({});
   const studentNoticeTimers = useRef<Record<number, number>>({});
+  const createFeedbackTimer = useRef<number | null>(null);
   const [studentBulkToast, setStudentBulkToast] = useState<StudentBulkToast | null>(null);
   const studentBulkToastTimer = useRef<number | null>(null);
   const [groupActionStates, setGroupActionStates] = useState<Record<string, ActionButtonState>>({});
@@ -8010,9 +8374,10 @@ function AcademicManager({
 
   const activeDialogBusy = bulkActionsBusy
     || Boolean(groupDeletePinTarget && groupActionState(`delete:${groupDeletePinTarget.id}`) !== "idle")
-    || Boolean(permanentDeleteTarget && studentActionState(`permanent-delete:${permanentDeleteTarget.id}`) === "loading");
+    || Boolean(permanentDeleteTarget && studentActionState(`permanent-delete:${permanentDeleteTarget.id}`) === "loading")
+    || Boolean(resetPinTarget && studentActionState(`reset-pin:${resetPinTarget.id}`) === "loading");
 
-  useEscapeKey(Boolean(groupDetails || bulkDeleteConfirmOpen || permanentBulkDeleteConfirmOpen || permanentDeleteTarget || groupDeletePinTarget) && !activeDialogBusy, () => {
+  useEscapeKey(Boolean(groupDetails || bulkDeleteConfirmOpen || permanentBulkDeleteConfirmOpen || permanentDeleteTarget || resetPinTarget || groupDeletePinTarget) && !activeDialogBusy, () => {
     if (groupDetails) {
       setGroupDetails(null);
       return;
@@ -8024,6 +8389,10 @@ function AcademicManager({
     }
     if (permanentDeleteTarget) {
       setPermanentDeleteTarget(null);
+      return;
+    }
+    if (resetPinTarget) {
+      setResetPinTarget(null);
       return;
     }
     if (permanentBulkDeleteConfirmOpen) {
@@ -8151,6 +8520,7 @@ function AcademicManager({
     Object.values(groupActionTimers.current).forEach((timer) => window.clearTimeout(timer));
     Object.values(studentActionTimers.current).forEach((timer) => window.clearTimeout(timer));
     Object.values(studentNoticeTimers.current).forEach((timer) => window.clearTimeout(timer));
+    if (createFeedbackTimer.current !== null) window.clearTimeout(createFeedbackTimer.current);
     if (studentBulkToastTimer.current !== null) window.clearTimeout(studentBulkToastTimer.current);
   }, []);
 
@@ -8335,6 +8705,10 @@ function AcademicManager({
   function resetForm() {
     setEditingId(null);
     setStatus("");
+    if (createFeedbackTimer.current !== null) {
+      window.clearTimeout(createFeedbackTimer.current);
+      createFeedbackTimer.current = null;
+    }
     setFieldErrors({});
     setGroupForm({ ...emptyGroupForm, center_id: centers[0] ? String(centers[0].id) : "" });
     setStudentForm({ ...emptyStudentForm, billing_start_month: defaultBillingStartMonth() });
@@ -8442,6 +8816,10 @@ function AcademicManager({
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setStatus("");
+    if (createFeedbackTimer.current !== null) {
+      window.clearTimeout(createFeedbackTimer.current);
+      createFeedbackTimer.current = null;
+    }
     if (kind === "groups") {
       const errors: Record<string, string> = {};
       const feesAmount = Number(normalizeDigits(groupForm.fees_amount));
@@ -8523,6 +8901,10 @@ function AcademicManager({
         showStudentNotice(savedStudentId, { type: "success", message: t("admin.studentSaved", { code: savedStudentCode }) });
       } else {
         setStatus(t("admin.studentSaved", { code: savedStudentCode }));
+        createFeedbackTimer.current = window.setTimeout(() => {
+          setStatus("");
+          createFeedbackTimer.current = null;
+        }, 5000);
       }
       setSaveState("success");
       window.setTimeout(() => setSaveState("idle"), 2000);
@@ -8611,6 +8993,22 @@ function AcademicManager({
       const data = (await response.json()) as { ok: boolean; status?: string };
       if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
     }, student.is_active ? t("admin.disabledSuccessfully") : t("admin.enabledSuccessfully"), true);
+  }
+
+  function requestStudentPinReset(student: AdminStudent) {
+    if (!sessionHasPermission(session, "students.manage")) return;
+    setResetPinTarget(student);
+  }
+
+  async function confirmStudentPinReset() {
+    const student = resetPinTarget;
+    if (!student) return;
+    const succeeded = await runStudentAction(`reset-pin:${student.id}`, student.id, async () => {
+      const response = await fetch(`${API_BASE_URL}/admin/students/${student.id}/reset-pin`, { method: "POST", headers });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) throw new Error(adminApiErrorMessage(data.status, t));
+    }, t("admin.pinReset"), true);
+    if (succeeded) setResetPinTarget(null);
   }
 
   async function updateStudentFreeze(student: AdminStudent) {
@@ -8868,7 +9266,11 @@ function AcademicManager({
           </>
         )}
         {kind === "groups" && status ? <p className={status === t("admin.groupSaved") ? "lookup-result" : "form-error"} role="alert">{status}</p> : null}
-        <div className="form-actions"><button className={`primary-button compact-button action-feedback-${saveState} ${saveState === "success" ? "success-button" : ""}`} type="submit" disabled={loading || saveState === "loading"}>{actionButtonText(saveState, { idle: editingId ? t("admin.update") : t("admin.create"), loading: editingId ? t("admin.updating") : t("admin.creating"), success: saveMode === "update" ? t("admin.updated") : t("admin.created"), error: t("admin.actionFailedSave") })}</button>{editingId ? <button className="secondary-button compact-button" type="button" onClick={resetForm}>{t("admin.cancel")}</button> : null}</div>
+        <div className="form-actions">
+          <button className={`primary-button compact-button action-feedback-${saveState} ${saveState === "success" ? "success-button" : ""}`} type="submit" disabled={loading || saveState === "loading"}>{actionButtonText(saveState, { idle: editingId ? t("admin.update") : t("admin.create"), loading: editingId ? t("admin.updating") : t("admin.creating"), success: saveMode === "update" ? t("admin.updated") : t("admin.created"), error: t("admin.actionFailedSave") })}</button>
+          {editingId ? <button className="secondary-button compact-button" type="button" onClick={resetForm}>{t("admin.cancel")}</button> : null}
+          {kind === "students" ? <p className={`create-action-feedback ${status ? (status.startsWith(t("admin.studentSaved", { code: "" })) ? "success" : "error") : ""}`} role={status ? (status.startsWith(t("admin.studentSaved", { code: "" })) ? "status" : "alert") : undefined} aria-live="polite">{status}</p> : null}
+        </div>
       </form>
 
       {kind === "groups" && studentSummary ? <section className="groups-student-summary" aria-label={t("admin.currentStudents")}>
@@ -8883,9 +9285,9 @@ function AcademicManager({
         </div>
       </section> : null}
 
-      {kind === "students" && session.teacher.role === "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons">{(["active","frozen","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="frozen"?"Frozen / المجمد":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
+      {kind === "students" && session.teacher.role === "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons student-status-filter-buttons">{(["active","frozen","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="frozen"?"Frozen / المجمد":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
 
-      {kind === "students" && session.teacher.role !== "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons">{(["active","frozen","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="frozen"?"Frozen / المجمد":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
+      {kind === "students" && session.teacher.role !== "admin" ? <div className="student-list-toolbar"><div className="status-filter-buttons student-status-filter-buttons">{(["active","frozen","disabled","deleted","all"] as RecordStatusFilter[]).map((filter)=><button key={filter} className={statusFilter===filter?"active":""} type="button" onClick={()=>setStatusFilter(filter)}>{filter==="active"?"Active / النشط":filter==="frozen"?"Frozen / المجمد":filter==="disabled"?"Disabled / المعطل":filter==="deleted"?"Deleted / المحذوف":"All / الكل"}</button>)}</div><button className="secondary-button student-list-toggle" type="button" onClick={() => setShowStudents((value) => !value)}>{showStudents ? `${t("admin.hideStudents")} ▲` : `${t("admin.showStudents")} ▼`}</button></div> : null}
 
       {kind === "students" ? <label className="student-search-field">{t("admin.searchStudents")}<input value={studentSearch} onChange={(e) => setStudentSearch(normalizeDigits(e.target.value))} placeholder={t("admin.searchStudents")} /></label> : null}
       {kind === "students" ? <div className="student-bulk-toolbar">
@@ -8992,6 +9394,7 @@ function AcademicManager({
           onOpenProfile={(studentId) => openStudentProfile(studentId)}
           onEdit={editStudent}
           onPrint={(value) => void printStudentLabel(value)}
+          onResetPin={requestStudentPinReset}
           onFreeze={(value) => void updateStudentFreeze(value)}
           onStatus={(value) => void updateStudentStatus(value)}
           onDelete={(value) => void deleteStudent(value)}
@@ -9000,11 +9403,20 @@ function AcademicManager({
         />)}
         {!studentListLoading && !students.length ? <p className="empty-state">{t("admin.noStudents")}</p> : null}
       </div> : null}
-      {kind !== "groups" && status ? <p className={status.startsWith(t("admin.studentSaved", { code: "" })) ? "lookup-result" : "form-error"}>{status}</p> : null}
       {kind === "students" && studentBulkToast ? <div className={`student-bulk-toast ${studentBulkToast.type}`} role={studentBulkToast.type === "error" ? "alert" : "status"} aria-live={studentBulkToast.type === "error" ? "assertive" : "polite"}>
         <span className="student-bulk-toast-icon" aria-hidden="true">{studentBulkToast.type === "success" ? "✓" : "!"}</span>
         <span>{studentBulkToast.message}</span>
       </div> : null}
+      {resetPinTarget ? <div className="modal-backdrop" role="presentation"><section className="modal-card reset-pin-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="reset-pin-confirm-title" dir={language === "ar" ? "rtl" : "ltr"}>
+        <button className="modal-close-button" type="button" onClick={() => setResetPinTarget(null)} disabled={studentActionState(`reset-pin:${resetPinTarget.id}`) === "loading"} aria-label={t("common.close")} title={t("common.close")}>×</button>
+        <h3 id="reset-pin-confirm-title">{t("admin.resetPinConfirmTitle")}</h3>
+        <p className="reset-pin-confirm-description">{t("admin.resetPinConfirmDescription").split("\n").map((line, index) => <React.Fragment key={`${line}-${index}`}>{index > 0 ? <br /> : null}{line}</React.Fragment>)}</p>
+        <p><strong>{resetPinTarget.full_name}</strong> · <span dir="ltr">{resetPinTarget.student_code}</span></p>
+        <div className="form-actions">
+          <button className={`primary-button compact-button action-feedback-${studentActionState(`reset-pin:${resetPinTarget.id}`)}`} type="button" disabled={studentActionState(`reset-pin:${resetPinTarget.id}`) !== "idle"} onClick={() => void confirmStudentPinReset()}>{actionButtonText(studentActionState(`reset-pin:${resetPinTarget.id}`), { idle: t("admin.confirmPinReset"), loading: t("admin.resettingPin"), success: t("admin.pinReset"), error: t("admin.actionFailedSave") })}</button>
+          <button className="secondary-button compact-button" type="button" disabled={studentActionState(`reset-pin:${resetPinTarget.id}`) !== "idle"} onClick={() => setResetPinTarget(null)}>{t("admin.cancel")}</button>
+        </div>
+      </section></div> : null}
       {bulkDeleteConfirmOpen ? <div className="modal-backdrop" role="presentation"><section className="modal-card bulk-delete-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-delete-confirm-title">
         <button className="modal-close-button" type="button" onClick={() => setBulkDeleteConfirmOpen(false)} disabled={bulkDeleteFeedback.state === "loading"} aria-label={t("common.close")} title={t("common.close")}>×</button>
         <h3 id="bulk-delete-confirm-title">{t("admin.bulkDelete", { count: String(selectedStudentIds.length) })}</h3>
@@ -11008,6 +11420,30 @@ function AuditLogsPanel({ session, language, t }: { session: TeacherSession; lan
   return <section className="admin-editor audit-logs-panel"><div className="section-heading"><p className="eyebrow">{t("admin.tabs.auditLogs")}</p><h2>{t("audit.title")}</h2></div><div className="report-filters payment-report-filters"><label>{t("audit.search")}<input value={search} onChange={(event) => setSearch(event.target.value)} /></label><label>{t("audit.action")}<select value={action} onChange={(event) => { setAction(event.target.value); setPage(1); }}><option value="">{t("audit.allActions")}</option>{auditActionOptions.map((option) => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select></label><label>{t("audit.user")}<input value={userId} onChange={(event) => setUserId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.student")}<input value={studentId} onChange={(event) => setStudentId(normalizeDigits(event.target.value))} inputMode="numeric" /></label><label>{t("audit.dateFrom")}<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>{t("audit.dateTo")}<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label></div><div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading} onClick={refreshLogs}>{refreshLabel}</button><button className="secondary-button compact-button" type="button" onClick={() => { setUnlocked(false); setAccessToken(""); setLogs([]); }}>{t("admin.cancel")}</button><button className="secondary-button compact-button" type="button" onClick={() => setShowChangePin(true)}>{t("audit.changePin")}</button></div><p className="report-total">{total} · {t("audit.title")}</p>{logs.length ? <div className="table-wrap"><table><thead><tr><th>{t("audit.date")}</th><th>{t("audit.user")}</th><th>{t("audit.action")}</th><th>{t("audit.student")}</th><th>{t("audit.payment")}</th><th>{t("audit.details")}</th></tr></thead><tbody>{logs.map((log) => <tr key={log.id}><td>{new Date(log.created_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US")}</td><td>{log.actor_name || log.actor_username || "—"}</td><td>{t(auditActionKey(log.action))}</td><td><strong>{log.student_name || "—"}</strong>{log.student_code ? <small className="audit-student-code">{log.student_code}</small> : log.student_id ? <small className="audit-student-code">ID: {log.student_id}</small> : null}</td><td>{log.payment_id ? `${log.payment_id}${log.payment_amount ? ` · ${log.payment_amount} EGP` : ""}` : "—"}</td><td><details><summary>{t("audit.details")}</summary><div className="audit-detail-list">{formatAuditDetails(log.details || {}, language, t, log.actor_name || log.actor_username || "").map((item) => <div className="audit-detail-item" key={item.key}><b>{item.key}</b><span>{item.value}</span></div>)}{log.reversal_reason ? <div className="audit-detail-item"><b>{t("audit.reason")}</b><span>{log.reversal_reason}</span></div> : null}</div></details></td></tr>)}</tbody></table></div> : <p className="empty-state">{t("audit.noLogs")}</p>}<div className="report-actions audit-pagination"><button className="secondary-button compact-button" type="button" disabled={page <= 1 || loading} onClick={() => loadLogs(page - 1)}>{"‹"}</button><span>{page} / {Math.max(1, Math.ceil(total / 50))}</span><button className="secondary-button compact-button" type="button" disabled={page >= Math.max(1, Math.ceil(total / 50)) || loading} onClick={() => loadLogs(page + 1)}>{"›"}</button></div>{maintenancePanel}{status ? <p className="form-error">{status}</p> : null}</section>;
 }
 
+function reportCardDate(value: unknown, language: Language) {
+  const text = String(value ?? "").trim();
+  if (!text) return "—";
+  const date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T12:00:00` : text);
+  if (Number.isNaN(date.getTime())) return text;
+  return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Africa/Cairo" }).format(date);
+}
+
+function reportCardDateTime(value: unknown, language: Language) {
+  const text = String(value ?? "").trim();
+  if (!text) return "—";
+  const date = new Date(text);
+  if (Number.isNaN(date.getTime())) return reportCardDate(text, language);
+  return new Intl.DateTimeFormat(language === "ar" ? "ar-EG" : "en-US", { day: "2-digit", month: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Africa/Cairo" }).format(date);
+}
+
+function ReportCardField({ label, value, emphasized = false }: { label: string; value: React.ReactNode; emphasized?: boolean }) {
+  return <div className={`report-card-field${emphasized ? " is-emphasized" : ""}`}><span>{label}</span><strong>{value || "—"}</strong></div>;
+}
+
+function ReportMobileCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <article className={`report-mobile-card ${className}`}>{children}</article>;
+}
+
 function FinanceReportsPanel({ session, language, t, canReverse, canViewPayments, canViewAttendance }: { session: TeacherSession; language: Language; t: Translator; canReverse: boolean; canViewPayments: boolean; canViewAttendance: boolean }) {
   const reportTabsRef = useRef<HTMLDivElement | null>(null);
   const [tabIndicator, setTabIndicator] = useState<{ left: number; width: number; top: number; height: number } | null>(null);
@@ -11058,8 +11494,8 @@ function FinanceReportsPanel({ session, language, t, canReverse, canViewPayments
     {reportContext.view === "payments" && canViewPayments ? <PaymentReportsPanel session={session} language={language} t={t} canReverse={canReverse} embedded /> : null}
     {reportContext.view === "overdue" && canViewPayments ? <LatePaymentsReportPanel key={`${reportContext.groupId}:${reportContext.period}`} session={session} t={t} embedded initialGroupId={reportContext.groupId} initialPeriod={reportContext.period} /> : null}
     {reportContext.view === "special-financial" && canViewPayments ? <SpecialFinancialReportsPanel session={session} language={language} t={t} /> : null}
-    {reportContext.view === "attendance" && canViewAttendance ? <AttendanceReportsPanel session={session} t={t} kind="attendance" /> : null}
-    {reportContext.view === "absence" && canViewAttendance ? <AttendanceReportsPanel session={session} t={t} kind="absence" /> : null}
+    {reportContext.view === "attendance" && canViewAttendance ? <AttendanceReportsPanel session={session} language={language} t={t} kind="attendance" /> : null}
+    {reportContext.view === "absence" && canViewAttendance ? <AttendanceReportsPanel session={session} language={language} t={t} kind="absence" /> : null}
   </div>;
 }
 
@@ -11075,7 +11511,7 @@ function useReportOptions(session: TeacherSession, onError?: (message: string) =
   return { groups, grades };
 }
 
-function AttendanceReportsPanel({ session, t, kind }: { session: TeacherSession; t: Translator; kind: "attendance" | "absence" }) {
+function AttendanceReportsPanel({ session, language, t, kind }: { session: TeacherSession; language: Language; t: Translator; kind: "attendance" | "absence" }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [query, setQuery] = useState("");
@@ -11151,7 +11587,13 @@ function AttendanceReportsPanel({ session, t, kind }: { session: TeacherSession;
     <div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setToday}>{t("fees.today")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setThisMonth}>{t("fees.thisMonth")}</button><button className="primary-button compact-button" type="button" disabled={loading || searchFeedback.state === "loading"} onClick={applyReport}>{searchLabel}</button><button className="secondary-button compact-button" type="button" disabled={exportFeedback.state === "loading"} onClick={() => loadReport(true).catch(() => undefined)}>{exportLabel}</button></div>
     {searched ? <div className="report-summary"><span><b>{kind === "attendance" ? t("fees.attendanceTotal") : t("fees.absenceTotal")}</b>{total}</span>{kind === "attendance" ? <><span><b>{t("fees.presentCount")}</b>{presentCount}</span><span><b>{t("fees.lateCount")}</b>{lateCount}</span></> : null}</div> : null}
     {searched && !rows.length ? <p className="report-empty-message">{emptyMessage}</p> : null}
-    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("fees.sessionDate")}</th><th>{t("fees.sessionTime")}</th><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.scanSerial")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.attendanceStatus")}</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.attendance_record_id}-${row.session_id}`}><td>{row.session_date}</td><td>{row.starts_at ? new Date(row.starts_at).toLocaleTimeString() : "—"}</td><td>{row.student_name}</td><td>{row.student_code}</td><td>{row.student_serial || row.scan_serial || "—"}</td><td>{row.group_name}</td><td>{row.grade_level}</td><td>{row.status === "present" ? t("fees.present") : row.status === "late" ? t("fees.late") : t("fees.absent")}</td></tr>)}</tbody></table></div> : null}
+    {rows.length ? <>
+      <div className="table-wrap report-desktop-results"><table><thead><tr><th>{t("fees.sessionDate")}</th><th>{t("fees.sessionTime")}</th><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.scanSerial")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.attendanceStatus")}</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.attendance_record_id}-${row.session_id}`}><td>{row.session_date}</td><td>{row.starts_at ? new Date(row.starts_at).toLocaleTimeString() : "—"}</td><td>{row.student_name}</td><td>{row.student_code}</td><td>{row.student_serial || row.scan_serial || "—"}</td><td>{row.group_name}</td><td>{row.grade_level}</td><td>{row.status === "present" ? t("fees.present") : row.status === "late" ? t("fees.late") : t("fees.absent")}</td></tr>)}</tbody></table></div>
+      <div className="report-mobile-results">{rows.map((row) => <ReportMobileCard key={`${row.attendance_record_id}-${row.session_id}`}>
+        <div className="report-card-header"><div><strong>{row.student_name || "—"}</strong><span dir="ltr">{row.student_code || row.student_serial || row.scan_serial || "—"}</span></div><span className={`report-status-badge is-${row.status || "absent"}`}>{row.status === "present" ? t("fees.present") : row.status === "late" ? t("fees.late") : t("fees.absent")}</span></div>
+        <div className="report-card-grid"><ReportCardField label={t("admin.selectGroup")} value={row.group_name} /><ReportCardField label={t("admin.grade")} value={gradeLevelLabel(row.grade_level, language)} /><ReportCardField label={t("fees.sessionDate")} value={reportCardDate(row.session_date, language)} /><ReportCardField label={t("fees.sessionTime")} value={row.starts_at ? reportCardDateTime(row.starts_at, language).split(language === "ar" ? "، " : ", ").slice(-1)[0] : "—"} /></div>
+      </ReportMobileCard>)}</div>
+    </> : null}
     {rows.length && total > 0 ? <ReportPagination page={page} pageSize={pageSize} total={total} loading={loading} onPageChange={goToPage} t={t} /> : null}
     {status ? <p className="form-error" role="alert">{status}</p> : null}
   </section></div>;
@@ -11214,6 +11656,10 @@ function SpecialFinancialReportsPanel({ session, language, t }: { session: Teach
     <div className="report-actions"><button className="primary-button compact-button" type="button" disabled={loading || searchFeedback.state === "loading"} onClick={apply}>{searchLabel}</button><button className="secondary-button compact-button" type="button" disabled={!searched || exportFeedback.state === "loading"} onClick={() => loadReport(true).catch(() => undefined)}>{exportLabel}</button></div>
     {searched && summary ? <div className="report-summary"><span><b>{t("fees.specialFinancialOperations")}</b>{summary.total_operations || 0}</span><span><b>{t("fees.fullExemptions")}</b>{summary.full_exemptions || 0}</span><span><b>{t("fees.discounts")}</b>{summary.discounts || 0}</span><span><b>{t("fees.totalTreatmentValue")}</b>{Number(summary.total_treatment_value || 0).toFixed(2)} EGP</span></div> : null}
     {loading ? <p className="report-empty-message">{t("fees.searching")}</p> : null}{searched && !loading && !rows.length ? <p className="report-empty-message">{t("fees.specialFinancialEmpty")}</p> : null}
+    {rows.length ? <div className="report-mobile-results">{rows.map((row) => <ReportMobileCard key={`mobile-${row.id}`}>
+      <div className="report-card-header"><div><strong>{row.student_name || "—"}</strong><span dir="ltr">{row.student_code || row.student_serial || row.scan_serial || "—"}</span></div><span className={`report-status-badge is-${row.is_reversed ? "reversed" : "active"}`}>{row.is_reversed ? t("fees.reversed") : t("fees.activeOnly")}</span></div>
+      <div className="report-card-grid"><ReportCardField label={t("fees.treatmentType")} value={row.treatment_type === "exempt" ? t("fees.fullExemption") : t("fees.discount")} /><ReportCardField label={t("fees.discount")} value={`${Number(row.discount_amount || 0).toFixed(2)} EGP`} emphasized /><ReportCardField label={t("fees.paidAmount")} value={`${Number(row.paid_amount || 0).toFixed(2)} EGP`} emphasized /><ReportCardField label={t("fees.paymentDate")} value={row.paid_at ? reportCardDateTime(row.paid_at, language) : "—"} /><ReportCardField label={t("admin.selectGroup")} value={row.group_name} /><ReportCardField label={t("admin.grade")} value={gradeLevelLabel(row.grade_level, language)} /><ReportCardField label={t("fees.coveredMonth")} value={formatSpecialFinancialMonths(row, language) || "—"} /><ReportCardField label={t("fees.notes")} value={row.notes || "—"} /></div>
+    </ReportMobileCard>)}</div> : null}
     {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.scanSerial")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.treatmentType")}</th><th>{t("fees.discount")}</th><th>{t("fees.originalAmount")}</th><th>{t("fees.paidAmount")}</th><th>{t("fees.coveredMonth")}</th><th>{t("fees.paymentDate")}</th><th>{t("fees.recordedBy")}</th><th>{t("fees.notes")}</th><th>{t("fees.reversalState")}</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.student_name}</td><td>{row.student_code || "—"}</td><td>{row.student_serial || row.scan_serial || "—"}</td><td>{row.group_name || "—"}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td><span className={`special-financial-badge ${row.treatment_type}`}>{row.treatment_type === "exempt" ? t("fees.fullExemption") : t("fees.discount")}</span></td><td>{Number(row.discount_amount || 0).toFixed(2)}</td><td>{Number(row.gross_amount || 0).toFixed(2)}</td><td>{Number(row.paid_amount || 0).toFixed(2)}</td><td>{formatSpecialFinancialMonths(row, language) || "—"}</td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString(language === "ar" ? "ar-EG" : "en-US") : "—"}</td><td>{row.recorded_by || "—"}</td><td>{row.notes || "—"}</td><td><span className={`special-financial-badge ${row.is_reversed ? "reversed" : "active"}`}>{row.is_reversed ? t("fees.reversed") : t("fees.activeOnly")}</span></td></tr>)}</tbody></table></div> : null}
     {rows.length ? <ReportPagination page={page} pageSize={pageSize} total={total} loading={loading} onPageChange={goToPage} t={t} /> : null}{status ? <p className="form-error" role="alert">{status}</p> : null}
   </section></div>;
@@ -11412,7 +11858,15 @@ function PaymentReportsPanel({ session, language, t, canReverse, embedded = fals
     </div>
     <div className="report-actions"><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setToday}>{t("fees.today")}</button><button className="secondary-button compact-button" type="button" disabled={loading} onClick={setThisMonth}>{t("fees.thisMonth")}</button><button className={`primary-button compact-button action-feedback-${searchFeedback.state} ${searchFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={loading || searchFeedback.state === "loading"} onClick={() => searchReport().catch(() => undefined)}>{searchButtonLabel}</button><button className={`secondary-button compact-button action-feedback-${exportFeedback.state} ${exportFeedback.state === "success" ? "success-button" : ""}`} type="button" disabled={!rows.length || exportFeedback.state === "loading"} onClick={exportCsv}>{exportButtonLabel}</button></div>
     <p className="report-total">{t("fees.totalPaid")}: {totalPaid.toFixed(2)} EGP · {t("fees.paymentCount")}: {paymentCount}</p>
-    {rows.length ? <div className="table-wrap"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th><th>{t("fees.reversed")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td><span className={row.is_reversed ? "student-fee-payment-reversed" : undefined}>{row.amount} EGP</span></td><td><span className="payment-type-cell">{formatPaymentType(row)}</span></td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td><td>{row.is_reversed ? t("fees.reversed") : "—"}</td>{canReverse ? <td>{row.is_reversed ? "—" : <button className="secondary-button compact-button" type="button" disabled={reversing} onClick={() => openReverseDialog(row)}>{t("fees.reversePayment")}</button>}</td> : null}</tr>)}</tbody></table></div> : null}
+    {rows.length ? <>
+      <div className="table-wrap report-desktop-results"><table><thead><tr><th>{t("admin.studentName")}</th><th>{t("admin.studentCode")}</th><th>{t("admin.selectGroup")}</th><th>{t("admin.grade")}</th><th>{t("fees.amount")}</th><th>{t("fees.paymentType")}</th><th>{t("fees.paymentDate")}</th><th>{t("fees.reversed")}</th>{canReverse ? <th>{t("fees.reversePayment")}</th> : null}</tr></thead><tbody>{rows.map((row) => <tr key={row.id}><td>{row.full_name}{row.whatsapp_notified === false ? <WhatsAppNotSentBadge t={t} /> : null}</td><td>{row.student_code}</td><td>{row.group_name}</td><td>{gradeLevelLabel(row.grade_level, language)}</td><td><span className={row.is_reversed ? "student-fee-payment-reversed" : undefined}>{row.amount} EGP</span></td><td><span className="payment-type-cell">{formatPaymentType(row)}</span></td><td>{row.paid_at ? new Date(row.paid_at).toLocaleString() : "—"}</td><td>{row.is_reversed ? t("fees.reversed") : "—"}</td>{canReverse ? <td>{row.is_reversed ? "—" : <button className="secondary-button compact-button" type="button" disabled={reversing} onClick={() => openReverseDialog(row)}>{t("fees.reversePayment")}</button>}</td> : null}</tr>)}</tbody></table></div>
+      <div className="report-mobile-results">{rows.map((row) => <ReportMobileCard key={row.id} className="payment-report-card">
+        <div className="report-card-header"><div><strong>{row.full_name || "—"}</strong><span dir="ltr">{row.student_code || "—"}</span></div><strong className="report-card-metric">{row.amount} EGP</strong></div>
+        <div className="report-card-subline">{formatPaymentType(row)}</div>
+        <div className="report-card-grid"><ReportCardField label={t("admin.selectGroup")} value={row.group_name} /><ReportCardField label={t("admin.grade")} value={gradeLevelLabel(row.grade_level, language)} /><ReportCardField label={t("fees.paymentDate")} value={row.paid_at ? reportCardDateTime(row.paid_at, language) : "—"} /><ReportCardField label={t("fees.reversed")} value={row.is_reversed ? t("fees.reversed") : "—"} /></div>
+        {canReverse && !row.is_reversed ? <button className="secondary-button compact-button report-card-action" type="button" disabled={reversing} onClick={() => openReverseDialog(row)}>{t("fees.reversePayment")}</button> : null}
+      </ReportMobileCard>)}</div>
+    </> : null}
     {status ? <p className="form-error">{status}</p> : null}
     {reverseTarget ? <div className="modal-backdrop"><form className="modal-card" role="dialog" aria-modal="true" onSubmit={reversePayment}><button className="modal-close-button" type="button" onClick={() => setReverseTarget(null)} disabled={reversing} aria-label={t("common.close")} title={t("common.close")}>×</button><h3>{t("fees.reversePayment")}</h3><p>{reverseTarget.full_name} · {reverseTarget.amount} EGP</p><label>{t("audit.reason")}<textarea value={reverseReason} onChange={(event) => { setReverseReason(event.target.value); setReverseError(false); }} rows={4} autoFocus required /></label><label>{t("fees.securityCode")}<input value={reversePin} onChange={(event) => { setReversePin(normalizeDigits(event.target.value).replace(/\D/g, "").slice(0, 4)); setReverseError(false); }} inputMode="numeric" type="password" maxLength={4} autoComplete="one-time-code" placeholder={t("fees.securityCodeHint")} required /></label>{reverseError ? <p className="form-error" role="alert">{status || t("fees.reversalFailed")}</p> : null}<div className="report-actions"><button className="primary-button" type="submit" disabled={reversing || reverseReason.trim().length < 3 || !/^\d{4}$/.test(normalizeDigits(reversePin).trim())}>{reverseButtonLabel}</button><button className="secondary-button" type="button" disabled={reversing} onClick={() => setReverseTarget(null)}>{t("admin.cancel")}</button></div></form></div> : null}
     </section>
@@ -11591,7 +12045,7 @@ function CustomWhatsAppHistory({ session, language, t }: { session: TeacherSessi
     const params = new URLSearchParams(); if (search) params.set("search", search); if (status) params.set("status", status); if (from) params.set("from", from); if (to) params.set("to", to);
     fetch(`${API_BASE_URL}/whatsapp/custom-messages/history?${params}`, { headers: { Authorization: `Bearer ${session.token}` } }).then((response) => response.json()).then((data) => setMessages(data.ok && Array.isArray(data.messages) ? data.messages : [])).catch(() => setMessages([]));
   }, [search, status, from, to, session.token]);
-  return <section className="inbox-custom-history" dir={language === "ar" ? "rtl" : "ltr"}><div className="inbox-toolbar-primary"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("inbox.customSearchStudent")} /><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="">{t("inbox.customStatus")}</option>{["pending", "processing", "sent", "failed", "delivery_unknown", "skipped"].map((item) => <option key={item} value={item}>{item}</option>)}</select><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /><input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></div>
+  return <section className="inbox-custom-history" dir={language === "ar" ? "rtl" : "ltr"}><div className="inbox-toolbar-primary"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("inbox.customSearchStudent")} aria-label={t("inbox.customSearchStudent")} /><select value={status} onChange={(event) => setStatus(event.target.value)} aria-label={t("inbox.customStatus")}><option value="">{t("inbox.customStatus")}</option>{["pending", "processing", "sent", "failed", "delivery_unknown", "skipped"].map((item) => <option key={item} value={item}>{item}</option>)}</select><label className="inbox-history-date"><span className="inbox-field-label">{t("inbox.date")}</span><input type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label={`${t("inbox.date")} 1`} /></label><label className="inbox-history-date"><span className="inbox-field-label">{t("inbox.date")}</span><input type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label={`${t("inbox.date")} 2`} /></label></div>
     {messages.length ? <div className="inbox-custom-history-list">{messages.map((item) => <article key={item.id}><header><strong>{item.student_name || "—"} · {item.student_code || item.student_serial || "—"}</strong><span>{item.status}</span></header><small>{item.group_name || "—"} · {item.sent_by || "—"} · {formatInboxTimestamp(item.sent_at || item.created_at, language)}</small><p dir="auto">{item.rendered_message || "—"}</p><small>{t("inbox.customAttempts")}: {item.attempts}{item.last_error ? ` · ${item.last_error}` : ""}</small></article>)}</div> : <p className="empty-state">{t("inbox.customNoHistory")}</p>}</section>;
 }
 
@@ -11790,7 +12244,7 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t("inbox.search")} aria-label={t("inbox.search")} />
         </label>
         <label className="inbox-date-control">
-          <span className="visually-hidden">{t("inbox.date")}</span>
+          <span className="inbox-field-label">{t("inbox.date")}</span>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} aria-label={t("inbox.date")} />
         </label>
       </div>
@@ -11865,7 +12319,7 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
       <div className="inbox-conversation">
         {selected ? <>
           <div className="inbox-conversation-header">
-            <button className="secondary-button compact-button inbox-back-button" type="button" onClick={() => { setSelected(null); setMessages([]); }}><span aria-hidden="true">‹</span>{t("inbox.backToList")}</button>
+            <button className="secondary-button compact-button inbox-back-button" type="button" aria-label={t("inbox.backToList")} onClick={() => { setSelected(null); setMessages([]); }}><span aria-hidden="true">‹</span>{t("inbox.backToList")}</button>
             <div>
               <p className="eyebrow">{t("inbox.conversationDetails")}</p>
               <h3>{inboxSubjectLabel(selected.subject, t)}</h3>
@@ -12755,7 +13209,7 @@ function Shell({
         </div>
       ) : null}
       {children}
-      <footer className="site-footer" dir="ltr" lang="en">
+      <footer className="site-footer site-signature" dir="ltr" lang="en">
         © 2026 Mr. Ahmed Abdrabo · Designed &amp; Developed by Eng. Hany Hosny
       </footer>
     </div>

@@ -1237,6 +1237,33 @@ adminAcademicRouter.post("/students/:id/regenerate-scan-serial", requirePermissi
   }
 });
 
+adminAcademicRouter.post("/students/:id/reset-pin", requirePermission("students.manage"), async (req, res, next) => {
+  const studentId = Number(req.params.id);
+  if (!Number.isInteger(studentId) || studentId <= 0) return res.status(400).json({ ok: false, status: "invalid_student_id" });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const before = await client.query("SELECT id, group_id, pin_hash, pin_set_at, auth_version, deleted_at FROM students WHERE id = $1 FOR UPDATE", [studentId]);
+    if (!before.rowCount) { await client.query("ROLLBACK"); return res.status(404).json({ ok: false, status: "not_found" }); }
+    if (before.rows[0].deleted_at) { await client.query("ROLLBACK"); return res.status(404).json({ ok: false, status: "not_found" }); }
+    if (!hasGroupAccess(req.teacher, before.rows[0].group_id)) { await client.query("ROLLBACK"); return groupAccessDenied(res); }
+    const result = await client.query(
+      `UPDATE students SET pin_hash = NULL, pin_set_at = NULL, auth_version = auth_version + 1, updated_at = NOW()
+       WHERE id = $1 RETURNING id, auth_version`,
+      [studentId]
+    );
+    await client.query("DELETE FROM student_pin_tokens WHERE student_id = $1", [studentId]);
+    await client.query("COMMIT");
+    await auditLog({ action: "student_pin_reset", actorId: req.teacher.id, studentId, details: { student_id: studentId, action: "student_pin_reset", auth_version_after: Number(result.rows[0].auth_version) }, request: req });
+    return res.json({ ok: true, status: "student_pin_reset" });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    return next(error);
+  } finally {
+    client.release();
+  }
+});
+
 adminAcademicRouter.put("/students/:id", requirePermission("students.manage"), async (req, res, next) => {
   try {
     const studentId = Number(req.params.id);

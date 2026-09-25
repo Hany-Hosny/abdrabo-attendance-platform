@@ -283,6 +283,10 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS password_reset_requests_expiry_idx
       ON password_reset_requests(expires_at);
   `);
+  await query(
+    "INSERT INTO system_settings (key, value_json) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO NOTHING",
+    ["ai_routing_strategy", JSON.stringify("adaptive_parallel")]
+  );
 
   // 2. Add compatible columns and constraints for existing installations.
   await query("ALTER TABLE system_settings DROP CONSTRAINT IF EXISTS system_settings_key_check");
@@ -378,6 +382,11 @@ export async function migrate() {
     ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_frozen_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_unfrozen_at TIMESTAMPTZ;
     ALTER TABLE students ADD COLUMN IF NOT EXISTS absence_unfrozen_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS pin_hash TEXT;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS pin_set_at TIMESTAMPTZ;
+    ALTER TABLE students ADD COLUMN IF NOT EXISTS auth_version INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE students DROP CONSTRAINT IF EXISTS students_auth_version_check;
+    ALTER TABLE students ADD CONSTRAINT students_auth_version_check CHECK (auth_version >= 0);
     ALTER TABLE students DROP CONSTRAINT IF EXISTS students_gender_check;
     ALTER TABLE students ADD CONSTRAINT students_gender_check CHECK (gender IN ('male', 'female', 'unknown'));
 
@@ -878,6 +887,19 @@ export async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS student_portal_access_tokens_expiry_idx
       ON student_portal_access_tokens(expires_at, used_at);
+    CREATE TABLE IF NOT EXISTS student_pin_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      purpose TEXT NOT NULL CHECK (purpose IN ('pin_setup', 'pin_recovery')),
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS student_pin_tokens_student_active_idx
+      ON student_pin_tokens(student_id, purpose, expires_at, consumed_at);
+    CREATE INDEX IF NOT EXISTS student_pin_tokens_expiry_idx
+      ON student_pin_tokens(expires_at, consumed_at);
     CREATE TABLE IF NOT EXISTS whatsapp_session_leases (
       session_key TEXT PRIMARY KEY,
       owner_id TEXT NOT NULL,
@@ -891,6 +913,92 @@ export async function migrate() {
       next_available_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE EXTENSION IF NOT EXISTS pgcrypto;
+    CREATE TABLE IF NOT EXISTS ai_provider_instances (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider_type TEXT NOT NULL CHECK (provider_type IN ('gemini', 'groq', 'mistral', 'openrouter', 'cloudflare')),
+      display_name TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      routing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      model_id TEXT,
+      priority INTEGER NOT NULL DEFAULT 100 CHECK (priority BETWEEN 1 AND 100000),
+      weight INTEGER NOT NULL DEFAULT 1 CHECK (weight > 0),
+      timeout_ms INTEGER NOT NULL DEFAULT 12000 CHECK (timeout_ms BETWEEN 1000 AND 120000),
+      hedge_delay_ms INTEGER NOT NULL DEFAULT 500 CHECK (hedge_delay_ms BETWEEN 0 AND 10000),
+      max_concurrency INTEGER CHECK (max_concurrency IS NULL OR max_concurrency > 0),
+      provider_config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      credential_encrypted TEXT,
+      credential_iv TEXT,
+      credential_auth_tag TEXT,
+      health_state TEXT NOT NULL DEFAULT 'unknown' CHECK (health_state IN ('healthy', 'rate_limited', 'temporarily_failed', 'unknown')),
+      cooldown_until TIMESTAMPTZ,
+      last_success_at TIMESTAMPTZ,
+      last_failure_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      updated_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      legacy_source_key TEXT UNIQUE
+    );
+    DO $health_state$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'ai_provider_instances'::regclass AND conname = 'ai_provider_instances_health_state_check') THEN
+        ALTER TABLE ai_provider_instances DROP CONSTRAINT ai_provider_instances_health_state_check;
+      END IF;
+      ALTER TABLE ai_provider_instances ADD CONSTRAINT ai_provider_instances_health_state_check CHECK (health_state IN ('healthy', 'rate_limited', 'temporarily_failed', 'configuration_problem', 'unknown'));
+    EXCEPTION WHEN duplicate_object THEN
+      NULL;
+    END $health_state$;
+    CREATE INDEX IF NOT EXISTS ai_provider_instances_routing_idx
+      ON ai_provider_instances (routing_enabled, enabled, priority, provider_type);
+  `);
+
+  // Additive, repeatable compatibility import. Legacy settings and secrets are
+  // retained; the unique source key makes reruns idempotent.
+  await query(`
+    INSERT INTO ai_provider_instances (
+      provider_type, display_name, enabled, routing_enabled, model_id, priority,
+      timeout_ms, provider_config_json, credential_encrypted, credential_iv,
+      credential_auth_tag, legacy_source_key, created_at, updated_at
+    )
+    SELECT 'gemini', 'Gemini 1',
+      COALESCE((s.value_json->>'enabled')::boolean, TRUE),
+      COALESCE((s.value_json->>'enabled')::boolean, TRUE),
+      COALESCE(m.value_json #>> '{}', 'gemini-3.6-flash'),
+      COALESCE((s.value_json->>'priority')::integer, 1),
+      COALESCE((s.value_json->>'timeoutMs')::integer, 12000), '{}',
+      sec.encrypted_value, sec.iv, sec.auth_tag, 'legacy:gemini', NOW(), NOW()
+    FROM (SELECT 1) seed
+    LEFT JOIN system_settings s ON s.key = 'ai_provider_gemini'
+    LEFT JOIN system_settings m ON m.key = 'gemini_model'
+    LEFT JOIN system_secrets sec ON sec.key = 'gemini_api_key'
+    WHERE sec.key IS NOT NULL OR s.key IS NOT NULL
+    ON CONFLICT (legacy_source_key) DO NOTHING;
+
+    INSERT INTO ai_provider_instances (
+      provider_type, display_name, enabled, routing_enabled, model_id, priority,
+      timeout_ms, provider_config_json, credential_encrypted, credential_iv,
+      credential_auth_tag, legacy_source_key, created_at, updated_at
+    )
+    SELECT v.provider_type, v.display_name,
+      COALESCE((settings.value_json->>'enabled')::boolean, FALSE),
+      COALESCE((settings.value_json->>'enabled')::boolean, FALSE),
+      NULLIF(settings.value_json->>'model', ''),
+      COALESCE((settings.value_json->>'priority')::integer, 100),
+      COALESCE((settings.value_json->>'timeoutMs')::integer, 12000),
+      CASE WHEN v.provider_type = 'cloudflare' THEN jsonb_build_object('accountId', settings.value_json->>'accountId') ELSE '{}'::jsonb END,
+      sec.encrypted_value, sec.iv, sec.auth_tag, 'legacy:' || v.provider_type, NOW(), NOW()
+    FROM (VALUES
+      ('groq', 'Groq 1', 'ai_provider_groq', 'ai_provider_groq_key'),
+      ('mistral', 'Mistral 1', 'ai_provider_mistral', 'ai_provider_mistral_key'),
+      ('openrouter', 'OpenRouter 1', 'ai_provider_openrouter', 'ai_provider_openrouter_key'),
+      ('cloudflare', 'Cloudflare 1', 'ai_provider_cloudflare', 'ai_provider_cloudflare_token')
+    ) AS v(provider_type, display_name, setting_key, secret_key)
+    LEFT JOIN system_settings settings ON settings.key = v.setting_key
+    LEFT JOIN system_secrets sec ON sec.key = v.secret_key
+    WHERE settings.key IS NOT NULL OR sec.key IS NOT NULL
+    ON CONFLICT (legacy_source_key) DO NOTHING;
   `);
   // Keep every DDL/DML command separate when no transaction client is used.
   // node-postgres rejects a multi-command query whenever parameters are passed

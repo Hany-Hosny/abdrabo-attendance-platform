@@ -330,6 +330,61 @@ test("deterministic public answers compose price and schedule for the requested 
   assert.equal(calls.generation.length, 0);
 });
 
+test("a grade reply completes the pending deterministic schedule question", async () => {
+  process.env.ASSISTANT_MAINTENANCE_MODE = "false";
+  const { calls, handler } = providerHarness({
+    catalog: [{ displayName: "تالتة إعدادي", grade: "الصف الثالث الإعدادي", gradeLevel: "ثالثة إعدادي", monthlyFee: 220, schedules: [{ dayOfWeek: 6, startTime: "16:00", endTime: "17:00" }] }]
+  });
+  const response = await invoke(handler, validRequest({
+    messages: [
+      { role: "assistant", content: "تحب أعرفك مواعيد أنهي صف أو مجموعة؟" },
+      { role: "user", content: "تالتة إعدادي" }
+    ]
+  }));
+  assert.equal(response.payload.model, "system");
+  assert.match(response.payload.message.content, /تالتة إعدادي/);
+  assert.match(response.payload.message.content, /السبت/);
+  assert.equal(calls.generation.length, 0);
+});
+
+test("explicit registration intent switches away from a pending schedule", async () => {
+  process.env.ASSISTANT_MAINTENANCE_MODE = "false";
+  const { calls, handler } = providerHarness({ site: { center: null, pages: [], home: { registration: "التسجيل متاح بالتواصل مع السنتر" } } });
+  const response = await invoke(handler, validRequest({
+    action_id: "registration_info",
+    messages: [
+      { role: "assistant", content: "تحب أعرفك مواعيد أنهي صف أو مجموعة؟" },
+      { role: "user", content: "طريقة الاشتراك والتسجيل" }
+    ]
+  }));
+  assert.equal(response.payload.model, "system");
+  assert.match(response.payload.message.content, /التسجيل متاح/);
+  assert.doesNotMatch(response.payload.message.content, /مواعيد أنهي صف/);
+  assert.equal(calls.generation.length, 0);
+});
+
+test("teacher questions switch away from a pending schedule and stay grounded", async () => {
+  process.env.ASSISTANT_MAINTENANCE_MODE = "false";
+  const { calls, handler } = providerHarness({ site: { center: null, pages: [{ slug: "about-teacher", titleAr: "عن المدرس", contentAr: "مستر أحمد مدرس العلوم في المنصة." }], home: null } });
+  const profile = await invoke(handler, validRequest({
+    messages: [
+      { role: "assistant", content: "تحب أعرفك مواعيد أنهي صف أو مجموعة؟" },
+      { role: "user", content: "مين المستر ده؟" }
+    ]
+  }));
+  const opinion = await invoke(handler, validRequest({
+    messages: [
+      { role: "assistant", content: "تحب أعرفك مواعيد أنهي صف أو مجموعة؟" },
+      { role: "user", content: "المستر شاطر؟" }
+    ]
+  }));
+  assert.match(profile.payload.message.content, /مستر أحمد/);
+  assert.match(opinion.payload.message.content, /مستر أحمد/);
+  assert.doesNotMatch(profile.payload.message.content, /مواعيد أنهي صف/);
+  assert.doesNotMatch(opinion.payload.message.content, /مواعيد أنهي صف/);
+  assert.equal(calls.generation.length, 0);
+});
+
 test("public private multi-intent questions require login without leaking data", async () => {
   process.env.ASSISTANT_MAINTENANCE_MODE = "false";
   const { calls, handler } = providerHarness({});

@@ -10,6 +10,7 @@ import {
   WHATSAPP_TEMPLATE_PLACEHOLDERS,
   normalizeStudentGender
 } from "./whatsappTemplateCatalog.js";
+import { normalizeEgyptianPhone as normalizeEgyptianPhoneValue } from "../utils/normalizePhone.js";
 
 const normalizeTeacherDisplayName = (value) => String(value ?? "").replace(/مستر أحمد عبدربه/g, "Mr. Ahmed Abdrabo");
 
@@ -227,22 +228,8 @@ async function usePostgresAuthState() {
   };
 }
 
-function normalizeDigits(value) {
-  return String(value ?? "").replace(/[٠-٩۰-۹]/g, (digit) => {
-    const arabic = "٠١٢٣٤٥٦٧٨٩";
-    const eastern = "۰۱۲۳۴۵۶۷۸۹";
-    const index = arabic.indexOf(digit);
-    return String(index >= 0 ? index : eastern.indexOf(digit));
-  });
-}
-
 export function normalizeEgyptianPhone(value) {
-  let digits = normalizeDigits(value).replace(/[^\d]/g, "");
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  if (digits.startsWith("0")) digits = `20${digits.slice(1)}`;
-  if (digits.startsWith("1") && digits.length === 10) digits = `20${digits}`;
-  if (!/^20(?:10|11|12|15)\d{8}$/.test(digits)) return null;
-  return `+${digits}`;
+  return normalizeEgyptianPhoneValue(value);
 }
 
 function normalizeSettings(row) {
@@ -2802,7 +2789,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
         : (locale === "ar-EG" ? `الخصم المطبق: ${payload.discount_amount} ج.م` : `Discount applied: ${payload.discount_amount} EGP`)
       : "";
     const adjustedBody = adjustmentLine && !body.includes(adjustmentLine) ? `${body}\n${adjustmentLine}` : body;
-    const footer = type === "custom_message" ? "" : locale === "ar-EG" ? "— Mr. Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
+    const footer = type === "custom_message" ? "" : locale === "ar-EG" ? "Mr.Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
     const finalBody = adjustedBody.includes(footer) ? adjustedBody : `${adjustedBody}\n\n${footer}`;
     const contentUpdated = await dbPool.query(
       `UPDATE whatsapp_notification_jobs

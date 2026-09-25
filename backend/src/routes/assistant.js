@@ -6,7 +6,11 @@
   import { getPublicGroupCatalog } from "../services/publicGroupCatalog.js";
   import { authenticatedStudent } from "../services/studentAuth.js";
   import { getStudentAssistantContext, getPublicAssistantSiteContext } from "../services/studentAssistantContext.js";
-  import { generateWithFailover } from "../services/aiProviderRouter.js";
+  import { generateWithRouting } from "../services/aiProviderRouter.js";
+  import { normalizeArabicText } from "../services/assistantInputNormalization.js";
+  import { handleAssistantMessage } from "../services/assistantRuntimeOrchestrator.js";
+  import { resolveGradeEntity } from "../services/assistantBrain.js";
+  import { composeScheduleResponse } from "../services/assistantResponseComposer.js";
 
   export const assistantRouter = express.Router();
 
@@ -38,7 +42,8 @@
     const studentContext = body.studentContext && typeof body.studentContext === "object" && !Array.isArray(body.studentContext)
       ? { name: cleanText(body.studentContext.name, 80), grade: cleanText(body.studentContext.grade, 80) }
       : {};
-    return { messages, sessionType: body.sessionType, studentContext };
+    const actionId = typeof body.action_id === "string" ? cleanText(body.action_id, 80) : null;
+    return { messages, sessionType: body.sessionType, studentContext, actionId };
   }
 
   function publicCatalogContext(catalog) {
@@ -76,7 +81,7 @@
   }
 
   function normalizedIntentText(value) {
-    return String(value || "").toLowerCase().replace(/[؟?!،؛:]/g, " ").replace(/\s+/g, " ").trim();
+    return normalizeArabicText(value).toLowerCase().replace(/\s+/g, " ").trim();
   }
 
   function findPublicValue(value, keyPattern) {
@@ -125,34 +130,18 @@
 
   function catalogGroupsForQuery(catalog, text) {
     if (!Array.isArray(catalog)) return [];
-    const gradeAliases = [
-      [/(خامس|5)\s*(ابتدائي|ابتدائي)/, /(خامس|الخامس|5).*ابتدائي/],
-      [/(سادس|6)\s*(ابتدائي|ابتدائي)/, /(سادس|السادس|6).*ابتدائي/],
-      [/(أولى|اولى|1)\s*(إعدادي|اعدادي)/, /(أولى|اولى|أول|الأول|الاول|1).*إ?عدادي/],
-      [/(ثانية|تانية|2)\s*(إعدادي|اعدادي)/, /(ثانية|تانية|ثاني|الثاني|التاني|2).*إ?عدادي/],
-      [/(ثالثة|تالتة|3)\s*(إعدادي|اعدادي)/, /(ثالثة|تالتة|ثالث|الثالث|التالت|3).*إ?عدادي/],
-      [/(أولى|اولى|1)\s*(ثانوي|ثانوى)/, /(أولى|اولى|أول|الأول|الاول|1).*ثانوي/],
-      [/(ثانية|تانية|2)\s*(ثانوي|ثانوى)/, /(ثانية|تانية|ثاني|الثاني|التاني|2).*ثانوي/]
-    ];
-    const match = gradeAliases.find(([pattern]) => pattern.test(text));
-    if (!match) return [];
-    const [, groupPattern] = match;
-    const secondaryGroup = text.match(/ثانوي\s*([12١٢])/);
-    return catalog.filter((group) => {
-      const haystack = normalizedIntentText(`${group.displayName || ""} ${group.grade || ""} ${group.gradeLevel || ""}`)
-        .replaceAll("ال", "");
-      if (!groupPattern.test(haystack)) return false;
-      if (!secondaryGroup) return true;
-      const requestedNumber = secondaryGroup[1].replace("١", "1").replace("٢", "2");
-      return new RegExp(`(?:^|\\s)${requestedNumber}(?:$|\\s)`).test(haystack);
-    });
+    const resolution = resolveGradeEntity(text, catalog);
+    if (!resolution.candidates.length) return [];
+    const candidateSources = new Set(resolution.candidates.map((candidate) => candidate.source));
+    return catalog.filter((group) => candidateSources.has(group));
   }
+
 
   function publicGroupResponse(text, catalog) {
     const priceIntent = /(بكام|سعر|سعره|اشتراك|رسوم|فلوس|تكلفة)/.test(text);
-    const scheduleIntent = /(المواعيد|مواعيد|ميعاد|ميعادها|جدول)/.test(text);
+    const scheduleIntent = /(المواعيد|مواعيد|ميعاد|ميعادها|جدول|امتى)/.test(text);
     if (!priceIntent && !scheduleIntent) return null;
-    if (!/(خامس|سادس|أولى|اولى|ثانية|تانية|ثالثة|تالتة|ابتدائي|اعدادي|إعدادي|ثانوي|ثانوى|\b[1-6]\b)/.test(text)) {
+    if (!/(خامس|سادس|أولى|اولى|ثانية|تانية|ثانيه|ثالثة|ثالثه|تالتة|تالت|ابتدائي|اعدادي|إعدادي|ثانوي|ثانوى|\b[1-6]\b)/.test(text)) {
       return scheduleIntent ? "مواعيد أنهي صف أو مجموعة؟" : "سعر أنهي صف أو مجموعة؟";
     }
     const groups = catalogGroupsForQuery(catalog, text);
@@ -164,7 +153,13 @@
       const details = [priceIntent ? fee : null, scheduleIntent ? (schedules.length ? schedules.join("، ") : "المواعيد غير متاحة حاليًا") : null].filter(Boolean).join(" — ");
       return `${name}: ${details}`;
     });
-    return lines.join("\n");
+    if (!scheduleIntent) return lines.join("\n");
+    return composeScheduleResponse({
+      groups,
+      locale: /[\u0600-\u06FF]/.test(text) ? "ar" : "en",
+      gradeLabel: groups.length ? String(groups[0].grade || groups[0].gradeLevel || "").trim() : "",
+      includeFees: priceIntent
+    }).text;
   }
 
   function privateResponse(text, trustedStudentContext, isStudent) {
@@ -211,16 +206,22 @@
     const websiteIntent = /(لينك الموقع|الموقع الرسمي|الموقع|website|abdrabo\.online)/.test(text);
     const loginIntent = /(دخول الطلاب|دخول الطالب|لينك دخول|تسجيل الدخول|student login|login)/.test(text);
     const registrationIntent = /(التسجيل|تسجيل|الاشتراك|اشتراك|اشترك|اسجل|سجل)/.test(text);
-    const teacherIntent = /(مين مستر|معلومات عن مستر|عن مستر|عن المدرس|المدرس)/.test(text);
+    const teacherIntent = /(مين مستر|مين المستر|معلومات عن مستر|عن مستر|عن المدرس|المدرس|المستر شاطر|المستر كويس|رأيك في المستر)/.test(text);
 
     const privatePart = privateResponse(text, trustedStudentContext, sessionType === "student");
     if (privatePart) return privatePart;
     const studentGroupPart = studentGroupResponse(text, trustedStudentContext, sessionType === "student");
     if (studentGroupPart) return studentGroupPart;
-    if (centerIntent && scheduleIntent && !/(خامس|سادس|أولى|اولى|ثانية|تانية|ثالثة|تالتة|ابتدائي|اعدادي|إعدادي|ثانوي|ثانوى|\b[1-6]\b)/.test(text)) {
+    if (centerIntent && scheduleIntent && !/(خامس|سادس|أولى|اولى|ثانية|تانية|ثانيه|ثالثة|ثالثه|تالتة|تالت|ابتدائي|اعدادي|إعدادي|ثانوي|ثانوى|\b[1-6]\b)/.test(text)) {
       const center = site?.center;
       const location = center?.name && center?.address ? `${center.name}: ${center.address}` : "بيانات عنوان السنتر غير متاحة حاليًا.";
       return `${location}\nتحب مواعيد أنهي صف أو مجموعة؟`;
+    }
+    if (registrationIntent) {
+      const registration = findPublicValue(site, /(registration|subscription|register|اشتراك|تسجيل)/i);
+      return registration
+        ? `${registration}\nللتفاصيل: https://abdrabo.online/contact`
+        : "للتسجيل والاشتراك تواصل مع المنصة: https://abdrabo.online/contact";
     }
     const groupPart = publicGroupResponse(text, catalog);
     if (groupPart) {
@@ -252,12 +253,6 @@
       return whatsapp
         ? `واتساب: ${whatsapp.number}\nالرابط: ${whatsapp.url}\nصفحة التواصل: https://abdrabo.online/contact`
         : "صفحة التواصل: https://abdrabo.online/contact\nرقم الواتساب غير متاح حاليًا على المنصة.";
-    }
-    if (registrationIntent) {
-      const registration = findPublicValue(site, /(registration|subscription|register|اشتراك|تسجيل)/i);
-      return registration
-        ? `${registration}\nللتفاصيل: https://abdrabo.online/contact`
-        : "للتسجيل والاشتراك تواصل مع المنصة: https://abdrabo.online/contact";
     }
     if (teacherIntent) {
       const about = publicPageText(publicPage(site, "about-teacher"));
@@ -431,26 +426,79 @@
           } catch (_error) {
             site = { unavailable: true };
           }
-          const deterministicResponse = deterministicPublicResponse(latestUserMessage(request.messages), site, catalog, trustedStudentContext, effectiveSessionType);
-          if (deterministicResponse) {
-            return res.status(200).json({ ok: true, model: "system", message: { role: "assistant", content: deterministicResponse } });
+          const rawText = latestUserMessage(request.messages);
+          const runtime = await handleAssistantMessage({
+            rawText,
+            messages: request.messages,
+            catalog,
+            actionId: request.actionId,
+            baseSystemInstruction: systemInstruction(effectiveSessionType, trustedStudentContext, catalog, site),
+            deterministicHandler: async (understanding) => {
+              const pendingPrefix = understanding.arbitration?.decision === "CONTINUE_PENDING" && understanding.context.pendingIntent === "schedule_lookup"
+                ? "مواعيد "
+                : understanding.arbitration?.decision === "CONTINUE_PENDING" && understanding.context.pendingIntent === "fee_lookup" ? "سعر " : "";
+              return deterministicPublicResponse(
+                `${pendingPrefix}${rawText}`,
+                site,
+                catalog,
+                trustedStudentContext,
+                effectiveSessionType
+              );
+            },
+            generate: ({ systemInstruction: assembledSystemInstruction }) => generateWithRouting({
+              messages: request.messages,
+              systemInstruction: assembledSystemInstruction,
+              maxOutputTokens: 320,
+              temperature: 0.55,
+              loadGeminiConfig,
+              createGeminiClient,
+              loadProviderStatuses: loadAiProviderStatuses,
+              loadProviderTestConfig,
+              fetchImpl
+            })
+          });
+          if (runtime.kind === "deterministic") {
+            return res.status(200).json({ ok: true, model: "system", message: { role: "assistant", content: runtime.content } });
           }
+          if (runtime.kind === "failure") {
+            const generation = runtime.generation;
+            return res.status(502).json({ ok: false, status: generation.status, message: generation.message });
+          }
+          if (!runtime.content) {
+            const failure = providerFailure(new Error("empty_assistant_response"));
+            return res.status(failure.httpStatus).json({ ok: false, ...failure });
+          }
+          return res.status(200).json({ ok: true, model: runtime.model, message: { role: "assistant", content: runtime.content } });
         }
-        const generation = await generateWithFailover({
+        const runtime = await handleAssistantMessage({
+          rawText: latestUserMessage(request.messages),
           messages: request.messages,
-          systemInstruction: systemInstruction(effectiveSessionType, trustedStudentContext, catalog, site),
-          maxOutputTokens: 320,
-          temperature: 0.55,
-          loadGeminiConfig,
-          createGeminiClient,
-          loadProviderStatuses: loadAiProviderStatuses,
-          loadProviderTestConfig,
-          fetchImpl
+          catalog: [],
+          actionId: request.actionId,
+          baseSystemInstruction: systemInstruction(effectiveSessionType, trustedStudentContext, catalog, site),
+          generate: ({ systemInstruction: assembledSystemInstruction }) => generateWithRouting({
+            messages: request.messages,
+            systemInstruction: assembledSystemInstruction,
+            maxOutputTokens: 320,
+            temperature: 0.55,
+            loadGeminiConfig,
+            createGeminiClient,
+            loadProviderStatuses: loadAiProviderStatuses,
+            loadProviderTestConfig,
+            fetchImpl
+          })
         });
-        if (!generation.ok) return res.status(502).json({ ok: false, status: generation.status, message: generation.message });
-        return res.status(200).json({ ok: true, model: generation.model, message: { role: "assistant", content: generation.content } });
+        if (runtime.kind === "failure") return res.status(502).json({ ok: false, status: runtime.generation.status, message: runtime.generation.message });
+        if (!runtime.content) {
+          const failure = providerFailure(new Error("empty_assistant_response"));
+          return res.status(failure.httpStatus).json({ ok: false, ...failure });
+        }
+        return res.status(200).json({ ok: true, model: runtime.model, message: { role: "assistant", content: runtime.content } });
       } catch (error) {
-        console.error("Gemini Error Details:", error);
+        console.error("Assistant provider failure", {
+          status: Number(error?.status || error?.statusCode || 0) || null,
+          code: String(error?.code || error?.message || "unknown").slice(0, 120)
+        });
 
         if (error?.message === "assistant_not_configured") {
           return res.status(500).json({ ok: false, status: "assistant_not_configured", message: "AI settings are missing an API key. Configure Gemini in System Settings or GEMINI_API_KEY." });
