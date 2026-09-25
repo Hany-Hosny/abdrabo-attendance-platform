@@ -19,7 +19,8 @@
   },
   "bottomNav": {
     "present": false,
-    "overlap": false
+    "overlap": false,
+    "finalBottom": 426.546875
   },
   "clippedActions": []
 }

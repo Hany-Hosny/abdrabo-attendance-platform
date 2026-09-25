@@ -11,6 +11,7 @@ import {
   normalizeStudentGender
 } from "./whatsappTemplateCatalog.js";
 import { normalizeEgyptianPhone as normalizeEgyptianPhoneValue } from "../utils/normalizePhone.js";
+import { extractExternalMessageText, handleInboundExternalMessage, isIgnoredExternalJid, resolveExternalSenderJid } from "./externalMessaging.js";
 
 const normalizeTeacherDisplayName = (value) => String(value ?? "").replace(/مستر أحمد عبدربه/g, "Mr. Ahmed Abdrabo");
 
@@ -748,6 +749,24 @@ export async function connectWhatsApp() {
         console.error("Failed to persist WhatsApp credentials", safeWorkerError(error));
       });
     });
+    socket.ev.on("messages.upsert", ({ messages = [] } = {}) => {
+      for (const message of messages) {
+        const remoteJid = String(message?.key?.remoteJid || "");
+        if (message?.key?.fromMe || isIgnoredExternalJid(remoteJid)) continue;
+        void (async () => {
+          const senderJid = await resolveExternalSenderJid(remoteJid, socket.signalRepository?.lidMapping);
+          if (!senderJid) return;
+          const rawPhone = senderJid.split("@")[0].split(":")[0];
+          const body = extractExternalMessageText(message);
+          await handleInboundExternalMessage({
+            phone: rawPhone,
+            body,
+            providerMessageId: message?.key?.id,
+            fromMe: false
+          });
+        })().catch((error) => console.error("WhatsApp inbound external message error", safeWorkerError(error)));
+      }
+    });
     socket.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
       if (state.socket !== socket) return;
       if (qr) {
@@ -929,6 +948,7 @@ function normalizeNotificationType(value) {
   if (type === "absence") return "absence";
   if (type === "cancellation" || type === "cancelled_session") return "cancellation";
   if (type === "custom_message") return "custom_message";
+  if (type === "external_message") return "external_message";
   return null;
 }
 
@@ -2026,7 +2046,16 @@ async function updateJob(id, status, fields = {}, claimToken, dbPool = pool) {
     updated_at = NOW()
     WHERE id = $1 AND status = 'processing' AND claim_token = $7
     RETURNING id`, [id, status, fields.error || null, fields.nextAttemptAt || null, fields.phoneNumber || null, fields.providerMessageId || null, claimToken]);
+  if (result.rowCount > 0) await syncExternalMessageStatus({ id, status }, dbPool);
   return result.rowCount > 0;
+}
+
+async function syncExternalMessageStatus(jobOrRow, dbPool = pool) {
+  if (!jobOrRow?.id) return;
+  const status = String(jobOrRow.status || "");
+  const mapped = status === "sent" ? "sent" : status === "delivery_unknown" ? "delivery_unknown" : status === "failed" ? "failed" : status === "processing" ? "processing" : status === "review_required" || status === "skipped" ? "review_required" : "pending";
+  await dbPool.query(`UPDATE external_messages em SET delivery_status = $2, updated_at = NOW()
+    FROM whatsapp_notification_jobs j WHERE j.id = $1 AND j.external_message_id = em.id`, [jobOrRow.id, mapped]).catch(() => undefined);
 }
 
 async function deferDisconnectedJob(job, dbPool = pool) {
@@ -2041,6 +2070,7 @@ async function deferDisconnectedJob(job, dbPool = pool) {
      RETURNING id`,
     [job.id, job.claim_token]
   );
+  if (result.rowCount) await syncExternalMessageStatus({ id: job.id, status: "pending" }, dbPool);
   return result.rowCount > 0;
 }
 
@@ -2104,6 +2134,18 @@ async function markSendStartedWithResult(job, type, dbPool = pool) {
     if (!currentJob.rowCount) {
       await client.query("ROLLBACK");
       return { ok: false, reason: "stale_claim" };
+    }
+
+    if (type === "external_message") {
+      const started = await client.query(`UPDATE whatsapp_notification_jobs
+        SET send_started_at = NOW(), lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
+        WHERE id = $1 AND status = 'processing' AND claim_token = $2 RETURNING id`, [job.id, job.claim_token, JOB_LEASE_MS]);
+      if (!started.rowCount) {
+        await client.query("ROLLBACK");
+        return { ok: false, reason: "stale_claim" };
+      }
+      await client.query("COMMIT");
+      return { ok: true };
     }
 
     const studentResult = currentJob.rows[0].student_id == null
@@ -2243,6 +2285,7 @@ async function completeSentJob(job, providerMessageId, dbPool = pool) {
         [job.source_id, job.id]
       );
     }
+    if (completed.rowCount) await syncExternalMessageStatus({ id: job.id, status: "sent" }, client);
     await client.query("COMMIT");
     return completed.rowCount > 0;
   } catch (error) {
@@ -2254,11 +2297,17 @@ async function completeSentJob(job, providerMessageId, dbPool = pool) {
 }
 
 async function auditWhatsAppJob(job, action, details = {}) {
+  const type = notificationTypeForJob(job || {});
+  const externalAction = type === "external_message"
+    ? action === "whatsapp_job_failed" ? "external_message_delivery_failed"
+      : action === "whatsapp_job_delivery_unknown" ? "external_message_delivery_unknown"
+        : action
+    : action;
   await auditLog({
-    action,
+    action: externalAction,
     details: {
       job_id: job?.id || null,
-      notification_type: notificationTypeForJob(job || {}),
+      notification_type: type,
       source_id: job?.source_id || null,
       attempts: Number(job?.attempts || 0),
       approved_by: job?.approved_by || null,
@@ -2276,6 +2325,17 @@ function gradePercentage(score, maxScore) {
 
 export async function revalidateWhatsAppJob(job, type, db = query) {
   const execute = typeof db === "function" ? db : db.query.bind(db);
+  if (type === "external_message") {
+    if (!job?.external_message_id) return { ok: false, reason: "external_message_missing" };
+    const messageResult = await execute(`SELECT em.body, ec.canonical_phone
+      FROM external_messages em JOIN external_conversations ecv ON ecv.id = em.external_conversation_id
+      JOIN external_contacts ec ON ec.id = ecv.external_contact_id
+      WHERE em.id = $1 AND em.direction = 'outbound'`, [job.external_message_id]);
+    if (!messageResult.rowCount) return { ok: false, reason: "external_message_missing" };
+    const phone = normalizeEgyptianPhone(messageResult.rows[0].canonical_phone);
+    if (!phone) return { ok: false, reason: "invalid_phone" };
+    return { ok: true, phone, payload: { type: "external_message", message: messageResult.rows[0].body } };
+  }
   if (!job?.student_id) return { ok: false, reason: "student_missing" };
   const studentResult = await execute(`
     SELECT id, full_name, student_code, guardian_phone, gender, is_active, deleted_at, whatsapp_opted_out
@@ -2601,8 +2661,9 @@ async function recoverStaleWhatsAppJobs() {
       WHERE status = 'processing'
         AND (lease_expires_at <= NOW()
           OR (lease_expires_at IS NULL AND updated_at < NOW() - INTERVAL '5 minutes'))
-      RETURNING id, notification_type, source_id, attempts, status`);
+      RETURNING id, notification_type, source_id, external_message_id, attempts, status`);
     for (const job of result.rows) {
+      await syncExternalMessageStatus(job);
       await auditWhatsAppJob(job, job.status === "delivery_unknown" ? "whatsapp_job_delivery_unknown" : "whatsapp_job_expired_claim_recovered", {
         reason: job.status === "delivery_unknown" ? "send_was_in_flight" : "lease_expired"
       });
@@ -2676,6 +2737,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
   try {
     job = await claimNextJob(dbPool);
     if (!job) return;
+    await syncExternalMessageStatus(job, dbPool);
     await auditJob(job, "whatsapp_job_claimed", { lease_expires_at: job.lease_expires_at }).catch(() => undefined);
     const settings = settingsOverride || await getWhatsAppSettings(dbPool.query.bind(dbPool));
     const type = notificationTypeForJob(job);
@@ -2687,7 +2749,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
     }
     const policySkipReason = type === "custom_message" && !job.created_by_teacher_id
       ? "custom_message_sender_missing"
-      : !settings.auto_send && type !== "custom_message"
+      : !settings.auto_send && !["custom_message", "external_message"].includes(type)
       ? "auto_send_disabled"
       : type === "attendance" && settings.attendance_notifications_enabled === false
         ? "attendance_notifications_disabled"
@@ -2726,7 +2788,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
       await auditStale(job, "grade_portal_link_scrub");
       return;
     }
-    const selection = type === "custom_message"
+    const selection = ["custom_message", "external_message"].includes(type)
       ? { ok: true, eligibility, assignment: { id: null, content_version: null, message_body: String(eligibility.payload?.message || ""), audience: "neutral", slot_number: null, gender: null } }
       : await selectAndPersistWhatsAppTemplate({ job, type, dbPool });
     if (!selection.ok) {
@@ -2762,8 +2824,8 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
     }
     const parts = cairoParts(payload.event_time || payload.checkin_time);
     const studentCode = String(payload.student_code || "").trim();
-    portalAccessToken = createStudentPortalAccessToken();
-    const portalLink = type === "custom_message" ? "" : buildStudentPortalLink(job.student_id, studentCode, portalAccessToken);
+    portalAccessToken = ["custom_message", "external_message"].includes(type) ? null : createStudentPortalAccessToken();
+    const portalLink = ["custom_message", "external_message"].includes(type) ? "" : buildStudentPortalLink(job.student_id, studentCode, portalAccessToken);
     const locale = /[\u0600-\u06ff]/i.test(template) ? "ar-EG" : "en-US";
     const formattedPayload = {
       ...payload,
@@ -2781,7 +2843,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
     };
     const displayReference = displayReferenceForJob(job, type);
     const templateValues = { ...formattedPayload, ...parts, ref_code: displayReference, student_code: studentCode, portal_link: portalLink };
-    const renderedBody = type === "custom_message" ? String(payload.message || "").trim() : compileWhatsAppMessage(type, template, templateValues).trim();
+    const renderedBody = ["custom_message", "external_message"].includes(type) ? String(payload.message || "").trim() : compileWhatsAppMessage(type, template, templateValues).trim();
     const body = portalLink && !templateHasPlaceholder(template, "portal_link") ? `${renderedBody}\n${portalLink}` : renderedBody;
     const adjustmentLine = type === "receipt" && (payload.is_exempt === true || Number(payload.discount_amount || 0) > 0)
       ? payload.is_exempt === true
@@ -2789,7 +2851,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
         : (locale === "ar-EG" ? `الخصم المطبق: ${payload.discount_amount} ج.م` : `Discount applied: ${payload.discount_amount} EGP`)
       : "";
     const adjustedBody = adjustmentLine && !body.includes(adjustmentLine) ? `${body}\n${adjustmentLine}` : body;
-    const footer = type === "custom_message" ? "" : locale === "ar-EG" ? "Mr.Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
+    const footer = ["custom_message", "external_message"].includes(type) ? "" : locale === "ar-EG" ? "Mr.Ahmed Abdrabo Platform" : "— Abdrabo Attendance Platform";
     const finalBody = adjustedBody.includes(footer) ? adjustedBody : `${adjustedBody}\n\n${footer}`;
     const contentUpdated = await dbPool.query(
       `UPDATE whatsapp_notification_jobs
@@ -2823,7 +2885,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
     const deliverySettings = settingsOverride || await getWhatsAppSettings(dbPool.query.bind(dbPool));
     const deliverySkipReason = type === "custom_message" && !job.created_by_teacher_id
       ? "custom_message_sender_missing"
-      : !deliverySettings.auto_send && type !== "custom_message"
+      : !deliverySettings.auto_send && !["custom_message", "external_message"].includes(type)
       ? "auto_send_disabled"
       : type === "attendance" && deliverySettings.attendance_notifications_enabled === false
         ? "attendance_notifications_disabled"

@@ -15,15 +15,13 @@
   "document": {
     "width": 393,
     "bodyWidth": 393,
-    "height": 3712
+    "height": 4299
   },
   "bottomNav": {
     "present": true,
-    "overlap": true,
+    "overlap": false,
     "navTop": 782,
-    "finalBottom": 787.875
+    "finalBottom": 618.046875
   },
-  "clippedActions": [
-    "+ إضافة مزود"
-  ]
+  "clippedActions": []
 }

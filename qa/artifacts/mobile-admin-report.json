@@ -599,16 +599,7 @@
       }
     ],
     "horizontalOverflowFindings": [],
-    "bottomNavFindings": [
-      "dashboard: final content bottom 792.234375px overlaps nav top 782px",
-      "students: final content bottom 786.140625px overlaps nav top 782px",
-      "groups: final content bottom 791.140625px overlaps nav top 782px",
-      "exams: final content bottom 784.140625px overlaps nav top 782px",
-      "users: final content bottom 791.90625px overlaps nav top 782px",
-      "settings: final content bottom 787.875px overlaps nav top 782px",
-      "students: final content bottom 786.140625px overlaps nav top 782px",
-      "users: final content bottom 791.90625px overlaps nav top 782px"
-    ],
+    "bottomNavFindings": [],
     "screenshots": [
       "qa/artifacts/visual/iphone-15/dashboard.png",
       "qa/artifacts/visual/iphone-15/students.png",
@@ -628,10 +619,8 @@
       "qa/artifacts/visual/iphone-15/reports.png",
       "qa/artifacts/visual/iphone-15/messages.png"
     ],
-    "errors": [
-      "settings: clipped actions + إضافة مزود"
-    ],
-    "status": "ISSUES FOUND"
+    "errors": [],
+    "status": "PASS"
   },
   {
     "device": "iphone-15-pro-max",

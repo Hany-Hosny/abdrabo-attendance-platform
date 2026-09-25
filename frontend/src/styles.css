@@ -169,6 +169,108 @@
   }
 }
 
+/* Selection mode stays in the conversation header slot. It never becomes a
+   second panel between the header and the thread. */
+.admin-dashboard-inbox .inbox-external-panel .external-selection-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  padding: 3px 0 8px;
+  border-bottom: 1px solid rgba(128, 170, 211, 0.13);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-selection-header::-webkit-scrollbar { display: none; }
+.admin-dashboard-inbox .inbox-external-panel .external-selection-header strong {
+  flex: 1 0 auto;
+  color: #e9f0fa;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-header-action {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid rgba(128, 170, 211, 0.2);
+  border-radius: 8px;
+  background: rgba(128, 170, 211, 0.06);
+  color: #c9d5e5;
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-header-action:hover,
+.admin-dashboard-inbox .inbox-external-panel .external-header-action:focus-visible {
+  border-color: rgba(242, 140, 40, 0.55);
+  color: #f4b06b;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-header-action.destructive {
+  border-color: rgba(255, 132, 119, 0.35);
+  background: rgba(255, 132, 119, 0.08);
+  color: #ffb3a8;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-header-action:disabled { cursor: wait; opacity: 0.6; }
+.admin-dashboard-inbox .inbox-external-panel .inbox-messages .external-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: min(76%, 660px);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-messages .external-message.mine { flex-direction: row-reverse; background: transparent; }
+.admin-dashboard-inbox .inbox-external-panel .external-message-bubble {
+  min-width: 0;
+  padding: 9px 12px 7px;
+  border: 1px solid rgba(128, 170, 211, 0.13);
+  border-radius: 14px 14px 14px 5px;
+  background: rgba(22, 48, 71, 0.88);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message.mine .external-message-bubble {
+  border-color: rgba(242, 140, 40, 0.28);
+  border-radius: 14px 14px 5px 14px;
+  background: rgba(111, 69, 31, 0.46);
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message-checkbox {
+  position: static;
+  display: inline-flex;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 34px;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message-checkbox input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message-bubble p { margin: 0 0 5px; }
+.admin-dashboard-inbox .inbox-external-panel .external-message-bubble .message-meta { justify-content: flex-end; }
+.admin-dashboard-inbox .inbox-external-panel .inbox-reply-form.is-selection-disabled { opacity: 0.68; }
+.admin-dashboard-inbox .inbox-external-panel .inbox-reply-form.is-selection-disabled textarea { cursor: not-allowed; }
+
+@media (max-width: 768px) {
+  .admin-dashboard-inbox .inbox-external-panel .external-selection-header {
+    min-height: 48px;
+    gap: 4px;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-header-action {
+    min-height: 44px;
+    padding-inline: 8px;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-selection-header strong { font-size: 11px; }
+  .admin-dashboard-inbox .inbox-external-panel .inbox-messages .external-message { max-width: 92%; }
+}
+
 /* Shared site signature treatment. Existing footer spacing/layout remains
    unchanged; this only normalizes readability and wrapping. */
 .site-signature {
@@ -4880,6 +4982,28 @@ textarea {
 
 .exam-records {
   margin-top: 24px;
+}
+
+.exam-result-filter-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(245, 158, 11, .35);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, .1);
+  color: inherit;
+}
+
+.exam-result-row-highlight {
+  animation: exam-result-row-highlight 4.5s ease-out;
+}
+
+@keyframes exam-result-row-highlight {
+  0%, 45% { background: rgba(34, 197, 94, .2); }
+  100% { background: transparent; }
 }
 
 .exam-records-heading {
@@ -22203,9 +22327,562 @@ html[data-scanner-feedback="error"]::after {
   text-wrap: balance;
 }
 
+.inbox-source-badge.external { background: rgba(249,115,22,.14); color: #fb923c; }
+.inbox-external-panel { display: grid; gap: 18px; }
+.inbox-external-toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+.inbox-external-toolbar input { flex: 1 1 240px; min-width: 0; }
+.external-inquiry-context { border: 1px solid rgba(249,115,22,.28); border-radius: 14px; padding: 12px 14px; background: rgba(249,115,22,.08); }
+.external-inquiry-context strong { display: block; color: var(--accent-strong); margin-bottom: 5px; }
+.external-inquiry-context p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.external-contact-form { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--border); border-radius: 14px; }
+.external-contact-form label { display: grid; gap: 6px; font-weight: 700; }
+.external-message-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.external-message-actions .message-delete-button { margin-top: 0; }
+.external-selected-count { color: var(--muted-text, #9eb0c3); font-size: 12px; }
+.external-message { position: relative; }
+.external-message-checkbox { display: inline-flex; align-items: center; margin-bottom: 4px; }
+.external-message-checkbox input { accent-color: var(--accent-strong); }
+
+@media (max-width: 767px) {
+  .inbox-external-toolbar { align-items: stretch; }
+  .inbox-external-toolbar button { width: 100%; }
+  .inbox-external-panel .inbox-layout { min-width: 0; }
+}
+
 @media (max-width: 767px) {
   .student-login-card h1 {
     font-size: clamp(24px, 7vw, 28px) !important;
     line-height: 1.3 !important;
+  }
+}
+
+/* External conversations: compact, focused chat workspace. These rules are
+   intentionally scoped so the registered-student inbox keeps its existing UI. */
+.admin-dashboard-inbox .inbox-external-panel {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-panel-heading {
+  padding-bottom: 2px;
+  border: 0;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-panel-heading h2 {
+  margin-bottom: 2px;
+  font-size: clamp(22px, 2.1vw, 28px);
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-external-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-external-toolbar input {
+  min-height: 42px;
+  margin: 0;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-management-wrap { position: relative; flex: 0 0 auto; }
+.admin-dashboard-inbox .inbox-external-panel .external-management-button {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(128, 170, 211, 0.2);
+  border-radius: 9px;
+  background: transparent;
+  color: #c9d5e5;
+  cursor: pointer;
+  font-size: 21px;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-management-button:hover,
+.admin-dashboard-inbox .inbox-external-panel .external-management-button:focus-visible { border-color: rgba(242, 140, 40, 0.55); color: #f4b06b; }
+.admin-dashboard-inbox .inbox-external-panel .external-management-menu {
+  position: absolute;
+  z-index: 6;
+  inset-block-start: 44px;
+  inset-inline-end: 0;
+  min-width: 190px;
+  padding: 5px;
+  border: 1px solid rgba(128, 170, 211, 0.22);
+  border-radius: 10px;
+  background: #102943;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3);
+}
+.admin-dashboard-inbox .inbox-external-panel .external-management-menu button {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #ffb3a8;
+  cursor: pointer;
+  text-align: start;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-management-menu button:hover,
+.admin-dashboard-inbox .inbox-external-panel .external-management-menu button:focus-visible { background: rgba(255, 132, 119, 0.1); }
+.admin-dashboard-inbox .inbox-external-panel .external-management-menu button:disabled { cursor: not-allowed; opacity: 0.45; }
+.admin-dashboard-inbox .inbox-external-panel .inbox-list-panel { position: relative; }
+.admin-dashboard-inbox .inbox-external-panel .inbox-list-heading { justify-content: flex-end; }
+.admin-dashboard-inbox .inbox-external-panel .inbox-list-heading .external-management-wrap {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 7;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-list-heading .external-management-menu {
+  inset-inline-end: auto;
+  left: 0;
+}
+.external-delete-all-modal { max-width: 480px; }
+.external-delete-all-modal h3 { color: #ffb3a8; }
+.external-delete-all-modal p { white-space: pre-line; color: var(--muted); line-height: 1.65; }
+.external-delete-all-modal label { display: grid; gap: 7px; margin-top: 16px; font-weight: 700; }
+.external-delete-all-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+.external-delete-all-actions .message-delete-button { margin: 0; min-height: 42px; }
+
+@media (max-width: 768px) {
+  .admin-dashboard-inbox .inbox-external-panel .external-management-button { width: 44px; height: 44px; }
+  .admin-dashboard-inbox .inbox-external-panel .inbox-list-heading .external-management-wrap { top: 12px; left: 12px; }
+  .admin-dashboard-inbox .inbox-external-panel .inbox-list-heading { min-height: 64px; padding-inline-start: 60px; }
+  .external-delete-all-actions { flex-direction: column-reverse; }
+  .external-delete-all-actions button { width: 100%; min-height: 44px; }
+}
+
+/* External conversation list uses a real flex header so the title and menu share one row. */
+.admin-dashboard-inbox .inbox-external-panel .conversation-list-header {
+  min-height: 54px;
+  height: 54px;
+  padding: 0 16px;
+  justify-content: space-between;
+  align-items: center;
+  box-sizing: border-box;
+}
+.admin-dashboard-inbox .inbox-external-panel .conversation-list-header .external-management-wrap {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  flex: 0 0 auto;
+}
+.admin-dashboard-inbox .inbox-external-panel .conversation-list-header .external-management-menu {
+  left: auto;
+  inset-inline-end: 0;
+}
+.admin-dashboard-inbox .inbox-external-panel .conversation-list-header .external-management-button {
+  width: 42px;
+  height: 42px;
+}
+@media (max-width: 768px) {
+  .admin-dashboard-inbox .inbox-external-panel .conversation-list-header {
+    min-height: 50px;
+    height: 50px;
+    padding-inline: 12px;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .conversation-list-header .external-management-button {
+    width: 42px;
+    height: 42px;
+  }
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-layout {
+  grid-template-columns: minmax(230px, 0.36fr) minmax(0, 0.64fr);
+  gap: 12px;
+  min-height: clamp(520px, calc(100dvh - 300px), 720px);
+  margin-top: 0;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-list-panel,
+.admin-dashboard-inbox .inbox-external-panel .inbox-conversation {
+  min-height: 0;
+  height: clamp(520px, calc(100dvh - 300px), 720px);
+  padding: 13px;
+  border-radius: 14px;
+  background: rgba(10, 29, 49, 0.86);
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-list-panel {
+  gap: 10px;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-list-heading {
+  min-height: 60px;
+  padding-bottom: 10px;
+  padding-inline-start: 60px;
+  box-sizing: border-box;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-list-heading h3 {
+  font-size: 14px;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-list {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  overflow-y: auto;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread {
+  min-height: 0;
+  gap: 4px;
+  padding: 11px 12px;
+  border-color: rgba(128, 170, 211, 0.12);
+  border-radius: 10px;
+  background: rgba(7, 20, 35, 0.64);
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread:hover,
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread:focus-visible {
+  transform: none;
+  background: rgba(24, 47, 70, 0.8);
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread.active {
+  border-color: rgba(242, 140, 40, 0.78);
+  background: rgba(48, 45, 42, 0.78);
+  box-shadow: 0 0 0 2px rgba(242, 140, 40, 0.1);
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread.unread {
+  border-inline-start: 3px solid #f28c28;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread-identity {
+  gap: 7px;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread-identity strong {
+  font-size: 14px;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread > small,
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread > time {
+  color: #8295ad;
+  font-size: 11px;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread > time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-thread-preview {
+  display: -webkit-box;
+  max-width: 100%;
+  color: #b3c1d4;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-conversation {
+  gap: 10px;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-conversation-header {
+  position: relative;
+  align-items: center;
+  min-height: 48px;
+  padding-bottom: 10px;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-header-content {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-contact-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-conversation h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-contact-details {
+  margin: 3px 0 0;
+  font-size: 12px;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-header-phone {
+  color: #9fb2c8;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-source-badge.external {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-inline-context {
+  min-width: 0;
+  max-width: min(380px, 100%);
+}
+.admin-dashboard-inbox .inbox-external-panel .external-inquiry-details {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-color: rgba(242, 140, 40, 0.25);
+  border: 1px solid rgba(242, 140, 40, 0.25);
+  border-radius: 9px;
+  background: rgba(242, 140, 40, 0.07);
+}
+.admin-dashboard-inbox .inbox-external-panel .external-inquiry-details strong {
+  color: #f4b06b;
+  font-size: 11px;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-inquiry-details p {
+  margin: 4px 0 0;
+  color: #d5deeb;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-context-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 10px;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f4b06b;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+  text-align: start;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-context-toggle span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-actions-wrap { position: relative; flex: 0 0 auto; }
+.admin-dashboard-inbox .inbox-external-panel .external-actions-button {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid rgba(128, 170, 211, 0.2);
+  border-radius: 9px;
+  background: transparent;
+  color: #c9d5e5;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-actions-button:hover,
+.admin-dashboard-inbox .inbox-external-panel .external-actions-button:focus-visible { border-color: rgba(242, 140, 40, 0.55); color: #f4b06b; }
+.admin-dashboard-inbox .inbox-external-panel .external-actions-menu {
+  position: absolute;
+  z-index: 5;
+  inset-block-start: 42px;
+  inset-inline-end: 0;
+  display: grid;
+  width: max-content;
+  min-width: 190px;
+  padding: 5px;
+  border: 1px solid rgba(128, 170, 211, 0.22);
+  border-radius: 10px;
+  background: #102943;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3);
+}
+.admin-dashboard-inbox .inbox-external-panel .external-actions-menu button {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #d7e2ef;
+  cursor: pointer;
+  text-align: start;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-actions-menu button:hover,
+.admin-dashboard-inbox .inbox-external-panel .external-actions-menu button:focus-visible { background: rgba(128, 170, 211, 0.1); }
+.admin-dashboard-inbox .inbox-external-panel .external-actions-menu button.danger { color: #ffb3a8; }
+.admin-dashboard-inbox .inbox-external-panel .inbox-messages {
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 0;
+  padding: 4px 3px 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message {
+  position: relative;
+  max-width: min(72%, 640px);
+  padding: 9px 12px 7px;
+  border: 1px solid rgba(128, 170, 211, 0.13);
+  border-radius: 14px 14px 14px 5px;
+  background: rgba(22, 48, 71, 0.88);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message.mine {
+  border-color: rgba(242, 140, 40, 0.28);
+  border-radius: 14px 14px 5px 14px;
+  background: rgba(111, 69, 31, 0.46);
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message p {
+  margin: 0 0 5px;
+  color: #f2f6fb;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message .message-meta {
+  justify-content: flex-end;
+  gap: 5px 8px;
+  color: #9cafc3;
+  font-size: 10px;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message .message-meta > span:first-child {
+  display: none;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-delivery-status {
+  color: #d6a66e;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(128, 170, 211, 0.14);
+  border-radius: 9px;
+  background: rgba(7, 20, 35, 0.42);
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message-actions strong {
+  margin-inline-end: auto;
+  color: #c9d5e5;
+  font-size: 11px;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message-actions .message-delete-button {
+  min-height: 34px;
+  margin: 0;
+  padding: 6px 10px;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message-actions button,
+.admin-dashboard-inbox .inbox-external-panel .external-select-trigger,
+.admin-dashboard-inbox .inbox-external-panel .external-back-button {
+  min-height: 34px;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-select-trigger {
+  align-self: flex-start;
+  min-height: 30px;
+  padding: 4px 9px;
+  border: 1px solid rgba(128, 170, 211, 0.2);
+  border-radius: 8px;
+  background: transparent;
+  color: #9fb2c8;
+  cursor: pointer;
+  font-size: 11px;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-select-trigger:hover,
+.admin-dashboard-inbox .inbox-external-panel .external-select-trigger:focus-visible {
+  border-color: rgba(242, 140, 40, 0.5);
+  color: #f4b06b;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message-checkbox {
+  position: absolute;
+  inset-inline-start: -28px;
+  top: 8px;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  align-items: center;
+  justify-content: center;
+}
+.admin-dashboard-inbox .inbox-external-panel .external-message-checkbox input {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-reply-form {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding: 10px 0 0;
+  border-top: 1px solid rgba(128, 170, 211, 0.14);
+  background: rgba(10, 29, 49, 0.96);
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-reply-form textarea {
+  min-height: 48px;
+  max-height: 112px;
+  margin: 0;
+  resize: vertical;
+}
+.admin-dashboard-inbox .inbox-external-panel .inbox-reply-form .primary-button {
+  min-width: 112px;
+  min-height: 48px;
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .admin-dashboard-inbox .inbox-external-panel .inbox-layout {
+    display: block;
+    min-height: 0;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .inbox-list-panel,
+  .admin-dashboard-inbox .inbox-external-panel .inbox-conversation {
+    display: none;
+    width: 100%;
+    height: calc(100dvh - 295px);
+    min-height: 460px;
+  }
+  .admin-dashboard-inbox .inbox-external-panel:not(.has-selected-conversation) .inbox-list-panel,
+  .admin-dashboard-inbox .inbox-external-panel.has-selected-conversation .inbox-conversation {
+    display: flex;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .inbox-external-toolbar {
+    align-items: stretch;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .inbox-external-toolbar input,
+  .admin-dashboard-inbox .inbox-external-panel .inbox-external-toolbar button {
+    width: 100%;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-message {
+    max-width: 88%;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-message-checkbox {
+    inset-inline-start: -25px;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .inbox-reply-form {
+    grid-template-columns: 1fr;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .inbox-reply-form .primary-button {
+    width: 100%;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-message-actions {
+    align-items: stretch;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-message-actions strong {
+    flex: 1 0 100%;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-message-actions button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .inbox-conversation-header {
+    align-items: flex-start;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-header-content {
+    align-items: flex-start;
+    flex: 1 1 auto;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-inline-context {
+    flex: 1 0 100%;
+    max-width: 100%;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-actions-button {
+    width: 44px;
+    height: 44px;
+  }
+  .admin-dashboard-inbox .inbox-external-panel .external-actions-menu {
+    inset-inline-end: 0;
+    min-width: 210px;
   }
 }

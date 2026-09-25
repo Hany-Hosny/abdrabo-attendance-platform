@@ -4,6 +4,7 @@ import { normalizeDigits } from "../utils/normalizeDigits.js";
 import { requirePermission, requireTeacher } from "../middleware/requireTeacher.js";
 import { auditLog } from "../services/audit.js";
 import { authenticatedStudent, studentAuthFailure } from "../services/studentAuth.js";
+import { listExternalConversations, getExternalUnreadCount } from "../services/externalMessaging.js";
 
 export const inboxRouter = express.Router();
 export const staffInboxRouter = express.Router();
@@ -111,8 +112,32 @@ inboxRouter.put("/student/inbox/:threadId/read", async(req,res,next)=>{try{const
 staffInboxRouter.use(requireTeacher, requirePermission("messages.view"));
 staffInboxRouter.use((req,res,next)=>staffCanUseInbox(req)?next():res.status(403).json({ok:false,status:"inbox_permission_required"}));
 
-staffInboxRouter.get("/inbox/unread-count", async(req,res,next)=>{try{const result=await query("SELECT COUNT(*)::int AS count FROM inbox_messages WHERE deleted_at IS NULL AND is_read=FALSE AND sender_type IN ('student','public')");res.json({ok:true,count:result.rows[0].count});}catch(error){next(error);}});
-staffInboxRouter.get(["/inbox","/inbox/threads"], async(req,res,next)=>{try{const values=[],filters=["1=1"];const term=clean(req.query.search);const readFilter=String(req.query.read||"");if(req.query.unread==="true"||readFilter==="unread")filters.push("EXISTS (SELECT 1 FROM inbox_messages u WHERE u.thread_id=it.id AND u.deleted_at IS NULL AND u.is_read=FALSE AND u.sender_type IN ('student','public'))");if(readFilter==="read")filters.push("NOT EXISTS (SELECT 1 FROM inbox_messages u WHERE u.thread_id=it.id AND u.deleted_at IS NULL AND u.is_read=FALSE AND u.sender_type IN ('student','public'))");if(term){values.push(`%${term}%`);const n=values.length;filters.push(`(s.full_name ILIKE $${n} OR s.student_serial ILIKE $${n} OR s.student_code ILIKE $${n} OR COALESCE(g.display_name,g.name) ILIKE $${n} OR COALESCE(g.grade_level,g.grade) ILIKE $${n} OR it.public_name ILIKE $${n} OR it.public_phone ILIKE $${n})`);}if(req.query.date){values.push(String(req.query.date));filters.push(`it.created_at >= $${values.length}::date AND it.created_at < ($${values.length}::date + INTERVAL '1 day')`);}const result=await query(`SELECT it.*,s.full_name,s.student_serial,s.student_code,s.is_active AS student_is_active,s.deleted_at AS student_deleted_at,COALESCE(g.display_name,g.name) AS group_name,COALESCE(g.grade_level,g.grade) AS grade_level,EXISTS (SELECT 1 FROM inbox_messages origin WHERE origin.thread_id=it.id AND origin.sender_type='student') AS has_student_message,(SELECT COUNT(*) FROM inbox_messages u WHERE u.thread_id=it.id AND u.deleted_at IS NULL AND u.is_read=FALSE AND u.sender_type IN ('student','public'))::int AS unread_count,CASE WHEN EXISTS (SELECT 1 FROM inbox_messages u WHERE u.thread_id=it.id AND u.deleted_at IS NULL AND u.is_read=FALSE AND u.sender_type IN ('student','public')) THEN 'unread' ELSE 'read' END AS read_status,(SELECT body FROM inbox_messages WHERE thread_id=it.id AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1) AS last_message FROM inbox_threads it LEFT JOIN students s ON s.id=it.student_id LEFT JOIN groups g ON g.id=s.group_id WHERE ${filters.join(" AND ")} ORDER BY it.updated_at DESC`,values);res.json({ok:true,threads:result.rows.map(serializeInboxThread)});}catch(error){next(error);}});
+staffInboxRouter.get("/inbox/unread-count", async(req,res,next)=>{try{const result=await query("SELECT COUNT(*)::int AS count FROM inbox_messages WHERE deleted_at IS NULL AND is_read=FALSE AND sender_type IN ('student','public')");const externalCount=await getExternalUnreadCount();res.json({ok:true,count:Number(result.rows[0].count||0)+externalCount});}catch(error){next(error);}});
+staffInboxRouter.get(["/inbox","/inbox/threads"], async (req, res, next) => {
+  try {
+    const values = [];
+    const filters = ["1=1"];
+    const term = clean(req.query.search);
+    const readFilter = String(req.query.read || "");
+    if (req.query.unread === "true" || readFilter === "unread") filters.push("EXISTS (SELECT 1 FROM inbox_messages u WHERE u.thread_id=it.id AND u.deleted_at IS NULL AND u.is_read=FALSE AND u.sender_type IN ('student','public'))");
+    if (readFilter === "read") filters.push("NOT EXISTS (SELECT 1 FROM inbox_messages u WHERE u.thread_id=it.id AND u.deleted_at IS NULL AND u.is_read=FALSE AND u.sender_type IN ('student','public'))");
+    if (term) {
+      values.push(`%${term}%`);
+      const n = values.length;
+      filters.push(`(s.full_name ILIKE $${n} OR s.student_serial ILIKE $${n} OR s.student_code ILIKE $${n} OR COALESCE(g.display_name,g.name) ILIKE $${n} OR COALESCE(g.grade_level,g.grade) ILIKE $${n} OR it.public_name ILIKE $${n} OR it.public_phone ILIKE $${n})`);
+    }
+    if (req.query.date) {
+      values.push(String(req.query.date));
+      filters.push(`it.created_at >= $${values.length}::date AND it.created_at < ($${values.length}::date + INTERVAL '1 day')`);
+    }
+    const result = await query(`SELECT it.*,s.full_name,s.student_serial,s.student_code,s.is_active AS student_is_active,s.deleted_at AS student_deleted_at,COALESCE(g.display_name,g.name) AS group_name,COALESCE(g.grade_level,g.grade) AS grade_level,EXISTS (SELECT 1 FROM inbox_messages origin WHERE origin.thread_id=it.id AND origin.sender_type='student') AS has_student_message,(SELECT COUNT(*) FROM inbox_messages u WHERE u.thread_id=it.id AND u.deleted_at IS NULL AND u.is_read=FALSE AND u.sender_type IN ('student','public'))::int AS unread_count,CASE WHEN EXISTS (SELECT 1 FROM inbox_messages u WHERE u.thread_id=it.id AND u.deleted_at IS NULL AND u.is_read=FALSE AND u.sender_type IN ('student','public')) THEN 'unread' ELSE 'read' END AS read_status,(SELECT body FROM inbox_messages WHERE thread_id=it.id AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1) AS last_message FROM inbox_threads it LEFT JOIN students s ON s.id=it.student_id LEFT JOIN groups g ON g.id=s.group_id WHERE ${filters.join(" AND ")} ORDER BY it.updated_at DESC`, values);
+    const threads = result.rows.map(serializeInboxThread);
+    const external = await listExternalConversations({ search: term, read: readFilter, date: req.query.date });
+    threads.push(...external);
+    threads.sort((a, b) => new Date(b.last_message_at || b.updated_at || b.created_at).getTime() - new Date(a.last_message_at || a.updated_at || a.created_at).getTime());
+    res.json({ ok: true, threads });
+  } catch (error) { next(error); }
+});
 async function staffThreadMessages(req,res,next){try{const thread=await getThread(req.params.id);if(!thread)return res.status(404).json({ok:false,status:"not_found"});const read=await markIncomingRead(req.params.id,["student","public"]);const messages=await getMessages(req.params.id);const responseThread=serializeInboxThread({ ...thread, unread_count: Math.max(0, Number(thread.unread_count || 0) - read.rowCount) });if(read.rowCount)await auditLog({action:"message_read_status_changed",actorId:req.teacher.id,details:{thread_id:Number(req.params.id),marked_count:read.rowCount,status_after:"read"},request:req});res.json({ok:true,thread:responseThread,messages:messages.rows,marked_count:read.rowCount});}catch(error){next(error);}}
 staffInboxRouter.get("/inbox/:id", staffThreadMessages);
 staffInboxRouter.get("/inbox/threads/:id/messages", staffThreadMessages);

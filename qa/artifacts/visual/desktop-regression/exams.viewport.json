@@ -15,13 +15,13 @@
   "document": {
     "width": 1440,
     "bodyWidth": 1440,
-    "height": 999
+    "height": 1000
   },
   "bottomNav": {
     "present": false,
     "overlap": false,
     "navTop": 0,
-    "finalBottom": 748.5625
+    "finalBottom": 747.5625
   },
   "clippedActions": []
 }

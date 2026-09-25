@@ -1,6 +1,6 @@
 # Mobile/Admin Visual QA
 
-Generated: 2026-09-25T00:35:32.915Z
+Generated: 2026-09-25T20:14:26.369Z
 
 | Device | Viewport | Orientation | Authenticated | Status |
 |---|---:|---|---|---|
@@ -11,7 +11,7 @@ Generated: 2026-09-25T00:35:32.915Z
 | ipad-10th-gen-landscape | 1180×820 | landscape | yes | PASS |
 | ipad-air-11 | 834×1194 | portrait | yes | ISSUES FOUND |
 | iphone-13-mini | 375×812 | portrait | yes | ISSUES FOUND |
-| iphone-15 | 393×852 | portrait | yes | ISSUES FOUND |
+| iphone-15 | 393×852 | portrait | yes | PASS |
 | iphone-15-pro-max | 430×932 | portrait | yes | ISSUES FOUND |
 | iphone-15-pro-max-landscape | 932×430 | landscape | yes | PASS |
 | iphone-16-pro-max-class | 440×956 | portrait | yes | ISSUES FOUND |
@@ -79,8 +79,8 @@ Generated: 2026-09-25T00:35:32.915Z
 - Pages: dashboard, students, groups, attendance, scanner, fees, reports, exams, messages, users, settings, notifications, student-login, students, users, permissions, reports, messages
 - Skipped: student-portal: QA_STUDENT_CODE is not configured; no student session was created.; student-profile-360: No existing student card was returned by the local QA dataset.; messages-conversation: No safe existing conversation was returned by the local QA dataset.
 - Overflow: none
-- Bottom nav: dashboard: final content bottom 792.234375px overlaps nav top 782px; students: final content bottom 786.140625px overlaps nav top 782px; groups: final content bottom 791.140625px overlaps nav top 782px; exams: final content bottom 784.140625px overlaps nav top 782px; users: final content bottom 791.90625px overlaps nav top 782px; settings: final content bottom 787.875px overlaps nav top 782px; students: final content bottom 786.140625px overlaps nav top 782px; users: final content bottom 791.90625px overlaps nav top 782px
-- Errors: settings: clipped actions + إضافة مزود
+- Bottom nav: none
+- Errors: none
 
 ### iphone-15-pro-max
 - Pages: dashboard, students, groups, attendance, scanner, fees, reports, exams, messages, users, settings, notifications, student-login, students, users, permissions, reports, messages

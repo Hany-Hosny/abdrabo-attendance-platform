@@ -134,6 +134,13 @@ function isValidIsoDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+export function parseOptionalMaxScorePercentage(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = Number(normalizeDigits(raw));
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= 100 ? parsed : null;
+}
+
 function normalizeBillingStartMonth(value) {
   const text = String(value ?? "").trim();
   if (!text) return null;
@@ -909,7 +916,7 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
     const groupId = Number(normalizeDigits(req.query.group_id || ""));
     const studentId = Number(normalizeDigits(req.query.student_id || ""));
     const examId = Number(normalizeDigits(req.query.exam_id || ""));
-    const maxScorePercentage = Number(normalizeDigits(req.query.maxScorePercentage || req.query.max_score_percentage || ""));
+    const maxScorePercentage = parseOptionalMaxScorePercentage(req.query.maxScorePercentage ?? req.query.max_score_percentage);
     const search = normalizeDigits(req.query.search || "").trim();
     const date = String(req.query.date || "").trim();
     if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(new Date(`${date}T00:00:00Z`).getTime()) || new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date)) {
@@ -918,7 +925,7 @@ adminAcademicRouter.get("/exams/results", requirePermission("exams.view"), async
     if (Number.isInteger(groupId) && groupId > 0) { values.push(groupId); filters.push(`s.group_id = $${values.length}`); }
     if (Number.isInteger(studentId) && studentId > 0) { values.push(studentId); filters.push(`s.id = $${values.length}`); }
     if (Number.isInteger(examId) && examId > 0) { values.push(examId); filters.push(`e.id = $${values.length}`); }
-    if (Number.isFinite(maxScorePercentage) && maxScorePercentage >= 0 && maxScorePercentage <= 100) { values.push(maxScorePercentage); filters.push(`e.max_score > 0 AND er.score / e.max_score * 100 < $${values.length}`); }
+    if (maxScorePercentage !== null) { values.push(maxScorePercentage); filters.push(`e.max_score > 0 AND er.score / e.max_score * 100 < $${values.length}`); }
     appendGroupScope(filters, values, req.teacher, "s.group_id");
     if (date) { values.push(date); filters.push(`e.exam_date = $${values.length}::date`); }
     if (search) {

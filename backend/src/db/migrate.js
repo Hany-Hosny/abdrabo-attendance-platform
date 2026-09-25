@@ -609,6 +609,50 @@ export async function migrate() {
     CREATE INDEX IF NOT EXISTS inbox_messages_unread_idx ON inbox_messages(is_read, created_at);
     ALTER TABLE inbox_messages
       ADD COLUMN IF NOT EXISTS sender_student_id INTEGER REFERENCES students(id) ON DELETE SET NULL;
+
+    CREATE TABLE IF NOT EXISTS external_contacts (
+      id BIGSERIAL PRIMARY KEY,
+      canonical_phone TEXT NOT NULL UNIQUE,
+      display_phone TEXT,
+      display_name TEXT,
+      source TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS external_conversations (
+      id BIGSERIAL PRIMARY KEY,
+      external_contact_id BIGINT NOT NULL REFERENCES external_contacts(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'closed')),
+      source_type TEXT,
+      last_inquiry_id BIGINT REFERENCES inbox_threads(id) ON DELETE SET NULL,
+      last_message_at TIMESTAMPTZ,
+      last_message_preview TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS external_conversations_active_contact_idx
+      ON external_conversations(external_contact_id) WHERE status = 'open';
+    CREATE INDEX IF NOT EXISTS external_conversations_updated_idx
+      ON external_conversations(updated_at DESC);
+    CREATE TABLE IF NOT EXISTS external_messages (
+      id BIGSERIAL PRIMARY KEY,
+      external_conversation_id BIGINT NOT NULL REFERENCES external_conversations(id) ON DELETE CASCADE,
+      direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+      body TEXT NOT NULL,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      delivery_status TEXT NOT NULL DEFAULT 'pending' CHECK (delivery_status IN ('pending', 'processing', 'sent', 'delivered', 'read', 'failed', 'delivery_unknown', 'review_required')),
+      provider_message_id TEXT,
+      whatsapp_job_id BIGINT,
+      created_by_teacher_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS external_messages_provider_id_idx
+      ON external_messages(provider_message_id) WHERE provider_message_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS external_messages_conversation_idx
+      ON external_messages(external_conversation_id, created_at);
+    CREATE INDEX IF NOT EXISTS external_messages_unread_idx
+      ON external_messages(is_read, created_at) WHERE direction = 'inbound';
   `);
 
   await query(`
@@ -1035,8 +1079,9 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_status_check CHECK (status IN ('pending', 'processing', 'sent', 'failed', 'skipped', 'delivery_unknown', 'review_required'))");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS created_by_teacher_id INTEGER REFERENCES teachers(id) ON DELETE SET NULL");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS idempotency_key TEXT");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS external_message_id BIGINT REFERENCES external_messages(id) ON DELETE SET NULL");
   await query("CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_notification_jobs_idempotency_key_idx ON whatsapp_notification_jobs(idempotency_key) WHERE idempotency_key IS NOT NULL");
-  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation', 'custom_message'))");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD CONSTRAINT whatsapp_notification_jobs_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation', 'custom_message', 'external_message'))");
   await query("ALTER TABLE whatsapp_template_rotation DROP CONSTRAINT IF EXISTS whatsapp_template_rotation_notification_type_check");
   await query("ALTER TABLE whatsapp_template_rotation ADD CONSTRAINT whatsapp_template_rotation_notification_type_check CHECK (notification_type IN ('attendance', 'absence', 'grade', 'receipt', 'advance_payment', 'cancellation'))");
   await query("ALTER TABLE whatsapp_templates DROP CONSTRAINT IF EXISTS whatsapp_templates_category_check");

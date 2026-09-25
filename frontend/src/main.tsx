@@ -1701,6 +1701,7 @@ const translations = {
     "admin.permission.sendGrades": "إرسال نتائج الامتحانات عبر واتساب",
     "admin.permission.sendReceipts": "إرسال إيصالات الدفع عبر واتساب",
     "admin.permission.sendCustom": "إرسال رسائل واتساب مخصصة",
+    "admin.permission.sendExternal": "إرسال رسائل خارجية عبر واتساب",
     "inbox.sourceRegistered": "طالب مسجل",
     "inbox.sourcePublic": "استفسار خارجي",
     "inbox.publicReplyBlocked": "هذا استفسار خارجي ولا يمكن الرد عليه من داخل النظام.",
@@ -1721,6 +1722,64 @@ const translations = {
     "inbox.customSentBy": "أرسلها",
     "inbox.customNoHistory": "لا توجد رسائل مخصصة.",
     "inbox.customPhone": "واتساب",
+    "inbox.externalTab": "External",
+    "inbox.externalTitle": "مراسلة خارجية",
+    "inbox.externalPhone": "رقم الهاتف",
+    "inbox.externalName": "الاسم",
+    "inbox.externalInquiryContext": "سياق الاستفسار",
+    "inbox.externalSource": "استفسار من الموقع",
+    "inbox.externalMessage": "نص الرسالة",
+    "inbox.externalSelectMessages": "تحديد الرسائل",
+    "inbox.externalCancelSelection": "إلغاء",
+    "inbox.externalSelectAll": "تحديد الكل",
+    "inbox.externalClearAll": "إلغاء تحديد الكل",
+    "inbox.externalBackToChats": "العودة إلى المحادثات",
+    "inbox.externalActions": "إجراءات المحادثة",
+    "inbox.externalDeleteConversation": "حذف المحادثة بالكامل",
+    "inbox.externalDeletingConversation": "جارٍ حذف المحادثة...",
+    "inbox.externalConfirmDeleteConversation": "هل تريد حذف هذه المحادثة بالكامل؟\nسيتم حذف سجل الرسائل من المنصة.",
+    "inbox.externalConversationDeleted": "تم حذف المحادثة.",
+    "inbox.externalDeleteConversationFailed": "تعذر حذف المحادثة. حاول مرة أخرى.",
+    "inbox.externalManagement": "إدارة المحادثات الخارجية",
+    "inbox.externalDeleteAll": "حذف كل المحادثات",
+    "inbox.externalDeleteAllTitle": "حذف كل المحادثات الخارجية",
+    "inbox.externalDeleteAllBody": "سيتم حذف جميع محادثات ورسائل External من قاعدة البيانات. لا يمكن التراجع عن هذا الإجراء.",
+    "inbox.externalDeleteAllPhraseLabel": "اكتب للتأكيد",
+    "inbox.externalDeleteAllPhrase": "حذف الكل",
+    "inbox.externalDeleteAllCancel": "إلغاء",
+    "inbox.externalDeletingAll": "جارٍ حذف كل المحادثات...",
+    "inbox.externalDeletedAll": "تم حذف {{conversations}} محادثات و{{messages}} رسالة بنجاح.",
+    "inbox.externalDeleteAllFailed": "تعذر حذف المحادثات الخارجية. حاول مرة أخرى.",
+    "inbox.externalExpandContext": "عرض تفاصيل الاستفسار",
+    "inbox.externalCollapseContext": "إخفاء تفاصيل الاستفسار",
+    "inbox.externalStatus.pending": "قيد الإرسال",
+    "inbox.externalStatus.processing": "قيد المعالجة",
+    "inbox.externalStatus.sent": "تم الإرسال",
+    "inbox.externalStatus.delivered": "تم التسليم",
+    "inbox.externalStatus.read": "تمت القراءة",
+    "inbox.externalStatus.failed": "فشل الإرسال",
+    "inbox.externalStatus.delivery_unknown": "حالة التسليم غير مؤكدة",
+    "inbox.externalStatus.review_required": "بحاجة إلى مراجعة",
+    "inbox.externalConfirmDeleteOne": "هل تريد حذف هذه الرسالة؟",
+    "inbox.externalConfirmDeleteMany": "هل تريد حذف {{count}} رسائل؟",
+    "inbox.externalSelectAllMessages": "تحديد كل الرسائل",
+    "inbox.externalClearSelection": "إلغاء تحديد الرسائل",
+    "inbox.externalSelectedMessages": "تم تحديد {{count}} رسالة",
+    "inbox.externalDeleteSelected": "حذف المحدد ({{count}})",
+    "inbox.externalDeletingSelected": "جاري حذف المحدد...",
+    "inbox.externalDeletedSelected": "تم حذف {{count}} رسالة",
+    "inbox.externalConfirmDeleteSelected": "هل تريد حذف الرسائل المحددة؟ لا يمكن التراجع عن هذا الإجراء.",
+    "inbox.externalDeleteFailed": "تعذر حذف الرسائل المحددة. حاول مرة أخرى.",
+    "inbox.externalSend": "إرسال واتساب",
+    "inbox.externalSending": "جارٍ الإرسال...",
+    "inbox.externalQueued": "تمت إضافة الرسالة إلى قائمة الإرسال.",
+    "inbox.externalLoadFailed": "تعذر تحميل المحادثة الخارجية.",
+    "inbox.externalCreateFailed": "تعذر إنشاء المحادثة الخارجية.",
+    "inbox.externalNoConversations": "لا توجد محادثات خارجية.",
+    "inbox.externalSearch": "بحث بالاسم أو رقم الهاتف",
+    "inbox.externalManual": "بدء محادثة خارجية",
+    "inbox.externalPrefillFailed": "تعذر تحميل بيانات الاستفسار.",
+    "inbox.externalPhoneRequired": "أدخل رقم هاتف صحيحًا.",
     "admin.permission.reportsView": "عرض التقارير",
     "admin.permission.reverse": "إلغاء / عكس دفعة",
     "admin.permission.create": "إنشاء مستخدم",
@@ -1893,6 +1952,9 @@ const translations = {
     "admin.assessmentPlaceholder": "اكتب تقييمًا مختصرًا للطالب",
     "admin.saveExamResult": "حفظ نتيجة الامتحان",
     "admin.examResultSaved": "تم حفظ نتيجة الامتحان والتقييم.",
+    "admin.examResultSavedContext": "تم حفظ نتيجة {{student}} — {{result}}",
+    "admin.examResultHiddenByFilters": "تم حفظ النتيجة بنجاح، لكن عوامل التصفية الحالية تمنع ظهورها في السجل.",
+    "admin.showSavedExamResult": "عرض النتيجة",
     "admin.examResultDeleted": "تم مسح نتيجة الامتحان.",
     "admin.confirmDeleteExamResult": "هل تريد مسح نتيجة هذا الطالب؟",
     "admin.invalidExamResult": "راجع بيانات الامتحان والدرجة.",
@@ -3508,6 +3570,7 @@ const translations = {
     "admin.permission.sendGrades": "Send exam results via WhatsApp",
     "admin.permission.sendReceipts": "Send payment receipts via WhatsApp",
     "admin.permission.sendCustom": "Send custom WhatsApp messages",
+    "admin.permission.sendExternal": "Send external WhatsApp messages",
     "inbox.sourceRegistered": "Registered student",
     "inbox.sourcePublic": "External inquiry",
     "inbox.publicReplyBlocked": "This is an external inquiry and cannot be replied to from inside the system.",
@@ -3528,6 +3591,64 @@ const translations = {
     "inbox.customSentBy": "Sent by",
     "inbox.customNoHistory": "No custom messages found.",
     "inbox.customPhone": "WhatsApp",
+    "inbox.externalTab": "External",
+    "inbox.externalTitle": "External messaging",
+    "inbox.externalPhone": "Phone number",
+    "inbox.externalName": "Name",
+    "inbox.externalInquiryContext": "Inquiry context",
+    "inbox.externalSource": "Website inquiry",
+    "inbox.externalMessage": "Message",
+    "inbox.externalSelectMessages": "Select messages",
+    "inbox.externalCancelSelection": "Cancel",
+    "inbox.externalSelectAll": "Select all",
+    "inbox.externalClearAll": "Clear all",
+    "inbox.externalBackToChats": "Back to conversations",
+    "inbox.externalActions": "Conversation actions",
+    "inbox.externalDeleteConversation": "Delete conversation",
+    "inbox.externalDeletingConversation": "Deleting conversation...",
+    "inbox.externalConfirmDeleteConversation": "Delete this conversation completely?\nThe message history will be removed from the platform.",
+    "inbox.externalConversationDeleted": "Conversation deleted.",
+    "inbox.externalDeleteConversationFailed": "Could not delete the conversation. Please try again.",
+    "inbox.externalManagement": "External conversation management",
+    "inbox.externalDeleteAll": "Delete all conversations",
+    "inbox.externalDeleteAllTitle": "Delete all External conversations",
+    "inbox.externalDeleteAllBody": "All External conversations and messages will be deleted from the database. This cannot be undone.",
+    "inbox.externalDeleteAllPhraseLabel": "Type to confirm",
+    "inbox.externalDeleteAllPhrase": "DELETE ALL",
+    "inbox.externalDeleteAllCancel": "Cancel",
+    "inbox.externalDeletingAll": "Deleting all conversations...",
+    "inbox.externalDeletedAll": "{{conversations}} conversations and {{messages}} messages deleted successfully.",
+    "inbox.externalDeleteAllFailed": "Could not delete External conversations. Please try again.",
+    "inbox.externalExpandContext": "Show inquiry details",
+    "inbox.externalCollapseContext": "Hide inquiry details",
+    "inbox.externalStatus.pending": "Sending",
+    "inbox.externalStatus.processing": "Processing",
+    "inbox.externalStatus.sent": "Sent",
+    "inbox.externalStatus.delivered": "Delivered",
+    "inbox.externalStatus.read": "Read",
+    "inbox.externalStatus.failed": "Failed to send",
+    "inbox.externalStatus.delivery_unknown": "Delivery status unknown",
+    "inbox.externalStatus.review_required": "Needs review",
+    "inbox.externalConfirmDeleteOne": "Delete this message?",
+    "inbox.externalConfirmDeleteMany": "Delete {{count}} messages?",
+    "inbox.externalSelectAllMessages": "Select all messages",
+    "inbox.externalClearSelection": "Clear message selection",
+    "inbox.externalSelectedMessages": "{{count}} messages selected",
+    "inbox.externalDeleteSelected": "Delete selected ({{count}})",
+    "inbox.externalDeletingSelected": "Deleting selected...",
+    "inbox.externalDeletedSelected": "{{count}} messages deleted",
+    "inbox.externalConfirmDeleteSelected": "Delete the selected messages? This cannot be undone.",
+    "inbox.externalDeleteFailed": "Could not delete the selected messages. Please try again.",
+    "inbox.externalSend": "Send WhatsApp",
+    "inbox.externalSending": "Sending...",
+    "inbox.externalQueued": "Message added to the send queue.",
+    "inbox.externalLoadFailed": "Could not load the external conversation.",
+    "inbox.externalCreateFailed": "Could not create the external conversation.",
+    "inbox.externalNoConversations": "No external conversations yet.",
+    "inbox.externalSearch": "Search by name or phone",
+    "inbox.externalManual": "Start external conversation",
+    "inbox.externalPrefillFailed": "Could not load inquiry details.",
+    "inbox.externalPhoneRequired": "Enter a valid phone number.",
     "admin.permission.reportsView": "View reports",
     "admin.permission.reverse": "Reverse payment",
     "admin.permission.create": "Create user",
@@ -3700,6 +3821,9 @@ const translations = {
     "admin.assessmentPlaceholder": "Write a short assessment for the student",
     "admin.saveExamResult": "Save exam result",
     "admin.examResultSaved": "Exam result and assessment saved.",
+    "admin.examResultSavedContext": "Saved {{student}} — {{result}}",
+    "admin.examResultHiddenByFilters": "The result was saved, but the current filters prevent it from appearing in the history.",
+    "admin.showSavedExamResult": "Show result",
     "admin.examResultDeleted": "Exam result deleted.",
     "admin.confirmDeleteExamResult": "Delete this student's exam result?",
     "admin.invalidExamResult": "Review the exam details and score.",
@@ -3915,14 +4039,14 @@ type PermissionKey =
   | "messages.view" | "messages.manage"
   | "notes.view" | "notes.manage"
   | "users.view" | "users.create" | "users.edit" | "users.disable" | "users.delete"
-  | "activity_log.view" | "activity_log.export" | "whatsapp.view" | "whatsapp.manage" | "whatsapp.send_attendance" | "whatsapp.send_grades" | "whatsapp.send_receipts" | "whatsapp.send_custom" | "settings.manage"
+  | "activity_log.view" | "activity_log.export" | "whatsapp.view" | "whatsapp.manage" | "whatsapp.send_attendance" | "whatsapp.send_grades" | "whatsapp.send_receipts" | "whatsapp.send_custom" | "whatsapp.send_external" | "settings.manage"
   | "dashboard.view" | "dashboard.financial.view" | "dashboard.group_performance.view" | "dashboard.alerts.view" | "dashboard.activity.view";
 
 const allRbacPermissions: PermissionKey[] = [
   "students.view", "students.manage", "students.delete", "attendance.view", "attendance.manage", "attendance.cancel_sessions", "exams.view", "exams.manage",
   "homework.view", "homework.manage", "schedule.view", "schedule.manage", "payments.view", "payments.collect", "payments.advance", "payments.reports.view", "payments.reverse",
   "messages.view", "messages.manage", "notes.view", "notes.manage", "users.view", "users.create", "users.edit", "users.disable",
-  "users.delete", "activity_log.view", "activity_log.export", "whatsapp.view", "whatsapp.manage", "whatsapp.send_attendance", "whatsapp.send_grades", "whatsapp.send_receipts", "whatsapp.send_custom", "settings.manage", "dashboard.view", "dashboard.financial.view",
+  "users.delete", "activity_log.view", "activity_log.export", "whatsapp.view", "whatsapp.manage", "whatsapp.send_attendance", "whatsapp.send_grades", "whatsapp.send_receipts", "whatsapp.send_custom", "whatsapp.send_external", "settings.manage", "dashboard.view", "dashboard.financial.view",
   "dashboard.group_performance.view", "dashboard.alerts.view", "dashboard.activity.view"
 ];
 
@@ -3939,7 +4063,7 @@ const permissionGroups: Array<{ label: TranslationKey; permissions: Array<{ key:
     { key: "payments.reports.view", label: "admin.permission.reportsView" },
     { key: "payments.reverse", label: "admin.permission.reverse" }
   ] },
-  { label: "admin.permissionGroup.messages", permissions: [{ key: "messages.view", label: "admin.permission.view" }, { key: "messages.manage", label: "admin.permission.manage" }] },
+    { label: "admin.permissionGroup.messages", permissions: [{ key: "messages.view", label: "admin.permission.view" }, { key: "messages.manage", label: "admin.permission.manage" }] },
   { label: "admin.permissionGroup.notes", permissions: [{ key: "notes.view", label: "admin.permission.view" }, { key: "notes.manage", label: "admin.permission.manage" }] },
   { label: "admin.permissionGroup.users", permissions: [{ key: "users.view", label: "admin.permission.view" }, { key: "users.create", label: "admin.permission.create" }, { key: "users.edit", label: "admin.permission.edit" }, { key: "users.disable", label: "admin.permission.disable" }, { key: "users.delete", label: "admin.permission.delete" }] },
   { label: "admin.permissionGroup.activity", permissions: [{ key: "activity_log.view", label: "admin.permission.view" }, { key: "activity_log.export", label: "admin.permission.export" }] },
@@ -3950,7 +4074,8 @@ const permissionGroups: Array<{ label: TranslationKey; permissions: Array<{ key:
     { key: "whatsapp.send_attendance", label: "admin.permission.sendAttendance" },
     { key: "whatsapp.send_grades", label: "admin.permission.sendGrades" },
     { key: "whatsapp.send_receipts", label: "admin.permission.sendReceipts" },
-    { key: "whatsapp.send_custom", label: "admin.permission.sendCustom" }
+    { key: "whatsapp.send_custom", label: "admin.permission.sendCustom" },
+    { key: "whatsapp.send_external", label: "admin.permission.sendExternal" }
   ] },
   { label: "admin.permissionGroup.dashboard", permissions: [
     { key: "dashboard.view", label: "admin.permission.dashboard.view" },
@@ -11964,6 +12089,17 @@ function formatInboxTimestamp(value: unknown, language: Language) {
   }).format(date);
 }
 
+function externalMessageStatus(status: unknown, t: Translator) {
+  const value = typeof status === "string" ? status.toLowerCase() : "";
+  return t(`inbox.externalStatus.${value}` as any) || value || "—";
+}
+
+function externalPreview(value: unknown) {
+  const preview = typeof value === "string" ? value.trim() : "";
+  if (/^qa[-_]|^test[-_]|browser-fixed-/i.test(preview)) return "—";
+  return preview || "—";
+}
+
 function inboxSubjectLabel(subject: unknown, t: Translator) {
   const value = typeof subject === "string" ? subject.trim() : "";
   if (value.toLowerCase() === "public inquiry") return t("inbox.publicInquiry");
@@ -12049,6 +12185,283 @@ function CustomWhatsAppHistory({ session, language, t }: { session: TeacherSessi
     {messages.length ? <div className="inbox-custom-history-list">{messages.map((item) => <article key={item.id}><header><strong>{item.student_name || "—"} · {item.student_code || item.student_serial || "—"}</strong><span>{item.status}</span></header><small>{item.group_name || "—"} · {item.sent_by || "—"} · {formatInboxTimestamp(item.sent_at || item.created_at, language)}</small><p dir="auto">{item.rendered_message || "—"}</p><small>{t("inbox.customAttempts")}: {item.attempts}{item.last_error ? ` · ${item.last_error}` : ""}</small></article>)}</div> : <p className="empty-state">{t("inbox.customNoHistory")}</p>}</section>;
 }
 
+function ExternalMessagingPanel({ session, language, t }: { session: TeacherSession; language: Language; t: Translator }) {
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [selected, setSelected] = useState<any>(null);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [selectedMessageIds, setSelectedMessageIds] = useState<number[]>([]);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [inquiryExpanded, setInquiryExpanded] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [managementOpen, setManagementOpen] = useState(false);
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
+  const [deleteAllPhrase, setDeleteAllPhrase] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deletingConversation, setDeletingConversation] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
+  const [search, setSearch] = useState("");
+  const [phone, setPhone] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [inquiry, setInquiry] = useState<any>(null);
+  const [body, setBody] = useState("");
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const messagesViewportRef = useRef<HTMLDivElement>(null);
+  const deletingAllRef = useRef(false);
+  const conversationListRequestRef = useRef(0);
+  const idempotencyKey = useRef(crypto.randomUUID());
+  const canSend = sessionHasPermission(session, "whatsapp.send_external");
+  const canManage = sessionHasPermission(session, "messages.manage");
+  const auth = { Authorization: `Bearer ${session.token}` };
+  const jsonAuth = { ...auth, "Content-Type": "application/json" };
+
+  async function loadConversations() {
+    const requestId = ++conversationListRequestRef.current;
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("search", search.trim());
+    const response = await fetch(`${API_BASE_URL}/admin/inbox/external?${params}`, { headers: auth });
+    const data = await parseInboxResponse(response);
+    if (requestId === conversationListRequestRef.current && !deletingAllRef.current) setConversations(Array.isArray(data.conversations) ? data.conversations : []);
+  }
+
+  async function openConversation(conversation: any) {
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/inbox/external/${conversation.id}`, { headers: auth });
+      const data = await parseInboxResponse(response);
+      setSelected(data.conversation || conversation);
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+      setSelectedMessageIds([]);
+      setSelectionMode(false);
+      setInquiryExpanded(false);
+      setActionsOpen(false);
+      setConversations((current) => current.map((item) => Number(item.id) === Number(conversation.id) ? { ...item, ...(data.conversation || {}) } : item));
+    } catch (_error) { setStatus(t("inbox.externalLoadFailed")); }
+  }
+
+  useEffect(() => {
+    if (!selected?.id) return undefined;
+    let active = true;
+    const refreshOpenConversation = async () => {
+      if (document.visibilityState !== "visible" || deletingAllRef.current) return;
+      try {
+        const response = await fetch(`${API_BASE_URL}/admin/inbox/external/${selected.id}`, { headers: auth });
+        const data = await parseInboxResponse(response);
+        if (!active) return;
+        const viewport = messagesViewportRef.current;
+        const nearBottom = !viewport || viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 120;
+        setSelected((current: any) => current ? { ...current, ...(data.conversation || {}) } : current);
+        const nextMessages = Array.isArray(data.messages) ? data.messages : [];
+        const nextIds = new Set(nextMessages.map((message: any) => Number(message.id)));
+        setSelectedMessageIds((current) => current.filter((id) => nextIds.has(id)));
+        setMessages(nextMessages);
+        if (nearBottom) window.requestAnimationFrame(() => { if (active && messagesViewportRef.current) messagesViewportRef.current.scrollTop = messagesViewportRef.current.scrollHeight; });
+        setConversations((current) => current.map((item) => Number(item.id) === Number(selected.id) ? { ...item, ...(data.conversation || {}) } : item));
+      } catch (_error) {
+        // Keep the current thread visible when a background refresh is temporarily unavailable.
+      }
+    };
+    const timer = window.setInterval(() => { void refreshOpenConversation(); }, 5000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [selected?.id, session.token]);
+
+  useEffect(() => {
+    if (!selected?.id) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      if (messagesViewportRef.current) messagesViewportRef.current.scrollTop = messagesViewportRef.current.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [selected?.id]);
+
+  useEffect(() => { loadConversations().catch(() => setStatus(t("inbox.externalLoadFailed"))); }, [search, session.token]);
+
+  useEffect(() => {
+    const inquiryId = new URLSearchParams(window.location.search).get("inquiryId");
+    if (!inquiryId) return;
+    let active = true;
+    setLoading(true);
+    fetch(`${API_BASE_URL}/admin/inbox/external/prefill?inquiryId=${encodeURIComponent(inquiryId)}`, { headers: auth })
+      .then((response) => parseInboxResponse(response))
+      .then(async (data) => {
+        if (!active) return;
+        const next = data.prefill;
+        setInquiry(next);
+        setPhone(next.phone || "");
+        setDisplayName(next.display_name || "");
+        if (next.external_conversation_id) await openConversation({ id: next.external_conversation_id });
+      })
+      .catch(() => { if (active) setStatus(t("inbox.externalPrefillFailed")); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [session.token]);
+
+  useEffect(() => {
+    const conversationId = new URLSearchParams(window.location.search).get("conversationId");
+    if (conversationId) void openConversation({ id: conversationId });
+  }, [session.token]);
+
+  async function ensureConversation() {
+    if (selected) return selected;
+    if (!phone.trim()) throw new Error("external_phone_required");
+    const response = await fetch(`${API_BASE_URL}/admin/inbox/external/conversations`, {
+      method: "POST", headers: jsonAuth,
+      body: JSON.stringify({ phone: phone.trim(), display_name: displayName.trim() || undefined, inquiryId: inquiry?.inquiry_id || undefined })
+    });
+    const data = await parseInboxResponse(response);
+    setSelected(data.conversation);
+    await loadConversations();
+    return data.conversation;
+  }
+
+  function toggleMessageSelection(messageId: number) {
+    setSelectionMode(true);
+    setSelectedMessageIds((current) => current.includes(messageId) ? current.filter((id) => id !== messageId) : [...current, messageId]);
+  }
+
+  function toggleAllMessages() {
+    const visibleIds = messages.map((message) => Number(message.id)).filter((id) => Number.isSafeInteger(id) && id > 0);
+    setSelectionMode(true);
+    setSelectedMessageIds((current) => visibleIds.length && visibleIds.every((id) => current.includes(id)) ? [] : visibleIds);
+  }
+
+  function cancelMessageSelection() {
+    setSelectionMode(false);
+    setSelectedMessageIds([]);
+  }
+
+  async function deleteSelectedMessages() {
+    if (!selected?.id || !selectedMessageIds.length || deleting) return;
+    const confirmation = selectedMessageIds.length === 1
+      ? t("inbox.externalConfirmDeleteOne")
+      : t("inbox.externalConfirmDeleteMany", { count: String(selectedMessageIds.length) });
+    if (!window.confirm(confirmation)) return;
+    setDeleting(true);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/inbox/external/${selected.id}/messages`, {
+        method: "DELETE",
+        headers: jsonAuth,
+        body: JSON.stringify({ message_ids: selectedMessageIds })
+      });
+      const data = await parseInboxResponse(response);
+      setSelectedMessageIds([]);
+      await openConversation(selected);
+      await loadConversations();
+      setStatus(t("inbox.externalDeletedSelected", { count: String(data.deleted_message_count || 0) }));
+    } catch (_error) {
+      setStatus(t("inbox.externalDeleteFailed"));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function deleteConversation() {
+    if (!selected?.id || deletingConversation) return;
+    if (!window.confirm(t("inbox.externalConfirmDeleteConversation"))) return;
+    setDeletingConversation(true);
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/inbox/external/${selected.id}`, { method: "DELETE", headers: auth });
+      await parseInboxResponse(response);
+      setConversations((current) => current.filter((item) => Number(item.id) !== Number(selected.id)));
+      setSelected(null);
+      setMessages([]);
+      setSelectedMessageIds([]);
+      setSelectionMode(false);
+      setActionsOpen(false);
+      setInquiry(null);
+      const params = new URLSearchParams(window.location.search);
+      params.delete("conversationId");
+      window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+      await loadConversations();
+      setStatus(t("inbox.externalConversationDeleted"));
+    } catch (_error) {
+      setStatus(t("inbox.externalDeleteConversationFailed"));
+    } finally {
+      setDeletingConversation(false);
+    }
+  }
+
+  async function deleteAllConversations() {
+    if (!canManage || deletingAll || conversations.length === 0) return;
+    const expectedPhrase = language === "ar" ? "حذف الكل" : "DELETE ALL";
+    if (deleteAllPhrase !== expectedPhrase) return;
+    setDeletingAll(true);
+    deletingAllRef.current = true;
+    setStatus("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/inbox/external`, { method: "DELETE", headers: auth });
+      const data = await parseInboxResponse(response);
+      setConversations([]);
+      setSelected(null);
+      setMessages([]);
+      setSelectedMessageIds([]);
+      setSelectionMode(false);
+      setActionsOpen(false);
+      setManagementOpen(false);
+      setDeleteAllOpen(false);
+      setDeleteAllPhrase("");
+      setInquiry(null);
+      setPhone("");
+      setDisplayName("");
+      const params = new URLSearchParams(window.location.search);
+      params.delete("conversationId");
+      window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+      setStatus(t("inbox.externalDeletedAll", { conversations: String(data.deleted_conversations || 0), messages: String(data.deleted_messages || 0) }));
+      window.setTimeout(() => setStatus(""), 4000);
+      deletingAllRef.current = false;
+      await loadConversations();
+    } catch (_error) {
+      setStatus(t("inbox.externalDeleteAllFailed"));
+    } finally {
+      deletingAllRef.current = false;
+      setDeletingAll(false);
+    }
+  }
+
+  async function sendMessage(event: React.FormEvent) {
+    event.preventDefault();
+    if (!canSend || !body.trim() || sending) return;
+    setSending(true); setStatus("");
+    try {
+      const conversation = await ensureConversation();
+      const response = await fetch(`${API_BASE_URL}/admin/inbox/external/${conversation.id}/messages`, {
+        method: "POST", headers: { ...jsonAuth, "Idempotency-Key": idempotencyKey.current },
+        body: JSON.stringify({ body: body.trim(), inquiryId: inquiry?.inquiry_id || undefined })
+      });
+      await parseInboxResponse(response);
+      idempotencyKey.current = crypto.randomUUID();
+      setBody(""); setStatus(t("inbox.externalQueued"));
+      await openConversation(conversation);
+      await loadConversations();
+    } catch (error) {
+      setStatus(error instanceof Error && error.message === "external_phone_required" ? t("inbox.externalPhoneRequired") : t("inbox.externalCreateFailed"));
+    } finally { setSending(false); }
+  }
+
+  return <section className={`inbox-external-panel ${selected ? "has-selected-conversation" : ""}`} dir={language === "ar" ? "rtl" : "ltr"}>
+    <div className="inbox-heading external-panel-heading"><div><h2>{t("inbox.externalTitle")}</h2><p>{t("inbox.externalSource")}</p></div></div>
+    <div className="inbox-external-toolbar"><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("inbox.externalSearch")} aria-label={t("inbox.externalSearch")} /><button type="button" className="secondary-button compact-button" onClick={() => { setSelected(null); setMessages([]); setSelectedMessageIds([]); setSelectionMode(false); setInquiry(null); setPhone(""); setDisplayName(""); }}>{t("inbox.externalManual")}</button></div>
+    <div className="inbox-layout">
+      <div className="inbox-list-panel"><div className="inbox-list-heading conversation-list-header"><h3>{t("inbox.conversationsTab")}</h3>{canManage ? <div className="external-management-wrap"><button type="button" className="external-management-button" aria-label={t("inbox.externalManagement")} aria-expanded={managementOpen} onClick={() => setManagementOpen((value) => !value)}>⋮</button>{managementOpen ? <div className="external-management-menu" role="menu"><button type="button" role="menuitem" className="danger" disabled={!conversations.length || deletingAll} onClick={() => { setManagementOpen(false); setDeleteAllOpen(true); setDeleteAllPhrase(""); }}>{t("inbox.externalDeleteAll")}</button></div> : null}</div> : null}</div><div className="inbox-list">{conversations.length ? conversations.map((conversation) => <button key={conversation.id} type="button" className={`inbox-thread ${selected?.id === conversation.id ? "active" : ""} ${Number(conversation.unread_count) > 0 ? "unread" : ""}`} onClick={() => void openConversation(conversation)}><div className="inbox-thread-identity"><strong>{conversation.display_name || conversation.display_phone}</strong><small className="inbox-source-badge external">{t("inbox.externalTab")}</small>{Number(conversation.unread_count) > 0 ? <b aria-label={`${t("inbox.unread")}: ${conversation.unread_count}`}>{conversation.unread_count}</b> : null}</div><small dir="ltr">{conversation.display_phone}</small><span className="inbox-thread-preview">{externalPreview(conversation.last_message)}</span><time>{formatInboxTimestamp(conversation.last_message_at, language)}</time></button>) : <p className="empty-state">{t("inbox.externalNoConversations")}</p>}</div></div>
+      <div className="inbox-conversation">{loading ? <p className="empty-state">{t("inbox.refreshing")}</p> : <>
+        {selected ? <button type="button" className="external-back-button secondary-button compact-button" onClick={() => { setSelected(null); setMessages([]); setSelectedMessageIds([]); setSelectionMode(false); }}>{t("inbox.externalBackToChats")}</button> : null}
+        {selectionMode && selected && canManage ? <div className="external-selection-header" role="toolbar" aria-label={t("inbox.externalSelectMessages")}><strong>✓ {t("inbox.externalSelectedMessages", { count: String(selectedMessageIds.length) })}</strong><button type="button" className="external-header-action" onClick={toggleAllMessages}>{messages.length && messages.every((message) => selectedMessageIds.includes(Number(message.id))) ? t("inbox.externalClearAll") : t("inbox.externalSelectAll")}</button>{selectedMessageIds.length ? <button type="button" className="external-header-action destructive" disabled={deleting} onClick={() => void deleteSelectedMessages()}>{deleting ? t("inbox.externalDeletingSelected") : t("inbox.externalDeleteSelected", { count: String(selectedMessageIds.length) })}</button> : null}<button type="button" className="external-header-action" onClick={cancelMessageSelection}>{t("inbox.externalCancelSelection")}</button></div> : <div className="inbox-conversation-header"><div className="external-header-content"><div className="external-contact-heading"><h3>{selected?.display_name || displayName || t("inbox.externalTitle")}</h3><span className="inbox-source-badge external">{t("inbox.externalTab")}</span>{selected?.display_phone || phone ? <span className="external-header-phone" dir="ltr">{selected?.display_phone || phone}</span> : null}</div>{inquiry?.inquiry_brief ? <div className="external-inline-context"><button type="button" className="external-context-toggle" onClick={() => setInquiryExpanded((value) => !value)} aria-expanded={inquiryExpanded}><span>{t("inbox.externalSource")} · {externalPreview(inquiry.inquiry_brief).slice(0, 80)}</span><span aria-hidden="true">{inquiryExpanded ? "⌃" : "⌄"}</span></button></div> : null}</div>{selected && canManage ? <div className="external-actions-wrap"><button type="button" className="external-actions-button" aria-label={t("inbox.externalActions")} aria-expanded={actionsOpen} onClick={() => setActionsOpen((value) => !value)}>⋮</button>{actionsOpen ? <div className="external-actions-menu" role="menu"><button type="button" role="menuitem" onClick={() => { setSelectionMode(true); setActionsOpen(false); }}>{t("inbox.externalSelectMessages")}</button><button type="button" role="menuitem" className="danger" disabled={deletingConversation} onClick={() => void deleteConversation()}>{deletingConversation ? t("inbox.externalDeletingConversation") : t("inbox.externalDeleteConversation")}</button></div> : null}</div> : null}</div>}
+        {!selectionMode && inquiryExpanded && inquiry?.inquiry_brief ? <div className="external-inquiry-details"><strong>{t("inbox.externalSource")}</strong><p>{inquiry.inquiry_brief}</p></div> : null}
+        {!selected ? <div className="external-contact-form"><label>{t("inbox.externalPhone")}<input value={phone} onChange={(event) => setPhone(event.target.value)} inputMode="tel" dir="ltr" /></label><label>{t("inbox.externalName")}<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label></div> : null}
+        {selected ? <>
+          <div ref={messagesViewportRef} className="inbox-messages">{messages.length ? messages.map((message) => <article key={message.id} className={`inbox-message external-message ${message.direction === "outbound" ? "mine" : ""}`}>
+            {canManage && selectionMode ? <label className="external-message-checkbox"><input type="checkbox" checked={selectedMessageIds.includes(Number(message.id))} onChange={() => toggleMessageSelection(Number(message.id))} aria-label={`${t("inbox.externalSelectMessages")}: ${formatInboxTimestamp(message.created_at, language)}`} /></label> : null}
+            <div className="external-message-bubble"><p>{message.body}</p><small className="message-meta"><span>{message.direction === "outbound" ? t("inbox.senderTeacher") : t("inbox.senderPublic")}</span>{message.direction === "outbound" ? <span className="external-delivery-status">{externalMessageStatus(message.delivery_status, t)}</span> : null}<time>{formatInboxTimestamp(message.created_at, language)}</time></small></div></article>) : <p className="empty-state">{t("inbox.noMessages")}</p>}</div>
+        </> : null}
+        {canSend ? <form className={`inbox-reply-form ${selectionMode ? "is-selection-disabled" : ""}`} onSubmit={sendMessage}><textarea value={body} onChange={(event) => setBody(event.target.value.slice(0, 2000))} placeholder={t("inbox.externalMessage")} rows={4} disabled={selectionMode} /><button className={`primary-button ${sending ? "is-loading" : ""}`} type="submit" disabled={selectionMode || sending || !body.trim() || (!selected && !phone.trim())}>{sending ? t("inbox.externalSending") : t("inbox.externalSend")}</button></form> : <p className="inbox-public-reply-blocked">{t("inbox.replyUnavailable")}</p>}
+      </>}</div>
+    </div>{status ? <p className="lookup-result" role="status">{status}</p> : null}
+    {deleteAllOpen ? <div className="modal-backdrop external-delete-all-backdrop" role="presentation"><section className="modal-card external-delete-all-modal" role="dialog" aria-modal="true" aria-labelledby="external-delete-all-title" dir={language === "ar" ? "rtl" : "ltr"}><h3 id="external-delete-all-title">{t("inbox.externalDeleteAllTitle")}</h3><p>{t("inbox.externalDeleteAllBody")}</p><label>{t("inbox.externalDeleteAllPhraseLabel")}<input autoFocus value={deleteAllPhrase} onChange={(event) => setDeleteAllPhrase(event.target.value)} dir="auto" /></label><div className="external-delete-all-actions"><button type="button" className="secondary-button" disabled={deletingAll} onClick={() => { setDeleteAllOpen(false); setDeleteAllPhrase(""); }}>{t("inbox.externalDeleteAllCancel")}</button><button type="button" className="message-delete-button" disabled={deletingAll || deleteAllPhrase !== (language === "ar" ? "حذف الكل" : "DELETE ALL")} onClick={() => void deleteAllConversations()}>{deletingAll ? t("inbox.externalDeletingAll") : t("inbox.externalDeleteAll")}</button></div></section></div> : null}
+  </section>;
+}
+
 async function parseInboxResponse(response: Response) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data.ok === false) {
@@ -12071,7 +12484,7 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
   const [selectedThreadIds, setSelectedThreadIds] = useState<number[]>([]);
   const deleteThreadsFeedback = useActionFeedback();
   const [replyState, setReplyState] = useState<"idle" | "sending" | "sent">("idle");
-  const [messagesView, setMessagesView] = useState<"conversations" | "custom" | "history">("conversations");
+  const [messagesView, setMessagesView] = useState<"conversations" | "custom" | "history" | "external">(() => new URLSearchParams(window.location.search).get("section") === "external" ? "external" : "conversations");
   const auth = { Authorization: `Bearer ${session.token}` };
   const jsonAuth = { ...auth, "Content-Type": "application/json" };
   const unreadVisibleIds = threads.filter((thread) => Number(thread.unread_count) > 0).map((thread) => thread.id);
@@ -12106,6 +12519,14 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
   }
 
   async function openThread(thread: any) {
+    if (thread.conversation_type === "external" || thread.source_type === "external") {
+      const params = new URLSearchParams(window.location.search);
+      params.set("section", "external");
+      params.set("conversationId", String(thread.id));
+      window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+      setMessagesView("external");
+      return;
+    }
     setStatus("");
     try {
       const response = await fetch(`${API_BASE_URL}/admin/inbox/${thread.id}`, { headers: auth });
@@ -12223,6 +12644,16 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
     }
   }
 
+  function openInquiryExternal(thread: any) {
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", "inbox");
+    params.set("section", "external");
+    params.set("inquiryId", String(thread.id));
+    params.delete("conversationId");
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+    setMessagesView("external");
+  }
+
   return <section className={`admin-editor inbox-panel ${selected ? "inbox-has-selection" : ""}`}>
     <div className="inbox-heading">
       <div>
@@ -12231,11 +12662,13 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
       </div>
     </div>
     <div className="inbox-subnav" role="tablist" aria-label={t("inbox.title")}>
-      <button type="button" role="tab" aria-selected={messagesView === "conversations"} onClick={() => setMessagesView("conversations")}>{t("inbox.conversationsTab")}</button>
+      <button type="button" role="tab" aria-selected={messagesView === "conversations"} onClick={() => { setMessagesView("conversations"); window.history.replaceState({}, "", `${window.location.pathname}?tab=inbox`); }}>{t("inbox.conversationsTab")}</button>
       {sessionHasPermission(session, "whatsapp.send_custom") ? <><button type="button" role="tab" aria-selected={messagesView === "custom"} onClick={() => setMessagesView("custom")}>{t("inbox.customTab")}</button><button type="button" role="tab" aria-selected={messagesView === "history"} onClick={() => setMessagesView("history")}>{t("inbox.customHistoryTab")}</button></> : null}
+      <button type="button" role="tab" aria-selected={messagesView === "external"} onClick={() => { setMessagesView("external"); const params = new URLSearchParams(window.location.search); params.set("section", "external"); params.delete("conversationId"); window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`); }}>{t("inbox.externalTab")}</button>
     </div>
     {messagesView === "custom" && sessionHasPermission(session, "whatsapp.send_custom") ? <CustomWhatsAppComposer session={session} language={language} t={t} /> : null}
     {messagesView === "history" && sessionHasPermission(session, "whatsapp.send_custom") ? <CustomWhatsAppHistory session={session} language={language} t={t} /> : null}
+    {messagesView === "external" ? <ExternalMessagingPanel session={session} language={language} t={t} /> : null}
     {messagesView === "conversations" ? <>
     <div className="inbox-toolbar">
       <div className="inbox-toolbar-primary">
@@ -12305,10 +12738,10 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
                 />
               </label>
               <button className={`inbox-thread ${selected?.id === thread.id ? "active" : ""} ${isUnread ? "unread" : "read"}`} type="button" onClick={() => openThread(thread)}>
-                <div className="inbox-thread-identity"><strong>{inboxContactLabel(thread, t)}</strong><small className={`inbox-source-badge ${thread.source_type}`}>{thread.source_type === "registered_student" ? t("inbox.sourceRegistered") : t("inbox.sourcePublic")}</small>{isUnread ? <b aria-label={t("inbox.unread")}>{thread.unread_count}</b> : null}</div>
+                <div className="inbox-thread-identity"><strong>{thread.source_type === "external" ? (thread.display_name || thread.display_phone) : inboxContactLabel(thread, t)}</strong><small className={`inbox-source-badge ${thread.source_type}`}>{thread.source_type === "registered_student" ? t("inbox.sourceRegistered") : thread.source_type === "external" ? t("inbox.externalTab") : t("inbox.sourcePublic")}</small>{isUnread ? <b aria-label={t("inbox.unread")}>{thread.unread_count}</b> : null}</div>
                 <span className="inbox-thread-subject">{inboxSubjectLabel(thread.subject, t)}</span>
                 {thread.source_type === "registered_student" ? <small>{thread.student_code || thread.student_serial || "—"} · {thread.group_name || "—"} · {thread.grade_level || "—"}</small> : null}
-                {thread.public_phone ? <small className="inbox-phone">{t("contact.phone")}: {thread.public_phone}</small> : null}
+                {thread.source_type === "external" ? <small className="inbox-phone" dir="ltr">{thread.display_phone || thread.canonical_phone}</small> : thread.public_phone ? <small className="inbox-phone">{t("contact.phone")}: {thread.public_phone}</small> : null}
                 <span className="inbox-thread-preview">{thread.group_name ? `${thread.group_name} · ` : ""}{thread.last_message || "—"}</span>
                 <div className="inbox-thread-footer"><em className={isUnread ? "unread" : "read"}>{thread.read_status === "unread" ? t("inbox.unread") : t("inbox.read")}</em>{threadTimestamp ? <time dateTime={typeof threadTimestamp === "string" ? threadTimestamp : undefined}>{formatInboxTimestamp(threadTimestamp, language)}</time> : null}</div>
               </button>
@@ -12323,7 +12756,7 @@ function StaffInboxControls({ session, language, t, onUnreadCountChange }: { ses
             <div>
               <p className="eyebrow">{t("inbox.conversationDetails")}</p>
               <h3>{inboxSubjectLabel(selected.subject, t)}</h3>
-              <p className="inbox-contact-details"><strong>{inboxContactLabel(selected, t)}</strong><small className={`inbox-source-badge ${selected.source_type}`}>{selected.source_type === "registered_student" ? t("inbox.sourceRegistered") : t("inbox.sourcePublic")}</small>{selected.source_type === "registered_student" ? <span>{selected.student_code || selected.student_serial || "—"} · {selected.group_name || "—"} · {selected.grade_level || "—"}</span> : selected.public_phone ? <a href={`tel:${selected.public_phone}`}>{t("contact.phone")}: {selected.public_phone}</a> : null}</p>
+              <p className="inbox-contact-details"><strong>{inboxContactLabel(selected, t)}</strong><small className={`inbox-source-badge ${selected.source_type}`}>{selected.source_type === "registered_student" ? t("inbox.sourceRegistered") : t("inbox.sourcePublic")}</small>{selected.source_type === "registered_student" ? <span>{selected.student_code || selected.student_serial || "—"} · {selected.group_name || "—"} · {selected.grade_level || "—"}</span> : selected.public_phone ? <a href={`tel:${selected.public_phone}`} onClick={(event) => { event.preventDefault(); openInquiryExternal(selected); }}>{t("contact.phone")}: {selected.public_phone}</a> : null}</p>
             </div>
           </div>
           <div className="inbox-messages">{messages.length ? messages.map((message) => <article className={`inbox-message ${["admin", "teacher", "assistant"].includes(message.sender_type) ? "mine" : ""} ${message.is_read ? "read" : "unread"}`} key={message.id}>
@@ -12589,6 +13022,11 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   const [loading, setLoading] = useState(true);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [statusTone, setStatusTone] = useState<"success" | "error">("error");
+  const [historyFilterReset, setHistoryFilterReset] = useState(false);
+  const [savedResultNotice, setSavedResultNotice] = useState(false);
+  const [savedResultId, setSavedResultId] = useState<number | null>(null);
+  const [highlightedRecordId, setHighlightedRecordId] = useState<number | null>(null);
   const [deletingRecordId, setDeletingRecordId] = useState<number | null>(null);
   const [sendingGradeId, setSendingGradeId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(() => new Set());
@@ -12597,25 +13035,30 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   const [batchToast, setBatchToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
   const batchToastTimerRef = useRef<number | null>(null);
+  const statusTimerRef = useRef<number | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
   const canSendGrades = sessionHasPermission(session, "whatsapp.send_grades");
 
   useEscapeKey(Boolean(batchConfirmOpen) && !batchMutating, () => setBatchConfirmOpen(false));
 
   const recordsQuery = useMemo(() => {
     const params = new URLSearchParams();
-    if (selectedGroup) params.set("group_id", selectedGroup);
-    const locationParams = new URLSearchParams(window.location.search);
-    if (locationParams.get("exam_id")) params.set("exam_id", locationParams.get("exam_id") || "");
-    if (locationParams.get("maxScorePercentage")) params.set("maxScorePercentage", locationParams.get("maxScorePercentage") || "");
-    if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
-    if (recordDate) params.set("date", recordDate);
+    if (!historyFilterReset) {
+      if (selectedGroup) params.set("group_id", selectedGroup);
+      const locationParams = new URLSearchParams(window.location.search);
+      if (locationParams.get("exam_id")) params.set("exam_id", locationParams.get("exam_id") || "");
+      if (locationParams.get("maxScorePercentage")) params.set("maxScorePercentage", locationParams.get("maxScorePercentage") || "");
+      if (recordSearch.trim()) params.set("search", normalizeDigits(recordSearch.trim()));
+      if (recordDate) params.set("date", recordDate);
+    }
     return params.toString();
-  }, [selectedGroup, recordDate, recordSearch]);
+  }, [historyFilterReset, selectedGroup, recordDate, recordSearch]);
 
   useEffect(() => {
     const syncLocation = () => {
       const params = new URLSearchParams(window.location.search);
       setSelectedGroup(params.get("group_id") || "");
+      setHistoryFilterReset(false);
       if (params.get("exam_id")) setRecordSearch("");
     };
     window.addEventListener("popstate", syncLocation);
@@ -12640,7 +13083,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   useEffect(() => {
     let cancelled = false;
     setRecordsLoading(true);
-    fetch(`${API_BASE_URL}/admin/exams/results?${recordsQuery}`, { headers: { Authorization: `Bearer ${session.token}` } })
+    fetch(`${API_BASE_URL}/admin/exams/results?${recordsQuery}`, { cache: "no-store", headers: { Authorization: `Bearer ${session.token}` } })
       .then(async (response) => {
         const data = await response.json();
         if (!response.ok || !data.ok) throw new Error(t("admin.profileLoadFailed"));
@@ -12654,7 +13097,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   useEffect(() => {
     if (!records.some((record) => ["pending", "processing"].includes(String(record.whatsapp_status)))) return undefined;
     const timer = window.setInterval(() => {
-      fetch(`${API_BASE_URL}/admin/exams/results?${recordsQuery}`, { headers: { Authorization: `Bearer ${session.token}` } })
+      fetch(`${API_BASE_URL}/admin/exams/results?${recordsQuery}`, { cache: "no-store", headers: { Authorization: `Bearer ${session.token}` } })
         .then((response) => response.json())
         .then((data) => { if (data.ok) setRecords(Array.isArray(data.results) ? data.results as ExamResultRecord[] : []); })
         .catch(() => undefined);
@@ -12664,6 +13107,8 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
 
   useEffect(() => () => {
     if (batchToastTimerRef.current !== null) window.clearTimeout(batchToastTimerRef.current);
+    if (statusTimerRef.current !== null) window.clearTimeout(statusTimerRef.current);
+    if (highlightTimerRef.current !== null) window.clearTimeout(highlightTimerRef.current);
   }, []);
 
   const visibleStudents = students.filter((student) => {
@@ -12685,15 +13130,60 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
   const selectedStudent = students.find((student) => String(student.id) === form.student_id);
   const liveEvaluation = scoreEvaluation(form.score, form.max_score, t);
 
+  function showSuccessStatus(message: string) {
+    if (statusTimerRef.current !== null) window.clearTimeout(statusTimerRef.current);
+    setStatusTone("success");
+    setStatus(message);
+    statusTimerRef.current = window.setTimeout(() => {
+      setStatus("");
+      statusTimerRef.current = null;
+    }, 5000);
+  }
+
+  function showErrorStatus(message: string) {
+    if (statusTimerRef.current !== null) window.clearTimeout(statusTimerRef.current);
+    setStatusTone("error");
+    setStatus(message);
+  }
+
+  function highlightSavedRecord(recordId: number) {
+    if (highlightTimerRef.current !== null) window.clearTimeout(highlightTimerRef.current);
+    setHighlightedRecordId(recordId);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`exam-result-${recordId}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    highlightTimerRef.current = window.setTimeout(() => {
+      setHighlightedRecordId(null);
+      highlightTimerRef.current = null;
+    }, 4500);
+  }
+
+  function revealSavedResult() {
+    setHistoryFilterReset(true);
+    setRecordSearch("");
+    setRecordDate("");
+    setSavedResultNotice(false);
+  }
+
+  useEffect(() => {
+    if (savedResultId === null) return;
+    if (!records.some((record) => Number(record.id) === savedResultId)) return;
+    highlightSavedRecord(savedResultId);
+    setSavedResultId(null);
+    setSavedResultNotice(false);
+  }, [records, savedResultId]);
+
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setStatus("");
     const maxScore = Number(normalizeDigits(form.max_score));
     const score = Number(normalizeDigits(form.score));
     if (!form.student_id || !form.title.trim() || !form.exam_date || !form.max_score.trim() || !form.score.trim() || !Number.isFinite(maxScore) || maxScore <= 0 || !Number.isFinite(score) || score < 0 || score > maxScore) {
-      setStatus(t("admin.invalidExamResult"));
+      showErrorStatus(t("admin.invalidExamResult"));
       return;
     }
+    const savedStudentName = selectedStudent?.full_name || selectedStudent?.student_code || t("admin.selectedStudent");
+    const savedScore = `${score}/${maxScore}`;
     setSaving(true);
     try {
       const response = await fetch(`${API_BASE_URL}/admin/exams/results`, {
@@ -12703,13 +13193,23 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
       });
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.status === "invalid_exam_result" ? t("admin.invalidExamResult") : t("errors.loginFailed"));
-      setStatus(t("admin.examResultSaved"));
+      const savedResultId = Number(data.result?.id);
+      if (!Number.isSafeInteger(savedResultId) || savedResultId <= 0) throw new Error(t("errors.loginFailed"));
+      setRecordsExpanded(true);
+      setSavedResultNotice(false);
+      setSavedResultId(savedResultId);
+      showSuccessStatus(t("admin.examResultSavedContext", { student: savedStudentName, result: savedScore }));
       setForm((current) => ({ ...current, score: "", assessment: "" }));
-      const refreshed = await fetch(`${API_BASE_URL}/admin/exams/results?${recordsQuery}`, { headers: { Authorization: `Bearer ${session.token}` } });
+      const refreshed = await fetch(`${API_BASE_URL}/admin/exams/results?${recordsQuery}`, { cache: "no-store", headers: { Authorization: `Bearer ${session.token}` } });
       const refreshedData = await refreshed.json();
-      if (refreshed.ok && refreshedData.ok) setRecords(Array.isArray(refreshedData.results) ? refreshedData.results as ExamResultRecord[] : []);
+      if (!refreshed.ok || !refreshedData.ok) throw new Error(t("admin.profileLoadFailed"));
+      const refreshedRecords = Array.isArray(refreshedData.results) ? refreshedData.results as ExamResultRecord[] : [];
+      setRecords(refreshedRecords);
+      if (!refreshedRecords.some((record) => Number(record.id) === savedResultId)) {
+        setSavedResultNotice(true);
+      }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+      showErrorStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
     } finally {
       setSaving(false);
     }
@@ -12732,9 +13232,9 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
         next.delete(recordId);
         return next;
       });
-      setStatus(t("admin.examResultDeleted"));
+      showSuccessStatus(t("admin.examResultDeleted"));
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
+      showErrorStatus(error instanceof Error ? error.message : t("errors.loginFailed"));
     } finally {
       setDeletingRecordId(null);
     }
@@ -12850,7 +13350,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
       <form onSubmit={save} className="exam-result-form">
         <div className="exam-filter-grid">
           <label>{t("admin.selectGroup")}
-            <select value={selectedGroup} onChange={(event) => { setSelectedGroup(event.target.value); setForm((current) => ({ ...current, student_id: "" })); }} disabled={loading}>
+            <select value={selectedGroup} onChange={(event) => { setHistoryFilterReset(false); setSelectedGroup(event.target.value); setForm((current) => ({ ...current, student_id: "" })); }} disabled={loading}>
               <option value="">{t("admin.allGroups")}</option>
               {groups.map((group) => <option key={group.id} value={group.id}>{group.display_name || group.name}</option>)}
             </select>
@@ -12873,7 +13373,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
         {liveEvaluation ? <div className={`score-evaluation score-${liveEvaluation.tone}`}><span>{t("admin.evaluationPreview")}</span><strong>{liveEvaluation.label}</strong><small>{liveEvaluation.percentage.toFixed(0)}%</small></div> : null}
         <label className="exam-assessment-field">{t("admin.assessment")}<textarea rows={4} value={form.assessment} onChange={(event) => setForm((current) => ({ ...current, assessment: event.target.value }))} placeholder={t("admin.assessmentPlaceholder")} /></label>
         <button className="primary-button" type="submit" disabled={saving || loading}>{saving ? t("admin.saving") : t("admin.saveExamResult")}</button>
-        {status ? <p className={status === t("admin.examResultSaved") || status === t("admin.examResultDeleted") ? "lookup-result" : "form-error"}>{status}</p> : null}
+        {status ? <p className={statusTone === "success" ? "lookup-result" : "form-error"} role="status">{status}</p> : null}
       </form>
       <div className="exam-records">
         <div className="exam-records-heading">
@@ -12884,17 +13384,18 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
           </button>
         </div>
         {recordsExpanded ? <>
+          {savedResultNotice ? <div className="exam-result-filter-notice" role="status"><span>{t("admin.examResultHiddenByFilters")}</span><button className="secondary-button compact-button" type="button" onClick={revealSavedResult}>{t("admin.showSavedExamResult")}</button></div> : null}
           <div className="exam-records-toolbar">
             <label className="exam-records-search">{t("admin.searchExamRecords")}
-              <input value={recordSearch} onChange={(event) => setRecordSearch(event.target.value)} placeholder="A-6251" />
+              <input value={recordSearch} onChange={(event) => { setHistoryFilterReset(false); setRecordSearch(event.target.value); }} placeholder="A-6251" />
             </label>
             <label className="exam-records-date-filter">{t("admin.examDateFilter")}
               <div className="exam-date-filter-controls">
-                <select value={recordDate || "all"} onChange={(event) => setRecordDate(event.target.value === "all" ? "" : event.target.value)} aria-label={t("admin.examDateFilter")}>
+                <select value={recordDate || "all"} onChange={(event) => { setHistoryFilterReset(false); setRecordDate(event.target.value === "all" ? "" : event.target.value); }} aria-label={t("admin.examDateFilter")}>
                   <option value="all">{t("admin.allTime")}</option>
                   {recordDate ? <option value={recordDate}>{formatExamResultDate(recordDate)}</option> : null}
                 </select>
-                <input type="date" value={recordDate} onChange={(event) => setRecordDate(event.target.value)} aria-label={t("admin.examDateFilter")} />
+                <input type="date" value={recordDate} onChange={(event) => { setHistoryFilterReset(false); setRecordDate(event.target.value); }} aria-label={t("admin.examDateFilter")} />
               </div>
             </label>
           </div>
@@ -12931,7 +13432,7 @@ function ExamResultsManager({ session, language, t }: { session: TeacherSession;
                     const deliveryLabel = deliveryState === "sent" ? t("whatsapp.gradeStatusSent") : deliveryState === "failed" ? t("whatsapp.gradeStatusFailed") : deliveryState === "processing" ? t("whatsapp.gradeStatusSending") : deliveryState === "pending" ? t("whatsapp.gradeStatusQueued") : t("whatsapp.notSent");
                     const buttonLabel = deliveryState === "failed" ? t("whatsapp.retryGrade") : deliveryState === "sent" ? t("whatsapp.sendGradeAgain") : deliveryState === "processing" ? t("whatsapp.sendingGrade") : t("whatsapp.sendGrade");
                     const deliveryTimestamp = deliveryState === "sent" ? (record.whatsapp_sent_at || record.whatsapp_last_updated) : record.whatsapp_last_updated;
-                    return <tr key={resultId}>
+                    return <tr id={`exam-result-${resultId}`} className={highlightedRecordId === resultId ? "exam-result-row-highlight" : undefined} key={resultId}>
                       <td className="exam-selection-column">
                         <input
                           type="checkbox"

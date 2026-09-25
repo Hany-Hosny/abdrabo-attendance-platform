@@ -15,6 +15,7 @@ import { adminSearchRouter } from "./routes/adminSearch.js";
 import { adminNotificationsRouter } from "./routes/adminNotifications.js";
 import { operationsRouter } from "./routes/operations.js";
 import { inboxRouter, staffInboxRouter } from "./routes/inbox.js";
+import { externalMessagingRouter } from "./routes/externalMessaging.js";
 import { whatsappRouter } from "./routes/whatsapp.js";
 import { assistantRouter } from "./routes/assistant.js";
 import { ensureMonthlyFees } from "./services/fees.js";
@@ -112,6 +113,7 @@ app.use("/api/admin", adminAcademicRouter);
 app.use("/api", assistantRouter);
 app.use("/api", operationsRouter);
 app.use("/api/admin", operationsRouter);
+app.use("/api/admin/inbox/external", externalMessagingRouter);
 app.use("/api/admin", staffInboxRouter);
 app.use("/api/whatsapp", whatsappRouter);
 
