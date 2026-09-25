@@ -1,0 +1,29 @@
+{
+  "project": "iphone-se-3rd-gen",
+  "route": "/teacher/dashboard?tab=settings",
+  "expected": {
+    "width": 375,
+    "height": 667
+  },
+  "actual": {
+    "width": 375,
+    "height": 667
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 375,
+    "bodyWidth": 375,
+    "height": 3727
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 597,
+    "finalBottom": 586.359375
+  },
+  "clippedActions": [
+    "+ إضافة مزود"
+  ]
+}

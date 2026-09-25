@@ -1,0 +1,27 @@
+{
+  "project": "iphone-15",
+  "route": "/teacher/dashboard?tab=fees",
+  "expected": {
+    "width": 393,
+    "height": 852
+  },
+  "actual": {
+    "width": 393,
+    "height": 852
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 393,
+    "bodyWidth": 393,
+    "height": 852
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 782,
+    "finalBottom": 425.40625
+  },
+  "clippedActions": []
+}

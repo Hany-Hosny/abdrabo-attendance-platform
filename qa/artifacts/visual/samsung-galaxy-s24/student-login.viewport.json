@@ -1,0 +1,26 @@
+{
+  "project": "samsung-galaxy-s24",
+  "route": "/student/login",
+  "expected": {
+    "width": 360,
+    "height": 780
+  },
+  "actual": {
+    "width": 360,
+    "height": 780
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 360,
+    "bodyWidth": 360,
+    "height": 780
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 611.59375
+  },
+  "clippedActions": []
+}

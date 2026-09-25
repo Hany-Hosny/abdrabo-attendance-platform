@@ -1,0 +1,27 @@
+{
+  "project": "generic-narrow-320",
+  "route": "/teacher/dashboard?tab=fees",
+  "expected": {
+    "width": 320,
+    "height": 640
+  },
+  "actual": {
+    "width": 320,
+    "height": 640
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 320,
+    "bodyWidth": 320,
+    "height": 640
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 565,
+    "finalBottom": 419.265625
+  },
+  "clippedActions": []
+}

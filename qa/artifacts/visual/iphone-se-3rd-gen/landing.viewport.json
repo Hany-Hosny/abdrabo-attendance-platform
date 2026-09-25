@@ -1,0 +1,26 @@
+{
+  "project": "iphone-se-3rd-gen",
+  "route": "/",
+  "expected": {
+    "width": 375,
+    "height": 667
+  },
+  "actual": {
+    "width": 375,
+    "height": 667
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 375,
+    "bodyWidth": 375,
+    "height": 667
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 2622.765625
+  },
+  "clippedActions": []
+}

@@ -1,0 +1,26 @@
+{
+  "project": "ipad-10th-gen",
+  "route": "/",
+  "expected": {
+    "width": 820,
+    "height": 1180
+  },
+  "actual": {
+    "width": 820,
+    "height": 1180
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 820,
+    "bodyWidth": 820,
+    "height": 1180
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 2337.1875
+  },
+  "clippedActions": []
+}

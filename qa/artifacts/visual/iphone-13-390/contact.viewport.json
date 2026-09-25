@@ -1,0 +1,17 @@
+{
+  "project": "iphone-13-390",
+  "route": "/contact",
+  "expected": {
+    "width": 390,
+    "height": 844
+  },
+  "actual": {
+    "width": 390,
+    "height": 844
+  },
+  "document": {
+    "width": 390,
+    "height": 844
+  },
+  "direction": "rtl"
+}

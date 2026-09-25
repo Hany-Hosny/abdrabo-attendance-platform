@@ -1,0 +1,26 @@
+{
+  "project": "iphone-15-pro-max",
+  "route": "/notifications",
+  "expected": {
+    "width": 430,
+    "height": 932
+  },
+  "actual": {
+    "width": 430,
+    "height": 932
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 430,
+    "bodyWidth": 430,
+    "height": 973
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 769.375
+  },
+  "clippedActions": []
+}

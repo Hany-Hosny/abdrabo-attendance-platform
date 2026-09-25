@@ -1,0 +1,26 @@
+{
+  "project": "oneplus-12",
+  "route": "/student/login",
+  "expected": {
+    "width": 450,
+    "height": 1000
+  },
+  "actual": {
+    "width": 450,
+    "height": 1000
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 450,
+    "bodyWidth": 450,
+    "height": 1000
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 718.59375
+  },
+  "clippedActions": []
+}

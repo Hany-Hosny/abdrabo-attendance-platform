@@ -1,0 +1,27 @@
+{
+  "project": "iphone-15-pro-max",
+  "route": "/teacher/dashboard",
+  "expected": {
+    "width": 430,
+    "height": 932
+  },
+  "actual": {
+    "width": 430,
+    "height": 932
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 430,
+    "bodyWidth": 430,
+    "height": 3299
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": true,
+    "navTop": 862,
+    "finalBottom": 872.328125
+  },
+  "clippedActions": []
+}

@@ -1,0 +1,27 @@
+{
+  "project": "iphone-se-3rd-gen",
+  "route": "/teacher/dashboard?tab=students",
+  "expected": {
+    "width": 375,
+    "height": 667
+  },
+  "actual": {
+    "width": 375,
+    "height": 667
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 375,
+    "bodyWidth": 375,
+    "height": 2420
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 597,
+    "finalBottom": 584.625
+  },
+  "clippedActions": []
+}

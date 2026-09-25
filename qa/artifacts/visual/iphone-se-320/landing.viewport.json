@@ -1,0 +1,17 @@
+{
+  "project": "iphone-se-320",
+  "route": "/",
+  "expected": {
+    "width": 320,
+    "height": 568
+  },
+  "actual": {
+    "width": 320,
+    "height": 568
+  },
+  "document": {
+    "width": 320,
+    "height": 568
+  },
+  "direction": "rtl"
+}

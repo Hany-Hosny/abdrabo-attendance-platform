@@ -1,0 +1,26 @@
+{
+  "project": "desktop-regression",
+  "route": "/notifications",
+  "expected": {
+    "width": 1440,
+    "height": 900
+  },
+  "actual": {
+    "width": 1440,
+    "height": 900
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 1440,
+    "bodyWidth": 1440,
+    "height": 900
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 615.03125
+  },
+  "clippedActions": []
+}

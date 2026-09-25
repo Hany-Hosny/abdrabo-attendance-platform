@@ -1,0 +1,26 @@
+{
+  "project": "iphone-15",
+  "route": "/notifications",
+  "expected": {
+    "width": 393,
+    "height": 852
+  },
+  "actual": {
+    "width": 393,
+    "height": 852
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 393,
+    "bodyWidth": 393,
+    "height": 1001
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 671.375
+  },
+  "clippedActions": []
+}

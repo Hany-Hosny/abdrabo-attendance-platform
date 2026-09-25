@@ -1,0 +1,26 @@
+{
+  "project": "ipad-air-11",
+  "route": "/",
+  "expected": {
+    "width": 834,
+    "height": 1194
+  },
+  "actual": {
+    "width": 834,
+    "height": 1194
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 834,
+    "bodyWidth": 834,
+    "height": 1194
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 2344.546875
+  },
+  "clippedActions": []
+}

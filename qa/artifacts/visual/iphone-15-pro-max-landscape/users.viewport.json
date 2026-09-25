@@ -1,0 +1,27 @@
+{
+  "project": "iphone-15-pro-max-landscape",
+  "route": "/teacher/dashboard?tab=users",
+  "expected": {
+    "width": 932,
+    "height": 430
+  },
+  "actual": {
+    "width": 932,
+    "height": 430
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 932,
+    "bodyWidth": 932,
+    "height": 880
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "navTop": 0,
+    "finalBottom": 276.875
+  },
+  "clippedActions": []
+}

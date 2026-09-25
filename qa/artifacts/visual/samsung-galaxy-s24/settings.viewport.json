@@ -1,0 +1,29 @@
+{
+  "project": "samsung-galaxy-s24",
+  "route": "/teacher/dashboard?tab=settings",
+  "expected": {
+    "width": 360,
+    "height": 780
+  },
+  "actual": {
+    "width": 360,
+    "height": 780
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 360,
+    "bodyWidth": 360,
+    "height": 3726
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 710,
+    "finalBottom": 699.09375
+  },
+  "clippedActions": [
+    "+ إضافة مزود"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "project": "samsung-galaxy-a56",
+  "route": "/contact",
+  "expected": {
+    "width": 412,
+    "height": 915
+  },
+  "actual": {
+    "width": 412,
+    "height": 915
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 412,
+    "bodyWidth": 412,
+    "height": 915
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 1810.1875
+  },
+  "clippedActions": []
+}

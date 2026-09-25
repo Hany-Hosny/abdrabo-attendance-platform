@@ -1,0 +1,27 @@
+{
+  "project": "samsung-galaxy-a56",
+  "route": "/teacher/dashboard?tab=fees",
+  "expected": {
+    "width": 412,
+    "height": 915
+  },
+  "actual": {
+    "width": 412,
+    "height": 915
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 412,
+    "bodyWidth": 412,
+    "height": 915
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 845,
+    "finalBottom": 427
+  },
+  "clippedActions": []
+}

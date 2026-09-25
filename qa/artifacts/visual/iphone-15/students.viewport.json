@@ -1,0 +1,27 @@
+{
+  "project": "iphone-15",
+  "route": "/teacher/dashboard?tab=students",
+  "expected": {
+    "width": 393,
+    "height": 852
+  },
+  "actual": {
+    "width": 393,
+    "height": 852
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 393,
+    "bodyWidth": 393,
+    "height": 2849
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": true,
+    "navTop": 782,
+    "finalBottom": 786.140625
+  },
+  "clippedActions": []
+}

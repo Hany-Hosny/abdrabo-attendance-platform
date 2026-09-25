@@ -1,0 +1,29 @@
+{
+  "project": "iphone-16-pro-max-class",
+  "route": "/teacher/dashboard?tab=settings",
+  "expected": {
+    "width": 440,
+    "height": 956
+  },
+  "actual": {
+    "width": 440,
+    "height": 956
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 440,
+    "bodyWidth": 440,
+    "height": 3697
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": true,
+    "navTop": 886,
+    "finalBottom": 891.8125
+  },
+  "clippedActions": [
+    "+ إضافة مزود"
+  ]
+}

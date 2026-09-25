@@ -1,0 +1,26 @@
+{
+  "project": "iphone-13-mini",
+  "route": "/about-teacher",
+  "expected": {
+    "width": 375,
+    "height": 812
+  },
+  "actual": {
+    "width": 375,
+    "height": 812
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 375,
+    "bodyWidth": 375,
+    "height": 812
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 696.484375
+  },
+  "clippedActions": []
+}

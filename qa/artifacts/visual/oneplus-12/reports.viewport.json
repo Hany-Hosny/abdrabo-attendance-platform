@@ -1,0 +1,27 @@
+{
+  "project": "oneplus-12",
+  "route": "/teacher/dashboard?tab=reports",
+  "expected": {
+    "width": 450,
+    "height": 1000
+  },
+  "actual": {
+    "width": 450,
+    "height": 1000
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 450,
+    "bodyWidth": 450,
+    "height": 1088
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 930,
+    "finalBottom": 912.140625
+  },
+  "clippedActions": []
+}

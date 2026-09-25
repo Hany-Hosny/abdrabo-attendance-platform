@@ -1,0 +1,26 @@
+{
+  "project": "ipad-10th-gen-landscape",
+  "route": "/notifications",
+  "expected": {
+    "width": 1180,
+    "height": 820
+  },
+  "actual": {
+    "width": 1180,
+    "height": 820
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 1180,
+    "bodyWidth": 1180,
+    "height": 820
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 615.03125
+  },
+  "clippedActions": []
+}

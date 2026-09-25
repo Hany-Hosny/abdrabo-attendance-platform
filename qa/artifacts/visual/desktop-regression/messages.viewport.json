@@ -1,0 +1,27 @@
+{
+  "project": "desktop-regression",
+  "route": "/teacher/dashboard?tab=inbox",
+  "expected": {
+    "width": 1440,
+    "height": 900
+  },
+  "actual": {
+    "width": 1440,
+    "height": 900
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 1440,
+    "bodyWidth": 1440,
+    "height": 1197
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "navTop": 0,
+    "finalBottom": 475.5
+  },
+  "clippedActions": []
+}

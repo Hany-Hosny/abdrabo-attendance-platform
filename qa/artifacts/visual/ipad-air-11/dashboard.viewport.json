@@ -1,0 +1,27 @@
+{
+  "project": "ipad-air-11",
+  "route": "/teacher/dashboard",
+  "expected": {
+    "width": 834,
+    "height": 1194
+  },
+  "actual": {
+    "width": 834,
+    "height": 1194
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 864,
+    "bodyWidth": 864,
+    "height": 2620
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "navTop": 0,
+    "finalBottom": 923.671875
+  },
+  "clippedActions": []
+}

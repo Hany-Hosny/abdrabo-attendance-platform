@@ -1,0 +1,26 @@
+{
+  "project": "generic-narrow-320",
+  "route": "/",
+  "expected": {
+    "width": 320,
+    "height": 640
+  },
+  "actual": {
+    "width": 320,
+    "height": 640
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 320,
+    "bodyWidth": 320,
+    "height": 640
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 2606.296875
+  },
+  "clippedActions": []
+}

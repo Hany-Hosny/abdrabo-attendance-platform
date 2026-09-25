@@ -1,0 +1,27 @@
+{
+  "project": "samsung-galaxy-tab-s9-s10",
+  "route": "/teacher/dashboard?tab=groups",
+  "expected": {
+    "width": 800,
+    "height": 1280
+  },
+  "actual": {
+    "width": 800,
+    "height": 1280
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 845,
+    "bodyWidth": 845,
+    "height": 1586
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "navTop": 0,
+    "finalBottom": 1134.375
+  },
+  "clippedActions": []
+}

@@ -1,0 +1,26 @@
+{
+  "project": "samsung-galaxy-tab-s9-s10-landscape",
+  "route": "/contact",
+  "expected": {
+    "width": 1280,
+    "height": 800
+  },
+  "actual": {
+    "width": 1280,
+    "height": 800
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 1280,
+    "bodyWidth": 1280,
+    "height": 800
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 1378.640625
+  },
+  "clippedActions": []
+}

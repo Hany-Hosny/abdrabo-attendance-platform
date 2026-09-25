@@ -1,0 +1,26 @@
+{
+  "project": "iphone-15-pro-max-landscape",
+  "route": "/notifications",
+  "expected": {
+    "width": 932,
+    "height": 430
+  },
+  "actual": {
+    "width": 932,
+    "height": 430
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 932,
+    "bodyWidth": 932,
+    "height": 752
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 269.84375
+  },
+  "clippedActions": []
+}

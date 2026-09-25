@@ -1,0 +1,27 @@
+{
+  "project": "google-pixel-8",
+  "route": "/teacher/dashboard",
+  "expected": {
+    "width": 412,
+    "height": 915
+  },
+  "actual": {
+    "width": 412,
+    "height": 915
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 412,
+    "bodyWidth": 412,
+    "height": 3297
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": true,
+    "navTop": 845,
+    "finalBottom": 855.828125
+  },
+  "clippedActions": []
+}

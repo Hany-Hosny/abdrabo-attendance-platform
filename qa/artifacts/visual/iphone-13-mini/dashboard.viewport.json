@@ -1,0 +1,27 @@
+{
+  "project": "iphone-13-mini",
+  "route": "/teacher/dashboard",
+  "expected": {
+    "width": 375,
+    "height": 812
+  },
+  "actual": {
+    "width": 375,
+    "height": 812
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 375,
+    "bodyWidth": 375,
+    "height": 3306
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 742,
+    "finalBottom": 735.953125
+  },
+  "clippedActions": []
+}

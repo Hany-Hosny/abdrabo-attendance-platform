@@ -1,0 +1,26 @@
+{
+  "project": "iphone-15",
+  "route": "/student/login",
+  "expected": {
+    "width": 393,
+    "height": 852
+  },
+  "actual": {
+    "width": 393,
+    "height": 852
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 393,
+    "bodyWidth": 393,
+    "height": 852
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 647.59375
+  },
+  "clippedActions": []
+}

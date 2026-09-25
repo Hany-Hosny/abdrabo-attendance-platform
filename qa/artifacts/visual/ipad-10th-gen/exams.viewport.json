@@ -1,0 +1,27 @@
+{
+  "project": "ipad-10th-gen",
+  "route": "/teacher/dashboard?tab=exams",
+  "expected": {
+    "width": 820,
+    "height": 1180
+  },
+  "actual": {
+    "width": 820,
+    "height": 1180
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 856,
+    "bodyWidth": 856,
+    "height": 1180
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "navTop": 0,
+    "finalBottom": 917.390625
+  },
+  "clippedActions": []
+}

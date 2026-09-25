@@ -1,0 +1,29 @@
+{
+  "project": "iphone-15",
+  "route": "/teacher/dashboard?tab=settings",
+  "expected": {
+    "width": 393,
+    "height": 852
+  },
+  "actual": {
+    "width": 393,
+    "height": 852
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 393,
+    "bodyWidth": 393,
+    "height": 3712
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": true,
+    "navTop": 782,
+    "finalBottom": 787.875
+  },
+  "clippedActions": [
+    "+ إضافة مزود"
+  ]
+}

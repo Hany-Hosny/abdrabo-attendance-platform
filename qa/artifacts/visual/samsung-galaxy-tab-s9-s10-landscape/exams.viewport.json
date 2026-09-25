@@ -1,0 +1,27 @@
+{
+  "project": "samsung-galaxy-tab-s9-s10-landscape",
+  "route": "/teacher/dashboard?tab=exams",
+  "expected": {
+    "width": 1280,
+    "height": 800
+  },
+  "actual": {
+    "width": 1280,
+    "height": 800
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 1280,
+    "bodyWidth": 1280,
+    "height": 999
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "navTop": 0,
+    "finalBottom": 648.5625
+  },
+  "clippedActions": []
+}

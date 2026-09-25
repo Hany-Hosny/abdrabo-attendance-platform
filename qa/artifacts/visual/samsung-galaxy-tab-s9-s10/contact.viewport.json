@@ -1,0 +1,26 @@
+{
+  "project": "samsung-galaxy-tab-s9-s10",
+  "route": "/contact",
+  "expected": {
+    "width": 800,
+    "height": 1280
+  },
+  "actual": {
+    "width": 800,
+    "height": 1280
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 800,
+    "bodyWidth": 800,
+    "height": 1280
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 1369.609375
+  },
+  "clippedActions": []
+}

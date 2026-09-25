@@ -1,0 +1,27 @@
+{
+  "project": "samsung-galaxy-tab-s9-s10",
+  "route": "/teacher/dashboard?tab=scanner",
+  "expected": {
+    "width": 800,
+    "height": 1280
+  },
+  "actual": {
+    "width": 800,
+    "height": 1280
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 845,
+    "bodyWidth": 845,
+    "height": 1280
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "navTop": 0,
+    "finalBottom": 492.78125
+  },
+  "clippedActions": []
+}

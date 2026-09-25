@@ -1,0 +1,26 @@
+{
+  "project": "desktop-regression",
+  "route": "/student/login",
+  "expected": {
+    "width": 1440,
+    "height": 900
+  },
+  "actual": {
+    "width": 1440,
+    "height": 900
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 1440,
+    "bodyWidth": 1440,
+    "height": 900
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 635.59375
+  },
+  "clippedActions": []
+}

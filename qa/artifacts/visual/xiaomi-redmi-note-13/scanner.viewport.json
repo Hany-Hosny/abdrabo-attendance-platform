@@ -1,0 +1,27 @@
+{
+  "project": "xiaomi-redmi-note-13",
+  "route": "/teacher/dashboard?tab=scanner",
+  "expected": {
+    "width": 393,
+    "height": 873
+  },
+  "actual": {
+    "width": 393,
+    "height": 873
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 393,
+    "bodyWidth": 393,
+    "height": 873
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 803,
+    "finalBottom": 447.203125
+  },
+  "clippedActions": []
+}

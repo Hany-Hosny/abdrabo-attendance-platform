@@ -1,0 +1,26 @@
+{
+  "project": "iphone-16-pro-max-class",
+  "route": "/student/login",
+  "expected": {
+    "width": 440,
+    "height": 956
+  },
+  "actual": {
+    "width": 440,
+    "height": 956
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 440,
+    "bodyWidth": 440,
+    "height": 956
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 696.59375
+  },
+  "clippedActions": []
+}

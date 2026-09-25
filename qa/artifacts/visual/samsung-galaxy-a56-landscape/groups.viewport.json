@@ -1,0 +1,27 @@
+{
+  "project": "samsung-galaxy-a56-landscape",
+  "route": "/teacher/dashboard?tab=groups",
+  "expected": {
+    "width": 915,
+    "height": 412
+  },
+  "actual": {
+    "width": 915,
+    "height": 412
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 915,
+    "bodyWidth": 915,
+    "height": 1588
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "navTop": 0,
+    "finalBottom": 265.75
+  },
+  "clippedActions": []
+}

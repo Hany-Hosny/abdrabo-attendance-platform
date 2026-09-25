@@ -1,0 +1,27 @@
+{
+  "project": "ipad-10th-gen-landscape",
+  "route": "/teacher/dashboard?tab=fees",
+  "expected": {
+    "width": 1180,
+    "height": 820
+  },
+  "actual": {
+    "width": 1180,
+    "height": 820
+  },
+  "orientation": "landscape",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 1180,
+    "bodyWidth": 1180,
+    "height": 820
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "navTop": 0,
+    "finalBottom": 457.390625
+  },
+  "clippedActions": []
+}

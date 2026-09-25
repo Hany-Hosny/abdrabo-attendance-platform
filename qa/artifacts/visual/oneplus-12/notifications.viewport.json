@@ -1,0 +1,26 @@
+{
+  "project": "oneplus-12",
+  "route": "/notifications",
+  "expected": {
+    "width": 450,
+    "height": 1000
+  },
+  "actual": {
+    "width": 450,
+    "height": 1000
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 450,
+    "bodyWidth": 450,
+    "height": 1000
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 765.375
+  },
+  "clippedActions": []
+}

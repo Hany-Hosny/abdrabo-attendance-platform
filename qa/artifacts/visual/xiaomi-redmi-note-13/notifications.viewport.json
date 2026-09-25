@@ -1,0 +1,26 @@
+{
+  "project": "xiaomi-redmi-note-13",
+  "route": "/notifications",
+  "expected": {
+    "width": 393,
+    "height": 873
+  },
+  "actual": {
+    "width": 393,
+    "height": 873
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 393,
+    "bodyWidth": 393,
+    "height": 1001
+  },
+  "bottomNav": {
+    "present": false,
+    "overlap": false,
+    "finalBottom": 692.375
+  },
+  "clippedActions": []
+}

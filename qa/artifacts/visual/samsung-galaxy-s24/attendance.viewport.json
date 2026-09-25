@@ -1,0 +1,27 @@
+{
+  "project": "samsung-galaxy-s24",
+  "route": "/teacher/dashboard?tab=attendance",
+  "expected": {
+    "width": 360,
+    "height": 780
+  },
+  "actual": {
+    "width": 360,
+    "height": 780
+  },
+  "orientation": "portrait",
+  "language": "ar",
+  "direction": "rtl",
+  "document": {
+    "width": 360,
+    "bodyWidth": 360,
+    "height": 1026
+  },
+  "bottomNav": {
+    "present": true,
+    "overlap": false,
+    "navTop": 710,
+    "finalBottom": 646.796875
+  },
+  "clippedActions": []
+}
