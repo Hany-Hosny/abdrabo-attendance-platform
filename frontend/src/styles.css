@@ -4587,9 +4587,9 @@ textarea {
 .whatsapp-toggle-card input:focus-visible + i { outline: 2px solid rgba(105, 173, 255, 0.8); outline-offset: 3px; }
 .whatsapp-delay-fields { display: flex; align-items: end; gap: 8px; }
 .whatsapp-delay-fields > span { padding-bottom: 10px; color: var(--muted); }
-.whatsapp-delay-fields label { display: grid; grid-template-columns: 1fr auto; gap: 4px 6px; min-width: 74px; }
+.whatsapp-delay-fields label { display: grid; grid-template-columns: 1fr auto; gap: 4px 6px; min-width: 96px; }
 .whatsapp-delay-fields label span { grid-column: 1 / -1; color: var(--muted); font-size: 10px; }
-.whatsapp-delay-fields input { width: 56px; padding: 8px; }
+.whatsapp-delay-fields input { width: 78px; min-width: 78px; padding: 8px; box-sizing: border-box; }
 .whatsapp-delay-fields em { align-self: center; color: var(--muted); font-size: 10px; font-style: normal; }
 .whatsapp-delay-control { display: grid; gap: 10px; justify-items: end; }
 .whatsapp-delay-presets { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }

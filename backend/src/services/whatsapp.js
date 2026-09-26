@@ -57,11 +57,15 @@ const DEFAULT_SETTINGS = Object.freeze({
   max_delay_seconds: 8
 });
 
-const publicAppUrl = String(
-  process.env.FRONTEND_URL ||
-  process.env.PUBLIC_APP_URL ||
-  (process.env.NODE_ENV === "production" ? "https://abdrabo.up.railway.app" : "http://localhost:3000")
-).replace(/\/+$/, "");
+export function resolvePublicAppUrl({ frontendUrl = process.env.FRONTEND_URL, publicAppUrl = process.env.PUBLIC_APP_URL, nodeEnv = process.env.NODE_ENV } = {}) {
+  return String(
+    frontendUrl ||
+    publicAppUrl ||
+    (nodeEnv === "production" ? "https://abdrabo.online" : "http://localhost:3000")
+  ).replace(/\/+$/, "");
+}
+
+const publicAppUrl = resolvePublicAppUrl();
 
 const WHATSAPP_ENABLED = !["0", "false", "no", "off"].includes(
   String(process.env.WHATSAPP_ENABLED ?? "true").trim().toLowerCase()
@@ -90,6 +94,12 @@ const JOB_LEASE_RENEWAL_CHUNK_MS = 30_000;
 const JOB_PROVIDER_TIMEOUT_MS = 45_000;
 const GRADE_PORTAL_PREVIEW_MARKER = "[secure-link-generated-at-send]";
 const RETRY_REASON_MAX_LENGTH = 500;
+const DEFAULT_GOVERNOR_SETTINGS = Object.freeze({
+  max_messages_per_hour: 50,
+  batch_size: 25,
+  batch_cooldown_seconds: 300,
+  reconnect_cooldown_seconds: 300
+});
 const state = {
   status: "disconnected",
   phoneNumber: null,
@@ -244,6 +254,11 @@ function normalizeSettings(row) {
   const advancePaymentTemplates = normalizeTemplates(row?.advance_payment_templates, DEFAULT_ADVANCE_PAYMENT_TEMPLATES, "{months}");
   const min = Number(row?.min_delay_seconds);
   const max = Number(row?.max_delay_seconds);
+  const governor = Object.fromEntries(Object.entries(DEFAULT_GOVERNOR_SETTINGS).map(([key, fallback]) => {
+    const value = Number(row?.[key]);
+    const minimum = key.endsWith("_cooldown_seconds") ? 0 : 1;
+    return [key, Number.isInteger(value) && value >= minimum ? value : fallback];
+  }));
   return {
     auto_send: row?.auto_send === true,
     attendance_notifications_enabled: row?.attendance_notifications_enabled !== false,
@@ -251,8 +266,9 @@ function normalizeSettings(row) {
     grade_templates: gradeTemplates,
     receipt_templates: receiptTemplates,
     advance_payment_templates: advancePaymentTemplates,
-    min_delay_seconds: Number.isInteger(min) && min >= 2 && min <= 60 ? min : DEFAULT_SETTINGS.min_delay_seconds,
-    max_delay_seconds: Number.isInteger(max) && max >= 2 && max <= 60 ? max : DEFAULT_SETTINGS.max_delay_seconds,
+    min_delay_seconds: Number.isInteger(min) && min >= 2 && min <= 600 ? min : DEFAULT_SETTINGS.min_delay_seconds,
+    max_delay_seconds: Number.isInteger(max) && max >= 2 && max <= 600 ? max : DEFAULT_SETTINGS.max_delay_seconds,
+    ...governor,
     portal_base_url: publicAppUrl
   };
 }
@@ -277,12 +293,30 @@ export function validateWhatsAppSettings(input) {
   const advancePaymentTemplates = normalizeOptionalTemplates(input.advance_payment_templates, DEFAULT_ADVANCE_PAYMENT_TEMPLATES, "{months}");
   const min = Number(input.min_delay_seconds);
   const max = Number(input.max_delay_seconds);
-  if (!Number.isInteger(min) || !Number.isInteger(max) || min < 2 || max > 60 || min > max) throw new Error("invalid_delay_range");
-  return { auto_send: input.auto_send, attendance_notifications_enabled: input.attendance_notifications_enabled !== false, templates, grade_templates: gradeTemplates, receipt_templates: receiptTemplates, advance_payment_templates: advancePaymentTemplates, min_delay_seconds: min, max_delay_seconds: max };
+  if (!Number.isInteger(min) || !Number.isInteger(max) || min < 2 || max > 600 || min > max) throw new Error("invalid_delay_range");
+  const validatePositive = (key, minimum, maximum) => {
+    const value = Number(input[key] ?? DEFAULT_GOVERNOR_SETTINGS[key]);
+    if (!Number.isInteger(value) || value < minimum || value > maximum) throw new Error(`invalid_${key}`);
+    return value;
+  };
+  return {
+    auto_send: input.auto_send,
+    attendance_notifications_enabled: input.attendance_notifications_enabled !== false,
+    templates,
+    grade_templates: gradeTemplates,
+    receipt_templates: receiptTemplates,
+    advance_payment_templates: advancePaymentTemplates,
+    min_delay_seconds: min,
+    max_delay_seconds: max,
+    max_messages_per_hour: validatePositive("max_messages_per_hour", 1, 10000),
+    batch_size: validatePositive("batch_size", 1, 1000),
+    batch_cooldown_seconds: validatePositive("batch_cooldown_seconds", 0, 86400),
+    reconnect_cooldown_seconds: validatePositive("reconnect_cooldown_seconds", 0, 86400)
+  };
 }
 
 export async function getWhatsAppSettings(db = query) {
-  const result = await db("SELECT auto_send, attendance_notifications_enabled, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds FROM whatsapp_settings WHERE id = 1");
+  const result = await db("SELECT auto_send, attendance_notifications_enabled, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds, max_messages_per_hour, batch_size, batch_cooldown_seconds, reconnect_cooldown_seconds FROM whatsapp_settings WHERE id = 1");
   return normalizeSettings(result.rows[0]);
 }
 
@@ -333,15 +367,17 @@ export async function updateWhatsAppSettings(input, { actorId, request = null, d
       ? settings.attendance_notifications_enabled
       : before.attendance_notifications_enabled;
     await client.query(
-      `INSERT INTO whatsapp_settings (id, auto_send, attendance_notifications_enabled, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds, updated_by, updated_at)
-       VALUES (1, $1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7, $8, $9, NOW())
+      `INSERT INTO whatsapp_settings (id, auto_send, attendance_notifications_enabled, templates, grade_templates, receipt_templates, advance_payment_templates, min_delay_seconds, max_delay_seconds, max_messages_per_hour, batch_size, batch_cooldown_seconds, reconnect_cooldown_seconds, updated_by, updated_at)
+       VALUES (1, $1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, NOW())
        ON CONFLICT (id) DO UPDATE SET auto_send = EXCLUDED.auto_send,
          attendance_notifications_enabled = EXCLUDED.attendance_notifications_enabled, templates = EXCLUDED.templates,
          grade_templates = EXCLUDED.grade_templates, receipt_templates = EXCLUDED.receipt_templates,
          advance_payment_templates = EXCLUDED.advance_payment_templates,
          min_delay_seconds = EXCLUDED.min_delay_seconds, max_delay_seconds = EXCLUDED.max_delay_seconds,
+         max_messages_per_hour = EXCLUDED.max_messages_per_hour, batch_size = EXCLUDED.batch_size,
+         batch_cooldown_seconds = EXCLUDED.batch_cooldown_seconds, reconnect_cooldown_seconds = EXCLUDED.reconnect_cooldown_seconds,
          updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
-      [settings.auto_send, attendanceNotificationsEnabled, JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates), settings.min_delay_seconds, settings.max_delay_seconds, actorId || null]
+      [settings.auto_send, attendanceNotificationsEnabled, JSON.stringify(settings.templates), JSON.stringify(settings.grade_templates), JSON.stringify(settings.receipt_templates), JSON.stringify(settings.advance_payment_templates), settings.min_delay_seconds, settings.max_delay_seconds, settings.max_messages_per_hour, settings.batch_size, settings.batch_cooldown_seconds, settings.reconnect_cooldown_seconds, actorId || null]
     );
     await client.query(`
       INSERT INTO whatsapp_templates (category, message_body, is_active, audience, is_fallback)
@@ -808,11 +844,7 @@ export async function connectWhatsApp() {
         state.qr = null;
         state.phoneNumber = normalizeEgyptianPhone(socket.user?.id?.split(":")[0]) || socket.user?.id?.split(":")[0] || null;
         armConnectedWatchdog(socket);
-        await query(
-          `UPDATE whatsapp_notification_jobs
-           SET next_attempt_at = NOW(), updated_at = NOW()
-           WHERE status = 'pending' AND last_error = 'whatsapp_disconnected'`
-        ).catch((error) => console.error("Failed to wake disconnected WhatsApp jobs", safeWorkerError(error)));
+        await markWhatsAppReconnect().catch((error) => console.error("Failed to arm WhatsApp reconnect cooldown", safeWorkerError(error)));
         wakeWhatsAppWorker();
         console.log("WhatsApp connected");
       }
@@ -1087,10 +1119,10 @@ function compileWhatsAppMessage(_type, template, values) {
   return resolveSpintax(template, values);
 }
 
-export function buildStudentPortalLink(studentId, _studentCode, accessToken) {
+export function buildStudentPortalLink(studentId, _studentCode, accessToken, baseUrl = publicAppUrl) {
   const numericStudentId = Number(studentId);
   if (!Number.isSafeInteger(numericStudentId) || numericStudentId <= 0 || !/^[A-Za-z0-9_-]{20,64}$/.test(String(accessToken || ""))) return "";
-  return `${publicAppUrl}/p/${encodeURIComponent(accessToken)}`;
+  return `${baseUrl}/p/${encodeURIComponent(accessToken)}`;
 }
 
 function formatMonthLabel(value, locale) {
@@ -1303,7 +1335,11 @@ export async function settlePaymentNotificationJobsForReversal({ client, payment
   return result.rows;
 }
 
-async function reserveWhatsAppSendSlot(settings, dbPool = pool) {
+export async function reserveWhatsAppSendSlot(settings = null, dbPool = pool) {
+  const effectiveSettings = {
+    ...DEFAULT_GOVERNOR_SETTINGS,
+    ...(settings || await getWhatsAppSettings(dbPool.query.bind(dbPool)))
+  };
   const client = await dbPool.connect();
   try {
     await client.query("BEGIN");
@@ -1313,26 +1349,122 @@ async function reserveWhatsAppSendSlot(settings, dbPool = pool) {
       [WHATSAPP_SEND_SLOT_KEY]
     );
     const current = await client.query(
-      "SELECT next_available_at FROM whatsapp_send_slots WHERE session_key = $1 FOR UPDATE",
+      "SELECT next_available_at, batch_count, batch_cooldown_until, reconnect_cooldown_until FROM whatsapp_send_slots WHERE session_key = $1 FOR UPDATE",
       [WHATSAPP_SEND_SLOT_KEY]
     );
     const now = Date.now();
-    const availableAt = current.rows[0]?.next_available_at ? new Date(current.rows[0].next_available_at).getTime() : now;
-    const waitMs = Math.max(0, availableAt - now);
-    const delayMs = randomInteger(settings.min_delay_seconds, settings.max_delay_seconds) * 1000;
+    const slot = current.rows[0] || {};
+    const availableAt = slot.next_available_at ? new Date(slot.next_available_at).getTime() : now;
+    const cooldownAt = slot.batch_cooldown_until ? new Date(slot.batch_cooldown_until).getTime() : 0;
+    const reconnectAt = slot.reconnect_cooldown_until ? new Date(slot.reconnect_cooldown_until).getTime() : 0;
+    const hourly = await client.query(
+      `SELECT COUNT(*)::int AS count, MIN(reserved_at) AS oldest_reserved_at
+       FROM whatsapp_send_rate_events
+       WHERE session_key = $1 AND reserved_at >= NOW() - INTERVAL '1 hour'`,
+      [WHATSAPP_SEND_SLOT_KEY]
+    );
+    const hourlyCount = Number(hourly.rows[0]?.count || 0);
+    const oldestReservedAt = hourly.rows[0]?.oldest_reserved_at ? new Date(hourly.rows[0].oldest_reserved_at).getTime() : 0;
+    const hourlyWaitAt = hourlyCount >= effectiveSettings.max_messages_per_hour && oldestReservedAt
+      ? oldestReservedAt + 60 * 60_000
+      : 0;
+    const waitMs = Math.max(0, availableAt - now, cooldownAt - now, reconnectAt - now, hourlyWaitAt - now);
+    if (waitMs > 0) {
+      await client.query("COMMIT");
+      return { waitMs, reserved: false, reason: reconnectAt > now ? "reconnect_cooldown" : hourlyWaitAt > now ? "hourly_cap" : cooldownAt > now ? "batch_cooldown" : "send_slot" };
+    }
+    const delayMs = randomInteger(effectiveSettings.min_delay_seconds, effectiveSettings.max_delay_seconds) * 1000;
     const nextAvailableAt = new Date(Math.max(now, availableAt) + delayMs);
     await client.query(
-      "UPDATE whatsapp_send_slots SET next_available_at = $2, updated_at = NOW() WHERE session_key = $1",
-      [WHATSAPP_SEND_SLOT_KEY, nextAvailableAt]
+      `UPDATE whatsapp_send_slots
+       SET next_available_at = $2,
+           batch_count = CASE WHEN batch_count >= $3 THEN 1 ELSE batch_count + 1 END,
+           batch_cooldown_until = CASE
+             WHEN (CASE WHEN batch_count >= $3 THEN 1 ELSE batch_count + 1 END) >= $3
+             THEN NOW() + ($4 * INTERVAL '1 second')
+             ELSE NULL
+           END,
+           updated_at = NOW()
+       WHERE session_key = $1`,
+      [WHATSAPP_SEND_SLOT_KEY, nextAvailableAt, effectiveSettings.batch_size, effectiveSettings.batch_cooldown_seconds]
+    );
+    await client.query(
+      "INSERT INTO whatsapp_send_rate_events (session_key, reserved_at) VALUES ($1, NOW())",
+      [WHATSAPP_SEND_SLOT_KEY]
     );
     await client.query("COMMIT");
-    return waitMs;
+    return { waitMs: Math.max(0, availableAt - now), reserved: true, reason: null };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
     client.release();
   }
+}
+
+async function getWhatsAppGovernorWait(dbPool = pool) {
+  const settings = await getWhatsAppSettings(dbPool.query.bind(dbPool));
+  const slotResult = await dbPool.query(
+    `SELECT next_available_at, batch_cooldown_until, reconnect_cooldown_until
+       FROM whatsapp_send_slots
+      WHERE session_key = $1`,
+    [WHATSAPP_SEND_SLOT_KEY]
+  );
+  const slot = slotResult.rows[0];
+  if (!slot) return { waitMs: 0, reason: null };
+  const now = Date.now();
+  const times = [
+    { at: slot.next_available_at, reason: "send_slot" },
+    { at: slot.batch_cooldown_until, reason: "batch_cooldown" },
+    { at: slot.reconnect_cooldown_until, reason: "reconnect_cooldown" }
+  ];
+  const hourly = await dbPool.query(
+    `SELECT COUNT(*)::int AS count, MIN(reserved_at) AS oldest_reserved_at
+       FROM whatsapp_send_rate_events
+      WHERE session_key = $1 AND reserved_at >= NOW() - INTERVAL '1 hour'`,
+    [WHATSAPP_SEND_SLOT_KEY]
+  );
+  const hourlyCount = Number(hourly.rows[0]?.count || 0);
+  if (hourlyCount >= settings.max_messages_per_hour && hourly.rows[0]?.oldest_reserved_at) {
+    times.push({
+      at: new Date(new Date(hourly.rows[0].oldest_reserved_at).getTime() + 60 * 60_000),
+      reason: "hourly_cap"
+    });
+  }
+  const active = times
+    .map(({ at, reason }) => ({ at: at ? new Date(at).getTime() : 0, reason }))
+    .filter(({ at }) => at > now)
+    .sort((left, right) => left.at - right.at)[0];
+  return active ? { waitMs: active.at - now, reason: active.reason } : { waitMs: 0, reason: null };
+}
+
+export async function markWhatsAppReconnect({ db = pool } = {}) {
+  const settings = await getWhatsAppSettings(typeof db === "function" ? db : db.query.bind(db));
+  await (typeof db === "function" ? db : db.query.bind(db))(
+    `INSERT INTO whatsapp_send_slots (session_key, reconnect_cooldown_until)
+     VALUES ($1, NOW() + ($2 * INTERVAL '1 second'))
+     ON CONFLICT (session_key) DO UPDATE SET
+       reconnect_cooldown_until = GREATEST(
+         COALESCE(whatsapp_send_slots.reconnect_cooldown_until, NOW()),
+         NOW() + ($2 * INTERVAL '1 second')
+       ), updated_at = NOW()`,
+    [WHATSAPP_SEND_SLOT_KEY, settings.reconnect_cooldown_seconds]
+  );
+}
+
+async function deferGovernedJob(job, waitMs, reason, dbPool = pool) {
+  const result = await dbPool.query(
+    `UPDATE whatsapp_notification_jobs
+     SET status = 'pending', attempts = GREATEST(attempts - 1, 0),
+         last_error = $2, next_attempt_at = NOW() + ($3 * INTERVAL '1 millisecond'),
+         lease_expires_at = NULL, claim_token = NULL, send_started_at = NULL,
+         updated_at = NOW()
+     WHERE id = $1 AND status = 'processing' AND claim_token = $4
+     RETURNING id`,
+    [job.id, `whatsapp_governor_${reason}`, Math.max(1000, Math.ceil(waitMs)), job.claim_token]
+  );
+  if (result.rowCount) await syncExternalMessageStatus({ id: job.id, status: "pending" }, dbPool);
+  return result.rowCount > 0;
 }
 
 export async function enqueueGradeBatchNotifications({ resultIds }) {
@@ -2017,7 +2149,19 @@ async function claimNextJob(dbPool = pool, dbClient = null) {
     // Rely on row-level SKIP LOCKED; session advisory locks are unsafe through pooled connections.
     const result = await client.query(`SELECT * FROM whatsapp_notification_jobs
       WHERE status = 'pending' AND next_attempt_at <= NOW()
-      ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED`);
+      ORDER BY GREATEST(
+        0,
+        CASE notification_type
+          WHEN 'external_message' THEN 0
+          WHEN 'custom_message' THEN 0
+          WHEN 'receipt' THEN 1
+          WHEN 'advance_payment' THEN 1
+          WHEN 'cancellation' THEN 2
+          WHEN 'grade' THEN 2
+          ELSE 3
+        END - FLOOR(EXTRACT(EPOCH FROM (NOW() - created_at)) / 900)
+      ), created_at, id
+      LIMIT 1 FOR UPDATE SKIP LOCKED`);
     if (!result.rowCount) { await client.query("COMMIT"); return null; }
     const claimToken = crypto.randomUUID();
     const updated = await client.query(`UPDATE whatsapp_notification_jobs
@@ -2038,6 +2182,7 @@ async function updateJob(id, status, fields = {}, claimToken, dbPool = pool) {
   if (!claimToken) return false;
   const result = await dbPool.query(`UPDATE whatsapp_notification_jobs SET status = $2, last_error = $3,
     next_attempt_at = COALESCE($4, next_attempt_at), sent_at = CASE WHEN $2 = 'sent' THEN NOW() ELSE sent_at END,
+    provider_call_finished_at = CASE WHEN $2 IN ('sent', 'delivery_unknown') THEN COALESCE(provider_call_finished_at, NOW()) ELSE provider_call_finished_at END,
     lease_expires_at = CASE WHEN $2 = 'processing' THEN lease_expires_at ELSE NULL END,
     phone_number = COALESCE($5, phone_number), provider_message_id = COALESCE($6, provider_message_id),
     provider_accepted_at = CASE WHEN $6 IS NOT NULL THEN COALESCE(provider_accepted_at, NOW()) ELSE provider_accepted_at END,
@@ -2138,7 +2283,8 @@ async function markSendStartedWithResult(job, type, dbPool = pool) {
 
     if (type === "external_message") {
       const started = await client.query(`UPDATE whatsapp_notification_jobs
-        SET send_started_at = NOW(), lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
+        SET send_started_at = NOW(), provider_call_started_at = NOW(), provider_call_finished_at = NULL,
+            lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
         WHERE id = $1 AND status = 'processing' AND claim_token = $2 RETURNING id`, [job.id, job.claim_token, JOB_LEASE_MS]);
       if (!started.rowCount) {
         await client.query("ROLLBACK");
@@ -2148,7 +2294,7 @@ async function markSendStartedWithResult(job, type, dbPool = pool) {
       return { ok: true };
     }
 
-    const studentResult = currentJob.rows[0].student_id == null
+    const studentResult = ["custom_message", "external_message"].includes(type) || currentJob.rows[0].student_id == null
       ? { rowCount: 0, rows: [] }
       : await client.query(
         `SELECT gender, is_active, deleted_at, whatsapp_opted_out
@@ -2235,7 +2381,8 @@ async function markSendStartedWithResult(job, type, dbPool = pool) {
     }
     const result = await client.query(
       `UPDATE whatsapp_notification_jobs
-       SET send_started_at = NOW(), lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
+       SET send_started_at = NOW(), provider_call_started_at = NOW(), provider_call_finished_at = NULL,
+           lease_expires_at = NOW() + ($3 * INTERVAL '1 millisecond'), updated_at = NOW()
        WHERE id = $1 AND status = 'processing' AND claim_token = $2
        RETURNING id`,
       [job.id, job.claim_token, JOB_LEASE_MS]
@@ -2267,6 +2414,7 @@ async function completeSentJob(job, providerMessageId, dbPool = pool) {
       `UPDATE whatsapp_notification_jobs
        SET status = 'sent', sent_at = NOW(), last_error = NULL,
            lease_expires_at = NULL, claim_token = NULL,
+           provider_call_finished_at = COALESCE(provider_call_finished_at, NOW()),
            provider_message_id = COALESCE($3, provider_message_id),
            provider_accepted_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND status = 'processing' AND claim_token = $2
@@ -2285,7 +2433,7 @@ async function completeSentJob(job, providerMessageId, dbPool = pool) {
         [job.source_id, job.id]
       );
     }
-    if (completed.rowCount) await syncExternalMessageStatus({ id: job.id, status: "sent" }, client);
+    if (completed.rowCount && job.external_message_id) await syncExternalMessageStatus({ id: job.id, status: "sent" }, client);
     await client.query("COMMIT");
     return completed.rowCount > 0;
   } catch (error) {
@@ -2728,6 +2876,11 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
   const connected = ownership?.connected || (() => state.status === "connected" && Boolean(provider || state.socket));
   const auditStale = (job, phase) => auditJob(job, "whatsapp_job_stale_claim_rejected", { phase }).catch(() => undefined);
   if (!ownsSession()) return;
+  if (!connected()) return;
+  if (!settingsOverride) {
+    const governorWait = await getWhatsAppGovernorWait(dbPool);
+    if (governorWait.waitMs > 0) return;
+  }
   if (state.workerRunning) return;
   state.workerRunning = true;
   let job = null;
@@ -2739,7 +2892,10 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
     if (!job) return;
     await syncExternalMessageStatus(job, dbPool);
     await auditJob(job, "whatsapp_job_claimed", { lease_expires_at: job.lease_expires_at }).catch(() => undefined);
-    const settings = settingsOverride || await getWhatsAppSettings(dbPool.query.bind(dbPool));
+    const settings = {
+      ...DEFAULT_GOVERNOR_SETTINGS,
+      ...(settingsOverride || await getWhatsAppSettings(dbPool.query.bind(dbPool)))
+    };
     const type = notificationTypeForJob(job);
     if (!type) {
       const updated = await updateJob(job.id, "skipped", { error: "unsupported_whatsapp_notification_type" }, job.claim_token, dbPool);
@@ -2770,8 +2926,14 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
       return;
     }
 
-    const waitMs = await reserveWhatsAppSendSlot(settings, dbPool);
-    if (!(await waitWithJobLease(job, waitMs, dbPool, auditJob, ownsSession))) {
+    const reservation = await reserveWhatsAppSendSlot(settingsOverride ? settings : null, dbPool);
+    if (!reservation.reserved) {
+      const deferred = await deferGovernedJob(job, reservation.waitMs, reservation.reason, dbPool);
+      if (deferred) await auditJob(job, "whatsapp_job_governor_deferred", { reason: reservation.reason, wait_ms: reservation.waitMs });
+      else await auditStale(job, "governor_defer");
+      return;
+    }
+    if (!(await waitWithJobLease(job, reservation.waitMs, dbPool, auditJob, ownsSession))) {
       await auditStale(job, "send_slot_wait");
       return;
     }
@@ -2910,6 +3072,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
       }
       return;
     }
+    await auditJob(job, "whatsapp_provider_call_started", { notification_type: type }).catch(() => undefined);
     if (portalAccessToken) {
       await cleanupJobPortalAccess(job, null, dbPool);
       await createPortalAccessRecord(job.student_id, portalAccessToken, dbPool);
@@ -2923,6 +3086,7 @@ async function processWhatsAppJob({ dbPool = pool, provider = state.socket, sett
     );
     providerAccepted = true;
     providerMessageId = providerResponse?.key?.id || null;
+    await auditJob(job, "whatsapp_provider_call_finished", { notification_type: type, provider_message_id: providerMessageId }).catch(() => undefined);
     if (!ownsSession() || (!ownership && !isLocallyWithinConfirmedLease())) throw new Error("whatsapp_ownership_lost_during_send");
     state.lastSentAt = Date.now();
     const completed = await completeSentJob(job, providerMessageId, dbPool);

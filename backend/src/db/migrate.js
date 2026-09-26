@@ -851,6 +851,10 @@ export async function migrate() {
       advance_payment_templates JSONB NOT NULL DEFAULT '[]'::jsonb,
       min_delay_seconds INTEGER NOT NULL DEFAULT 4 CHECK (min_delay_seconds BETWEEN 2 AND 60),
       max_delay_seconds INTEGER NOT NULL DEFAULT 8 CHECK (max_delay_seconds BETWEEN 2 AND 60),
+      max_messages_per_hour INTEGER NOT NULL DEFAULT 50,
+      batch_size INTEGER NOT NULL DEFAULT 25,
+      batch_cooldown_seconds INTEGER NOT NULL DEFAULT 300,
+      reconnect_cooldown_seconds INTEGER NOT NULL DEFAULT 300,
       updated_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -955,8 +959,18 @@ export async function migrate() {
     CREATE TABLE IF NOT EXISTS whatsapp_send_slots (
       session_key TEXT PRIMARY KEY,
       next_available_at TIMESTAMPTZ,
+      batch_count INTEGER NOT NULL DEFAULT 0,
+      batch_cooldown_until TIMESTAMPTZ,
+      reconnect_cooldown_until TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS whatsapp_send_rate_events (
+      id BIGSERIAL PRIMARY KEY,
+      session_key TEXT NOT NULL,
+      reserved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS whatsapp_send_rate_events_window_idx
+      ON whatsapp_send_rate_events(session_key, reserved_at);
 
     CREATE EXTENSION IF NOT EXISTS pgcrypto;
     CREATE TABLE IF NOT EXISTS ai_provider_instances (
@@ -1050,6 +1064,15 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS grade_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS receipt_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
   await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS advance_payment_templates JSONB NOT NULL DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS max_messages_per_hour INTEGER NOT NULL DEFAULT 50");
+  await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS batch_size INTEGER NOT NULL DEFAULT 25");
+  await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS batch_cooldown_seconds INTEGER NOT NULL DEFAULT 300");
+  await query("ALTER TABLE whatsapp_settings ADD COLUMN IF NOT EXISTS reconnect_cooldown_seconds INTEGER NOT NULL DEFAULT 300");
+  await query("ALTER TABLE whatsapp_send_slots ADD COLUMN IF NOT EXISTS batch_count INTEGER NOT NULL DEFAULT 0");
+  await query("ALTER TABLE whatsapp_send_slots ADD COLUMN IF NOT EXISTS batch_cooldown_until TIMESTAMPTZ");
+  await query("ALTER TABLE whatsapp_send_slots ADD COLUMN IF NOT EXISTS reconnect_cooldown_until TIMESTAMPTZ");
+  await query("CREATE TABLE IF NOT EXISTS whatsapp_send_rate_events (id BIGSERIAL PRIMARY KEY, session_key TEXT NOT NULL, reserved_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+  await query("CREATE INDEX IF NOT EXISTS whatsapp_send_rate_events_window_idx ON whatsapp_send_rate_events(session_key, reserved_at)");
   await query("ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS cancelled_at TIMESTAMPTZ");
   await query("ALTER TABLE attendance_sessions ADD COLUMN IF NOT EXISTS cancelled_by INTEGER REFERENCES teachers(id) ON DELETE SET NULL");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS cancellation_session_id INTEGER REFERENCES attendance_sessions(id) ON DELETE SET NULL");
@@ -1060,8 +1083,16 @@ export async function migrate() {
   await query("CREATE INDEX IF NOT EXISTS students_billing_start_month_idx ON students (billing_start_month)");
   await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_min_delay_seconds_check");
   await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_max_delay_seconds_check");
+  await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_max_messages_per_hour_check");
+  await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_batch_size_check");
+  await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_batch_cooldown_seconds_check");
+  await query("ALTER TABLE whatsapp_settings DROP CONSTRAINT IF EXISTS whatsapp_settings_reconnect_cooldown_seconds_check");
   await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_min_delay_seconds_check CHECK (min_delay_seconds BETWEEN 2 AND 60)");
-  await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_max_delay_seconds_check CHECK (max_delay_seconds BETWEEN 2 AND 60)");
+  await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_max_delay_seconds_check CHECK (max_delay_seconds BETWEEN 2 AND 600)");
+  await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_max_messages_per_hour_check CHECK (max_messages_per_hour BETWEEN 1 AND 10000)");
+  await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_batch_size_check CHECK (batch_size BETWEEN 1 AND 1000)");
+  await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_batch_cooldown_seconds_check CHECK (batch_cooldown_seconds BETWEEN 0 AND 86400)");
+  await query("ALTER TABLE whatsapp_settings ADD CONSTRAINT whatsapp_settings_reconnect_cooldown_seconds_check CHECK (reconnect_cooldown_seconds BETWEEN 0 AND 86400)");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS notification_type TEXT NOT NULL DEFAULT 'attendance'");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS source_id BIGINT");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS template_index INTEGER");
@@ -1072,6 +1103,8 @@ export async function migrate() {
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS send_started_at TIMESTAMPTZ");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_message_id TEXT");
   await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_accepted_at TIMESTAMPTZ");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_call_started_at TIMESTAMPTZ");
+  await query("ALTER TABLE whatsapp_notification_jobs ADD COLUMN IF NOT EXISTS provider_call_finished_at TIMESTAMPTZ");
   await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN attendance_record_id DROP NOT NULL");
   await query("ALTER TABLE whatsapp_notification_jobs ALTER COLUMN phone_number DROP NOT NULL");
   await query("ALTER TABLE whatsapp_notification_jobs DROP CONSTRAINT IF EXISTS whatsapp_notification_jobs_notification_type_check");

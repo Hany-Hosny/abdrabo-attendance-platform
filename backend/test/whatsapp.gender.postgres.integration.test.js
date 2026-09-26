@@ -38,15 +38,22 @@ async function withIsolatedDatabase(run) {
         idempotency_key TEXT, phone_number TEXT,
         payload JSONB NOT NULL, ref_code TEXT NOT NULL, status TEXT NOT NULL,
         attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         sent_at TIMESTAMPTZ, lease_expires_at TIMESTAMPTZ, claim_token TEXT, send_started_at TIMESTAMPTZ,
         provider_message_id TEXT, template_index INTEGER, template_text TEXT,
         rendered_message TEXT, template_id BIGINT, template_version INTEGER,
         template_category TEXT, template_audience TEXT, template_slot_number INTEGER,
         template_body_snapshot TEXT, template_gender TEXT, provider_accepted_at TIMESTAMPTZ,
+        provider_call_started_at TIMESTAMPTZ, provider_call_finished_at TIMESTAMPTZ,
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE TABLE whatsapp_send_slots (
-        session_key TEXT PRIMARY KEY, next_available_at TIMESTAMPTZ, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        session_key TEXT PRIMARY KEY, next_available_at TIMESTAMPTZ, batch_count INTEGER NOT NULL DEFAULT 0,
+        batch_cooldown_until TIMESTAMPTZ, reconnect_cooldown_until TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE whatsapp_send_rate_events (
+        id BIGSERIAL PRIMARY KEY, session_key TEXT NOT NULL, reserved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE TABLE student_portal_access_tokens (
         token_hash TEXT PRIMARY KEY, student_id INTEGER NOT NULL, expires_at TIMESTAMPTZ NOT NULL,
@@ -225,17 +232,20 @@ integrationTest("worker fake-provider path sends one rendered message and fences
       sent.push(payload.text);
       return { key: { id: `fake-retry-${sent.length}` } };
     } };
+    await db.query("UPDATE whatsapp_send_slots SET next_available_at = NOW(), batch_count = 0, batch_cooldown_until = NULL, reconnect_cooldown_until = NULL WHERE session_key = 'local_dev'");
     await addAbsentJob(db, { id: 502, gender: "male", status: "pending" });
     await processWhatsAppJobForTest({ dbPool: db, provider: retryProvider, settings });
     const failedAttempt = await db.query("SELECT status, template_id FROM whatsapp_notification_jobs WHERE id = 502");
     assert.equal(failedAttempt.rows[0].status, "pending");
     assert.ok(failedAttempt.rows[0].template_id);
     await db.query("UPDATE whatsapp_notification_jobs SET next_attempt_at = NOW() WHERE id = 502");
+    await db.query("UPDATE whatsapp_send_slots SET next_available_at = NOW(), batch_count = 0, batch_cooldown_until = NULL, reconnect_cooldown_until = NULL WHERE session_key = 'local_dev'");
     await processWhatsAppJobForTest({ dbPool: db, provider: retryProvider, settings });
     assert.equal((await db.query("SELECT status FROM whatsapp_notification_jobs WHERE id = 502")).rows[0].status, "sent");
     assert.equal((await db.query("SELECT next_slot FROM whatsapp_template_rotation_state WHERE category = 'absence' AND audience = 'male'")).rows[0].next_slot, 2);
 
     const unknownProvider = { sendMessage: async () => { const error = new Error("provider timeout"); error.code = "whatsapp_provider_timeout"; throw error; } };
+    await db.query("UPDATE whatsapp_send_slots SET next_available_at = NOW(), batch_count = 0, batch_cooldown_until = NULL, reconnect_cooldown_until = NULL WHERE session_key = 'local_dev'");
     await addAbsentJob(db, { id: 503, gender: "male", status: "pending" });
     await processWhatsAppJobForTest({ dbPool: db, provider: unknownProvider, settings });
     assert.equal((await db.query("SELECT status, last_error FROM whatsapp_notification_jobs WHERE id = 503")).rows[0].status, "delivery_unknown");
@@ -278,11 +288,10 @@ integrationTest("auto-send safety is global and disconnected jobs remain durable
     const enabledSettings = { auto_send: true, min_delay_seconds: 2, max_delay_seconds: 2 };
     await processWhatsAppJobForTest({ dbPool: db, provider, settings: enabledSettings, ownership: { connected } });
     let deferred = (await db.query("SELECT status, attempts, last_error FROM whatsapp_notification_jobs WHERE id = 701")).rows[0];
-    assert.deepEqual([deferred.status, Number(deferred.attempts), deferred.last_error], ["pending", 0, "whatsapp_disconnected"]);
-    await db.query("UPDATE whatsapp_notification_jobs SET next_attempt_at = NOW() WHERE id = 701");
+    assert.deepEqual([deferred.status, Number(deferred.attempts), deferred.last_error], ["pending", 0, null]);
     await processWhatsAppJobForTest({ dbPool: db, provider, settings: enabledSettings, ownership: { connected } });
     deferred = (await db.query("SELECT status, attempts, last_error FROM whatsapp_notification_jobs WHERE id = 701")).rows[0];
-    assert.deepEqual([deferred.status, Number(deferred.attempts), deferred.last_error], ["pending", 0, "whatsapp_disconnected"]);
+    assert.deepEqual([deferred.status, Number(deferred.attempts), deferred.last_error], ["pending", 0, null]);
 
     await db.query("UPDATE whatsapp_notification_jobs SET next_attempt_at = NOW() WHERE id = 701");
     await processWhatsAppJobForTest({ dbPool: db, provider, settings: enabledSettings });

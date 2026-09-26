@@ -13,6 +13,10 @@ type WhatsAppSettings = {
   cancellation_templates: string[];
   min_delay_seconds: number;
   max_delay_seconds: number;
+  max_messages_per_hour: number;
+  batch_size: number;
+  batch_cooldown_seconds: number;
+  reconnect_cooldown_seconds: number;
   portal_base_url?: string;
 };
 type WhatsAppStatus = {
@@ -94,7 +98,11 @@ const defaultSettings: WhatsAppSettings = {
   absence_templates: fallbackAbsenceTemplates.map(normalizeTeacherDisplayName),
   cancellation_templates: fallbackCancellationTemplates,
   min_delay_seconds: 4,
-  max_delay_seconds: 8
+  max_delay_seconds: 8,
+  max_messages_per_hour: 50,
+  batch_size: 25,
+  batch_cooldown_seconds: 300,
+  reconnect_cooldown_seconds: 300
 };
 
 function normalizeSettings(value: Partial<WhatsAppSettings> | undefined): WhatsAppSettings {
@@ -115,6 +123,10 @@ function normalizeSettings(value: Partial<WhatsAppSettings> | undefined): WhatsA
     cancellation_templates: normalizeTemplates(value?.cancellation_templates, fallbackCancellationTemplates, "{group_name}"),
     min_delay_seconds: Number.isInteger(Number(value?.min_delay_seconds)) ? Number(value?.min_delay_seconds) : 4,
     max_delay_seconds: Number.isInteger(Number(value?.max_delay_seconds)) ? Number(value?.max_delay_seconds) : 8,
+    max_messages_per_hour: Number.isInteger(Number(value?.max_messages_per_hour)) ? Number(value?.max_messages_per_hour) : 50,
+    batch_size: Number.isInteger(Number(value?.batch_size)) ? Number(value?.batch_size) : 25,
+    batch_cooldown_seconds: Number.isInteger(Number(value?.batch_cooldown_seconds)) ? Number(value?.batch_cooldown_seconds) : 300,
+    reconnect_cooldown_seconds: Number.isInteger(Number(value?.reconnect_cooldown_seconds)) ? Number(value?.reconnect_cooldown_seconds) : 300,
     portal_base_url: String(value?.portal_base_url || window.location.origin).replace(/\/+$/, "")
   };
 }
@@ -715,7 +727,8 @@ export function WhatsAppSettingsPanel({ token, language, canManage = false, canC
       <div className="settings-section-heading"><span>02</span><div><h3>{t("whatsapp.automationTitle")}</h3><p>{t("whatsapp.automationDescription")}</p></div></div>
       <div className="whatsapp-automation-grid">
         <label className="whatsapp-toggle-card"><span><strong>{t("whatsapp.autoSendLabel")}</strong><small>{t("whatsapp.autoSendDescription")}</small><em className={settings.auto_send ? "is-enabled" : "is-disabled"} aria-live="polite">{settings.auto_send ? t("whatsapp.autoSendEnabled") : t("whatsapp.autoSendDisabled")}</em></span><input type="checkbox" disabled={!canManage || saving || autoSendSaving} checked={settings.auto_send} onChange={(event) => void toggleAutoSend(event.target.checked)} aria-label={t("whatsapp.autoSendLabel")} /><i aria-hidden="true" /></label>
-        <div className="whatsapp-delay-card"><div><strong>{t("whatsapp.delayLabel")}</strong><small>{t("whatsapp.delayDescription")}</small></div><div className="whatsapp-delay-control"><div className="whatsapp-delay-fields"><label><span>{t("whatsapp.minimum")}</span><input disabled={!canManage} type="number" min="2" max="60" value={settings.min_delay_seconds} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, min_delay_seconds: Number(event.target.value) })); }} /><em>{t("whatsapp.seconds")}</em></label><span>—</span><label><span>{t("whatsapp.maximum")}</span><input disabled={!canManage} type="number" min="2" max="60" value={settings.max_delay_seconds} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, max_delay_seconds: Number(event.target.value) })); }} /><em>{t("whatsapp.seconds")}</em></label></div><div className="whatsapp-delay-presets">{[[3, 6, "whatsapp.presetFast"], [5, 12, "whatsapp.presetBalanced"], [10, 30, "whatsapp.presetSafe"]].map(([min, max, label]) => <button className={settings.min_delay_seconds === min && settings.max_delay_seconds === max ? "active" : ""} key={label} type="button" disabled={!canManage} onClick={() => applyDelayPreset(Number(min), Number(max))}>{t(label as string)}</button>)}</div></div></div>
+        <div className="whatsapp-delay-card"><div><strong>{t("whatsapp.delayLabel")}</strong><small>{t("whatsapp.delayDescription")}</small></div><div className="whatsapp-delay-control"><div className="whatsapp-delay-fields"><label><span>{t("whatsapp.minimum")}</span><input disabled={!canManage} type="number" min="2" max="600" value={settings.min_delay_seconds} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, min_delay_seconds: Number(event.target.value) })); }} /><em>{t("whatsapp.seconds")}</em></label><span>—</span><label><span>{t("whatsapp.maximum")}</span><input disabled={!canManage} type="number" min="2" max="600" value={settings.max_delay_seconds} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, max_delay_seconds: Number(event.target.value) })); }} /><em>{t("whatsapp.seconds")}</em></label></div><div className="whatsapp-delay-presets">{[[3, 6, "whatsapp.presetFast"], [5, 12, "whatsapp.presetBalanced"], [10, 30, "whatsapp.presetSafe"]].map(([min, max, label]) => <button className={settings.min_delay_seconds === min && settings.max_delay_seconds === max ? "active" : ""} key={label} type="button" disabled={!canManage} onClick={() => applyDelayPreset(Number(min), Number(max))}>{t(label as string)}</button>)}</div></div></div>
+        <div className="whatsapp-delay-card"><div><strong>{t("whatsapp.governorTitle")}</strong><small>{t("whatsapp.governorDescription")}</small></div><div className="whatsapp-delay-control"><div className="whatsapp-delay-fields"><label><span>{t("whatsapp.maxMessagesPerHour")}</span><input disabled={!canManage} type="number" min="1" max="10000" value={settings.max_messages_per_hour} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, max_messages_per_hour: Number(event.target.value) })); }} /><em>{t("whatsapp.messages")}</em></label><label><span>{t("whatsapp.batchSize")}</span><input disabled={!canManage} type="number" min="1" max="1000" value={settings.batch_size} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, batch_size: Number(event.target.value) })); }} /><em>{t("whatsapp.messages")}</em></label></div><div className="whatsapp-delay-fields"><label><span>{t("whatsapp.batchCooldown")}</span><input disabled={!canManage} type="number" min="0" max="86400" value={settings.batch_cooldown_seconds} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, batch_cooldown_seconds: Number(event.target.value) })); }} /><em>{t("whatsapp.seconds")}</em></label><label><span>{t("whatsapp.reconnectCooldown")}</span><input disabled={!canManage} type="number" min="0" max="86400" value={settings.reconnect_cooldown_seconds} onChange={(event) => { setFeedback("idle"); setSettings((current) => ({ ...current, reconnect_cooldown_seconds: Number(event.target.value) })); }} /><em>{t("whatsapp.seconds")}</em></label></div></div></div>
       </div>
     </section>
 
